@@ -1,0 +1,8 @@
+numpy
+scipy
+astropy
+matplotlib
+bokeh
+pytest
+pytest-cov
+coveralls

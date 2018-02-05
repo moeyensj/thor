@@ -1,0 +1,17 @@
+language: python
+sudo: false
+branches:
+  only:
+    - master
+python:
+  - "3.6"
+  
+install:
+  - pip install --upgrade setuptools
+  - pip install -r requirements.txt
+
+script: 
+  - py.test rascals --cov=rascals
+
+after_success:
+  - coveralls
