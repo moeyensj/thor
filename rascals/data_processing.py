@@ -9,12 +9,12 @@ def findObsInCell(obsIds, coords, coord_center, radius):
     
     Parameters
     ----------
-    obsIds : `~np.ndarray` [N, 1]
+    obsIds : `~np.ndarray` (N, 1)
         Array of observation IDs corresponding to the coords.
-    coords : `~np.ndarray` [N, d]
+    coords : `~np.ndarray` (N, D)
         Array of coordinates of N rows for each observation
-        and d dimensions. 
-    coord_center : `~np.ndarray` [1, d]
+        and D dimensions. 
+    coord_center : `~np.ndarray` (1, D)
         Array containing coordinates in d dimensions about which
         to search. 
     radius : float
