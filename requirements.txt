@@ -3,6 +3,7 @@ scipy
 astropy
 matplotlib
 bokeh
+fortranformat
 pytest
 pytest-cov
 coveralls
