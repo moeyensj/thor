@@ -5,19 +5,20 @@ from pandas.util.testing import assert_frame_equal
 
 from ..io import buildObjectDatabase
 
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+
 def test_io():
-    
     # Read test database tables 
-    con_test = sql.connect("data/objects_TEST.db")
+    con_test = sql.connect(os.path.join(DATA_DIR, "objects_TEST.db"))
     mpcOrbitCat_test = pd.read_sql("""SELECT * FROM mpcOrbitCat""", con_test)
     oorbOrbitCat_test = pd.read_sql("""SELECT * FROM oorbOrbitCat""", con_test)
     ephemeris_test = pd.read_sql("""SELECT * FROM ephemeris""", con_test)
 
     # Run current version of code
-    con_current = buildObjectDatabase("data/OBJECTS_TEST_current.db", 
-                                      mpcorbFile="data/MPCORB_TEST.DAT",
-                                      orbFile="data/MPCORB_59580_TEST.orb",
-                                      ephFile="data/MPCORB_OBS_TEST.eph")
+    con_current = buildObjectDatabase(os.path.join(DATA_DIR, "OBJECTS_TEST_current.db"), 
+                                      mpcorbFile=os.path.join(DATA_DIR, "MPCORB_TEST.DAT"),
+                                      orbFile=os.path.join(DATA_DIR, "MPCORB_59580_TEST.orb"),
+                                      ephFile=os.path.join(DATA_DIR, "MPCORB_OBS_TEST.eph"))
     mpcOrbitCat_current = pd.read_sql("""SELECT * FROM mpcOrbitCat""", con_current)
     oorbOrbitCat_current = pd.read_sql("""SELECT * FROM oorbOrbitCat""", con_current)
     ephemeris_current = pd.read_sql("""SELECT * FROM ephemeris""", con_current)
@@ -30,4 +31,4 @@ def test_io():
     # Delete current
     con_current.close()
     con_test.close()
-    os.remove("data/OBJECTS_TEST_current.db")
+    os.remove(os.path.join(DATA_DIR, "OBJECTS_TEST_current.db"))
