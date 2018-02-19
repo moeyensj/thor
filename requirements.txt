@@ -3,7 +3,6 @@ scipy
 astropy
 matplotlib
 pandas
-sqlite3
 fortranformat
 pytest
 pytest-cov
