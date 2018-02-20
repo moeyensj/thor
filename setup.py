@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
    name="RaSCaLS",
-   version="0.1.2.dev0",
+   version="0.2.0.dev0",
    description="Range, Shift, Cluster and Link Scheme",
    license="BSD 3-Clause License",
    author="Joachim Moeyens, Mario Juric",
