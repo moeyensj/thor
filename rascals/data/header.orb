@@ -1,0 +1,4 @@
+#    Number           Ecliptic x            Ecliptic y            Ecliptic z          Ecliptic dx/dt        Ecliptic dy/dt        Ecliptic dz/dt        Epoch (TT)    Absolute   Slope
+#      or                                                                                                                                                  MJD        magnitude parameter
+#  designation           [au]                  [au]                  [au]                 [au/d]                [au/d]                [au/d]                              H         G
+#-----0001-----<>--------0039--------<>--------0040--------<>--------0041--------<>--------0042--------<>--------0043--------<>--------0044--------<>------0074-----<>---0036-<>---0037-<
