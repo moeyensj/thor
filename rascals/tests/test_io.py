@@ -9,7 +9,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 def test_io():
     # Read test database tables 
-    con_test = sql.connect(os.path.join(DATA_DIR, "objects_TEST.db"))
+    con_test = sql.connect(os.path.join(DATA_DIR, "OBJECTS_TEST.db"))
     mpcOrbitCat_test = pd.read_sql("""SELECT * FROM mpcOrbitCat""", con_test)
     oorbOrbitCat_test = pd.read_sql("""SELECT * FROM oorbOrbitCat""", con_test)
     ephemeris_test = pd.read_sql("""SELECT * FROM ephemeris""", con_test)
