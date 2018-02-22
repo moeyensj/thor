@@ -17,3 +17,13 @@ To install pre-requisite software using pip:
 Once pre-requisites have been installed:
 
 ```python setup.py install```
+
+## Testing Installation
+
+Using pytest (with coveralls):
+
+```pytest rascals --cov=rascals```
+
+Or using setuptools:
+
+```python setup.py test```
