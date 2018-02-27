@@ -7,3 +7,4 @@ fortranformat
 pyyaml
 pytest
 pytest-cov
+coveralls
