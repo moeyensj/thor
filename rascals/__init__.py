@@ -5,3 +5,4 @@ from .oorb import *
 from .coordinates import *
 # needs tests:
 from .projections import *
+from .vectors import *
