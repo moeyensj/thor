@@ -4,6 +4,6 @@ astropy
 matplotlib
 pandas
 fortranformat
+pyyaml
 pytest
 pytest-cov
-coveralls
