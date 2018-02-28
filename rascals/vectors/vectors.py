@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.linalg import norm
+from ..coordinates import _angularToCartesian
 
 __all__ = ["calcNae",
            "calcDelta",
@@ -114,7 +115,7 @@ def calcR1(x_a):
     # test particle n_a
     n_a = x_a / norm(x_a)
     # Find the normal to the plane of the orbit n_hat
-    n_hat = np.cross(np.cross(n_a, z_axis), r_hat)
+    n_hat = np.cross(np.cross(n_a, z_axis), n_a)
     # Find the rotation axis v
     v = np.cross(n_hat, z_axis)
     # Calculate the cosine of the rotation angle, equivalent to the cosine of the

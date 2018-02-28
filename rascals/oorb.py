@@ -74,7 +74,7 @@ def propagateTestParticle(coords_ec_cart,
         The resulting oorb ephemeris after propagation.
     """
     # Read in the header template
-    headerFile = open("data/header.orb", "r")
+    headerFile = open(os.path.join(os.path.dirname(__file__), "data/header.orb"), "r")
     header = headerFile.readlines()
     header[-1] += "\n"
     
