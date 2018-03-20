@@ -33,7 +33,8 @@ def propagateTestParticle(coords_ec_cart,
                           H=10,
                           G=0.15,
                           observatoryCode=Config.oorbObservatoryCode,
-                          removeFiles=True):
+                          removeFiles=True,
+                          verbose=True):
     """
     Propagate a test particle using its ecliptic coordinates and velocity to 
     a given epoch and generate an ephemeris. 
@@ -67,6 +68,8 @@ def propagateTestParticle(coords_ec_cart,
     removeFiles : bool, optional
         Clean and remove oorb output files. 
         [Default = True]
+    verbose : bool, optional
+        Print progress statements?
         
     Returns
     -------
@@ -86,7 +89,6 @@ def propagateTestParticle(coords_ec_cart,
     # Create row format
     lineformat = ff.FortranRecordWriter("(A16,6(1X,E21.14),1X,F16.8,1X,F9.5,1X,F9.6)")
     line = lineformat.write([designation, *coords_ec_cart, *velocity_ec_cart, mjdStart, H, G])
-    print(line)
     
     # Create file
     file = open(orbInFile, "w")
@@ -95,17 +97,19 @@ def propagateTestParticle(coords_ec_cart,
     file.write(line + "\n")
     file.close()
     
-    # Propogate orbit
+    # Propagate orbit
     call = ["oorb",
             "--task=propagation",
             "--orb-in={}".format(orbInFile),
             "--epoch-mjd-utc={}".format(mjdEnd),
             "--orb-out={}".format(orbOutFile)]
-    print("Propagating test particle from {} to {}.".format(mjdStart, mjdEnd))
+    if verbose is True:
+        print("Propagating test particle from {} to {}.".format(mjdStart, mjdEnd))
     subprocess.call(call)
 
     # Generate ephemeris
-    print("Generating test particle ephemeris for observatory code {}.".format(observatoryCode))
+    if verbose is True:
+        print("Generating test particle ephemeris for observatory code {}.".format(observatoryCode))
     ephOut = open(ephOutFile, "w")
     call = ["oorb",
             "--task=ephemeris",
@@ -115,15 +119,19 @@ def propagateTestParticle(coords_ec_cart,
     ephOut.close()
 
     # Read ephemeris file
-    print("Reading ephemeris file.")
+    if verbose is True:
+        print("Reading ephemeris file.")
     eph = readEPHFile(ephOutFile)
     
     # Clean files
     if removeFiles is True:
-        print("Removing files.")
+        if verbose is True:
+            print("Removing files.")
         for file in [orbInFile, orbOutFile, ephOutFile]:
             os.remove(file)
     
-    print("Done.")
+    if verbose is True:
+        print("Done.")
+        print("")
     return eph
       
