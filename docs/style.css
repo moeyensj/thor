@@ -1,0 +1,13 @@
+h1, h2 {
+    font-weight: normal;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+h1 {
+    font-size: 30px;
+}
+
+h2 {
+    font-size: 20px;
+}
