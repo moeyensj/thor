@@ -9,7 +9,7 @@ __all__ = ["findObsInCell",
            "queryCell",
            "getObservations"]
 
-def findObsInCell(obsIds, coords, coord_center, radius):
+def findObsInCell(obsIds, coords, coord_center, fieldArea=10, fieldShape="square"):
     """
     Find the observation IDs in a circular / spherical region 
     about a central point.
@@ -24,17 +24,29 @@ def findObsInCell(obsIds, coords, coord_center, radius):
     coord_center : `~np.ndarray` (1, D)
         Array containing coordinates in d dimensions about which
         to search. 
-    radius : float
-        Search radius.
-        
+    fieldArea : float, optional
+        Field area in square degrees. 
+        [Default = 10]
+    fieldShape : str, optional
+        Field's geometric shape: one of 'square' or 'circle'.
+        [Default = 'square']
+    
     Returns
     -------
     `~np.ndarray`
         Array of observation IDs that fall within the search radius.
     """
-    distances = np.sqrt(np.sum((coords - coord_center)**2, axis=1))
-    return obsIds[np.where(distances <= radius)[0]]
-
+    if fieldShape == "square":
+        half_side = np.sqrt(fieldArea) / 2
+        return obsIds[np.all(np.abs(coords - coord_center) <= half_side, axis=1)]
+    elif fieldShape == "circle":
+        radius = np.sqrt(fieldArea / np.pi)
+        distances = np.sqrt(np.sum((coords - coord_center)**2, axis=1))
+        return obsIds[np.where(distances <= radius)[0]]
+    else:
+        raise ValueError("fieldType should be one of 'square' or 'circle'")
+    return
+   
 def createQuery(queryType,
                 observationColumns=Config.observationColumns,
                 truthColumns=Config.truthColumns):
