@@ -2,14 +2,19 @@ import numpy as np
 import pandas as pd
 import sqlite3 as sql
 
-__all__ = ["readMPCORBFile", "readORBFile",
-           "readEPHFile", "buildObjectDatabase",
+__all__ = ["readMPCORBFile", 
+           "readORBFile",
+           "readEPHFile", 
+           "buildObjectDatabase",
            "calcNight"]
 
 def readMPCORBFile(file,
                    con=None):
     """
     Read MPCORB.DAT file into a pandas DataFrame.
+
+    For more details about the MPCORB file:
+    https://www.minorplanetcenter.net/iau/MPCORB.html
     
     Parameters
     ----------
@@ -29,9 +34,9 @@ def readMPCORBFile(file,
                "H",
                "G", 
                "epoch_pf_TT",
-               "M0_deg",
+               "meanAnom_deg",
                "argPeri_deg",
-               "Omega_deg",
+               "ascNode_deg",
                "i_deg",
                "e", 
                "n_deg_p_day",
@@ -44,17 +49,42 @@ def readMPCORBFile(file,
                "rmsResid_arcsec",
                "coarsePerturbers",
                "precisePerturbers",
-               "compName", "flags1",
-               "flags2",
+               "compName", 
+               "flags",
                "readableDesignation",
                "lastObsInOrbitSolution"]
-    
+
+    # See: https://www.minorplanetcenter.net/iau/info/MPOrbitFormat.html
+    column_spec = [(0, 7),
+                   (8, 13),
+                   (14, 19),
+                   (20, 25),
+                   (26, 35),
+                   (37, 46),
+                   (48, 57),
+                   (59, 68),
+                   (70, 79),
+                   (80, 91),
+                   (92, 103),
+                   (105, 106),
+                   (107, 116),
+                   (117, 122),
+                   (123, 126),
+                   (127, 136),
+                   (137, 141),
+                   (142, 145),
+                   (146, 149),
+                   (150, 160),
+                   (161, 165),
+                   (166, 194),
+                   (194, 202)]
+
     dtypes = {"H" : np.float64,
               "G" : np.float64,
               "epoch_pf_TT" : str,
-              "M0_deg" : np.float64,
+              "meanAnom_deg" : np.float64,
               "argPeri_deg" : np.float64,
-              "Omega_deg" : np.float64,
+              "ascNode_deg" : np.float64,
               "i_deg" : np.float64,
               "e" : np.float64,
               "n_deg_p_day" : np.float64,
@@ -72,11 +102,11 @@ def readMPCORBFile(file,
     
     converters = {"designation": lambda x: str(x),
                   "readableDesignation" : lambda x: str(x),
-                  "flags1" : lambda x: str(x),
-                  "flags2" : lambda x: str(x)}
+                  "flags" : lambda x: str(x)}
     
     mpcorb = pd.read_fwf(file,
                          skiprows=43,
+                         colspecs=column_spec,
                          header=None,
                          index_col=False, 
                          names=columns,
@@ -95,6 +125,7 @@ def readMPCORBFile(file,
         return mpcorb
 
 def readORBFile(file,
+                elementType="keplerian",
                 con=None):
     """
     Read an oorb .orb file into a pandas DataFrame.
@@ -103,9 +134,14 @@ def readORBFile(file,
     ----------
     file : str
         Path to file.orb
+    elementType : str, optional
+        Orbital element type of input .orb file. Should be consistent 
+        with default defined in `~rascals.Config.oorbConfig`.
+        [Default = 'keplerian']
     con : `~sqlite3.Connection`, optional
         If a database connection is passed, will save
         DataFrame into database as oorbOrbitCat table.
+        [Default = None]
         
     Returns
     -------
@@ -113,16 +149,46 @@ def readORBFile(file,
         If database connection is not passed, will
         return DataFrame of the Oorb orbit file.   
     """
-    columns = ["designation",
-               "x_ec_au",
-               "y_ec_au",
-               "z_ec_au",
-               "dx_ec/dt_au_p_day",
-               "dy_ec/dt_au_p_day",
-               "dz_ec/dt_au_p_day", 
-               "epoch_TT",
-               "H",
-               "G"]
+    if elementType == "keplerian":
+        columns = ["designation",
+                   "a_au",
+                   "e",
+                   "i_deg",
+                   "ascNode_deg",
+                   "argPeri_deg",
+                   "meanAnom_deg", 
+                   "epoch_TT_mjd",
+                   "H",
+                   "G"]
+        
+    elif elementType == "cartesian":
+        columns = ["designation",
+                   "x_ec_au",
+                   "y_ec_au",
+                   "z_ec_au",
+                   "dx_ec/dt_au_p_day",
+                   "dy_ec/dt_au_p_day",
+                   "dz_ec/dt_au_p_day", 
+                   "epoch_TT_mjd",
+                   "H",
+                   "G"]
+    else:
+        raise ValueError("elementType should be one of 'keplerian' or 'cartesian'")
+    
+    # See: https://github.com/oorb/oorb/blob/master/main/io.f90#L3477
+    # See: https://github.com/oorb/oorb/blob/master/main/io.f90#L3652
+    # See: https://github.com/oorb/oorb/blob/master/main/io.f90#L3661
+    # (A16,6(1X,E21.14),1X,F16.8,1X,F9.5,1X,F9.6)
+    column_spec = [(0, 16),
+                   (17, 38),
+                   (39, 60),
+                   (61, 82),
+                   (83, 104),
+                   (105, 126),
+                   (127, 148),
+                   (149, 165),
+                   (166, 175),
+                   (176, 186)]
 
     dtypes = {name : np.float64 for name in columns[1:]} 
     
@@ -130,6 +196,7 @@ def readORBFile(file,
             
     orb = pd.read_fwf(file,
                       skiprows=4,
+                      colspecs=column_spec,
                       header=None, 
                       index_col=False,
                       names=columns,
@@ -211,6 +278,49 @@ def readEPHFile(file,
                "TrueAnom",
                "PosAngle_deg"]
     
+    # See: https://github.com/oorb/oorb/blob/master/main/oorb.f90#L7089
+    # (A,A11,1X,A,1X,38(A18,1X))
+    column_spec = [(0, 11),
+                   (12, 21),
+                   (22, 40),
+                   (41, 59),
+                   (60, 78),
+                   (79, 97),
+                   (98, 116),
+                   (117, 135),
+                   (136, 154),
+                   (155, 173),
+                   (174, 192),
+                   (193, 211),
+                   (212, 230),
+                   (231, 249),
+                   (250, 268),
+                   (269, 287),
+                   (288, 306),
+                   (307, 325),
+                   (326, 344),
+                   (345, 363),
+                   (364, 382),
+                   (383, 401),
+                   (402, 420),
+                   (421, 439),
+                   (440, 458),
+                   (459, 477),
+                   (478, 496),
+                   (497, 515),
+                   (516, 534),
+                   (535, 553),
+                   (554, 572),
+                   (573, 591),
+                   (592, 610),
+                   (611, 629),
+                   (630, 648),
+                   (649, 667),
+                   (668, 686),
+                   (687, 705),
+                   (706, 724),
+                   (725, 743)]
+    
     dtypes = {name : np.float64 for name in columns[2:]} 
               
     converters = {"designation": lambda x: str(x)}
@@ -219,11 +329,13 @@ def readEPHFile(file,
         print("Reading oorb ephemeris file to database...")
         for chunk in pd.read_fwf(file, 
                                  skiprows=1,
-                                 index_col=False, 
-                                 chunksize=chunksize,
+                                 colspecs=column_spec,
+                                 header=None, 
+                                 index_col=False,
                                  names=columns,
                                  dtypes=dtypes,
-                                 converters=converters):
+                                 converters=converters,
+                                 chunksize=chunksize):
         
             chunk["night"] = calcNight(chunk["mjd_utc"].values)
             
@@ -253,16 +365,20 @@ def readEPHFile(file,
     else:
         eph = pd.read_fwf(file, 
                           skiprows=1, 
-                          index_col=False, 
+                          colspecs=column_spec,
+                          header=None, 
+                          index_col=False,
                           names=columns,
                           dtypes=dtypes,
                           converters=converters)
         return eph
 
+
 def buildObjectDatabase(database,
                         mpcorbFile=None,
                         orbFile=None,
                         ephFile=None,
+                        elementType="keplerian",
                         chunksize=100000):
     """
     Prepare object database and populate with choice of MPCORB catalogue,
@@ -278,6 +394,14 @@ def buildObjectDatabase(database,
         Path to oorb orbit file. Will be read into table.
     ephFile : str, optional
         Path to oorb ephemeris file. Will be read into table.
+    elementType : str, optional
+        Orbital element type of input .orb file. Should be consistent 
+        with default defined in `~rascals.Config.oorbConfig`.
+        [Default = 'keplerian']
+    chunksize : int, optional
+        Number of lines per chunk to break ephemeris file into when reading
+        into database.
+        [Default = 100000]
     
     Returns
     -------
@@ -295,9 +419,9 @@ def buildObjectDatabase(database,
                 "H" REAL,
                 "G" REAL, 
                 "epoch_pf_TT" VARCHAR,
-                "M0_deg" REAL,
+                "meanAnom_deg" REAL,
                 "argPeri_deg" REAL,
-                "Omega_deg" REAL,
+                "ascNode_deg" REAL,
                 "i_deg" REAL,
                 "e" REAL, 
                 "n_deg_p_day" REAL,
@@ -311,8 +435,7 @@ def buildObjectDatabase(database,
                 "coarsePerturbers" VARCHAR,
                 "precisePerturbers" VARCHAR,
                 "compName" VARCHAR,
-                "flags1" VARCHAR,
-                "flags2" VARCHAR,
+                "flags" VARCHAR,
                 "readableDesignation" VARCHAR,
                 "lastObsInOrbitSolution" INTEGER
             );""")
@@ -320,7 +443,22 @@ def buildObjectDatabase(database,
         
     if orbFile is not None:
         print("Building oorbOrbitCat table...")
-        con.execute("""
+        if elementType == "keplerian":
+            con.execute("""
+            CREATE TABLE oorbOrbitCat (
+                "designation" VARCHAR,
+                "a_au" REAL,
+                "e" REAL,
+                "i_deg" REAL,
+                "ascNode_deg" REAL,
+                "argPeri_deg" REAL,
+                "meanAnom_deg" REAL, 
+                "epoch_TT_mjd" VARCHAR,
+                "H" REAL,
+                "G" REAL
+            );""")
+        elif elementType == "cartesian":
+            con.execute("""
             CREATE TABLE oorbOrbitCat (
                 "designation" VARCHAR,
                 "x_ec_au" REAL,
@@ -329,10 +467,13 @@ def buildObjectDatabase(database,
                 "dx_ec/dt_au_p_day" REAL,
                 "dy_ec/dt_au_p_day" REAL,
                 "dz_ec/dt_au_p_day" REAL, 
-                "epoch_TT" VARCHAR,
+                "epoch_TT_mjd" VARCHAR,
                 "H" REAL,
                 "G" REAL
             );""")
+        else:
+            raise ValueError("elementType should be one of 'keplerian' or 'cartesian'")
+
         orb = readORBFile(orbFile, con=con)
         
     if ephFile is not None:
