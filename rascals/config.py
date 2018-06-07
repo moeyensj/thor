@@ -27,3 +27,4 @@ class Config:
     ###       use a pre-defined configuration file for oorb
     oorbDirectory = "/Users/joachim/repos/cloned/oorb/" 
     oorbObservatoryCode = "I11"
+    oorbConfigFile ="/Users/joachim/repos/RaSCaLS/rascals/data/oorb.conf"
