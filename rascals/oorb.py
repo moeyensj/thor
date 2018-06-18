@@ -30,8 +30,9 @@ def setupOorb(oorbDirectory=Config.oorbDirectory):
     os.environ["OORB_CONF"] = os.path.join(os.path.abspath(oorbDirectory), "main/oorb.conf")
     os.environ["OORB_GNUPLOTS_SCRIPTS_DIR"] = os.path.join(os.path.abspath(oorbDirectory), "gnuplot")
     return
-    
-def propagateTestParticle(elements,
+
+def propagateTestParticle(coords_ec_cart,
+                          velocity_ec_cart,
                           mjdStart,
                           mjdEnd,
                           designation="RaSCaL",
@@ -106,16 +107,20 @@ def propagateTestParticle(elements,
     
     # Create row format
     lineformat = ff.FortranRecordWriter("(A16,6(1X,E21.14),1X,F16.8,1X,F9.5,1X,F9.6)")
-    lines = []
-    for i, e in enumerate(elements):
-        lines.append(lineformat.write([designation + "_{}".format(i + 1), *e, mjdStart, H, G]))
+    line = lineformat.write([designation, *coords_ec_cart, *velocity_ec_cart, mjdStart, H, G])
     
     # Create file
     file = open(orbInFile, "w")
     for l in header:
         file.write(l)
-    for line in lines:
-        file.write(line + "\n")
+    file.write(line + "\n")
+    file.close()
+    
+    # Create file
+    file = open(orbInFile, "w")
+    for l in header:
+        file.write(l)
+    file.write(line + "\n")
     file.close()
     
     # Propagate orbit
