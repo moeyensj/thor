@@ -1,9 +1,12 @@
 import numpy as np
+from astropy import units as u
+from astropy import constants as c
 
 from .vectors import calcNae
 from .vectors import calcDelta
 from .vectors import calcXae
 from .vectors import calcXa
+from .vectors import calcNhat
 from .vectors import calcR1
 from .vectors import calcR2
 from .projections import cartesianToGnomonic
@@ -12,13 +15,14 @@ from .coordinates import equatorialToEclipticAngular
 __all__ = ["TestParticle"]
 
 class TestParticle:
-    def __init__(self, coords_eq_ang, r, velocity_ec_cart, x_e, mjd):
+    def __init__(self, coords_eq_ang, r, velocity_ec_cart, x_e, mjd=None):
         self.coords_eq_ang = coords_eq_ang
         self.r = r
         self.velocity_ec_cart = velocity_ec_cart
         self.x_e = x_e
         self.mjd = mjd
-    
+        
+        
     def prepare(self, verbose=True):
         if verbose is True:
             print("Convering to ecliptic coordinates...")
@@ -41,8 +45,12 @@ class TestParticle:
         self.x_a = calcXa(self.x_ae, self.x_e)
         
         if verbose is True:
+            print("Calculating vector normal to plane of orbit...")
+        self.n_hat = calcNhat(self.x_a)
+        
+        if verbose is True:
             print("Calculating R1 rotation matrix...")
-        self.R1 = calcR1(self.x_a)
+        self.R1 = calcR1(self.x_a, self.n_hat)
         self.x_a_xy = np.array(self.R1 @ self.x_a)[0]
         
         if verbose is True:
@@ -62,12 +70,12 @@ class TestParticle:
         
         if verbose is True:
             print("Convering to ecliptic coordinates...")
-        coords_ec = equatorialToEclipticAngular(np.radians(cell.observations[["RA_deg", "Dec_deg"]].as_matrix()))
+        coords_ec = equatorialToEclipticAngular(np.radians(cell.observations[["RA_deg", "Dec_deg"]].values))
         
         if verbose is True:
             print("Calculating asteroid to observer unit vector...")
         n_ae = calcNae(coords_ec)
-        x_e = cell.observations[["obs_x_au", "obs_y_au", "obs_z_au"]].as_matrix()
+        x_e = cell.observations[["obs_x_au", "obs_y_au", "obs_z_au"]].values
         
         if verbose is True:
             print("Calculating asteroid to observer distance assuming r = {} AU...".format(self.r))

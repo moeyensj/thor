@@ -6,6 +6,7 @@ __all__ = ["calcNae",
            "calcDelta",
            "calcXae",
            "calcXa",
+           "calcNhat",
            "calcR1",
            "calcR2"]
 
@@ -101,8 +102,31 @@ def calcXa(x_ae, x_e):
     """
     return x_ae + x_e
 
+def calcNhat(x_a):
+    """
+    Calulate the unit vector normal to the plane of the orbit.
+    
+    Parameters
+    ----------
+    x_a : `~np.ndarray` (3)
+        Barycentric asteroid position vector in arbitrary units.
+        
+    Returns
+    -------
+    n_hat : `~np.ndarray` (3)
+        Unit vector normal to plane of orbit.
+    
+    """
+    # Make n a unit vectorn_hat = n / norm(n)
+    n_a = x_a / norm(x_a)
+    # Find the normal to the plane of the orbit n
+    n = np.cross(n_a, np.cross(z_axis, n_a))
+    # Make n a unit vector
+    n_hat = n / norm(n)
+    return n_hat
 
-def calcR1(x_a):
+
+def calcR1(x_a, n_hat):
     """
     Calculate the rotation matrix that would rotate the barycentric
     position vector x_ae to the x-y plane.
@@ -111,17 +135,14 @@ def calcR1(x_a):
     ----------
     x_a : `~np.ndarray` (3)
         Barycentric asteroid position vector in arbitrary units.
+    n_hat : `~np.ndarray` (3)
+        Unit vector normal to plane of orbit.
 
     Returns
     -------
     R1 : `~np.matrix` (3, 3)
         Rotation matrix.
     """
-    n_a = x_a / norm(x_a)
-    # Find the normal to the plane of the orbit n
-    n = np.cross(n_a, np.cross(z_axis, n_a))
-    # Make n a unit vector
-    n_hat = n / norm(n)
     # Find the rotation axis v
     v = np.cross(n_hat, z_axis)
     # Calculate the cosine of the rotation angle, equivalent to the cosine of the
