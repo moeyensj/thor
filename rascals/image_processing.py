@@ -48,7 +48,7 @@ def rascalize(cell, particle, mjds, mjd_range=0.5, includeEquatorialProjection=T
                                            mjd_f,
                                            verbose=verbose)
         # Get new equatorial coordinates
-        new_coords_eq_ang = propagated[["RA_deg", "Dec_deg"]].as_matrix()[0]
+        new_coords_eq_ang = propagated[["RA_deg", "Dec_deg"]].values[0]
         
         # Get new barycentric distance
         new_r = propagated["r_au"].values[0]
@@ -56,20 +56,21 @@ def rascalize(cell, particle, mjds, mjd_range=0.5, includeEquatorialProjection=T
         # Get new velocity in ecliptic cartesian coordinates
         new_velocity_ec_cart = propagated[["HEclObj_dX/dt_au_p_day",
                                            "HEclObj_dY/dt_au_p_day",
-                                           "HEclObj_dZ/dt_au_p_day"]].as_matrix()[0]
+                                           "HEclObj_dZ/dt_au_p_day"]].values[0]
         
         # Get new location of observer
         new_x_e = propagated[["HEclObsy_X_au",
                               "HEclObsy_Y_au",
-                              "HEclObsy_Z_au"]].as_matrix()[0]
+                              "HEclObsy_Z_au"]].values[0]
         
         # Get new mjd (same as mjd_f)
         new_mjd = propagated["mjd_utc"].values[0]
 
         # Define new cell at new coordinates
         newCell = Cell(new_coords_eq_ang,
-                       oldCell.radius,
                        new_mjd,
+                       area=oldCell.area,
+                       shape=oldCell.shape,
                        dataframe=oldCell.dataframe)
         
         # Get the observations in that cell
