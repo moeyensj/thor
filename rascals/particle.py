@@ -2,6 +2,7 @@ import numpy as np
 from astropy import units as u
 from astropy import constants as c
 
+from .config import Config
 from .vectors import calcNae
 from .vectors import calcDelta
 from .vectors import calcXae
@@ -15,33 +16,75 @@ from .coordinates import equatorialToEclipticAngular
 __all__ = ["TestParticle"]
 
 class TestParticle:
-    def __init__(self, coords_eq_ang, r, velocity_ec_cart, x_e, mjd=None):
+    """
+    TestParticle: Class that calculates and stores the rotation matrices 
+    for a guess of heliocentric distance and velocity. To be used in 
+    tandem with the Cell class.
+    
+    Parameters
+    ----------
+    coords_eq_ang : `~numpy.ndarray` (2)
+        Angular equatorial coordinates.
+    r : float
+        Heliocentric distance in AU.
+    v : `~numpy.ndarray` (1, 3)
+        Particle's velocity vector in AU per day (ecliptic). 
+    x_e : `~numpy.ndarray` (1, 3)
+        Topocentric position vector in AU (ecliptic). 
+    mjd : float
+        Time at which the given geometry is true in units of MJD.
+    """
+    def __init__(self, coords_eq_ang, r, v, x_e, mjd):
         self.coords_eq_ang = coords_eq_ang
         self.r = r
-        self.velocity_ec_cart = velocity_ec_cart
+        self.v = v
         self.x_e = x_e
         self.mjd = mjd
         
         
     def prepare(self, verbose=True):
+        """
+        Calculate rotation matrices. 
+        
+        Populates the following class properties:
+            coords_ec : ecliptic coordinates 
+            n_ae : observer to object unit vector 
+            delta : observer to object distance assuming r 
+            x_ae : observer to object position vector
+            x_a : object position vector
+            n_hat : vector normal to the plane of orbit 
+            R1 : rotation matrix to rotate towards x-y plane
+            R2 : rotation matrix to rotate towards x-axis
+            M : final rotation matrix
+        
+        Parameters
+        ----------
+        verbose : bool, optional
+            Print progress statements.
+            [Default = True]
+            
+        Returns
+        -------
+        None
+        """
         if verbose is True:
             print("Convering to ecliptic coordinates...")
         self.coords_ec = equatorialToEclipticAngular(np.radians([self.coords_eq_ang]))
         
         if verbose is True:
-            print("Calculating asteroid to observer unit vector...")
+            print("Calculating object to observer unit vector...")
         self.n_ae = calcNae(self.coords_ec[:, 0:2])
         
         if verbose is True:
-            print("Calculating asteroid to observer distance assuming r = {} AU...".format(self.r))
+            print("Calculating object to observer distance assuming r = {} AU...".format(self.r))
         self.delta = calcDelta(self.r, self.x_e, self.n_ae)
         
         if verbose is True:
-            print("Calculating asteroid to observer position vector...")
+            print("Calculating object to observer position vector...")
         self.x_ae = calcXae(self.delta, self.n_ae)
         
         if verbose is True:
-            print("Calculating barycentic asteroid position vector...")
+            print("Calculating barycentic object position vector...")
         self.x_a = calcXa(self.x_ae, self.x_e)
         
         if verbose is True:
@@ -66,37 +109,56 @@ class TestParticle:
             print("")
         return
         
-    def apply(self, cell, verbose=True):
+    def apply(self, cell, verbose=True, columnMapping=Config.columnMapping):
+        """
+        Apply the prepared rotations to the given cell. Adds the gnomonic 
+        plane coordinates to the cell's observations (columns: theta_x_deg, theta_y_deg) 
+        
+        Parameters
+        ----------
+        cell : `~rascals.cell.Cell`
+            RaSCaLS cell. 
+        verbose : bool, optional
+            Print progress statements? 
+            [Default = True]
+        columnMapping : dict, optional
+            Column name mapping of observations to internally used column names. 
+            [Default = `~rascals.Config.columnMapping`]
+        
+        Returns
+        -------
+        None
+        """
         
         if verbose is True:
             print("Convering to ecliptic coordinates...")
-        coords_ec = equatorialToEclipticAngular(np.radians(cell.observations[["RA_deg", "Dec_deg"]].values))
+        coords_ec = equatorialToEclipticAngular(np.radians(cell.observations[[columnMapping["RA_deg"], columnMapping["Dec_deg"]]].values))
         
         if verbose is True:
-            print("Calculating asteroid to observer unit vector...")
+            print("Calculating object to observer unit vector...")
         n_ae = calcNae(coords_ec)
-        x_e = cell.observations[["obs_x_au", "obs_y_au", "obs_z_au"]].values
+        x_e = cell.observations[[columnMapping["obs_x_au"], columnMapping["obs_y_au"], columnMapping["obs_z_au"]]].values
         
         if verbose is True:
-            print("Calculating asteroid to observer distance assuming r = {} AU...".format(self.r))
+            print("Calculating object to observer distance assuming r = {} AU...".format(self.r))
         delta = np.zeros(len(n_ae))
         for i, (n_ae_i, x_e_i) in enumerate(zip(n_ae, x_e)):
             delta[i] = calcDelta(self.r, x_e_i, n_ae_i)
         
         if verbose is True:
-            print("Calculating asteroid to observer position vector...")
+            print("Calculating object to observer position vector...")
         x_ae = np.zeros([len(delta), 3])
         for i, (delta_i, n_ae_i) in enumerate(zip(delta, n_ae)):
             x_ae[i] = calcXae(delta_i, n_ae_i)
         
         if verbose is True:
-            print("Calculating barycentic asteroid position vector...")
+            print("Calculating barycentic object position vector...")
         x_a = np.zeros([len(x_ae), 3])
         for i, (x_ae_i, x_e_i) in enumerate(zip(x_ae, x_e)):
             x_a[i] = calcXa(x_ae_i, x_e_i)
         
         if verbose is True:
-            print("Applying rotation matrix M to barycentric asteroid position vector...")
+            print("Applying rotation matrix M to barycentric object position vector...")
         coords_cart_rotated = np.array(self.M @ x_a.T).T
         
         if verbose is True:
@@ -109,4 +171,4 @@ class TestParticle:
         if verbose is True:
             print("Done.")
             print("")
-        return 
+        return  
