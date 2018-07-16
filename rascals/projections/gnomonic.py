@@ -9,17 +9,17 @@ def angularToGnomonic(coords_ang, coords_ang_center=np.array([0, 0])):
     
     Parameters
     ----------
-    coords_ang : `~np.ndarray` (N, 2)
+    coords_ang : `~numpy.ndarray` (N, 2)
         Longitude (between 0 and 2 pi) and latitude (between -pi/2 and pi/2)
         in radians.
-    coords_ang_center : `~np.ndarray` (2), optional
+    coords_ang_center : `~numpy.ndarray` (2), optional
         Longitude (between 0 and 2 pi) and latitude (between -pi/2 and pi/2)
         in radians about which to center projection.
         [Default = np.array([0, 0])]
         
     Returns
     -------
-    coords_gnomonic : `~np.ndarray` (N, 2)
+    coords_gnomonic : `~numpy.ndarray` (N, 2)
         Gnomonic longitude and latitude in radians.
     """
     lon = coords_ang[:, 0] 
@@ -39,12 +39,12 @@ def cartesianToGnomonic(coords_cart):
     
     Parameters
     ----------
-    coords_cart : `~np.ndarray` (N, 3)
-        Cartesian equatorial x, y, z coordinates.
+    coords_cart : `~numpy.ndarray` (N, 3)
+        Cartesian x, y, z coordinates.
             
     Returns
     -------
-    coords_gnomonic : `~np.ndarray` (N, 2)
+    coords_gnomonic : `~numpy.ndarray` (N, 2)
         Gnomonic longitude and latitude in radians.
     """
     u = coords_cart[:,1] / coords_cart[:,0]

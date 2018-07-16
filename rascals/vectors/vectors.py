@@ -29,12 +29,12 @@ def calcNae(coords_ec_ang):
 
     Parameters
     ----------
-    coords_ec_ang : `~np.ndarray` (N, 2)
+    coords_ec_ang : `~numpy.ndarray` (N, 2)
         Ecliptic longitude and latitude in radians.
 
     Returns
     -------
-    N_ae : `~np.ndarray` (N, 3)
+    N_ae : `~numpy.ndarray` (N, 3)
         Cartesian unit vector in direction of provided
         angular coordinates.
     """
@@ -49,9 +49,9 @@ def calcDelta(r, x_e, n_ae):
     ----------
     r : float
         Heliocentric distance in arbitrary units.
-    x_e : `~np.ndarray` (3)
+    x_e : `~numpy.ndarray` (3)
         Topocentric position vector in same units as r.
-    n_ae : `~np.ndarray` (3)
+    n_ae : `~numpy.ndarray` (3)
         Unit vector in direction of asteroid from the topocentric position
         in same units as r.
 
@@ -72,13 +72,13 @@ def calcXae(delta, n_ae):
     ----------
     delta : float
         Distance from the topocenter to asteroid in arbitrary units.
-    n_ae : `~np.ndarray` (3)
+    n_ae : `~numpy.ndarray` (3)
         Unit vector in direction of asteroid from the topocentric position
         in same units as delta.
 
     Returns
     -------
-    x_ae : `~np.ndarray` (3)
+    x_ae : `~numpy.ndarray` (3)
         Topocenter to asteroid position vector in units of delta.
     """
     return np.dot(delta, n_ae)
@@ -90,14 +90,14 @@ def calcXa(x_ae, x_e):
 
     Parameters
     ----------
-    x_ae : `~np.ndarray` (3)
+    x_ae : `~numpy.ndarray` (3)
         Topocenter to asteroid position vector in arbitrary units.
-    x_e : `~np.ndarray` (3)
+    x_e : `~numpy.ndarray` (3)
         Topocentric position vector in same units as x_ae.
 
     Returns
     -------
-    x_a : `~np.ndarray` (3)
+    x_a : `~numpy.ndarray` (3)
         Barycentric asteroid position vector in units of x_ae.
     """
     return x_ae + x_e
@@ -108,12 +108,12 @@ def calcNhat(x_a):
     
     Parameters
     ----------
-    x_a : `~np.ndarray` (3)
+    x_a : `~numpy.ndarray` (3)
         Barycentric asteroid position vector in arbitrary units.
         
     Returns
     -------
-    n_hat : `~np.ndarray` (3)
+    n_hat : `~numpy.ndarray` (3)
         Unit vector normal to plane of orbit.
     
     """
@@ -133,14 +133,14 @@ def calcR1(x_a, n_hat):
 
     Parameters
     ----------
-    x_a : `~np.ndarray` (3)
+    x_a : `~numpy.ndarray` (3)
         Barycentric asteroid position vector in arbitrary units.
-    n_hat : `~np.ndarray` (3)
+    n_hat : `~numpy.ndarray` (3)
         Unit vector normal to plane of orbit.
 
     Returns
     -------
-    R1 : `~np.matrix` (3, 3)
+    R1 : `~numpy.matrix` (3, 3)
         Rotation matrix.
     """
     # Find the rotation axis v
@@ -163,12 +163,12 @@ def calcR2(x_a_xy):
 
     Parameters
     ----------
-    x_a_xy : `~np.ndarray` (3)
+    x_a_xy : `~numpy.ndarray` (3)
         Barycentric asteroid position vector rotated to the x-y plane.
 
     Returns
     -------
-    R2 : `~np.matrix` (3, 3)
+    R2 : `~numpy.matrix` (3, 3)
         Rotation matrix.
     """
     x_a_xy = x_a_xy / norm(x_a_xy)
