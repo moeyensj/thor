@@ -81,9 +81,9 @@ def plotBinnedContour(dataframe,
     Returns
     -------
     fig : `~matplotlib.figure.Figure` 
-        The matplotlib figure.
+        The matplotlib figure object.
     ax : `~matplotlib.axes._subplots.AxesSubplot`
-        The matplotlib axes. 
+        The matplotlib axes object. 
     """
 
     try:
@@ -208,14 +208,14 @@ def plotScatterContour(dataframe,
         [Default = {'colors': 'red', 'linewidths': 1}]
     scatterKwargs : dict, optional
         Dictionary of additional keyword arguments to pass to ax.scatter.
-        [Default = {}]
+        [Default = {'s': 0.1}]
     
     Returns
     -------
     fig : `~matplotlib.figure.Figure` 
-        The matplotlib figure.
+        The matplotlib figure object.
     ax : `~matplotlib.axes._subplots.AxesSubplot`
-        The matplotlib axes. 
+        The matplotlib axes object. 
     """
 
     try:
