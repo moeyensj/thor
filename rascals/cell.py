@@ -30,11 +30,12 @@ class Cell:
         [Default = `~pandas.DataFrame]
         **This parameter should either be replaced with a required argument or some other form
         of data structure.
+        
     Returns
     -------
     None
     """
-    def __init__(self, center, mjd, dataframe, shape="square", area=10, ):
+    def __init__(self, center, mjd, dataframe, shape="square", area=10):
         self.center = center
         self.area = area
         self.shape = shape
