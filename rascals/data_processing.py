@@ -3,7 +3,8 @@ import numpy as np
 from .config import Config
 
 __all__ = ["findObsInCell",
-           "findExpTimes"]
+           "findExpTimes",
+           "findAverageObject"]
 
 def findObsInCell(obsIds, 
                   coords,
@@ -125,3 +126,48 @@ def findExpTimes(observations,
     mjds = observations[observations[columnMapping["obs_id"]].isin(possible_obs_ids)][columnMapping["exp_mjd"]].unique()
     mjds.sort()
     return mjds
+
+def findAverageObject(observations, 
+                      columnMapping=Config.columnMapping):
+    """
+    Find the object with observations that represents 
+    the most average in terms of cartesian velocity and the
+    heliocentric distance.
+    
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations.
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~rascals.Config.columnMapping`] 
+    
+    Returns
+    -------
+    name : str
+        The name of the object
+    """
+    objects = observations[observations[columnMapping["name"]] != "NS"]
+    
+    if len(objects) == 0:
+        # No real objects
+        return -1
+    
+    rv = objects[[
+        columnMapping["obj_dx/dt_au_p_day"],
+        columnMapping["obj_dy/dt_au_p_day"],
+        columnMapping["obj_dz/dt_au_p_day"],
+        columnMapping["r_au"]
+    ]].values
+    
+    # Calculate the percent difference between the median of each velocity element
+    # and the heliocentric distance
+    percent_diff = np.abs((rv - np.median(rv, axis=0)) / np.median(rv, axis=0))
+    
+    # Sum the percent differences
+    summed_diff = np.sum(percent_diff, axis=1)
+    
+    # Find the minimum summed percent difference and call that 
+    # the average object
+    index = np.where(summed_diff == np.min(summed_diff))[0][0]
+    return objects[columnMapping["name"]].values[index]
