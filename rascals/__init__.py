@@ -7,5 +7,5 @@ from .projections import *
 from .vectors import *
 from .particle import *
 from .cell import * 
-from .image_processing import *
 from .plotting import *
+from .main import *
