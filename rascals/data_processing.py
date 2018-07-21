@@ -1,52 +1,12 @@
 import numpy as np
+import pandas as pd
 
 from .config import Config
+from .cell import Cell
 
-__all__ = ["findObsInCell",
-           "findExpTimes",
-           "findAverageObject"]
-
-def findObsInCell(obsIds, 
-                  coords,
-                  coordsCenter, 
-                  fieldArea=10, 
-                  fieldShape="square"):
-    """
-    Find the observation IDs in a circular / spherical region 
-    about a central point.
-    
-    Parameters
-    ----------
-    obsIds : `~numpy.ndarray` (N, 1)
-        Array of observation IDs corresponding to the coords.
-    coords : `~numpy.ndarray` (N, D)
-        Array of coordinates of N rows for each observation
-        and D dimensions. 
-    coordsCenter : `~numpy.ndarray` (1, D)
-        Array containing coordinates in D dimensions about which
-        to search. 
-    fieldArea : float, optional
-        Field area in square degrees. 
-        [Default = 10]
-    fieldShape : str, optional
-        Field's geometric shape: one of 'square' or 'circle'.
-        [Default = 'square']
-    
-    Returns
-    -------
-    `~np.ndarray`
-        Array of observation IDs that fall within cell.
-    """
-    if fieldShape == "square":
-        half_side = np.sqrt(fieldArea) / 2
-        return obsIds[np.all(np.abs(coords - coordsCenter) <= half_side, axis=1)]
-    elif fieldShape == "circle":
-        radius = np.sqrt(fieldArea / np.pi)
-        distances = np.sqrt(np.sum((coords - coordsCenter)**2, axis=1))
-        return obsIds[np.where(distances <= radius)[0]]
-    else:
-        raise ValueError("fieldType should be one of 'square' or 'circle'")
-    return
+__all__ = ["findExpTimes",
+           "findAverageObject",
+           "buildCellForVisit"]
    
 def findExpTimes(observations, 
                  r, 
@@ -171,3 +131,41 @@ def findAverageObject(observations,
     # the average object
     index = np.where(summed_diff == np.min(summed_diff))[0][0]
     return objects[columnMapping["name"]].values[index]
+
+def buildCellForVisit(observations, 
+                      visitId, 
+                      shape="square", 
+                      area=10, 
+                      columnMapping=Config.columnMapping):
+    """
+    Builds a cell for a unique visit. Populates cell with observations. 
+    
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations.
+    visitId : int
+        Visit ID.
+    shape : {'square', 'circle'}, optional
+        Cell's shape can be square or circle. Combined with the area parameter, will set the search 
+        area when looking for observations contained within the defined cell. 
+        [Default = 'square']
+    area : float, optional
+        Cell's area in units of square degrees. 
+        [Default = 10]
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~rascals.Config.columnMapping`]
+        
+    Returns
+    -------
+    cell : `~rascals.Cell`
+        Cell with observations populated.
+    """
+    visit = observations[observations[columnMapping["visit_id"]] == visitId]
+    center = visit[[columnMapping["field_RA_deg"], columnMapping["field_Dec_deg"]]].values[0]
+    mjd = visit[columnMapping["exp_mjd"]].values[0]
+    cell = Cell(center, mjd, observations, shape=shape, area=area)
+    cell.getObservations()
+    return cell
+    
