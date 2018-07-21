@@ -3,6 +3,7 @@ import pandas as pd
 
 from .config import Config
 from .cell import Cell
+from .oorb import propagateTestParticle
 
 __all__ = ["findExpTimes",
            "findAverageObject",
@@ -104,8 +105,8 @@ def findAverageObject(observations,
     
     Returns
     -------
-    name : str
-        The name of the object
+    name : {str, -1}
+        The name of the object, if there are no real objects returns -1
     """
     objects = observations[observations[columnMapping["name"]] != "NS"]
     
