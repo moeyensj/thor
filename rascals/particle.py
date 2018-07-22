@@ -68,6 +68,7 @@ class TestParticle:
         None
         """
         if verbose is True:
+            print("Preparing rotation matrices...")
             print("Convering to ecliptic coordinates...")
         self.coords_ec = equatorialToEclipticAngular(np.radians([self.coords_eq_ang]))
         
@@ -131,6 +132,7 @@ class TestParticle:
         """
         
         if verbose is True:
+            print("Applying rotation matrices to observations...")
             print("Convering to ecliptic coordinates...")
         coords_ec = equatorialToEclipticAngular(np.radians(cell.observations[[columnMapping["RA_deg"], columnMapping["Dec_deg"]]].values))
         
