@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import pandas as pd
 
@@ -52,22 +53,36 @@ def findExpTimes(observations,
     mjds : `~numpy.ndarray`
         Sorted unique exposure times. 
     """
+    
+    if verbose == True:
+        print("RaSCaLS: findExpTimes")
+        print("-------------------------")
+        print("Generating particle ephemeris for the middle of every night.")
+        print("Finding optimal exposure times (maximum angular velocity: {})...".format(vMax))
+        print("")
+    
+    time_start = time.time()
     possible_obs_ids = np.empty(0)
     ri = r
     vi = v
     mjdStarti = mjdStart
     
-    for night in nights: 
+    for i, night in enumerate(nights): 
         
         # Find exposure time in the middle of the night  
         mjdEnd = np.median(observations[observations["night"] == night]["exp_mjd"].unique())
         
-        # Propagate particle
+        # Propagate particle (set verbose to false here)
+        if verbose == True:
+            print("Night: {} ({}/{})".format(night, i + 1, len(nights)))
+            print("Propagating particle to {}...".format(mjdEnd))
         ephemeris = propagateTestParticle(ri, 
                                           vi,
                                           mjdStarti,
                                           mjdEnd,
-                                          verbose=verbose)
+                                          verbose=False)
+        if verbose == True:
+            print("Looking for observations...")
         
         # Find all observation IDs within some maximum angular velocity from the location of the particle
         obs_ids = observations[observations[columnMapping["night"]] == night][columnMapping["obs_id"]].values
@@ -79,6 +94,10 @@ def findExpTimes(observations,
         index = np.where(v <= vMax)[0]
         possible_obs_ids = np.concatenate([possible_obs_ids, obs_ids[index]])
         
+        if verbose == True:
+            print("Found {} observations within search area.".format(len(index)))
+            print("")
+        
         # Set new r, v and time to particle's current location
         ri = ephemeris[['HEclObj_X_au', 'HEclObj_Y_au', 'HEclObj_Z_au']].values[0]
         vi = ephemeris[['HEclObj_dX/dt_au_p_day', 'HEclObj_dY/dt_au_p_day', 'HEclObj_dZ/dt_au_p_day']].values[0]
@@ -86,9 +105,18 @@ def findExpTimes(observations,
         
     mjds = observations[observations[columnMapping["obs_id"]].isin(possible_obs_ids)][columnMapping["exp_mjd"]].unique()
     mjds.sort()
+    time_end = time.time()
+    
+    if verbose == True:
+        print("Done. Found {} unique exposure times.".format(len(mjds)))
+        print("Total time in seconds: {}".format(time_end - time_start))
+        print("-------------------------")
+        print("")
+  
     return mjds
 
 def findAverageObject(observations, 
+                      verbose=True,
                       columnMapping=Config.columnMapping):
     """
     Find the object with observations that represents 
@@ -99,6 +127,9 @@ def findAverageObject(observations,
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing observations.
+    verbose : bool, optional
+        Print progress statements? 
+        [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
         [Default = `~rascals.Config.columnMapping`] 
@@ -108,10 +139,15 @@ def findAverageObject(observations,
     name : {str, -1}
         The name of the object, if there are no real objects returns -1
     """
+    if verbose == True:
+        print("RaSCaLS: findAvgObject")
+        print("-------------------------")
     objects = observations[observations[columnMapping["name"]] != "NS"]
     
     if len(objects) == 0:
         # No real objects
+        if verbose == True:
+            print("No real objects found.")
         return -1
     
     rv = objects[[
@@ -131,7 +167,14 @@ def findAverageObject(observations,
     # Find the minimum summed percent difference and call that 
     # the average object
     index = np.where(summed_diff == np.min(summed_diff))[0][0]
-    return objects[columnMapping["name"]].values[index]
+    name = objects[columnMapping["name"]].values[index]
+    if verbose == True:
+        print("{} is the most average object.".format(name))
+        print("-------------------------")
+        print("")
+        
+    return name
+    
 
 def buildCellForVisit(observations, 
                       visitId, 
