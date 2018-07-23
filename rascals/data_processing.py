@@ -6,11 +6,11 @@ from .config import Config
 from .cell import Cell
 from .oorb import propagateTestParticle
 
-__all__ = ["findExpTimes",
+__all__ = ["findExposureTimes",
            "findAverageObject",
            "buildCellForVisit"]
    
-def findExpTimes(observations, 
+def findExposureTimes(observations, 
                  r, 
                  v, 
                  mjdStart, 
@@ -55,7 +55,7 @@ def findExpTimes(observations,
     """
     
     if verbose == True:
-        print("RaSCaLS: findExpTimes")
+        print("RaSCaLS: findExposureTimes")
         print("-------------------------")
         print("Generating particle ephemeris for the middle of every night.")
         print("Finding optimal exposure times (maximum angular velocity: {})...".format(vMax))
@@ -140,7 +140,7 @@ def findAverageObject(observations,
         The name of the object, if there are no real objects returns -1
     """
     if verbose == True:
-        print("RaSCaLS: findAvgObject")
+        print("RaSCaLS: findAverageObject")
         print("-------------------------")
     objects = observations[observations[columnMapping["name"]] != "NS"]
     

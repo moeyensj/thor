@@ -9,7 +9,7 @@ from .config import Config
 from .cell import Cell
 from .particle import TestParticle
 from .oorb import propagateTestParticle
-from .data_processing import findExpTimes
+from .data_processing import findExposureTimes
 
 __all__ = ["rangeAndShift",
            "clusterVelocity",
@@ -74,6 +74,8 @@ def rangeAndShift(observations,
         print("RaSCaLS: rangeAndShift")
         print("-------------------------")
         print("Running range and shift...")
+        print("Assuming r = {} AU".format(r))
+        print("Assuming v = {} AU per day".format(v))
         
     x_e = cell.observations[[columnMapping["obs_x_au"], columnMapping["obs_y_au"], columnMapping["obs_z_au"]]].values[0]
    
@@ -88,7 +90,7 @@ def rangeAndShift(observations,
         cell_night = cell.observations["night"].unique()[0]
         nights.sort()
         nights = nights[nights > cell_night]
-        mjds = findExpTimes(observations, particle.x_a, v, cell.mjd, nights, verbose=verbose)
+        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, nights, verbose=verbose)
         
     
     # Apply tranformations to observations
@@ -345,6 +347,13 @@ def clusterAndLink(observations,
         print("RaSCaLS: clusterAndLink")
         print("-------------------------")
         print("Running velocity space clustering...")
+        print("X velocity range: {}".format(vxRange))
+        print("X velocity bins: {}".format(vxNum))
+        print("Y velocity range: {}".format(vyRange))
+        print("Y velocity bins: {}".format(vyNum))
+        print("Max sample distance: {}".format(eps))
+        print("Minimum samples: {}".format(minSamples))
+
     
     possible_clusters = []
     if threads > 1:
