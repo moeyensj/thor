@@ -14,7 +14,8 @@ from .data_processing import findExposureTimes
 __all__ = ["rangeAndShift",
            "clusterVelocity",
            "_clusterVelocity",
-           "clusterAndLink"]
+           "clusterAndLink",
+           "analyzeClusters"]
 
 def rangeAndShift(observations,
                   cell, 
@@ -189,7 +190,7 @@ def clusterVelocity(obsIds,
                     vx, 
                     vy, 
                     eps=0.005, 
-                    minSamples=6):
+                    minSamples=5):
     """
     Clusters RaSCaLS projection with different velocities
     in the projection plane using `~scipy.cluster.DBSCAN`.
@@ -217,7 +218,7 @@ def clusterVelocity(obsIds,
         The number of samples (or total weight) in a neighborhood for a 
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
-        [Default = 6]
+        [Default = 5]
         
     Returns
     -------
@@ -269,7 +270,7 @@ def clusterAndLink(observations,
                    vyNum=100, 
                    threads=12, 
                    eps=0.005, 
-                   minSamples=6,
+                   minSamples=5,
                    verbose=True,
                    columnMapping=Config.columnMapping):
     """
@@ -305,7 +306,7 @@ def clusterAndLink(observations,
         The number of samples (or total weight) in a neighborhood for a 
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
-        [Default = 6]
+        [Default = 5]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -432,3 +433,157 @@ def clusterAndLink(observations,
         print("")
 
     return allClusters, clusterMembers
+
+def analyzeClusters(observations,
+                    allClusters, 
+                    clusterMembers, 
+                    minSamples=5, 
+                    partialThreshold=0.8, 
+                    verbose=True,
+                    columnMapping=Config.columnMapping):
+    """
+    Analyze clusters.
+    
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing post-range and shift observations.
+    allClusters : `~pandas.DataFrame`
+        DataFrame with the cluster ID, the number of observations, and the x and y velocity. 
+    clusterMembers : `~pandas.DataFrame`
+        DataFrame containing the cluster ID and the observation IDs of its members. 
+    minSamples : int, optional
+        The number of samples (or total weight) in a neighborhood for a 
+        point to be considered as a core point. This includes the point itself.
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 5]
+    partialThreshold : float, optional
+        Percentage (expressed between 0 and 1) of observations in a cluster required for the 
+        object to be found. 
+        [Default = 0.8]
+    verbose : bool, optional
+        Print progress statements? 
+        [Default = True]
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~rascals.Config.columnMapping`]
+        
+    Returns
+    -------
+    allClusters : `~pandas.DataFrame`
+        DataFrame with the cluster ID, the number of observations, and the x and y velocity. 
+    clusterMembers : `~pandas.DataFrame`
+        DataFrame containing the cluster ID and the observation IDs of its members. 
+    allObjects : `~pandas.DataFrame`
+        Summary dataframe 
+    """ 
+
+    time_start = time.time()
+    if verbose == True:
+        print("RaSCaLS: analyzeClusters")
+        print("-------------------------")
+        print("Analyzing observations...")
+
+    # Add columns to classify pure, contaminated and false clusters
+    # Add numbers to classify the number of members, and the linked object 
+    # in the contaminated and pure case
+    allClusters["pure"] = np.zeros(len(allClusters), dtype=int)
+    allClusters["partial"] = np.zeros(len(allClusters), dtype=int)
+    allClusters["false"] = np.zeros(len(allClusters), dtype=int)
+    allClusters["num_members"] = np.ones(len(allClusters), dtype=int) * np.NaN
+    allClusters["linked_object"] = np.ones(len(allClusters), dtype=int) * np.NaN
+
+    # Count number of noise detections, real object detections,
+    num_noise_obs = len(observations[observations[columnMapping["name"]] == "NS"])
+    num_object_obs = len(observations[observations[columnMapping["name"]] != "NS"])
+    num_unique = len(observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].unique())
+    num_obs_per_object = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().values
+    num_min_obs_pure = len(np.where(num_obs_per_object >= minSamples)[0])
+    num_min_obs_partial = len(np.where(num_obs_per_object >= partialThreshold * minSamples)[0])
+    objects_num_obs_descending = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().index.values
+    findable_pure = objects_num_obs_descending[np.where(num_obs_per_object >= minSamples)[0]]
+    findable_partial = objects_num_obs_descending[np.where(num_obs_per_object >= partialThreshold * minSamples)[0]]
+    
+    if verbose == True:
+        print("Object observations: {}".format(num_object_obs))
+        print("Noise observations: {}".format(num_noise_obs))
+        print("Observation contamination (%): {}".format(num_noise_obs / len(observations) * 100))
+        print("Unique objects: {}".format(num_unique))
+        print("Unique objects with at least {} detections: {}".format(minSamples, num_min_obs_pure))
+        print("Unique objects with at least {}% of {} detections: {}".format(partialThreshold * 100, minSamples, num_min_obs_partial))
+        print("")
+        print("Analyzing clusters...")
+        
+    observations_temp = observations.rename(columns={columnMapping["obs_id"]: "obs_id"})
+    cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(clusterMembers, on="obs_id")
+    cluster_designation.drop(columns="obs_id", inplace=True)
+    cluster_designation.drop_duplicates(inplace=True)
+    unique_ids_per_cluster = cluster_designation["cluster_id"].value_counts()
+    allClusters["num_members"] = unique_ids_per_cluster.sort_index().values
+
+    # Isolate pure clusters
+    single_member_clusters = cluster_designation[cluster_designation["cluster_id"].isin(allClusters[allClusters["num_members"] == 1]["cluster_id"])]
+    allClusters.loc[allClusters["cluster_id"].isin(single_member_clusters["cluster_id"]), "linked_object"] = single_member_clusters[columnMapping["name"]].values
+    allClusters.loc[(allClusters["linked_object"] != "NS") & (allClusters["linked_object"].notna()), "pure"] = 1
+    allClusters.loc[(((1 - allClusters["num_members"] / allClusters["num_obs"]) >= partialThreshold)
+                     & (allClusters["pure"] != 1) & (allClusters["linked_object"].isna())), "partial"] = 1
+    allClusters.loc[(allClusters["pure"] != 1) & (allClusters["partial"] != 1), "false"] = 1
+    
+    num_pure = len(allClusters[allClusters["pure"] == 1])
+    num_partial = len(allClusters[allClusters["partial"] == 1])
+    num_false = len(allClusters[allClusters["false"] == 1])
+    num_total = num_pure + num_partial + num_false
+    
+    if verbose == True:
+        print("Pure clusters: {}".format(num_pure))
+        print("Partial clusters: {}".format(num_partial))
+        print("False clusters: {}".format(num_false))
+        print("Total clusters: {}".format(num_total))
+        print("Cluster contamination (%): {}".format(num_false / num_total * 100))
+        
+    # Isolate partial clusters and grab the object with the most detections to cound as found (partial)
+    cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(clusterMembers, on="obs_id")
+    cluster_designation.drop(columns="obs_id", inplace=True)
+    partial_ids = allClusters[allClusters["partial"] == 1]["cluster_id"].values
+    partial_clusters = cluster_designation[cluster_designation["cluster_id"].isin(partial_ids)]
+    partial_clusters_temp = pd.DataFrame(partial_clusters.groupby(["cluster_id", columnMapping["name"]]).size()).reset_index()
+    partial_clusters_temp.rename(columns={0: "count"}, inplace=True)
+    partial_clusters_temp.sort_values("count", ascending=False, inplace=True)
+    partial_clusters_temp.drop_duplicates(subset=["cluster_id"], keep="first", inplace=True)
+    partial_clusters_temp.sort_values("cluster_id", inplace=True)
+    allClusters.loc[allClusters["cluster_id"].isin(partial_clusters_temp["cluster_id"]), "linked_object"] = partial_clusters_temp[columnMapping["name"]].values
+    
+    # Populate allObjects DataFrame
+    allObjects = pd.DataFrame(columns=[
+        columnMapping["name"], 
+        "num_obs", 
+        "findable_pure", 
+        "findable_partial", 
+        "findable",
+        "found_pure", 
+        "found_partial",
+        "found"])
+    allObjects[columnMapping["name"]] = objects_num_obs_descending
+    allObjects["num_obs"] = num_obs_per_object
+    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["pure"] == 1]["linked_object"]), "found_pure"] = 1
+    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["partial"] == 1]["linked_object"]), "found_partial"] = 1
+    allObjects.loc[allObjects[columnMapping["name"]].isin(findable_partial), "findable_partial"] = 1
+    allObjects.loc[allObjects[columnMapping["name"]].isin(findable_pure), "findable_pure"] = 1
+    allObjects.loc[(allObjects["findable_pure"] == 1) | (allObjects["findable_partial"] == 1), "findable"] = 1
+    allObjects.loc[(allObjects["found_pure"] == 1) | (allObjects["found_partial"] == 1), "found"] = 1
+    allObjects.fillna(value=0, inplace=True)
+    
+    found = allObjects[allObjects["found"] == 1]
+    missed = allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)]
+    time_end = time.time()
+    
+    if verbose == True:
+        print("Unique linked objects: {}".format(len(found)))
+        print("Unique missed objects: {}".format(len(missed)))
+        print("Completeness (%): {}".format(len(found) / (len(found) + len(missed)) * 100))
+        print("Done.")
+        print("Total time in seconds: {}".format(time_end - time_start))
+        print("-------------------------")
+        print("")
+
+    return allClusters, clusterMembers, allObjects
