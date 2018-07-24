@@ -1,8 +1,8 @@
-# RaSCaLS
-Range, Shift, Cluster and Link Scheme (RaSCaLS)
+# THOR
+Tracklet-less Heliocentric Orbit Recovery
 
 [![Build Status](https://www.travis-ci.com/moeyensj/RaSCaLS.svg?token=sWjpnqPgpHyuq3j7qPuj&branch=master)](https://www.travis-ci.com/moeyensj/RaSCaLS)
-[![Coverage Status](https://coveralls.io/repos/github/moeyensj/RaSCaLS/badge.svg?t=Eu0phN)](https://coveralls.io/github/moeyensj/RaSCaLS)
+[![Coverage Status](https://coveralls.io/repos/github/moeyensj/thor/badge.svg?t=Eu0phN)](https://coveralls.io/github/moeyensj/thor)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 ## Installation
@@ -22,7 +22,7 @@ Once pre-requisites have been installed:
 
 Using pytest (with coveralls):
 
-```pytest rascals --cov=rascals```
+```pytest thor --cov=thor```
 
 Or using setuptools:
 
