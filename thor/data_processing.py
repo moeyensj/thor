@@ -46,7 +46,7 @@ def findExposureTimes(observations,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`] 
+        [Default = `~thor.Config.columnMapping`] 
 
     Returns
     -------
@@ -55,7 +55,7 @@ def findExposureTimes(observations,
     """
     
     if verbose == True:
-        print("RaSCaLS: findExposureTimes")
+        print("THOR: findExposureTimes")
         print("-------------------------")
         print("Generating particle ephemeris for the middle of every night.")
         print("Finding optimal exposure times (maximum angular velocity: {})...".format(vMax))
@@ -132,7 +132,7 @@ def findAverageObject(observations,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`] 
+        [Default = `~thor.Config.columnMapping`] 
     
     Returns
     -------
@@ -140,7 +140,7 @@ def findAverageObject(observations,
         The name of the object, if there are no real objects returns -1
     """
     if verbose == True:
-        print("RaSCaLS: findAverageObject")
+        print("THOR: findAverageObject")
         print("-------------------------")
     objects = observations[observations[columnMapping["name"]] != "NS"]
     
@@ -199,11 +199,11 @@ def buildCellForVisit(observations,
         [Default = 10]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
-    cell : `~rascals.Cell`
+    cell : `~thor.Cell`
         Cell with observations populated.
     """
     visit = observations[observations[columnMapping["visit_id"]] == visitId]

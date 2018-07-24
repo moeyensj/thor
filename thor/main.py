@@ -33,8 +33,8 @@ def rangeAndShift(observations,
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing observations.
-    cell : `~rascals.Cell`
-        RaSCaLS cell. 
+    cell : `~thor.Cell`
+        THOR cell. 
     r : float
         Heliocentric distance in AU.
     v : `~numpy.ndarray` (1, 3)
@@ -57,7 +57,7 @@ def rangeAndShift(observations,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
@@ -72,7 +72,7 @@ def rangeAndShift(observations,
         
     time_start = time.time()
     if verbose == True:
-        print("RaSCaLS: rangeAndShift")
+        print("THOR: rangeAndShift")
         print("-------------------------")
         print("Running range and shift...")
         print("Assuming r = {} AU".format(r))
@@ -192,7 +192,7 @@ def clusterVelocity(obsIds,
                     eps=0.005, 
                     minSamples=5):
     """
-    Clusters RaSCaLS projection with different velocities
+    Clusters THOR projection with different velocities
     in the projection plane using `~scipy.cluster.DBSCAN`.
     
     Parameters
@@ -312,7 +312,7 @@ def clusterAndLink(observations,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
@@ -345,7 +345,7 @@ def clusterAndLink(observations,
 
     time_start_cluster = time.time()
     if verbose == True:
-        print("RaSCaLS: clusterAndLink")
+        print("THOR: clusterAndLink")
         print("-------------------------")
         print("Running velocity space clustering...")
         print("X velocity range: {}".format(vxRange))
@@ -466,7 +466,7 @@ def analyzeClusters(observations,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
@@ -480,7 +480,7 @@ def analyzeClusters(observations,
 
     time_start = time.time()
     if verbose == True:
-        print("RaSCaLS: analyzeClusters")
+        print("THOR: analyzeClusters")
         print("-------------------------")
         print("Analyzing observations...")
 

@@ -22,7 +22,7 @@ def setupOorb(oorbDirectory=Config.oorbDirectory):
     ----------
     oorbDirectory : str, optional
         Path to oorb directory.
-        [Default = `~rascals.Config.oorbDirectory`]
+        [Default = `~thor.Config.oorbDirectory`]
     """
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.abspath(oorbDirectory), "main:")
     os.environ["OORBROOT"] = oorbDirectory
@@ -79,11 +79,11 @@ def propagateTestParticle(coords_ec_cart,
         [Default = 0.15]
     observatoryCode : str, optional
         Observatory from which to measure ephemerides.
-        [Default = `~rascals.Config.oorbObservatoryCode`]
+        [Default = `~thor.Config.oorbObservatoryCode`]
     configFile : str, optional
         Path to oorb config file which specifies how propagation should
         be done and what orbital element type to output.
-        [Default = `~rascals.Config.oorbConfigFile`]
+        [Default = `~thor.Config.oorbConfigFile`]
     removeFiles : bool, optional
         Clean and remove oorb output files. 
         [Default = True]
@@ -183,7 +183,7 @@ def convertMPCToOorb(mpcorbFile,
     configFile : str, optional
         Path to oorb config file which specifies how propagation should
         be done and what orbital element type to output.
-        [Default = `~rascals.Config.oorbConfigFile`]
+        [Default = `~thor.Config.oorbConfigFile`]
     verbose : bool, optional
         Print progress statements?
         
@@ -229,7 +229,7 @@ def propagateOrbits(oorbInFile,
     configFile : str, optional
         Path to oorb config file which specifies how propagation should
         be done and what orbital element type to output.
-        [Default = `~rascals.Config.oorbConfigFile`]
+        [Default = `~thor.Config.oorbConfigFile`]
     verbose : bool, optional
         Print progress statements?
         
@@ -284,11 +284,11 @@ def generateEphemeris(oorbInFile,
         [Default = None]
     observatoryCode : str, optional
         Observatory from which to measure ephemerides.
-        [Default = `~rascals.Config.oorbObservatoryCode`]
+        [Default = `~thor.Config.oorbObservatoryCode`]
     configFile : str, optional
         Path to oorb config file which specifies how propagation should
         be done and what orbital element type to output.
-        [Default = `~rascals.Config.oorbConfigFile`]
+        [Default = `~thor.Config.oorbConfigFile`]
     verbose : bool, optional
         Print progress statements?
         

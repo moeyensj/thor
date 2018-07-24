@@ -136,7 +136,7 @@ def readORBFile(file,
         Path to file.orb
     elementType : str, optional
         Orbital element type of input .orb file. Should be consistent 
-        with default defined in `~rascals.Config.oorbConfig`.
+        with default defined in `~thor.Config.oorbConfig`.
         [Default = 'keplerian']
     con : `~sqlite3.Connection`, optional
         If a database connection is passed, will save
@@ -396,7 +396,7 @@ def buildObjectDatabase(database,
         Path to oorb ephemeris file. Will be read into table.
     elementType : str, optional
         Orbital element type of input .orb file. Should be consistent 
-        with default defined in `~rascals.Config.oorbConfig`.
+        with default defined in `~thor.Config.oorbConfig`.
         [Default = 'keplerian']
     chunksize : int, optional
         Number of lines per chunk to break ephemeris file into when reading
