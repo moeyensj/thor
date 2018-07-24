@@ -5,16 +5,16 @@ import matplotlib.pyplot as plt
 from ..config import Config
 from .helpers import _setAxes
 
-__all__ = ["plotRascals",
-           "plotRascals3D"]
+__all__ = ["plotProjections",
+           "plotProjections3D"]
 
-def plotRascals(dataframe, 
-                colorByObject=False, 
-                usePlotly=True, 
-                returnFig=False, 
-                columnMapping=Config.columnMapping):
+def plotProjections(dataframe, 
+                    colorByObject=False, 
+                    usePlotly=True, 
+                    returnFig=False, 
+                    columnMapping=Config.columnMapping):
     """
-    Plot the RaSCaLS projection in 2D. 
+    Plot projected observations in 2D. 
     
     Parameters
     ----------
@@ -107,11 +107,11 @@ def plotRascals(dataframe,
         
 
 
-def plotRascals3D(dataframe, 
+def plotProjections3D(dataframe, 
                   colorByObject=False, 
                   columnMapping=Config.columnMapping):
     """
-    Plot the RaSCaLS projection in 3D. 
+    Plot projected observations in 3D. 
     
     Parameters
     ----------
