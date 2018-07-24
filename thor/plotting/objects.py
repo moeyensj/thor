@@ -16,8 +16,8 @@ def plotCell(cell,
     
     Parameters
     ----------
-    cell : `~rascals.cell.Cell`
-        RaSCaLS cell. 
+    cell : `~thor.cell.Cell`
+        THOR cell. 
     coordinateSystem : {'equatorialAngular', 'eclipticAngular'}, optional
         Which coordinate system to use.
         [Default = 'equatorialAngular']
@@ -26,7 +26,7 @@ def plotCell(cell,
         [Default = {'s': 0.05}]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------

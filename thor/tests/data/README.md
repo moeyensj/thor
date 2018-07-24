@@ -15,7 +15,7 @@ oorb --task=ephemeris --code=I11 --orb-in=MPCORB_59580_TEST.orb --timespan=30.0 
 Then to build database:
 
 ```
-from rascals import buildObjectDatabase
+from thor import buildObjectDatabase
 
 con = buildObjectDatabase("OBJECTS_TEST.db", 
                           mpcorbFile="MPCORB_TEST.DAT",
@@ -29,9 +29,9 @@ To build DataFrame files:
 
 
 ```
-from rascals import readMPCORBFile
-from rascals import readORBFile
-from rascals import readEPHFile
+from thor import readMPCORBFile
+from thor import readORBFile
+from thor import readEPHFile
 
 mpcOrbitCat = readMPCORBFile("MPCORB_TEST.DAT")
 mpcOrbitCat.to_csv("mpcOrbitCat_TEST.df", index=False, sep=" ")

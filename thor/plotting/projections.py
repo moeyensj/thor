@@ -28,7 +28,7 @@ def plotProjections(dataframe,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
    
     Returns
     -------
@@ -122,7 +122,7 @@ def plotProjections3D(dataframe,
         [Default = False]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
    
     Returns
     -------

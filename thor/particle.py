@@ -117,14 +117,14 @@ class TestParticle:
         
         Parameters
         ----------
-        cell : `~rascals.cell.Cell`
-            RaSCaLS cell. 
+        cell : `~thor.cell.Cell`
+            THOR cell. 
         verbose : bool, optional
             Print progress statements? 
             [Default = True]
         columnMapping : dict, optional
             Column name mapping of observations to internally used column names. 
-            [Default = `~rascals.Config.columnMapping`]
+            [Default = `~thor.Config.columnMapping`]
         
         Returns
         -------
