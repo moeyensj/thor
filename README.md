@@ -1,3 +1,4 @@
+![banner](docs/images/banner_med.png)
 # THOR
 Tracklet-less Heliocentric Orbit Recovery
 
