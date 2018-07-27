@@ -10,12 +10,14 @@ from .cell import Cell
 from .particle import TestParticle
 from .oorb import propagateTestParticle
 from .data_processing import findExposureTimes
+from .data_processing import buildCellForVisit
 
 __all__ = ["rangeAndShift",
            "clusterVelocity",
            "_clusterVelocity",
            "clusterAndLink",
-           "analyzeClusters"]
+           "analyzeClusters",
+           "runRangeAndShiftOnVisit"]
 
 def rangeAndShift(observations,
                   cell, 
@@ -61,7 +63,7 @@ def rangeAndShift(observations,
         
     Returns
     -------
-    `~pandas.DataFrame`
+    projected_obs : `~pandas.DataFrame`
         Observations dataframe (from cell.observations) with columns containing
         projected coordinates. 
     """
@@ -475,7 +477,7 @@ def analyzeClusters(observations,
     clusterMembers : `~pandas.DataFrame`
         DataFrame containing the cluster ID and the observation IDs of its members. 
     allObjects : `~pandas.DataFrame`
-        Summary dataframe 
+        Summary dataframe.
     """ 
 
     time_start = time.time()
@@ -587,3 +589,95 @@ def analyzeClusters(observations,
         print("")
 
     return allClusters, clusterMembers, allObjects
+
+def runRangeAndShiftOnVisit(observations,
+                            visitId,
+                            r, 
+                            v,
+                            searchArea=0.5, 
+                            searchShape="square",
+                            cellArea=10, 
+                            cellShape="square",
+                            useAverageObject=True,
+                            verbose=True,
+                            columnMapping=True):
+    """
+    Run range and shift on a visit. 
+    
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations.
+    visitId : int
+        Visit ID. 
+    r : float
+        Heliocentric distance in AU.
+    v : `~numpy.ndarray` (1, 3)
+        Velocity vector in AU per day (ecliptic). 
+    useAverageObject : bool, optional
+        Find an object in the original visit that represents
+        the average and use that object's orbit. Ignores given 
+        r and v. 
+        [Default = False]
+    searchArea : float, optional
+        Area of THOR cell used to find average object in
+        degrees squared.
+        [Default = 0.5]
+    searchShape : {'square', 'circle'}, optional
+        Shape of the search cell. 
+        [Default = 'square']
+    cellArea : float, optional
+        Area of THOR cell. Should be the same size as the visit. 
+        [Default = 10]
+    cellShape : {'square', 'circle'}, optional
+        Shape of THOR cell. Should be the same shape as the visit.
+        [Default = 'square']
+    verbose : bool, optional
+        Print progress statements? 
+        [Default = True]
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+        
+    Returns
+    -------
+    projected_obs : `~pandas.DataFrame`
+        Observations dataframe (from cell.observations) with columns containing
+        projected coordinates. 
+    """
+    
+    if verbose == True:
+        print("THOR: runRangeAndShiftOnVisit")
+        print("-------------------------")
+        print("Running Thor on visit {}...".format(visitId))
+        if useAverageObject != True:
+            print("Assuming orbit with r = {}".format(r))
+            print("Assuming orbit with v = {}".format(v))
+        else:
+            print("Search cell area: {} ".format(searchArea))
+            print("Search cell shape: {} ".format(searchShape))
+    
+        print("Cell area: {} ".format(cellArea))
+        print("Cell shape: {} ".format(cellShape))
+        print("")
+
+    small_cell = buildCellForVisit(observations, visitId, area=searchArea, shape=searchShape)
+    small_cell.getObservations()
+    if useAverageObject is True:
+        avg_obj = findAverageObject(small_cell.observations)
+        if avg_obj == -1:
+            print("Can't run RaSCaLS on this visit.")
+            print("Provide an orbit to run.")
+            return
+
+        obj = small_cell.observations[small_cell.observations[config.columnMapping["name"]] == avg_obj]
+        r = obj[config.columnMapping["r_au"]].values[0]
+        v = obj[[config.columnMapping["obj_dx/dt_au_p_day"], 
+                 config.columnMapping["obj_dy/dt_au_p_day"],
+                 config.columnMapping["obj_dz/dt_au_p_day"]]].values[0]
+        
+
+    cell = Cell(small_cell.center, small_cell.mjd, observations, area=cellArea, shape=cellShape)
+    projected_obs = rangeAndShift(observations, cell, r, v)
+    
+    return projected_obs
