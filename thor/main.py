@@ -9,6 +9,7 @@ from .config import Config
 from .cell import Cell
 from .particle import TestParticle
 from .oorb import propagateTestParticle
+from .data_processing import findAverageObject
 from .data_processing import findExposureTimes
 from .data_processing import buildCellForVisit
 
@@ -268,8 +269,10 @@ def _clusterVelocity(vx, vy,
 def clusterAndLink(observations, 
                    vxRange=[-0.1, 0.1], 
                    vyRange=[-0.1, 0.1],
-                   vxNum=100, 
-                   vyNum=100, 
+                   vxBins=100, 
+                   vyBins=100,
+                   vxValues=None,
+                   vyValues=None,
                    threads=12, 
                    eps=0.005, 
                    minSamples=5,
@@ -283,19 +286,32 @@ def clusterAndLink(observations,
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing post-range and shift observations.
-    vxRange : list or `~numpy.ndarray` (2)
+    vxRange : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in x. 
+        Will not be used if vxValues are specified. 
         [Default = [-0.1, 0.1]]
-    vxRange : list or `~numpy.ndarray` (2)
+    vxRange : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in y. 
+        Will not be used if vyValues are specified. 
         [Default = [-0.1, 0.1]]
-    vxNum : int, optional
+    vxBins : int, optional
         Length of x-velocity grid between vxRange[0] 
-        and vxRange[-1].
+        and vxRange[-1]. Will not be used if vxValues are 
+        specified. 
         [Default = 100]
-    vyNum : int, optional
+    vyBins: int, optional
         Length of y-velocity grid between vyRange[0] 
-        and vyRange[-1].
+        and vyRange[-1]. Will not be used if vyValues are 
+        specified. 
+        [Default = 100]
+    vxValues : {None, `~numpy.ndarray`}, optional
+        Values of velocities in x at which to cluster
+        and link. 
+        [Default = None]
+    vyValues : {None, `~numpy.ndarray`}, optional
+        Values of velocities in y at which to cluster
+        and link. 
+        [Default = None]
     threads : int, optional
         Number of threads to use. 
         [Default = 12]
@@ -339,8 +355,23 @@ def clusterAndLink(observations,
 
     # Grab remaining detections
     #remaining = np.where(mjd != mjd.min())[0]
-    vx = np.linspace(*vxRange, num=vxNum)
-    vy = np.linspace(*vyRange, num=vyNum)
+    if vxValues is None and vxRange is not None:
+        vx = np.linspace(*vxRange, num=vxBins)
+    elif vxValues is None and vxRange is None:
+        raise ValueError("Both vxValues and vxRange cannot be None.")
+    else:
+        vx = vxValues
+        vxRange = [vxValues[0], vxValues[-1]]
+        vxBins = len(vx)
+     
+    if vyValues is None and vyRange is not None:
+        vy = np.linspace(*vyRange, num=vyBins)
+    elif vyValues is None and vyRange is None:
+        raise ValueError("Both vyValues and vyRange cannot be None.")
+    else:
+        vy = vyValues
+        vyRange = [vyValues[0], vyValues[-1]]
+        vyBins = len(vy)
     vxx, vyy = np.meshgrid(vx, vy)    
     vxx = vxx.flatten()
     vyy = vyy.flatten()
@@ -351,9 +382,18 @@ def clusterAndLink(observations,
         print("-------------------------")
         print("Running velocity space clustering...")
         print("X velocity range: {}".format(vxRange))
-        print("X velocity bins: {}".format(vxNum))
+        print("X velocity bins: {}".format(vxBins))
         print("Y velocity range: {}".format(vyRange))
-        print("Y velocity bins: {}".format(vyNum))
+        print("Y velocity bins: {}".format(vyBins))
+        if vxValues is not None:
+            print("User defined x velocity values: True")
+        else: 
+            print("User defined x velocity values: False")
+        if vyValues is not None:
+            print("User defined y velocity values: True")
+        else:
+            print("User defined y velocity values: False")
+        print("Velocity grid size: {}".format(vxBins * vyBins))
         print("Max sample distance: {}".format(eps))
         print("Minimum samples: {}".format(minSamples))
 
@@ -600,7 +640,7 @@ def runRangeAndShiftOnVisit(observations,
                             cellShape="square",
                             useAverageObject=True,
                             verbose=True,
-                            columnMapping=True):
+                            columnMapping=Config.columnMapping):
     """
     Run range and shift on a visit. 
     
@@ -670,11 +710,11 @@ def runRangeAndShiftOnVisit(observations,
             print("Provide an orbit to run.")
             return
 
-        obj = small_cell.observations[small_cell.observations[config.columnMapping["name"]] == avg_obj]
-        r = obj[config.columnMapping["r_au"]].values[0]
-        v = obj[[config.columnMapping["obj_dx/dt_au_p_day"], 
-                 config.columnMapping["obj_dy/dt_au_p_day"],
-                 config.columnMapping["obj_dz/dt_au_p_day"]]].values[0]
+        obj = small_cell.observations[small_cell.observations[columnMapping["name"]] == avg_obj]
+        r = obj[columnMapping["r_au"]].values[0]
+        v = obj[[columnMapping["obj_dx/dt_au_p_day"], 
+                 columnMapping["obj_dy/dt_au_p_day"],
+                 columnMapping["obj_dz/dt_au_p_day"]]].values[0]
         
 
     cell = Cell(small_cell.center, small_cell.mjd, observations, area=cellArea, shape=cellShape)
