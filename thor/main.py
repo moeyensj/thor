@@ -525,6 +525,8 @@ def analyzeClusters(observations,
         DataFrame containing the cluster ID and the observation IDs of its members. 
     allObjects : `~pandas.DataFrame`
         Object summary DataFrame.
+    summary : `~pandas.DataFrame`
+        Overall summary DataFrame.
     """ 
 
     time_start = time.time()
@@ -540,6 +542,8 @@ def analyzeClusters(observations,
     allClusters["partial"] = np.zeros(len(allClusters), dtype=int)
     allClusters["false"] = np.zeros(len(allClusters), dtype=int)
     allClusters["num_members"] = np.ones(len(allClusters), dtype=int) * np.NaN
+    allClusters["num_visits"] = np.ones(len(allClusters), dtype=int) * np.NaN
+    allClusters["num_fields"] = np.ones(len(allClusters), dtype=int) * np.NaN
     allClusters["linked_object"] = np.ones(len(allClusters), dtype=int) * np.NaN
 
     # Count number of noise detections, real object detections, the number of unique objects
@@ -562,14 +566,29 @@ def analyzeClusters(observations,
         print("Unique objects with at least {}% of {} detections: {}".format(partialThreshold * 100, minSamples, num_min_obs_partial))
         print("")
         print("Analyzing clusters...")
-        
+    
+    # Count number of members per cluster
     observations_temp = observations.rename(columns={columnMapping["obs_id"]: "obs_id"})
     cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(clusterMembers, on="obs_id")
     cluster_designation.drop(columns="obs_id", inplace=True)
     cluster_designation.drop_duplicates(inplace=True)
     unique_ids_per_cluster = cluster_designation["cluster_id"].value_counts()
     allClusters["num_members"] = unique_ids_per_cluster.sort_index().values
-
+    
+    # Count number of visits per cluster
+    cluster_visit = observations_temp[["obs_id", columnMapping["visit_id"]]].merge(clusterMembers, on="obs_id")
+    cluster_visit.drop(columns="obs_id", inplace=True)
+    cluster_visit.drop_duplicates(inplace=True)
+    unique_visits_per_cluster = cluster_visit["cluster_id"].value_counts()
+    allClusters["num_visits"] = unique_visits_per_cluster.sort_index().values
+    
+    # Count number of fields per cluster
+    cluster_fields = observations_temp[["obs_id", columnMapping["field_id"]]].merge(clusterMembers, on="obs_id")
+    cluster_fields.drop(columns="obs_id", inplace=True)
+    cluster_fields.drop_duplicates(inplace=True)
+    unique_fields_per_cluster = cluster_fields["cluster_id"].value_counts()
+    allClusters["num_fields"] = unique_fields_per_cluster.sort_index().values
+    
     # Isolate pure clusters
     single_member_clusters = cluster_designation[cluster_designation["cluster_id"].isin(allClusters[allClusters["num_members"] == 1]["cluster_id"])]
     allClusters.loc[allClusters["cluster_id"].isin(single_member_clusters["cluster_id"]), "linked_object"] = single_member_clusters[columnMapping["name"]].values
@@ -582,10 +601,12 @@ def analyzeClusters(observations,
     num_partial = len(allClusters[allClusters["partial"] == 1])
     num_false = len(allClusters[allClusters["false"] == 1])
     num_total = num_pure + num_partial + num_false
+    num_duplicate_visits = len(allClusters[allClusters["num_obs"] != allClusters["num_visits"]])
     
     if verbose == True:
         print("Pure clusters: {}".format(num_pure))
         print("Partial clusters: {}".format(num_partial))
+        print("Duplicate visit clusters: {}".format(num_duplicate_visits))
         print("False clusters: {}".format(num_false))
         print("Total clusters: {}".format(num_total))
         print("Cluster contamination (%): {}".format(num_false / num_total * 100))
@@ -624,18 +645,44 @@ def analyzeClusters(observations,
     
     found = allObjects[allObjects["found"] == 1]
     missed = allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)]
+    findable = len(allObjects[allObjects["findable"] == 1])
+    found_pure = len(allObjects[allObjects["found_pure"] == 1])
+    found_partial = len(allObjects[allObjects["found_partial"] == 1])
     time_end = time.time()
+    completeness = len(found) / (len(found) + len(missed)) * 100
     
     if verbose == True:
         print("Unique linked objects: {}".format(len(found)))
         print("Unique missed objects: {}".format(len(missed)))
-        print("Completeness (%): {}".format(len(found) / (len(found) + len(missed)) * 100))
+        print("Completeness (%): {}".format(completeness))
         print("Done.")
         print("Total time in seconds: {}".format(time_end - time_start))
         print("-------------------------")
         print("")
+        
+    summary = pd.DataFrame({
+        "num_observations_object": num_object_obs,
+        "num_observations_noise": num_noise_obs,
+        "obs_contamination" : num_noise_obs / len(observations) * 100,
+        "unique_objects" : num_unique,
+        "unique_objects_findable_pure" : num_min_obs_pure,
+        "unique_objects_findable_partial" : num_min_obs_partial,
+        "unique_objects_findable" : findable,
+        "unique_objects_found_pure" : found_pure,
+        "unique_objects_found_partial" : found_partial,
+        "unique_objects_found" : len(found),
+        "unique_objects_missed" : len(missed),
+        "completeness" : completeness,
+        "pure_clusters" : num_pure,
+        "partial_clusters" : num_partial,
+        "duplicate_visit_clusters" : num_duplicate_visits,
+        "false_clusters" : num_false,
+        "total_clusters" : num_total,
+        "cluster_contamination": num_false / num_total * 100,
+        
+    }, index=[0])
 
-    return allClusters, clusterMembers, allObjects
+    return allClusters, clusterMembers, allObjects, summary
 
 def runRangeAndShiftOnVisit(observations,
                             visitId,
