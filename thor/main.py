@@ -430,6 +430,13 @@ def clusterAndLink(observations,
     if verbose == True:
         print("Done. Completed in {} seconds.".format(time_end_cluster - time_start_cluster))
         print("")
+    
+    if len(possible_clusters) == 0:
+        print("No clusters found.")
+        print("")
+        return pd.DataFrame(columns=["cluster_id", "obs_id"]), pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy", "num_obs"])
+        
+    if verbose == True:
         print("Restructuring clusters...")
     
     # Clean up returned arrays and remove empty cases
@@ -517,7 +524,7 @@ def analyzeClusters(observations,
     clusterMembers : `~pandas.DataFrame`
         DataFrame containing the cluster ID and the observation IDs of its members. 
     allObjects : `~pandas.DataFrame`
-        Summary dataframe.
+        Object summary DataFrame.
     """ 
 
     time_start = time.time()
@@ -535,7 +542,7 @@ def analyzeClusters(observations,
     allClusters["num_members"] = np.ones(len(allClusters), dtype=int) * np.NaN
     allClusters["linked_object"] = np.ones(len(allClusters), dtype=int) * np.NaN
 
-    # Count number of noise detections, real object detections,
+    # Count number of noise detections, real object detections, the number of unique objects
     num_noise_obs = len(observations[observations[columnMapping["name"]] == "NS"])
     num_object_obs = len(observations[observations[columnMapping["name"]] != "NS"])
     num_unique = len(observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].unique())
@@ -583,7 +590,7 @@ def analyzeClusters(observations,
         print("Total clusters: {}".format(num_total))
         print("Cluster contamination (%): {}".format(num_false / num_total * 100))
         
-    # Isolate partial clusters and grab the object with the most detections to cound as found (partial)
+    # Isolate partial clusters and grab the object with the most detections to count as found (partial)
     cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(clusterMembers, on="obs_id")
     cluster_designation.drop(columns="obs_id", inplace=True)
     partial_ids = allClusters[allClusters["partial"] == 1]["cluster_id"].values
