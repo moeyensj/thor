@@ -26,7 +26,8 @@ def rangeAndShift(observations,
                   v,
                   mjds="auto",
                   vMax=3.0,
-                  includeEquatorialProjection=True, 
+                  includeEquatorialProjection=True,
+                  saveFile=None,
                   verbose=True, 
                   columnMapping=Config.columnMapping):
     """
@@ -55,6 +56,9 @@ def rangeAndShift(observations,
         Include naive shifting in equatorial coordinates without properly projecting
         to the plane of the orbit. This is useful if performance comparisons want to be made.
         [Default = True]
+    saveFile : {None, str}, optional
+        Path to save DataFrame to or None. 
+        [Default = None]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -180,7 +184,14 @@ def rangeAndShift(observations,
     time_end = time.time()
     if verbose == True:
         print("Done. Final DataFrame has {} observations.".format(len(final_df)))
-        print("Total time in seconds: {}".format(time_end - time_start))
+        print("Total time in seconds: {}".format(time_end - time_start))  
+        
+    if saveFile is not None:
+        if verbose is True:
+            print("Saving to {}".format(saveFile))
+        final_df.to_csv(saveFile, sep=" ", index=False)
+    
+    if verbose == True:
         print("-------------------------")
         print("")
         
@@ -276,6 +287,7 @@ def clusterAndLink(observations,
                    threads=12, 
                    eps=0.005, 
                    minSamples=5,
+                   saveFiles=None,
                    verbose=True,
                    columnMapping=Config.columnMapping):
     """
@@ -325,6 +337,9 @@ def clusterAndLink(observations,
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
+    saveFiles : {None, list}, optional
+        List of paths to save DataFrames to ([allClusters, clusterMembers]) or None. 
+        [Default = None]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -430,11 +445,6 @@ def clusterAndLink(observations,
     if verbose == True:
         print("Done. Completed in {} seconds.".format(time_end_cluster - time_start_cluster))
         print("")
-    
-    if len(possible_clusters) == 0:
-        print("No clusters found.")
-        print("")
-        return pd.DataFrame(columns=["cluster_id", "obs_id"]), pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy", "num_obs"])
         
     if verbose == True:
         print("Restructuring clusters...")
@@ -450,6 +460,27 @@ def clusterAndLink(observations,
             for c in cluster:
                 populated_clusters.append(c)
                 populated_cluster_velocities.append([vxi, vyi])
+                
+    if len(populated_clusters) == 0:
+        time_end_restr = time.time()
+        clusterMembers = pd.DataFrame(columns=["cluster_id", "obs_id"])
+        allClusters = pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy", "num_obs"])
+        print("No clusters found.")
+        if verbose == True:
+            print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))
+        
+        if saveFiles is not None:
+            if verbose == True:
+                print("Saving allClusters to {}".format(saveFiles[0]))
+                allClusters.to_csv(saveFiles[0], sep=" ", index=False)
+                print("Saving clusterMembers to {}".format(saveFiles[1]))
+                clusterMembers.to_csv(saveFiles[1], sep=" ", index=False)
+                
+        if verbose == True:    
+            print("-------------------------")
+            print("")
+    
+        return allClusters, clusterMembers
                 
     cluster_ids = np.arange(1, len(populated_clusters) + 1, dtype=int)
     num_members = np.zeros(len(populated_clusters), dtype=int)
@@ -478,9 +509,19 @@ def clusterAndLink(observations,
         print("")
         print("Found {} clusters.".format(len(allClusters)))
         print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))
+    
+    if saveFiles is not None:
+        if verbose == True:
+            print("Saving allClusters to {}".format(saveFiles[0]))
+            print("Saving clusterMembers to {}".format(saveFiles[1]))
+        
+        allClusters.to_csv(saveFiles[0], sep=" ", index=False)
+        clusterMembers.to_csv(saveFiles[1], sep=" ", index=False)
+                
+    if verbose == True:    
         print("-------------------------")
         print("")
-
+        
     return allClusters, clusterMembers
 
 def analyzeClusters(observations,
@@ -488,6 +529,7 @@ def analyzeClusters(observations,
                     clusterMembers, 
                     minSamples=5, 
                     partialThreshold=0.8, 
+                    saveFiles=None,
                     verbose=True,
                     columnMapping=Config.columnMapping):
     """
@@ -510,6 +552,9 @@ def analyzeClusters(observations,
         Percentage (expressed between 0 and 1) of observations in a cluster required for the 
         object to be found. 
         [Default = 0.8]
+    saveFiles : {None, list}, optional
+        List of paths to save DataFrames to ([allClusters, clusterMembers, allObjects, summary]) or None. 
+        [Default = None]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -657,8 +702,6 @@ def analyzeClusters(observations,
         print("Completeness (%): {}".format(completeness))
         print("Done.")
         print("Total time in seconds: {}".format(time_end - time_start))
-        print("-------------------------")
-        print("")
         
     summary = pd.DataFrame({
         "num_observations_object": num_object_obs,
@@ -680,7 +723,23 @@ def analyzeClusters(observations,
         "total_clusters" : num_total,
         "cluster_contamination": num_false / num_total * 100,
         
-    }, index=[0])
+    }, index=[0]) 
+    
+    if saveFiles is not None:
+        if verbose == True:
+            print("Saving allClusters to {}".format(saveFiles[0]))
+            print("Saving clusterMembers to {}".format(saveFiles[1]))
+            print("Saving allObjects to {}".format(saveFiles[2]))
+            print("Saving summary to {}".format(saveFiles[3]))
+            
+        allClusters.to_csv(saveFiles[0], sep=" ", index=False)
+        clusterMembers.to_csv(saveFiles[1], sep=" ", index=False) 
+        allObjects.to_csv(saveFiles[2], sep=" ", index=False) 
+        summary.to_csv(saveFiles[3], sep=" ", index=False) 
+        
+    if verbose == True:    
+        print("-------------------------")
+        print("")
 
     return allClusters, clusterMembers, allObjects, summary
 
