@@ -1,3 +1,4 @@
+import os
 import time
 import numpy as np
 import pandas as pd
@@ -18,7 +19,8 @@ __all__ = ["rangeAndShift",
            "_clusterVelocity",
            "clusterAndLink",
            "analyzeClusters",
-           "runRangeAndShiftOnVisit"]
+           "runRangeAndShiftOnVisit",
+           "runClusterAndLinkOnVisit"]
 
 def rangeAndShift(observations,
                   cell, 
@@ -752,6 +754,7 @@ def runRangeAndShiftOnVisit(observations,
                             cellArea=10, 
                             cellShape="square",
                             useAverageObject=True,
+                            saveFiles=None,
                             verbose=True,
                             columnMapping=Config.columnMapping):
     """
@@ -788,6 +791,11 @@ def runRangeAndShiftOnVisit(observations,
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
+    saveFiles : {None, list}, optional
+        List of paths to save DataFrames to ([[projected_obs, avg_object]) or None. 
+        If useAverageObject is False, then the second path will not be used. If
+        there is no averageObject, no files will be saved.
+        [Default = None]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
         [Default = `~thor.Config.columnMapping`]
@@ -797,6 +805,10 @@ def runRangeAndShiftOnVisit(observations,
     projected_obs : `~pandas.DataFrame`
         Observations dataframe (from cell.observations) with columns containing
         projected coordinates. 
+    avg_obj : {`~pandas.DataFrame`, int, None}
+        If useAverageObject is True, will return a slice into the observations dataframe
+        with the object's corresponding observation. If there are no real objects, will instead
+        return -1. If useAverageObject is False, returns None. 
     """
     
     if verbose == True:
@@ -821,7 +833,7 @@ def runRangeAndShiftOnVisit(observations,
         if avg_obj == -1:
             print("Can't run RaSCaLS on this visit.")
             print("Provide an orbit to run.")
-            return
+            return projected_obs, avg_obj
 
         obj = small_cell.observations[small_cell.observations[columnMapping["name"]] == avg_obj]
         r = obj[columnMapping["r_au"]].values[0]
@@ -833,4 +845,219 @@ def runRangeAndShiftOnVisit(observations,
     cell = Cell(small_cell.center, small_cell.mjd, observations, area=cellArea, shape=cellShape)
     projected_obs = rangeAndShift(observations, cell, r, v)
     
-    return projected_obs
+    if saveFiles is not None:
+        if useAverageObject is True and avg_obj != -1:
+            obj.to_csv(saveFiles[1], sep=" ", index=False)
+        projected_obs.to_csv(saveFiles[0], sep=" ", index=False)
+    
+    if useAverageObject is True:
+        return projected_obs, obj
+    else:
+        return projected_obs
+    
+def runClusterAndLinkOnVisit(observations, 
+                             visitId,
+                             orbits, 
+                             avgObject, 
+                             vxRange=[-0.1, 0.1], 
+                             vyRange=[-0.1, 0.1],
+                             vxBins=100, 
+                             vyBins=100,
+                             vxValues=None,
+                             vyValues=None,
+                             threads=12, 
+                             eps=0.005, 
+                             minSamples=5,
+                             partialThreshold=0.8, 
+                             saveDir=None,
+                             verbose=True,
+                             columnMapping=Config.columnMapping):
+    """
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing post-range and shift observations.
+    visitId : int
+        Visit ID. 
+    orbits : `~pandas.DataFrame`
+        Orbit catalog.
+    avgObject : `~pandas.DataFrame`
+        A slice into the observations dataframe
+        with the object's corresponding observation.
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x. 
+        Will not be used if vxValues are specified. 
+        [Default = [-0.1, 0.1]]
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y. 
+        Will not be used if vyValues are specified. 
+        [Default = [-0.1, 0.1]]
+    vxBins : int, optional
+        Length of x-velocity grid between vxRange[0] 
+        and vxRange[-1]. Will not be used if vxValues are 
+        specified. 
+        [Default = 100]
+    vyBins: int, optional
+        Length of y-velocity grid between vyRange[0] 
+        and vyRange[-1]. Will not be used if vyValues are 
+        specified. 
+        [Default = 100]
+    vxValues : {None, `~numpy.ndarray`}, optional
+        Values of velocities in x at which to cluster
+        and link. 
+        [Default = None]
+    vyValues : {None, `~numpy.ndarray`}, optional
+        Values of velocities in y at which to cluster
+        and link. 
+        [Default = None]
+    threads : int, optional
+        Number of threads to use. 
+        [Default = 12]
+    eps : float, optional
+        The maximum distance between two samples for them to be considered 
+        as in the same neighborhood. 
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 0.005]
+    minSamples : int, optional
+        The number of samples (or total weight) in a neighborhood for a 
+        point to be considered as a core point. This includes the point itself.
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 5]
+    partialThreshold : float, optional
+        Percentage (expressed between 0 and 1) of observations in a cluster required for the 
+        object to be found. 
+        [Default = 0.8]
+    saveDir : {None, str}, optional
+        Directory where to save outputs inluding plots. Will create
+        a sub-directory inside directory. 
+        [Default = None]
+    verbose : bool, optional
+        Print progress statements? 
+        [Default = True]
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+    
+    """
+    avg_obj = avgObject[columnMapping["name"]].values[0]
+    o = orbits[orbits[columnMapping["name"]] == avg_obj]
+    
+    if saveDir is not None:
+        baseName = os.path.join(saveDir, "visitId{}_{}".format(visitId, avg_obj))
+        os.makedirs(baseName)
+        saveFiles1=[os.path.join(baseName, "allClusters_pre.txt"),
+                   os.path.join(baseName, "clusterMembers_pre.txt")]
+        saveFiles2=[os.path.join(baseName, "allClusters_post.txt"),
+                   os.path.join(baseName, "clusterMembers_post.txt"),
+                   os.path.join(baseName, "allObjects.txt"),
+                   os.path.join(baseName, "summary.txt")]
+    else:
+        saveFiles1 = None
+        saveFiles2 = None
+    
+    allClusters, clusterMembers = clusterAndLink(
+        observations, 
+        eps=eps, 
+        minSamples=minSamples, 
+        vxRange=vxRange, 
+        vyRange=vyRange, 
+        vxBins=vxBins, 
+        vyBins=vyBins, 
+        saveFiles=saveFiles1,
+        vxValues=vxValues,
+        vyValues=vyValues,
+        threads=threads,
+        verbose=verbose,
+        columnMapping=columnMapping)
+    
+    allClusters, clusterMember, allObjects, summary = analyzeClusters(
+        observations, 
+        allClusters, 
+        clusterMembers, 
+        partialThreshold=partialThreshold, 
+        minSamples=minSamples,
+        saveFiles=saveFiles2,
+        verbose=verbose,
+        columnMapping=columnMapping)
+    
+    found = orbits[orbits[columnMapping["name"]].isin(allObjects[allObjects["found"] == 1][columnMapping["name"]])]
+    missed = orbits[orbits[columnMapping["name"]].isin((allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)][columnMapping["name"]]))]
+    
+    fig, ax = plotScatterContour(missed, 
+                                 columnMapping["a_au"],
+                                 columnMapping["i_deg"],
+                                 columnMapping["e"],
+                                 plotCounts=False, 
+                                 logCounts=True, 
+                                 countLevels=4, 
+                                 mask=None,
+                                 xLabel="a [AU]",
+                                 yLabel="i [deg]",
+                                 zLabel="e",
+                                 scatterKwargs={"s": 1, "vmin": 0, "vmax": 1})
+    ax.text(ax.get_xlim()[-1] - 0.40 * (ax.get_xlim()[1] - ax.get_xlim()[0]), ax.get_ylim()[1] - 0.05 * ax.get_ylim()[1], "Missed objects: {}".format(len(missed)))
+    ax.scatter(o["a_au"].values, o["i_deg"].values, c="r", s=20, marker="+")
+    ax.set_title("Missed Orbits\nVisit: {}, Object: {}".format(visitId, avg_obj))
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    if saveDir is not None:
+        fig.savefig(os.path.join(baseName, "missed_aie.png"))
+    
+    fig, ax = plotScatterContour(found, 
+                                 columnMapping["a_au"],
+                                 columnMapping["i_deg"],
+                                 columnMapping["e"],
+                                 plotCounts=False, 
+                                 logCounts=True, 
+                                 countLevels=4, 
+                                 mask=None,
+                                 xLabel="a [AU]",
+                                 yLabel="i [deg]",
+                                 zLabel="e",
+                                 scatterKwargs={"s": 1, "vmin": 0, "vmax": 1})        
+    ax.scatter(o["a_au"].values, o["i_deg"].values, c="r", s=20, marker="+")
+    ax.set_title("Recovered Orbits\nVisit: {}, Object: {}".format(visitId, avg_obj))
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.text(ax.get_xlim()[-1] - 0.40 * (ax.get_xlim()[1] - ax.get_xlim()[0]), ax.get_ylim()[1] - 0.05 * ax.get_ylim()[1], "Found objects: {}".format(len(found)))
+    if saveDir is not None:
+        fig.savefig(os.path.join(baseName, "found_aie.png"))
+    
+    found_obs = observations[observations[columnMapping["name"]].isin(allObjects[allObjects["found"] == 1][columnMapping["name"]])]
+    missed_obs = observations[observations[columnMapping["name"]].isin((allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)][columnMapping["name"]]))]
+    
+    fig, ax = plotScatterContour(missed_obs, 
+                                 columnMapping["obj_dx/dt_au_p_day"], 
+                                 columnMapping["obj_dy/dt_au_p_day"], 
+                                 columnMapping["obj_dz/dt_au_p_day"],
+                                 countLevels=4, 
+                                 xLabel="dx/dt [AU per day]",
+                                 yLabel="dy/dt [AU per day]",
+                                 zLabel="dz/dt [AU per day]")
+   
+    ax.text(ax.get_xlim()[-1] - 0.40 * (ax.get_xlim()[1] - ax.get_xlim()[0]), ax.get_ylim()[1] - 0.05 * ax.get_ylim()[1], "Missed objects: {}".format(len(missed)))
+    ax.scatter(*avgObject[[columnMapping["obj_dx/dt_au_p_day"], columnMapping["obj_dy/dt_au_p_day"]]].values.T, c="r", s=1, marker="+")
+    ax.set_title("Missed Orbits\nVisit: {}, Object: {}".format(visitId, avg_obj))
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    if saveDir is not None:
+        fig.savefig(os.path.join(baseName, "missed_orbits.png"))
+    
+    fig, ax = plotScatterContour(found_obs, 
+                                 columnMapping["obj_dx/dt_au_p_day"], 
+                                 columnMapping["obj_dy/dt_au_p_day"], 
+                                 columnMapping["obj_dz/dt_au_p_day"],
+                                 countLevels=4, 
+                                 xLabel="dx/dt [AU per day]",
+                                 yLabel="dy/dt [AU per day]",
+                                 zLabel="dz/dt [AU per day]")
+   
+    ax.scatter(*avgObject[[columnMapping["obj_dx/dt_au_p_day"], columnMapping["obj_dz/dt_au_p_day"]]].values.T, c="r", s=1, marker="+")
+    ax.set_title("Found Orbits\nVisit: {}, Object: {}".format(visitId, avg_obj))
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.text(ax.get_xlim()[-1] - 0.40 * (ax.get_xlim()[1] - ax.get_xlim()[0]), ax.get_ylim()[1] - 0.05 * ax.get_ylim()[1], "Found objects: {}".format(len(missed)))
+
+    if saveDir is not None:
+        fig.savefig(os.path.join(baseName, "found_orbits.png"))
+    return
