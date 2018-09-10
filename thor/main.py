@@ -19,8 +19,12 @@ __all__ = ["rangeAndShift",
            "_clusterVelocity",
            "clusterAndLink",
            "analyzeClusters",
+<<<<<<< HEAD
            "runRangeAndShiftOnVisit",
            "runClusterAndLinkOnVisit"]
+=======
+           "runRangeAndShiftOnVisit"]
+>>>>>>> 2a44ab9d6efb5a7285dea025a75e62f241576c8a
 
 def rangeAndShift(observations,
                   cell, 

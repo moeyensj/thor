@@ -89,7 +89,16 @@ class Config:
         "obj_dy/dt_au_p_day" : "HEclObj_dY/dt_au_p_day",
         
         # Object's z velocity in AU per day
-        "obj_dz/dt_au_p_day" : "HEclObj_dZ/dt_au_p_day"
+        "obj_dz/dt_au_p_day" : "HEclObj_dZ/dt_au_p_day",
+        
+        # Semi-major axis
+        "a_au" : "a_au",
+        
+        # Inclination
+        "i_deg" : "i_deg",
+        
+        # Eccentricity
+        "e" : "e",
     }
     
     observationColumns = [
