@@ -2,7 +2,7 @@
 # THOR
 Tracklet-less Heliocentric Orbit Recovery
 
-[![Build Status](https://www.travis-ci.com/moeyensj/RaSCaLS.svg?token=sWjpnqPgpHyuq3j7qPuj&branch=master)](https://www.travis-ci.com/moeyensj/RaSCaLS)
+[![Build Status](https://www.travis-ci.com/moeyensj/thor.svg?token=sWjpnqPgpHyuq3j7qPuj&branch=master)](https://www.travis-ci.com/moeyensj/thor)
 [![Coverage Status](https://coveralls.io/repos/github/moeyensj/thor/badge.svg?t=Eu0phN)](https://coveralls.io/github/moeyensj/thor)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
