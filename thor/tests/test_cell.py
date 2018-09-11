@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..data_processing import findObsInCell
+from ..cell import _findObsInCell
 
 def test_findObsInCell_2D_Circle():
     # Create a set of points on a grid
@@ -20,7 +20,7 @@ def test_findObsInCell_2D_Circle():
         distances = np.sqrt((xx - xx[center])**2 + (yy - yy[center])**2)
         inside = ids[np.where(distances <= np.sqrt(area/np.pi))[0]]
         np.testing.assert_array_equal(inside,
-                                      findObsInCell(ids,
+                                      _findObsInCell(ids,
                                                     np.array([xx, yy]).T,
                                                     np.array([xx[center], yy[center]]),
                                                     fieldArea=area,
@@ -43,7 +43,7 @@ def test_findObsInCell_2D_Square():
         # Find ids inside each square
         inside = ids[np.where((np.abs(xx - xx[center]) <= np.sqrt(area) / 2) & (np.abs(yy - yy[center]) <= np.sqrt(area) / 2))[0]]
         np.testing.assert_array_equal(inside,
-                                      findObsInCell(ids,
+                                      _findObsInCell(ids,
                                                     np.array([xx, yy]).T,
                                                     np.array([xx[center], yy[center]]),
                                                     fieldArea=area,
