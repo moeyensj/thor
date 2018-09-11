@@ -4,6 +4,7 @@ astropy
 matplotlib
 pandas
 fortranformat
+plotly
 pyyaml
 pytest
 pytest-cov
