@@ -1,6 +1,7 @@
 numpy
 scipy
 astropy
+sklearn
 matplotlib
 pandas
 fortranformat
