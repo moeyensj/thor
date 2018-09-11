@@ -15,6 +15,7 @@ def test_io():
     ephemeris_test = pd.read_sql("""SELECT * FROM ephemeris""", con_test)
 
     # Run current version of code
+    print(os.path.join(DATA_DIR, "OBJECTS_TEST_current.db"))
     con_current = buildObjectDatabase(os.path.join(DATA_DIR, "OBJECTS_TEST_current.db"), 
                                       mpcorbFile=os.path.join(DATA_DIR, "MPCORB_TEST.DAT"),
                                       orbFile=os.path.join(DATA_DIR, "MPCORB_59580_TEST.orb"),
