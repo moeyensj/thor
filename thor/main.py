@@ -13,6 +13,7 @@ from .oorb import propagateTestParticle
 from .data_processing import findAverageObject
 from .data_processing import findExposureTimes
 from .data_processing import buildCellForVisit
+from .plotting import plotScatterContour
 
 __all__ = ["rangeAndShift",
            "clusterVelocity",
@@ -833,11 +834,11 @@ def runRangeAndShiftOnVisit(observations,
         if avg_obj == -1:
             print("Can't run RaSCaLS on this visit.")
             print("Provide an orbit to run.")
-            return projected_obs, avg_obj
+            return avg_obj
 
         obj = small_cell.observations[small_cell.observations[columnMapping["name"]] == avg_obj]
         r = obj[columnMapping["r_au"]].values[0]
-        v = obj[[columnMapping["obj_dx/dt_au_p_day"], 
+        v = obj[[columnMapping["obj_dx/dt_au_p_day"],
                  columnMapping["obj_dy/dt_au_p_day"],
                  columnMapping["obj_dz/dt_au_p_day"]]].values[0]
         
