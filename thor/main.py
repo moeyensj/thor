@@ -27,9 +27,10 @@ def rangeAndShift(observations,
                   cell, 
                   r, 
                   v,
+                  numNights=14,
                   mjds="auto",
                   vMax=3.0,
-                  includeEquatorialProjection=True,
+                  includeEquatorialProjection=False,
                   saveFile=None,
                   verbose=True, 
                   columnMapping=Config.columnMapping):
@@ -46,6 +47,7 @@ def rangeAndShift(observations,
         Heliocentric distance in AU.
     v : `~numpy.ndarray` (1, 3)
         Velocity vector in AU per day (ecliptic). 
+    numNights : int, 
     mjds : {'auto', `~numpy.ndarray` (N)}
         If mjds is 'auto', will propagate the particle to middle of each unique night in 
         obervations and look for all detections within an angular search radius (defined by a 
@@ -100,8 +102,8 @@ def rangeAndShift(observations,
         nights = observations[columnMapping["night"]].unique() 
         cell_night = cell.observations["night"].unique()[0]
         nights.sort()
-        nights = nights[nights > cell_night]
-        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, nights, verbose=verbose)
+        nights = nights[np.where(nights <= nights[0] + numNights)][1:]
+        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, nights, vMax=vMax, verbose=verbose)
         
     
     # Apply tranformations to observations
@@ -750,11 +752,13 @@ def runRangeAndShiftOnVisit(observations,
                             visitId,
                             r, 
                             v,
+                            numNights=14, 
+                            useAverageObject=True,
                             searchArea=0.5, 
                             searchShape="square",
                             cellArea=10, 
                             cellShape="square",
-                            useAverageObject=True,
+                            vMax=30.0,
                             saveFiles=None,
                             verbose=True,
                             columnMapping=Config.columnMapping):
@@ -771,6 +775,8 @@ def runRangeAndShiftOnVisit(observations,
         Heliocentric distance in AU.
     v : `~numpy.ndarray` (1, 3)
         Velocity vector in AU per day (ecliptic). 
+    numNights : int, optional
+        Number of nights over which to run range and shift. 
     useAverageObject : bool, optional
         Find an object in the original visit that represents
         the average and use that object's orbit. Ignores given 
@@ -789,6 +795,10 @@ def runRangeAndShiftOnVisit(observations,
     cellShape : {'square', 'circle'}, optional
         Shape of THOR cell. Should be the same shape as the visit.
         [Default = 'square']
+    vMax : float, optional
+        Maximum angular velocity (in RA and Dec) permitted when searching for exposure times
+        in degrees per day. 
+        [Default = 3.0]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -844,7 +854,7 @@ def runRangeAndShiftOnVisit(observations,
         
 
     cell = Cell(small_cell.center, small_cell.mjd, observations, area=cellArea, shape=cellShape)
-    projected_obs = rangeAndShift(observations, cell, r, v)
+    projected_obs = rangeAndShift(observations, cell, r, v, mjds="auto", vMax=vMax, numNights=numNights)
     
     if saveFiles is not None:
         if useAverageObject is True and avg_obj != -1:
