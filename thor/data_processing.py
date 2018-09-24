@@ -66,7 +66,7 @@ def findExposureTimes(observations,
     # then grab the night corresponding to exposure time closest to
     # mjd start, use that value to calculate the appropriate array
     # of nights to use and their exposure times
-    times_nights = observations[observations[columnMapping["exp_mjd"]] >= mjd][[columnMapping["exp_mjd"], columnMapping["night"]]]
+    times_nights = observations[observations[columnMapping["exp_mjd"]] > mjd][[columnMapping["exp_mjd"], columnMapping["night"]]]
     times_nights.sort_values(by=columnMapping["exp_mjd"], inplace=True)
     nightStart = times_nights[times_nights[columnMapping["exp_mjd"]] >= mjd]["night"].values[0]
     times = np.unique(times_nights[(times_nights[columnMapping["night"]] >= nightStart) 
