@@ -9,7 +9,7 @@ from sklearn.cluster import DBSCAN
 from .config import Config
 from .cell import Cell
 from .particle import TestParticle
-from .oorb import propagateTestParticle
+from .pyoorb import propagateTestParticle
 from .data_processing import findAverageObject
 from .data_processing import findExposureTimes
 from .data_processing import buildCellForVisit
@@ -29,7 +29,7 @@ def rangeAndShift(observations,
                   v,
                   numNights=14,
                   mjds="auto",
-                  vMax=3.0,
+                  dMax=20.0,
                   includeEquatorialProjection=False,
                   saveFile=None,
                   verbose=True, 
@@ -47,16 +47,19 @@ def rangeAndShift(observations,
         Heliocentric distance in AU.
     v : `~numpy.ndarray` (1, 3)
         Velocity vector in AU per day (ecliptic). 
-    numNights : int, 
+    numNights : int, optional
+        Number of nights from the first exposure to consider 
+        for ranging and shifting. 
+        [Default = 14]
     mjds : {'auto', `~numpy.ndarray` (N)}
         If mjds is 'auto', will propagate the particle to middle of each unique night in 
         obervations and look for all detections within an angular search radius (defined by a 
         maximum allowable angular speed) and extract the exposure time. Alternatively, an array
         of exposure times may be passed. 
-    vMax : float, optional
-        Maximum angular velocity (in RA and Dec) permitted when searching for exposure times
-        in degrees per day. 
-        [Default = 3.0]
+    dMax : float, optional
+        Maximum angular distance (in RA and Dec) permitted when searching for exposure times
+        in degrees. 
+        [Default = 20.0]
     includeEquatorialProjection : bool, optional
         Include naive shifting in equatorial coordinates without properly projecting
         to the plane of the orbit. This is useful if performance comparisons want to be made.
@@ -99,13 +102,8 @@ def rangeAndShift(observations,
     particle.prepare(verbose=verbose)
     
     if mjds == "auto":
-        nights = observations[columnMapping["night"]].unique() 
-        cell_night = cell.observations["night"].unique()[0]
-        nights.sort()
-        nights = nights[np.where(nights <= nights[0] + numNights)][1:]
-        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, nights, vMax=vMax, verbose=verbose)
+        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, numNights=numNights, dMax=dMax, verbose=verbose)
         
-    
     # Apply tranformations to observations
     particle.apply(cell, verbose=verbose)
     
@@ -113,24 +111,41 @@ def rangeAndShift(observations,
     cells = [cell]
     particles = [particle]
     
+    # Propagate test particle and generate ephemeris for all mjds
+    if verbose == True:
+        print("Propagating test particle...")
+    ephemeris = propagateTestParticle(
+        particle.elements,
+        particle.mjd, 
+        mjds,
+        elementType="cartesian",
+        mjdScale="UTC",
+        H=10,
+        G=0.15)
+    if verbose == True:
+        print("Done.")
+        print("")
+    
     if includeEquatorialProjection is True:
-            cell.observations["theta_x_eq_deg"] = cell.observations[columnMapping["RA_deg"]] - particle.coords_eq_ang[0]
-            cell.observations["theta_y_eq_deg"] = cell.observations[columnMapping["RA_deg"]] - particle.coords_eq_ang[1]
+        cell.observations["theta_x_eq_deg"] = cell.observations[columnMapping["RA_deg"]] - particle.coords_eq_ang[0]
+        cell.observations["theta_y_eq_deg"] = cell.observations[columnMapping["RA_deg"]] - particle.coords_eq_ang[1]
     
     # Initialize final dataframe and add observations
     final_df = pd.DataFrame()
     final_df = pd.concat([cell.observations, final_df])
-
+    
+    if verbose == True:
+        print("Reading ephemeris and gathering observations...")
+        print("")
     for mjd_f in mjds:
+        if verbose == True:
+            print("Building particle and cell for {}".format(mjd_f))
         oldCell = cells[-1]
         oldParticle = particles[-1]
         
-        # Propagate particle to new mjd
-        propagated = propagateTestParticle(oldParticle.x_a,
-                                           oldParticle.v,
-                                           oldParticle.mjd,
-                                           mjd_f,
-                                           verbose=verbose)
+        # Get propagated particle
+        propagated = ephemeris[ephemeris["mjd"] == mjd_f]
+        
         # Get new equatorial coordinates
         new_coords_eq_ang = propagated[["RA_deg", "Dec_deg"]].values[0]
         
@@ -148,7 +163,7 @@ def rangeAndShift(observations,
                               "HEclObsy_Z_au"]].values[0]
         
         # Get new mjd (same as mjd_f)
-        new_mjd = propagated["mjd_utc"].values[0]
+        new_mjd = mjd_f
 
         # Define new cell at new coordinates
         newCell = Cell(new_coords_eq_ang,
@@ -758,7 +773,7 @@ def runRangeAndShiftOnVisit(observations,
                             searchShape="square",
                             cellArea=10, 
                             cellShape="square",
-                            vMax=30.0,
+                            dMax=20.0,
                             saveFiles=None,
                             verbose=True,
                             columnMapping=Config.columnMapping):
@@ -776,7 +791,9 @@ def runRangeAndShiftOnVisit(observations,
     v : `~numpy.ndarray` (1, 3)
         Velocity vector in AU per day (ecliptic). 
     numNights : int, optional
-        Number of nights over which to run range and shift. 
+        Number of nights from the time of the visit to consider 
+        for ranging and shifting. 
+        [Default = 14]
     useAverageObject : bool, optional
         Find an object in the original visit that represents
         the average and use that object's orbit. Ignores given 
@@ -795,10 +812,10 @@ def runRangeAndShiftOnVisit(observations,
     cellShape : {'square', 'circle'}, optional
         Shape of THOR cell. Should be the same shape as the visit.
         [Default = 'square']
-    vMax : float, optional
-        Maximum angular velocity (in RA and Dec) permitted when searching for exposure times
-        in degrees per day. 
-        [Default = 3.0]
+    dMax : float, optional
+        Maximum angular distance (in RA and Dec) permitted when searching for exposure times
+        in degrees. 
+        [Default = 20.0]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -854,7 +871,7 @@ def runRangeAndShiftOnVisit(observations,
         
 
     cell = Cell(small_cell.center, small_cell.mjd, observations, area=cellArea, shape=cellShape)
-    projected_obs = rangeAndShift(observations, cell, r, v, mjds="auto", vMax=vMax, numNights=numNights)
+    projected_obs = rangeAndShift(observations, cell, r, v, mjds="auto", dMax=dMax, numNights=numNights)
     
     if saveFiles is not None:
         if useAverageObject is True and avg_obj != -1:
