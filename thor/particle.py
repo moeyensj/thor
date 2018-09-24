@@ -89,6 +89,10 @@ class TestParticle:
         self.x_a = calcXa(self.x_ae, self.x_e)
         
         if verbose is True:
+            print("Creating elements array...")
+        self.elements = np.array([*self.x_a, *self.v])
+        
+        if verbose is True:
             print("Calculating vector normal to plane of orbit...")
         self.n_hat = calcNhat(self.x_a)
         

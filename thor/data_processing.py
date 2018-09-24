@@ -4,20 +4,20 @@ import pandas as pd
 
 from .config import Config
 from .cell import Cell
-from .oorb import propagateTestParticle
+from .pyoorb import propagateTestParticle
 
 __all__ = ["findExposureTimes",
            "findAverageObject",
            "buildCellForVisit"]
    
 def findExposureTimes(observations, 
-                 r, 
-                 v, 
-                 mjdStart, 
-                 nights, 
-                 vMax=3.0, 
-                 verbose=True,
-                 columnMapping=Config.columnMapping):
+                      r, 
+                      v, 
+                      mjd, 
+                      numNights=14, 
+                      dMax=20.0, 
+                      verbose=True,
+                      columnMapping=Config.columnMapping):
     
     """
     Finds the unique exposure times of all detections that fall within
@@ -28,19 +28,19 @@ def findExposureTimes(observations,
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing observations.
-    r : float
+    r : `~numpy.ndarray` (1, 3)
         Heliocentric distance in AU.
     v : `~numpy.ndarray` (1, 3)
         Velocity vector in AU per day (ecliptic).  
-    mjdStart : float
-        Epoch at which ecliptic coordinates and velocity are measured in MJD.
-    nights : `~numpy.ndarray` (N)
-        List of nights at which to calculate exposure times. Should ideally not include
-        the night containing mjdStart. 
-    vMax : float, optional
-        Maximum angular velocity (in RA and Dec) permitted when searching for exposure times
-        in degrees per day. 
-        [Default = 3.0]
+    mjd : float
+        Epoch at which ecliptic coordinates and velocity are measured in MJD. 
+    numNights : int, optional
+        List of nights at which to calculate exposure times. 
+        [Default = 14]
+    dMax : float, optional
+        Maximum angular distance (in RA and Dec) permitted when searching for exposure times
+        in degrees. 
+        [Default = 20.0]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -58,55 +58,40 @@ def findExposureTimes(observations,
         print("THOR: findExposureTimes")
         print("-------------------------")
         print("Generating particle ephemeris for the middle of every night.")
-        print("Finding optimal exposure times (maximum angular velocity: {})...".format(vMax))
+        print("Finding optimal exposure times (with maximum angular distance of {} degrees)...".format(dMax))
         print("")
     
     time_start = time.time()
-    possible_obs_ids = np.empty(0)
-    ri = r
-    vi = v
-    mjdStarti = mjdStart
+    # Grab exposure times and night values, insure they are sorted
+    # then grab the night corresponding to exposure time closest to
+    # mjd start, use that value to calculate the appropriate array
+    # of nights to use and their exposure times
+    times_nights = observations[observations[columnMapping["exp_mjd"]] >= mjd][[columnMapping["exp_mjd"], columnMapping["night"]]]
+    times_nights.sort_values(by=columnMapping["exp_mjd"], inplace=True)
+    nightStart = times_nights[times_nights[columnMapping["exp_mjd"]] >= mjd]["night"].values[0]
+    times = np.unique(times_nights[(times_nights[columnMapping["night"]] >= nightStart) 
+                         & (times_nights[columnMapping["night"]] <= nightStart + numNights)][columnMapping["exp_mjd"]].values)
     
-    for i, night in enumerate(nights): 
-        
-        # Find exposure time in the middle of the night  
-        mjdEnd = np.median(observations[observations["night"] == night]["exp_mjd"].unique())
-        
-        # Propagate particle (set verbose to false here)
-        if verbose == True:
-            print("Night: {} ({}/{})".format(night, i + 1, len(nights)))
-            print("Propagating particle to {}...".format(mjdEnd))
-        ephemeris = propagateTestParticle(ri, 
-                                          vi,
-                                          mjdStarti,
-                                          mjdEnd,
-                                          verbose=False)
-        if verbose == True:
-            print("Looking for observations...")
-        
-        # Find all observation IDs within some maximum angular velocity from the location of the particle
-        obs_ids = observations[observations[columnMapping["night"]] == night][columnMapping["obs_id"]].values
-        dRA = observations[observations[columnMapping["night"]] == night][columnMapping["RA_deg"]].values - ephemeris["RA_deg"].values
-        dDec = observations[observations[columnMapping["night"]] == night][columnMapping["Dec_deg"]].values - ephemeris["Dec_deg"].values
-        dec = ephemeris["Dec_deg"].values + dDec/2
-        dt = observations[observations[columnMapping["night"]] == night][columnMapping["exp_mjd"]].values - ephemeris["mjd_utc"].values
-        v = np.abs(np.sqrt((dRA * np.cos(np.radians(dec)))**2  + dDec**2) / dt)
-        index = np.where(v <= vMax)[0]
-        possible_obs_ids = np.concatenate([possible_obs_ids, obs_ids[index]])
-        
-        if verbose == True:
-            print("Found {} observations within search area.".format(len(index)))
-            print("")
-        
-        # Set new r, v and time to particle's current location
-        ri = ephemeris[['HEclObj_X_au', 'HEclObj_Y_au', 'HEclObj_Z_au']].values[0]
-        vi = ephemeris[['HEclObj_dX/dt_au_p_day', 'HEclObj_dY/dt_au_p_day', 'HEclObj_dZ/dt_au_p_day']].values[0]
-        mjdStarti = mjdEnd
-        
-    mjds = observations[observations[columnMapping["obs_id"]].isin(possible_obs_ids)][columnMapping["exp_mjd"]].unique()
-    mjds.sort()
+    eph = propagateTestParticle([*r, *v], mjd, times)
+    
+    df = pd.merge(observations[[columnMapping["obs_id"],
+                                columnMapping["exp_mjd"], 
+                                columnMapping["RA_deg"],
+                                columnMapping["Dec_deg"]]],
+                  eph[["mjd", "RA_deg", "Dec_deg"]], 
+                  how='inner', 
+                  left_on=columnMapping["exp_mjd"], 
+                  right_on="mjd",
+                  suffixes=["_obs", "_orbit"])
+
+    dRA = df[columnMapping["RA_deg"] + "_obs"] - df["RA_deg_orbit"]
+    dDec = df[columnMapping["Dec_deg"] + "_obs"] - df["Dec_deg_orbit"]
+    dec = np.mean(df[[columnMapping["Dec_deg"] + "_obs", "Dec_deg_orbit"]].values, axis=1)
+    d = np.sqrt((dRA * np.cos(np.radians(dec)))**2 + dDec**2)
+    indexes = np.where(d <= dMax)[0]
+    mjds = np.unique(df["exp_mjd"].values[indexes])
+    
     time_end = time.time()
-    
     if verbose == True:
         print("Done. Found {} unique exposure times.".format(len(mjds)))
         print("Total time in seconds: {}".format(time_end - time_start))
