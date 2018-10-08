@@ -31,7 +31,7 @@ def rangeAndShift(observations,
                   numNights=14,
                   mjds="auto",
                   dMax=20.0,
-                  includeEquatorialProjection=False,
+                  includeEquatorialProjection=True,
                   saveFile=None,
                   verbose=True, 
                   columnMapping=Config.columnMapping):
@@ -129,7 +129,7 @@ def rangeAndShift(observations,
     
     if includeEquatorialProjection is True:
         cell.observations["theta_x_eq_deg"] = cell.observations[columnMapping["RA_deg"]] - particle.coords_eq_ang[0]
-        cell.observations["theta_y_eq_deg"] = cell.observations[columnMapping["RA_deg"]] - particle.coords_eq_ang[1]
+        cell.observations["theta_y_eq_deg"] = cell.observations[columnMapping["Dec_deg"]] - particle.coords_eq_ang[1]
     
     # Initialize final dataframe and add observations
     final_df = pd.DataFrame()
