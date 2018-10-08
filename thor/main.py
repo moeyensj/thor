@@ -681,7 +681,7 @@ def analyzeClusters(observations,
                     allObjects, 
                     summary,
                     minSamples=5, 
-                    partialThreshold=0.8, 
+                    contaminationThreshold=0.2, 
                     saveFiles=None,
                     verbose=True,
                     columnMapping=Config.columnMapping):
@@ -705,8 +705,8 @@ def analyzeClusters(observations,
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
-    partialThreshold : float, optional
-        Percentage (expressed between 0 and 1) of observations in a cluster required for the 
+    contaminationThreshold : float, optional
+        Percentage (expressed between 0 and 1) of imposter observations in a cluster permitted for the 
         object to be found. 
         [Default = 0.8]
     saveFiles : {None, list}, optional
@@ -747,7 +747,7 @@ def analyzeClusters(observations,
     allClusters["num_visits"] = np.ones(len(allClusters), dtype=int) * np.NaN
     allClusters["num_fields"] = np.ones(len(allClusters), dtype=int) * np.NaN
     allClusters["linked_object"] = np.ones(len(allClusters), dtype=int) * np.NaN
-    
+
     # Count number of members per cluster
     observations_temp = observations.rename(columns={columnMapping["obs_id"]: "obs_id"})
     cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(clusterMembers, on="obs_id")
@@ -755,35 +755,59 @@ def analyzeClusters(observations,
     cluster_designation.drop_duplicates(inplace=True)
     unique_ids_per_cluster = cluster_designation["cluster_id"].value_counts()
     allClusters["num_members"] = unique_ids_per_cluster.sort_index().values
-    
+
     # Count number of visits per cluster
     cluster_visit = observations_temp[["obs_id", columnMapping["visit_id"]]].merge(clusterMembers, on="obs_id")
     cluster_visit.drop(columns="obs_id", inplace=True)
     cluster_visit.drop_duplicates(inplace=True)
     unique_visits_per_cluster = cluster_visit["cluster_id"].value_counts()
     allClusters["num_visits"] = unique_visits_per_cluster.sort_index().values
-    
+
     # Count number of fields per cluster
     cluster_fields = observations_temp[["obs_id", columnMapping["field_id"]]].merge(clusterMembers, on="obs_id")
     cluster_fields.drop(columns="obs_id", inplace=True)
     cluster_fields.drop_duplicates(inplace=True)
     unique_fields_per_cluster = cluster_fields["cluster_id"].value_counts()
     allClusters["num_fields"] = unique_fields_per_cluster.sort_index().values
-    
+
     # Isolate pure clusters
     single_member_clusters = cluster_designation[cluster_designation["cluster_id"].isin(allClusters[allClusters["num_members"] == 1]["cluster_id"])]
     allClusters.loc[allClusters["cluster_id"].isin(single_member_clusters["cluster_id"]), "linked_object"] = single_member_clusters[columnMapping["name"]].values
     allClusters.loc[(allClusters["linked_object"] != "NS") & (allClusters["linked_object"].notna()), "pure"] = 1
-    allClusters.loc[(((1 - allClusters["num_members"] / allClusters["num_obs"]) >= partialThreshold)
-                     & (allClusters["pure"] != 1) & (allClusters["linked_object"].isna())), "partial"] = 1
+
+    # Grab all clusters that are not pure, calculate contamination and see if we can accept them
+    cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(
+        clusterMembers[~clusterMembers["cluster_id"].isin(allClusters[allClusters["pure"] == 1]["cluster_id"].values)], on="obs_id")
+    cluster_designation.drop(columns="obs_id", inplace=True)
+    cluster_designation = cluster_designation[["cluster_id", "designation"]].groupby(cluster_designation[["cluster_id", "designation"]].columns.tolist(), as_index=False).size()
+    cluster_designation = cluster_designation.reset_index()
+    cluster_designation.rename(columns={0: "num_obs"}, inplace=True)
+    cluster_designation.sort_values(by=["cluster_id", "num_obs"], inplace=True)
+    # Remove duplicate rows: keep row with the object with the mot detections in a cluster
+    cluster_designation.drop_duplicates(subset=["cluster_id"], inplace=True, keep="last")
+    cluster_designation = cluster_designation.merge(allClusters[["cluster_id", "num_obs"]], on="cluster_id")
+    cluster_designation.rename(columns={"num_obs_x": "num_obs", "num_obs_y": "total_num_obs"}, inplace=True)
+    cluster_designation["contamination"] = (1 - cluster_designation["num_obs"] / cluster_designation["total_num_obs"])
+    partial_clusters = cluster_designation[(cluster_designation["num_obs"] >= minSamples) 
+                                            & (cluster_designation["contamination"] <= contaminationThreshold)
+                                            & (cluster_designation[columnMapping["name"]] != "NS")]
+
+    allClusters.loc[allClusters["cluster_id"].isin(partial_clusters["cluster_id"]), "linked_object"] = partial_clusters[columnMapping["name"]]
+    allClusters.loc[allClusters["cluster_id"].isin(partial_clusters["cluster_id"]), "partial"] = 1
     allClusters.loc[(allClusters["pure"] != 1) & (allClusters["partial"] != 1), "false"] = 1
-    
+
+    # Update allObjects DataFrame
+    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["pure"] == 1]["linked_object"]), "found_pure"] = 1
+    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["partial"] == 1]["linked_object"]), "found_partial"] = 1
+    allObjects.loc[(allObjects["found_pure"] == 1) | (allObjects["found_partial"] == 1), "found"] = 1
+    allObjects.fillna(value=0, inplace=True)
+
     num_pure = len(allClusters[allClusters["pure"] == 1])
     num_partial = len(allClusters[allClusters["partial"] == 1])
     num_false = len(allClusters[allClusters["false"] == 1])
     num_total = num_pure + num_partial + num_false
     num_duplicate_visits = len(allClusters[allClusters["num_obs"] != allClusters["num_visits"]])
-    
+
     if verbose == True:
         print("Pure clusters: {}".format(num_pure))
         print("Partial clusters: {}".format(num_partial))
@@ -791,23 +815,6 @@ def analyzeClusters(observations,
         print("False clusters: {}".format(num_false))
         print("Total clusters: {}".format(num_total))
         print("Cluster contamination (%): {}".format(num_false / num_total * 100))
-        
-    # Isolate partial clusters and grab the object with the most detections to count as found (partial)
-    cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(clusterMembers, on="obs_id")
-    cluster_designation.drop(columns="obs_id", inplace=True)
-    partial_ids = allClusters[allClusters["partial"] == 1]["cluster_id"].values
-    partial_clusters = cluster_designation[cluster_designation["cluster_id"].isin(partial_ids)]
-    partial_clusters_temp = pd.DataFrame(partial_clusters.groupby(["cluster_id", columnMapping["name"]]).size()).reset_index()
-    partial_clusters_temp.rename(columns={0: "count"}, inplace=True)
-    partial_clusters_temp.sort_values("count", ascending=False, inplace=True)
-    partial_clusters_temp.drop_duplicates(subset=["cluster_id"], keep="first", inplace=True)
-    partial_clusters_temp.sort_values("cluster_id", inplace=True)
-    allClusters.loc[allClusters["cluster_id"].isin(partial_clusters_temp["cluster_id"]), "linked_object"] = partial_clusters_temp[columnMapping["name"]].values
-    
-    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["pure"] == 1]["linked_object"]), "found_pure"] = 1
-    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["partial"] == 1]["linked_object"]), "found_partial"] = 1
-    allObjects.loc[(allObjects["found_pure"] == 1) | (allObjects["found_partial"] == 1), "found"] = 1
-    allObjects.fillna(value=0, inplace=True)
     
     found = allObjects[allObjects["found"] == 1]
     missed = allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)]
