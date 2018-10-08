@@ -22,6 +22,7 @@ __all__ = ["rangeAndShift",
            "analyzeObservations",
            "analyzeProjections",
            "analyzeClusters",
+           "analyzeVisit",
            "runRangeAndShiftOnVisit",
            "runClusterAndLinkOnVisit"]
 
@@ -687,7 +688,7 @@ def analyzeProjections(observations,
     """
     time_start = time.time()
     if verbose == True:
-        print("THOR: analyzeObservations")
+        print("THOR: analyzeProjections")
         print("-------------------------")
         print("Analyzing projections...")
     
@@ -945,6 +946,92 @@ def analyzeClusters(observations,
         print("")
 
     return allClusters, clusterMembers, allObjects, summary
+
+def analyzeVisit(observations,
+                 visitId, 
+                 minSamples=5, 
+                 verbose=True,
+                 columnMapping=Config.columnMapping):
+    """
+    Count the number of objects that should be findable in the 
+    survey that exist in the visit. Also calculate some visit-level
+    statistics. 
+    
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing post-range and shift observations.
+    minSamples : int, optional
+        The number of samples (or total weight) in a neighborhood for a 
+        point to be considered as a core point. This includes the point itself.
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 5]
+    verbose : bool, optional
+        Print progress statements? 
+        [Default = True]
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+    
+    Returns
+    -------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame.
+    summary : `~pandas.DataFrame`
+        Overall summary DataFrame. 
+    """
+    time_start = time.time()
+    if verbose == True:
+        print("THOR: analyzeVisit")
+        print("-------------------------")
+        print("Analyzing visit {}...".format(visitId))
+        
+    visit = observations[observations[columnMapping["visit_id"]] == visitId]
+    
+    # Count number of noise detections, real object detections, the number of unique objects
+    num_noise_obs = len(visit[visit[columnMapping["name"]] == "NS"])
+    num_object_obs = len(visit[visit[columnMapping["name"]] != "NS"])
+    unique_objects = visit[visit[columnMapping["name"]] != "NS"][columnMapping["name"]].unique()
+    num_unique_objects = len(unique_objects)
+    num_obs_per_object = observations[(observations[columnMapping["name"]] != "NS") & (observations[columnMapping["name"]].isin(unique_objects))][columnMapping["name"]].value_counts().values
+    objects_num_obs_descending = observations[(observations[columnMapping["name"]] != "NS") & (observations[columnMapping["name"]].isin(unique_objects))][columnMapping["name"]].value_counts().index.values
+    findable = objects_num_obs_descending[np.where(num_obs_per_object >= minSamples)[0]]
+    
+    # Populate allObjects DataFrame
+    allObjects = pd.DataFrame(columns=[
+        columnMapping["name"], 
+        "num_obs", 
+        "findable",
+        "found"])
+    
+    allObjects[columnMapping["name"]] = objects_num_obs_descending
+    allObjects["num_obs"] = num_obs_per_object
+    allObjects.loc[allObjects[columnMapping["name"]].isin(findable), "findable"] = 1
+    allObjects.loc[allObjects["findable"] != 1, ["findable"]] = 0
+    num_findable = len(allObjects[allObjects["findable"] == 1])
+    
+    # Prepare summary DataFrame
+    summary = pd.DataFrame({
+        "visit_id": visitId,
+        "num_observations_object": num_object_obs,
+        "num_observations_noise": num_noise_obs,
+        "obs_contamination" : num_noise_obs / len(visit) * 100,
+        "unique_objects" : num_unique_objects,
+        "unique_objects_findable" : num_findable}, index=[0]) 
+    
+    time_end = time.time()
+    if verbose == True:
+        print("Object observations in visit: {}".format(num_object_obs))
+        print("Noise observations in visit: {}".format(num_noise_obs))
+        print("Observation contamination (%): {}".format(num_noise_obs / len(visit) * 100))
+        print("Unique objects in visit: {}".format(num_unique_objects))
+        print("Unique objects with at least {} detections in survey: {}".format(minSamples, num_findable))
+        print("") 
+        print("Total time in seconds: {}".format(time_end - time_start))
+        print("-------------------------")
+        print("")
+        
+    return allObjects, summary
 
 def runRangeAndShiftOnVisit(observations,
                             visitId,
