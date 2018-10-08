@@ -408,9 +408,16 @@ def clusterAndLink(observations,
         vy = vyValues
         vyRange = [vyValues[0], vyValues[-1]]
         vyBins = len(vy)
-    vxx, vyy = np.meshgrid(vx, vy)    
-    vxx = vxx.flatten()
-    vyy = vyy.flatten()
+        
+    if vxValues is None and vyValues is None:
+        vxx, vyy = np.meshgrid(vx, vy)    
+        vxx = vxx.flatten()
+        vyy = vyy.flatten()
+    elif vxValues is not None and vyValues is not None:
+        vxx = vx
+        vyy = vy
+    else:
+        raise ValueError("")
 
     time_start_cluster = time.time()
     if verbose == True:
@@ -418,9 +425,17 @@ def clusterAndLink(observations,
         print("-------------------------")
         print("Running velocity space clustering...")
         print("X velocity range: {}".format(vxRange))
-        print("X velocity bins: {}".format(vxBins))
+        
+        if vxValues is not None:
+            print("X velocity values: {}".format(vxBins))
+        else:
+            print("X velocity bins: {}".format(vxBins))
+            
         print("Y velocity range: {}".format(vyRange))
-        print("Y velocity bins: {}".format(vyBins))
+        if vyValues is not None:
+            print("Y velocity values: {}".format(vyBins))
+        else:
+            print("Y velocity bins: {}".format(vyBins))
         if vxValues is not None:
             print("User defined x velocity values: True")
         else: 
@@ -429,7 +444,11 @@ def clusterAndLink(observations,
             print("User defined y velocity values: True")
         else:
             print("User defined y velocity values: False")
-        print("Velocity grid size: {}".format(vxBins * vyBins))
+            
+        if vxValues is None and vyValues is None:
+            print("Velocity grid size: {}".format(vxBins * vyBins))
+        else: 
+            print("Velocity grid size: {}".format(vxBins))
         print("Max sample distance: {}".format(eps))
         print("Minimum samples: {}".format(minSamples))
 
@@ -547,7 +566,6 @@ def clusterAndLink(observations,
 
 def analyzeProjections(observations,
                        minSamples=5, 
-                       partialThreshold=0.8, 
                        saveFiles=None,
                        verbose=True,
                        columnMapping=Config.columnMapping):
@@ -564,10 +582,6 @@ def analyzeProjections(observations,
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
-    partialThreshold : float, optional
-        Percentage (expressed between 0 and 1) of observations in a cluster required for the 
-        object to be found. 
-        [Default = 0.8]
     saveFiles : {None, list}, optional
         List of paths to save DataFrames to ([allClusters, clusterMembers, allObjects, summary]) or None. 
         [Default = None]
@@ -594,20 +608,16 @@ def analyzeProjections(observations,
     # Count number of noise detections, real object detections, the number of unique objects
     num_noise_obs = len(observations[observations[columnMapping["name"]] == "NS"])
     num_object_obs = len(observations[observations[columnMapping["name"]] != "NS"])
-    num_unique = len(observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].unique())
+    unique_objects = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].unique()
+    num_unique_objects = len(unique_objects)
     num_obs_per_object = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().values
-    num_min_obs_pure = len(np.where(num_obs_per_object >= minSamples)[0])
-    num_min_obs_partial = len(np.where(num_obs_per_object >= partialThreshold * minSamples)[0])
     objects_num_obs_descending = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().index.values
-    findable_pure = objects_num_obs_descending[np.where(num_obs_per_object >= minSamples)[0]]
-    findable_partial = objects_num_obs_descending[np.where(num_obs_per_object >= partialThreshold * minSamples)[0]]
+    findable = objects_num_obs_descending[np.where(num_obs_per_object >= minSamples)[0]]
     
     # Populate allObjects DataFrame
     allObjects = pd.DataFrame(columns=[
         columnMapping["name"], 
         "num_obs", 
-        "findable_pure", 
-        "findable_partial", 
         "findable",
         "found_pure", 
         "found_partial",
@@ -615,43 +625,48 @@ def analyzeProjections(observations,
         "dtheta_x/dt_median",
         "dtheta_y/dt_median",
         "dtheta_x/dt_sigma",
-        "dtheta_y/dt_sigma"])
+        "dtheta_y/dt_sigma",
+        "r_au_median",
+        "Delta_au_median",
+        "r_au_sigma",
+        "Delta_au_sigma"])
     
     allObjects[columnMapping["name"]] = objects_num_obs_descending
     allObjects["num_obs"] = num_obs_per_object
-    allObjects.loc[allObjects[columnMapping["name"]].isin(findable_partial), "findable_partial"] = 1
-    allObjects.loc[allObjects[columnMapping["name"]].isin(findable_pure), "findable_pure"] = 1
-    allObjects.loc[(allObjects["findable_pure"] == 1) | (allObjects["findable_partial"] == 1), "findable"] = 1
-    findable = len(allObjects[allObjects["findable"] == 1])
+    allObjects.loc[allObjects[columnMapping["name"]].isin(findable), "findable"] = 1
+    num_findable = len(allObjects[allObjects["findable"] == 1])
 
-    for obj in allObjects[allObjects["findable"] == 1][columnMapping["name"]].values:
+    for obj in findable:
         dets = observations[observations[columnMapping["name"]].isin([obj])]
         dt = dets[columnMapping["exp_mjd"]].values[1:] - dets[columnMapping["exp_mjd"]].values[0]
         dx = dets["theta_x_deg"].values[1:] - dets["theta_x_deg"].values[0]
         dy = dets["theta_y_deg"].values[1:] - dets["theta_y_deg"].values[0]
         allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_x/dt_median"]] = np.median(dx/dt)
-        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_x/dt_sigma"]] = np.std(dx/dt)
         allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_y/dt_median"]] = np.median(dy/dt)
+        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["Delta_au_median"]] = np.median(dets[columnMapping["Delta_au"]].values)
+        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["r_au_median"]] = np.median(dets[columnMapping["r_au"]].values)
+        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_x/dt_sigma"]] = np.std(dx/dt)
         allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_y/dt_sigma"]] = np.std(dy/dt)
+        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["r_au_sigma"]] = np.std(dets[columnMapping["r_au"]].values)
+        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["Delta_au_sigma"]] = np.std(dets[columnMapping["Delta_au"]].values)
+
+    allObjects.loc[allObjects["findable"] != 1, ["findable"]] = 0
     
     # Prepare summary DataFrame
     summary = pd.DataFrame({
         "num_observations_object": num_object_obs,
         "num_observations_noise": num_noise_obs,
         "obs_contamination" : num_noise_obs / len(observations) * 100,
-        "unique_objects" : num_unique,
-        "unique_objects_findable_pure" : num_min_obs_pure,
-        "unique_objects_findable_partial" : num_min_obs_partial,
-        "unique_objects_findable" : findable}, index=[0]) 
+        "unique_objects" : num_unique_objects,
+        "unique_objects_findable" : num_findable}, index=[0]) 
     
     time_end = time.time()
     if verbose == True:
         print("Object observations: {}".format(num_object_obs))
         print("Noise observations: {}".format(num_noise_obs))
         print("Observation contamination (%): {}".format(num_noise_obs / len(observations) * 100))
-        print("Unique objects: {}".format(num_unique))
-        print("Unique objects with at least {} detections: {}".format(minSamples, num_min_obs_pure))
-        print("Unique objects with at least {}% of {} detections: {}".format(partialThreshold * 100, minSamples, num_min_obs_partial))
+        print("Unique objects: {}".format(num_unique_objects))
+        print("Unique objects with at least {} detections: {}".format(minSamples, num_findable))
         print("") 
         print("Total time in seconds: {}".format(time_end - time_start))
         print("-------------------------")
@@ -788,8 +803,6 @@ def analyzeClusters(observations,
     partial_clusters_temp.drop_duplicates(subset=["cluster_id"], keep="first", inplace=True)
     partial_clusters_temp.sort_values("cluster_id", inplace=True)
     allClusters.loc[allClusters["cluster_id"].isin(partial_clusters_temp["cluster_id"]), "linked_object"] = partial_clusters_temp[columnMapping["name"]].values
-    
-    
     
     allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["pure"] == 1]["linked_object"]), "found_pure"] = 1
     allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["partial"] == 1]["linked_object"]), "found_partial"] = 1
@@ -948,7 +961,14 @@ def runRangeAndShiftOnVisit(observations,
         
 
     cell = Cell(small_cell.center, small_cell.mjd, observations, area=cellArea, shape=cellShape)
-    projected_obs = rangeAndShift(observations, cell, r, v, mjds="auto", dMax=dMax, numNights=numNights)
+    projected_obs = rangeAndShift(observations, 
+                                  cell, 
+                                  r, 
+                                  v, 
+                                  mjds="auto", 
+                                  dMax=dMax, 
+                                  numNights=numNights,
+                                  verbose=verbose)
     
     if saveFiles is not None:
         if useAverageObject is True and avg_obj != -1:
