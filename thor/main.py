@@ -263,7 +263,7 @@ def clusterVelocity(obsIds,
     xx = x - vx * dt
     yy = y - vy * dt
     X = np.vstack([xx, yy]).T  
-    db = DBSCAN(eps=eps, min_samples=minSamples).fit(X)
+    db = DBSCAN(eps=eps, min_samples=minSamples, n_jobs=1).fit(X)
     
     clusters = db.labels_[np.where(db.labels_ != -1)[0]]
     cluster_ids = []
@@ -322,7 +322,7 @@ def clusterAndLink(observations,
         Maximum and minimum velocity range in x. 
         Will not be used if vxValues are specified. 
         [Default = [-0.1, 0.1]]
-    vxRange : {None, list or `~numpy.ndarray` (2)}
+    vyRange : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in y. 
         Will not be used if vyValues are specified. 
         [Default = [-0.1, 0.1]]
