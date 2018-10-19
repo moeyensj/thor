@@ -28,7 +28,7 @@ def plotObservations(dataframe,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
    
     Returns
     -------
@@ -69,8 +69,8 @@ def plotObservations(dataframe,
             data.append(trace)
             
         layout = dict(
-            width=550,
-            height=550,
+            width=1000,
+            height=1000,
             autosize=False,
             title="",
             scene=dict(
@@ -121,7 +121,7 @@ def plotObservations3D(dataframe,
         [Default = False]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~rascals.Config.columnMapping`]
+        [Default = `~thor.Config.columnMapping`]
    
     Returns
     -------

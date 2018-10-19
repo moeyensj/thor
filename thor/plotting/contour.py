@@ -105,7 +105,7 @@ def plotBinnedContour(dataframe,
     else:
         stat = X.statistic.T
     
-    fig, ax = plt.subplots(1, 1, dpi=200)
+    fig, ax = plt.subplots(1, 1, dpi=600)
     cm = ax.imshow(stat, 
                    origin="lower", 
                    extent=[X.x_edge[0], X.x_edge[-1], X.y_edge[0], X.y_edge[-1]], 
@@ -225,7 +225,7 @@ def plotScatterContour(dataframe,
     except:
         dataframe = dataframe
     
-    fig, ax = plt.subplots(1, 1, dpi=200)
+    fig, ax = plt.subplots(1, 1, dpi=600)
     cm = ax.scatter(dataframe[xColumn].values, 
                     dataframe[yColumn].values, 
                     c=dataframe[zColumn].values, 
