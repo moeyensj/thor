@@ -70,8 +70,8 @@ def plotProjections(dataframe,
             data.append(trace)
             
         layout = dict(
-            width=550,
-            height=550,
+            width=1000,
+            height=1000,
             autosize=False,
             title="",
             scene=dict(
@@ -166,8 +166,8 @@ def plotProjections3D(dataframe,
         data.append(trace)
 
     layout = dict(
-        width=800,
-        height=550,
+        width=1000,
+        height=1000,
         autosize=False,
         title="",
         scene=dict(
