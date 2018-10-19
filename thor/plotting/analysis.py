@@ -1,28 +1,67 @@
-import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-__all__ = ["_plotGrid",
-           "plotProjectionAnalysis",
-           "plotClusteringAnalysis"]
+from ..config import Config
+from .helpers import _setPercentage
+from .contour import plotScatterContour
 
-def _plotGrid(ax, vxRange, vyRange):
+__all__ = ["_plotGrid",
+           "plotProjectionVelocitiesFindable",
+           "plotProjectionVelocitiesFound",
+           "plotProjectionVelocitiesMissed",
+           "plotFindableOrbits",
+           "plotFoundOrbits",
+           "plotMissedOrbits"]
+
+def _plotGrid(ax, 
+              vxRange, 
+              vyRange):
     rect = patches.Rectangle((vxRange[0], vyRange[0]),
                              vxRange[1]-vxRange[0],
-                             vyRange[1]-vyRange[0], linewidth=0.5, edgecolor='r',facecolor='none')
+                             vyRange[1]-vyRange[0], 
+                             linewidth=0.5,
+                             edgecolor='r',
+                             facecolor='none')
     ax.add_patch(rect)
+    return
 
-def plotProjectionAnalysis(allObjects, vxRange=[-0.1, 0.1], vyRange=[-0.1, 0.1], title="Findable Objects"):
+def plotProjectionVelocitiesFindable(allObjects,
+                                     vxRange=None,
+                                     vyRange=None):
+    """
+    Plots objects that should be findable in the projection
+    space based on their median velocities and the
+    chosen velocity ranges.
     
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame. Needs 'findable' column to be populated,
+        as well as the median projection space velocities and the median
+        heliocentric distance.
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x.
+        [Default = None]
+    vyRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y.
+        [Default = None]
+    
+    Returns
+    -------
+    fig : `~matplotlib.figure.Figure` 
+        The matplotlib figure object.
+    ax : `~matplotlib.axes._subplots.AxesSubplot`
+        The matplotlib axes object. 
+    """
     if vxRange is not None and vyRange is not None:
-        in_zone_findable = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
-         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
+        in_zone_findable = ((allObjects["dtheta_x/dt_median"] >= vxRange[0])
+         & (allObjects["dtheta_x/dt_median"] <= vxRange[1])
+         & (allObjects["dtheta_y/dt_median"] <= vyRange[1])
          & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
          & (allObjects["findable"] == 1))
-   
+
     fig, ax = plt.subplots(1, 1, dpi=600)
-    ax.errorbar(allObjects[allObjects["findable"] == 1]["dtheta_x/dt_median"].values, 
+    ax.errorbar(allObjects[allObjects["findable"] == 1]["dtheta_x/dt_median"].values,
                 allObjects[allObjects["findable"] == 1]["dtheta_y/dt_median"].values,
                 yerr=allObjects[allObjects["findable"] == 1]["dtheta_y/dt_sigma"].values,
                 xerr=allObjects[allObjects["findable"] == 1]["dtheta_x/dt_sigma"].values,
@@ -32,47 +71,70 @@ def plotProjectionAnalysis(allObjects, vxRange=[-0.1, 0.1], vyRange=[-0.1, 0.1],
                 elinewidth=0.1,
                 c="k", zorder=-1)
     cm = ax.scatter(allObjects[allObjects["findable"] == 1]["dtheta_x/dt_median"].values, 
-               allObjects[allObjects["findable"] == 1]["dtheta_y/dt_median"].values,
-               s=0.1,
-               c=allObjects[allObjects["findable"] == 1]["r_au_median"].values,  vmin=0, vmax=5.0)
+                    allObjects[allObjects["findable"] == 1]["dtheta_y/dt_median"].values,
+                    s=0.1,
+                    c=allObjects[allObjects["findable"] == 1]["r_au_median"].values,
+                    vmin=0,
+                    vmax=5.0)
     cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
     ax.set_aspect("equal")
-    _plotGrid(ax, vxRange, vyRange)
+
+    if vxRange is not None and vyRange is not None:
+        _plotGrid(ax, vxRange, vyRange)
 
     # Add labels and text
     cb.set_label("r [AU]", size=10)
     ax.set_xlabel(r"Median $ d\theta_X / dt$ [Degrees Per Day]", size=10)
     ax.set_ylabel(r"Median $ d\theta_Y / dt$ [Degrees Per Day]", size=10)
-    ax.set_title(title)
-    ax.text(-0.38, -0.15, "Objects: {}".format(len(allObjects[allObjects["findable"] == 1])))
-    ax.text(-0.38, -0.18, "Objects Findable: {}".format(len(allObjects[in_zone_findable])), color="r")
-    ax.set_xlim(-0.4, 0.4)
-    ax.set_ylim(-0.2, 0.2)
+
+    ax.text(_setPercentage(ax.get_xlim(), 0.04), 
+        _setPercentage(ax.get_ylim(), 0.05), 
+        "Objects Findable: {}".format(len(allObjects[allObjects["findable"] == 1])))
+
+    if vxRange is not None and vyRange is not None:
+        ax.text(_setPercentage(ax.get_xlim(), 0.04), 
+                _setPercentage(ax.get_ylim(), 0.11), 
+                "Objects Findable in Grid: {}".format(len(allObjects[in_zone_findable])),
+                color="r")
     return fig, ax
 
-def plotClusteringAnalysis(allObjects,  vxRange=[-0.1, 0.1], vyRange=[-0.1, 0.1], title="Missed Objects"):
-   
-    in_zone_findable = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
-         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
-         & (allObjects["findable"] == 1))
+def plotProjectionVelocitiesFound(allObjects,
+                                  vxRange=None,
+                                  vyRange=None):
+    """
+    Plots objects that were found in the projection
+    space based on their median velocities and the
+    chosen velocity ranges.
     
-    in_zone_missed = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
-         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
-         & (allObjects["found"] == 0)
-         & (allObjects["findable"] == 1))
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame. Needs 'found' column to be populated,
+        as well as the median projection space velocities and the median
+        heliocentric distance.
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x.
+        [Default = None]
+    vyRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y.
+        [Default = None]
     
-    in_zone_found = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
+    Returns
+    -------
+    fig : `~matplotlib.figure.Figure` 
+        The matplotlib figure object.
+    ax : `~matplotlib.axes._subplots.AxesSubplot`
+        The matplotlib axes object. 
+    """
+    if vxRange is not None and vyRange is not None:
+        in_zone_found = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
          & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
          & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
          & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
          & (allObjects["found"] == 1))
-    
+
     fig, ax = plt.subplots(1, 1, dpi=600)
-    ax.errorbar(allObjects[allObjects["findable"] == 1]["dtheta_x/dt_median"].values, 
+    ax.errorbar(allObjects[allObjects["findable"] == 1]["dtheta_x/dt_median"].values,
                 allObjects[allObjects["findable"] == 1]["dtheta_y/dt_median"].values,
                 yerr=allObjects[allObjects["findable"] == 1]["dtheta_y/dt_sigma"].values,
                 xerr=allObjects[allObjects["findable"] == 1]["dtheta_x/dt_sigma"].values,
@@ -80,22 +142,224 @@ def plotClusteringAnalysis(allObjects,  vxRange=[-0.1, 0.1], vyRange=[-0.1, 0.1]
                 ms=0.01,
                 capsize=0.1,
                 elinewidth=0.1,
-                c="k", zorder=-1, alpha=0.5)
-    cm = ax.scatter(allObjects[in_zone_found]["dtheta_x/dt_median"].values, 
-               allObjects[in_zone_found]["dtheta_y/dt_median"].values,
-               s=0.1,
-               c=allObjects[in_zone_found]["r_au_median"].values,  vmin=0, vmax=5.0)
+                c="k", zorder=-1)
+    cm = ax.scatter(allObjects[allObjects["found"] == 1]["dtheta_x/dt_median"].values, 
+                    allObjects[allObjects["found"] == 1]["dtheta_y/dt_median"].values,
+                    s=0.1,
+                    c=allObjects[allObjects["found"] == 1]["r_au_median"].values,
+                    vmin=0,
+                    vmax=5.0)
     cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
     ax.set_aspect("equal")
-    _plotGrid(ax, vxRange, vyRange)
+
+    if vxRange is not None and vyRange is not None:
+        _plotGrid(ax, vxRange, vyRange)
 
     # Add labels and text
     cb.set_label("r [AU]", size=10)
     ax.set_xlabel(r"Median $ d\theta_X / dt$ [Degrees Per Day]", size=10)
     ax.set_ylabel(r"Median $ d\theta_Y / dt$ [Degrees Per Day]", size=10)
-    ax.set_title(title)
-    ax.text(-0.38, -0.15, "Objects: {}".format(len(allObjects[allObjects["findable"] == 1])))
-    ax.text(-0.38, -0.18, "Objects Found: {}".format(len(allObjects[in_zone_found])), color="g")
-    ax.set_xlim(-0.4, 0.4)
-    ax.set_ylim(-0.2, 0.2)
+
+    ax.text(_setPercentage(ax.get_xlim(), 0.04), 
+        _setPercentage(ax.get_ylim(), 0.05), 
+        "Objects Found: {}".format(len(allObjects[allObjects["found"] == 1])))
+
+    if vxRange is not None and vyRange is not None:
+        ax.text(_setPercentage(ax.get_xlim(), 0.04), 
+                _setPercentage(ax.get_ylim(), 0.11), 
+                "Objects Found in Grid: {}".format(len(allObjects[in_zone_found])), 
+                color="g")
+    return fig, ax
+
+def plotProjectionVelocitiesMissed(allObjects,
+                                  vxRange=None,
+                                  vyRange=None):
+    """
+    Plots objects that were missed in the projection
+    space based on their median velocities and the
+    chosen velocity ranges.
+    
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame. Needs 'found' and 'findable' column to be populated,
+        as well as the median projection space velocities and the median
+        heliocentric distance.
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x.
+        [Default = None]
+    vyRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y.
+        [Default = None]
+    
+    Returns
+    -------
+    fig : `~matplotlib.figure.Figure` 
+        The matplotlib figure object.
+    ax : `~matplotlib.axes._subplots.AxesSubplot`
+        The matplotlib axes object. 
+    """
+    if vxRange is not None and vyRange is not None:
+        in_zone_missed = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
+            & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
+            & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
+            & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
+            & (allObjects["found"] == 0)
+            & (allObjects["findable"] == 1))
+
+    fig, ax = plt.subplots(1, 1, dpi=600)
+    ax.errorbar(allObjects[allObjects["findable"] == 1]["dtheta_x/dt_median"].values,
+                allObjects[allObjects["findable"] == 1]["dtheta_y/dt_median"].values,
+                yerr=allObjects[allObjects["findable"] == 1]["dtheta_y/dt_sigma"].values,
+                xerr=allObjects[allObjects["findable"] == 1]["dtheta_x/dt_sigma"].values,
+                fmt="o",
+                ms=0.01,
+                capsize=0.1,
+                elinewidth=0.1,
+                c="k", zorder=-1)
+    cm = ax.scatter(allObjects[allObjects["missed"] == 1]["dtheta_x/dt_median"].values,
+                    allObjects[allObjects["missed"] == 1]["dtheta_y/dt_median"].values,
+                    s=0.1,
+                    c=allObjects[allObjects["missed"] == 1]["r_au_median"].values,
+                    vmin=0,
+                    vmax=5.0)
+    cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
+    ax.set_aspect("equal")
+
+    if vxRange is not None and vyRange is not None:
+        _plotGrid(ax, vxRange, vyRange)
+
+    # Add labels and text
+    cb.set_label("r [AU]", size=10)
+    ax.set_xlabel(r"Median $ d\theta_X / dt$ [Degrees Per Day]", size=10)
+    ax.set_ylabel(r"Median $ d\theta_Y / dt$ [Degrees Per Day]", size=10)
+
+    ax.text(_setPercentage(ax.get_xlim(), 0.04), 
+        _setPercentage(ax.get_ylim(), 0.05), 
+        "Objects Missed: {}".format(len(allObjects[allObjects["missed"] == 1])))
+
+    if vxRange is not None and vyRange is not None:
+        ax.text(_setPercentage(ax.get_xlim(), 0.04), 
+                _setPercentage(ax.get_ylim(), 0.11), 
+                "Objects Missed in Grid: {}".format(len(allObjects[in_zone_missed])),
+                color="g")
+    return fig, ax
+
+def plotFindableOrbits(allObjects, 
+                       orbits, 
+                       columnMapping=Config.columnMapping):
+    """
+    Plots orbits that should be findable in semi-major axis, inclination 
+    and eccentrity space.
+
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame. Needs 'findable' column to be populated.
+    orbits : `~pandas.DataFrame`
+        Orbit DataFrame, should contain the orbits for the objects in 
+        the allObjects DataFrame.
+    columnMapping : dict, optional
+        Column name mapping of orbits DataFrame to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+    
+    Returns
+    -------
+    fig : `~matplotlib.figure.Figure` 
+        The matplotlib figure object.
+    ax : `~matplotlib.axes._subplots.AxesSubplot`
+        The matplotlib axes object. 
+    """
+    findable = orbits[orbits[columnMapping["name"]].isin(allObjects[allObjects["findable"] == 1][columnMapping["name"]])]
+    fig, ax = plotScatterContour(findable, 
+                                 columnMapping["a_au"],
+                                 columnMapping["i_deg"],
+                                 columnMapping["e"],
+                                 plotCounts=False, 
+                                 logCounts=True, 
+                                 countLevels=4, 
+                                 mask=None,
+                                 xLabel="a [AU]",
+                                 yLabel="i [Degrees]",
+                                 zLabel="e",
+                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1})
+    return fig, ax
+    
+    
+def plotFoundOrbits(allObjects, 
+                    orbits, 
+                    columnMapping=Config.columnMapping):
+    """
+    Plots orbits that have been found in semi-major axis, inclination 
+    and eccentrity space.
+    
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame. Needs 'found' column to be populated.
+    orbits : `~pandas.DataFrame`
+        Orbit DataFrame, should contain the orbits for the objects in 
+        the allObjects DataFrame.
+    columnMapping : dict, optional
+        Column name mapping of orbits DataFrame to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+    
+    Returns
+    -------
+    fig : `~matplotlib.figure.Figure` 
+        The matplotlib figure object.
+    ax : `~matplotlib.axes._subplots.AxesSubplot`
+        The matplotlib axes object. 
+    """
+    found = orbits[orbits[columnMapping["name"]].isin(allObjects[allObjects["found"] == 1][columnMapping["name"]])]
+    fig, ax = plotScatterContour(found, 
+                                 columnMapping["a_au"],
+                                 columnMapping["i_deg"],
+                                 columnMapping["e"],
+                                 plotCounts=False, 
+                                 logCounts=True, 
+                                 countLevels=4, 
+                                 mask=None,
+                                 xLabel="a [AU]",
+                                 yLabel="i [Degrees]",
+                                 zLabel="e",
+                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1})
+    return fig, ax
+    
+def plotMissedOrbits(allObjects, orbits, columnMapping=Config.columnMapping):
+    """
+    Plots orbits that have been missed (but were findable) in semi-major axis, inclination 
+    and eccentrity space.
+    
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame. Needs 'found' and 'findable' column to be populated.
+    orbits : `~pandas.DataFrame`
+        Orbit DataFrame, should contain the orbits for the objects in 
+        the allObjects DataFrame.
+    columnMapping : dict, optional
+        Column name mapping of orbits DataFrame to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+    
+    Returns
+    -------
+    fig : `~matplotlib.figure.Figure` 
+        The matplotlib figure object.
+    ax : `~matplotlib.axes._subplots.AxesSubplot`
+        The matplotlib axes object. 
+    """
+    missed = orbits[orbits[columnMapping["name"]].isin(allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)][columnMapping["name"]])]
+    fig, ax = plotScatterContour(missed, 
+                                 columnMapping["a_au"],
+                                 columnMapping["i_deg"],
+                                 columnMapping["e"],
+                                 plotCounts=False, 
+                                 logCounts=True, 
+                                 countLevels=4, 
+                                 mask=None,
+                                 xLabel="a [AU]",
+                                 yLabel="i [Degrees]",
+                                 zLabel="e",
+                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1})
     return fig, ax
