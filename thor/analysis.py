@@ -40,6 +40,10 @@ def calcLinkageEfficiency(allObjects,
     efficiency : float
         The number of objects found over the number findable as a fraction. 
     """
+    if verbose == True:
+        print("THOR: calcLinkageEfficiency")
+        print("-------------------------")
+        
     # Find the objects that should have been found with the defined velocity ranges
     in_zone_findable = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
          & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
@@ -71,7 +75,7 @@ def calcLinkageEfficiency(allObjects,
         print("Findable objects: {}".format(findable))
         print("Found objects: {}".format(found))
         print("Missed objects: {}".format(missed))
-        print("Efficiency [%]: {.f2}".format(efficiency * 100))
+        print("Efficiency [%]: {}".format(efficiency * 100))
     return efficiency
 
 def analyzeObservations(observations,
