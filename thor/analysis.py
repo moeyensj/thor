@@ -5,11 +5,117 @@ import pandas as pd
 
 from .config import Config
 
-__all__ = ["calcLinkageEfficiency",
+__all__ = ["calcLinkageFindable",
+           "calcLinkageFound",
+           "calcLinkageMissed",
+           "calcLinkageEfficiency",
            "analyzeObservations",
            "analyzeVisit",
            "analyzeProjections",
            "analyzeClusters"]
+
+def calcLinkageFindable(allObjects, 
+                        vxRange=[-0.1, 0.1], 
+                        vyRange=[-0.1, 0.1]):
+    """
+    Returns a slice of the allObjects DataFrame with all objects
+    that are findable inside the velocity ranges.
+    
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        The allObjects DataFrame. Requires analyzeProjections
+        to have been run on the DataFrame. 
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x. 
+        Will not be used if vxValues are specified. 
+        [Default = [-0.1, 0.1]]
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y. 
+        Will not be used if vyValues are specified. 
+        [Default = [-0.1, 0.1]]
+    
+    Returns
+    -------
+    allObjects[findable] : `~pandas.DataFrame`
+        The allObjects DataFrame filtered with only the
+        findable objects in the velocity ranges.
+    """
+    in_zone_findable = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
+         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
+         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
+         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
+         & (allObjects["findable"] == 1))
+    return allObjects[in_zone_findable]
+
+def calcLinkageFound(allObjects, 
+                     vxRange=[-0.1, 0.1], 
+                     vyRange=[-0.1, 0.1]):
+    """
+    Returns a slice of the allObjects DataFrame with all objects
+    that have been found inside the velocity ranges.
+    
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        The allObjects DataFrame. Requires analyzeClusters
+        to have been run on the DataFrame. 
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x. 
+        Will not be used if vxValues are specified. 
+        [Default = [-0.1, 0.1]]
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y. 
+        Will not be used if vyValues are specified. 
+        [Default = [-0.1, 0.1]]
+    
+    Returns
+    -------
+    allObjects[found] : `~pandas.DataFrame`
+        The allObjects DataFrame filtered with only the
+        found objects inside the velocity ranges.
+    """
+    in_zone_found = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
+         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
+         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
+         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
+         & (allObjects["found"] == 1))
+    return allObjects[in_zone_found]
+
+def calcLinkageMissed(allObjects, 
+                      vxRange=[-0.1, 0.1], 
+                      vyRange=[-0.1, 0.1]):
+    """
+    Returns a slice of the allObjects DataFrame with all objects
+    that were missed inside the velocity ranges.
+    
+    Parameters
+    ----------
+    allObjects : `~pandas.DataFrame`
+        The allObjects DataFrame. Requires analyzeClusters
+        to have been run on the DataFrame. 
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x. 
+        Will not be used if vxValues are specified. 
+        [Default = [-0.1, 0.1]]
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y. 
+        Will not be used if vyValues are specified. 
+        [Default = [-0.1, 0.1]]
+    
+    Returns
+    -------
+    allObjects[missed] : `~pandas.DataFrame`
+        The allObjects DataFrame filtered with only
+        missed objects inside the velocity ranges.
+    """
+    in_zone_missed = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
+         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
+         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
+         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
+         & (allObjects["found"] == 0)
+         & (allObjects["findable"] == 1))
+    return allObjects[in_zone_missed]
 
 def calcLinkageEfficiency(allObjects, 
                           vxRange=[-0.1, 0.1], 
@@ -45,30 +151,17 @@ def calcLinkageEfficiency(allObjects,
         print("-------------------------")
         
     # Find the objects that should have been found with the defined velocity ranges
-    in_zone_findable = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
-         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
-         & (allObjects["findable"] == 1))
-    findable = len(allObjects[in_zone_findable])
+    in_zone_findable = calcLinkageFindable(allObjects, vxRange=vxRange, vyRange=vyRange)
+    findable = len(in_zone_findable)
     
     # Find the objects that were missed
-    in_zone_missed = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
-         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
-         & (allObjects["found"] == 0)
-         & (allObjects["findable"] == 1))
-    missed = len(allObjects[in_zone_missed])
+    in_zone_missed = calcLinkageMissed(allObjects, vxRange=vxRange, vyRange=vyRange)
+    missed = len(in_zone_missed)
     
     # Find the objects that were found
-    in_zone_found = ((allObjects["dtheta_x/dt_median"] >= vxRange[0]) 
-         & (allObjects["dtheta_x/dt_median"] <= vxRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] <= vyRange[1]) 
-         & (allObjects["dtheta_y/dt_median"] >= vyRange[0])
-         & (allObjects["found"] == 1))
-    found = len(allObjects[in_zone_found])
-    
+    in_zone_found = calcLinkageFound(allObjects, vxRange=vxRange, vyRange=vyRange)
+    found = len(in_zone_found)
+
     efficiency = found / findable
     
     if verbose == True:
@@ -251,7 +344,6 @@ def analyzeVisit(observations,
 
 def analyzeProjections(observations,
                        minSamples=5, 
-                       saveFiles=None,
                        verbose=True,
                        columnMapping=Config.columnMapping):
     """
@@ -267,9 +359,6 @@ def analyzeProjections(observations,
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
-    saveFiles : {None, list}, optional
-        List of paths to save DataFrames to ([allClusters, clusterMembers, allObjects, summary]) or None. 
-        [Default = None]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
