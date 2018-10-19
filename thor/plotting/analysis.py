@@ -9,13 +9,16 @@ __all__ = ["_plotGrid",
            "plotProjectionVelocitiesFindable",
            "plotProjectionVelocitiesFound",
            "plotProjectionVelocitiesMissed",
-           "plotFindableOrbits",
-           "plotFoundOrbits",
-           "plotMissedOrbits"]
+           "plotOrbitsFindable",
+           "plotOrbitsFound",
+           "plotOrbitsMissed"]
 
 def _plotGrid(ax, 
               vxRange, 
               vyRange):
+    """
+    Helper function that plots a rectangular shape.
+    """
     rect = patches.Rectangle((vxRange[0], vyRange[0]),
                              vxRange[1]-vxRange[0],
                              vyRange[1]-vyRange[0], 
@@ -217,10 +220,10 @@ def plotProjectionVelocitiesMissed(allObjects,
                 capsize=0.1,
                 elinewidth=0.1,
                 c="k", zorder=-1)
-    cm = ax.scatter(allObjects[allObjects["missed"] == 1]["dtheta_x/dt_median"].values,
-                    allObjects[allObjects["missed"] == 1]["dtheta_y/dt_median"].values,
+    cm = ax.scatter(allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["dtheta_x/dt_median"].values,
+                    allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["dtheta_y/dt_median"].values,
                     s=0.1,
-                    c=allObjects[allObjects["missed"] == 1]["r_au_median"].values,
+                    c=allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["r_au_median"].values,
                     vmin=0,
                     vmax=5.0)
     cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
@@ -236,16 +239,16 @@ def plotProjectionVelocitiesMissed(allObjects,
 
     ax.text(_setPercentage(ax.get_xlim(), 0.04), 
         _setPercentage(ax.get_ylim(), 0.05), 
-        "Objects Missed: {}".format(len(allObjects[allObjects["missed"] == 1])))
+        "Objects Missed: {}".format(len(allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)])))
 
     if vxRange is not None and vyRange is not None:
         ax.text(_setPercentage(ax.get_xlim(), 0.04), 
                 _setPercentage(ax.get_ylim(), 0.11), 
                 "Objects Missed in Grid: {}".format(len(allObjects[in_zone_missed])),
-                color="g")
+                color="r")
     return fig, ax
 
-def plotFindableOrbits(allObjects, 
+def plotOrbitsFindable(allObjects, 
                        orbits, 
                        columnMapping=Config.columnMapping):
     """
@@ -286,7 +289,7 @@ def plotFindableOrbits(allObjects,
     return fig, ax
     
     
-def plotFoundOrbits(allObjects, 
+def plotOrbitsFound(allObjects, 
                     orbits, 
                     columnMapping=Config.columnMapping):
     """
@@ -326,7 +329,7 @@ def plotFoundOrbits(allObjects,
                                  scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1})
     return fig, ax
     
-def plotMissedOrbits(allObjects, orbits, columnMapping=Config.columnMapping):
+def plotOrbitsMissed(allObjects, orbits, columnMapping=Config.columnMapping):
     """
     Plots orbits that have been missed (but were findable) in semi-major axis, inclination 
     and eccentrity space.
