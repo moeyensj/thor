@@ -86,7 +86,7 @@ def plotObservations(dataframe,
         plotly.offline.iplot(fig)
    
     else:
-        fig, ax = plt.subplots(1, 1, dpi=200)
+        fig, ax = plt.subplots(1, 1, dpi=600)
         if colorByObject is True:
             a, b = np.unique(dataframe[columnMapping["name"]].values, return_inverse=True)
             hex_map = np.array(sns.color_palette("Accent", len(a)).as_hex())
