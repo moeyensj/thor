@@ -68,25 +68,25 @@ def findExposureTimes(observations,
     # of nights to use and their exposure times
     times_nights = observations[observations[columnMapping["exp_mjd"]] > mjd][[columnMapping["exp_mjd"], columnMapping["night"]]]
     times_nights.sort_values(by=columnMapping["exp_mjd"], inplace=True)
-    nightStart = times_nights[times_nights[columnMapping["exp_mjd"]] >= mjd]["night"].values[0]
+    nightStart = times_nights[times_nights[columnMapping["exp_mjd"]] >= mjd][columnMapping["night"]].values[0]
     times = np.unique(times_nights[(times_nights[columnMapping["night"]] >= nightStart) 
                          & (times_nights[columnMapping["night"]] <= nightStart + numNights)][columnMapping["exp_mjd"]].values)
     
     eph = propagateTestParticle([*r, *v], mjd, times)
+    eph.rename(columns={"RA_deg": "RA_deg_orbit", "Dec_deg": "Dec_deg_orbit"}, inplace=True)
     
     df = pd.merge(observations[[columnMapping["obs_id"],
                                 columnMapping["exp_mjd"], 
                                 columnMapping["RA_deg"],
                                 columnMapping["Dec_deg"]]],
-                  eph[["mjd", "RA_deg", "Dec_deg"]], 
+                  eph[["mjd", "RA_deg_orbit", "Dec_deg_orbit"]], 
                   how='inner', 
                   left_on=columnMapping["exp_mjd"], 
-                  right_on="mjd",
-                  suffixes=["_obs", "_orbit"])
+                  right_on="mjd")
 
-    dRA = df[columnMapping["RA_deg"] + "_obs"] - df["RA_deg_orbit"]
-    dDec = df[columnMapping["Dec_deg"] + "_obs"] - df["Dec_deg_orbit"]
-    dec = np.mean(df[[columnMapping["Dec_deg"] + "_obs", "Dec_deg_orbit"]].values, axis=1)
+    dRA = df[columnMapping["RA_deg"]] - df["RA_deg_orbit"]
+    dDec = df[columnMapping["Dec_deg"]] - df["Dec_deg_orbit"]
+    dec = np.mean(df[[columnMapping["Dec_deg"], "Dec_deg_orbit"]].values, axis=1)
     d = np.sqrt((dRA * np.cos(np.radians(dec)))**2 + dDec**2)
     indexes = np.where(d <= dMax)[0]
     mjds = np.unique(df["exp_mjd"].values[indexes])
@@ -195,6 +195,6 @@ def buildCellForVisit(observations,
     center = visit[[columnMapping["field_RA_deg"], columnMapping["field_Dec_deg"]]].values[0]
     mjd = visit[columnMapping["exp_mjd"]].values[0]
     cell = Cell(center, mjd, observations, shape=shape, area=area)
-    cell.getObservations()
+    cell.getObservations(columnMapping=columnMapping)
     return cell
     
