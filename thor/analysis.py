@@ -409,6 +409,14 @@ def analyzeProjections(observations,
     allObjects["num_obs"] = num_obs_per_object
     allObjects.loc[allObjects[columnMapping["name"]].isin(findable), "findable"] = 1
     num_findable = len(allObjects[allObjects["findable"] == 1])
+    
+    calc_r = False
+    calc_Delta = False
+    
+    if columnMapping["r_au"] in observations.columns:
+        calc_r = True
+    if columnMapping["Delta_au"] in observations.columns:
+        calc_Delta = False
 
     for obj in findable:
         dets = observations[observations[columnMapping["name"]].isin([obj])]
@@ -417,13 +425,17 @@ def analyzeProjections(observations,
         dy = dets["theta_y_deg"].values[1:] - dets["theta_y_deg"].values[0]
         allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_x/dt_median"]] = np.median(dx/dt)
         allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_y/dt_median"]] = np.median(dy/dt)
-        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["Delta_au_median"]] = np.median(dets[columnMapping["Delta_au"]].values)
-        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["r_au_median"]] = np.median(dets[columnMapping["r_au"]].values)
         allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_x/dt_sigma"]] = np.std(dx/dt)
         allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["dtheta_y/dt_sigma"]] = np.std(dy/dt)
-        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["r_au_sigma"]] = np.std(dets[columnMapping["r_au"]].values)
-        allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["Delta_au_sigma"]] = np.std(dets[columnMapping["Delta_au"]].values)
-
+        
+        if calc_r == True:
+            allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["r_au_median"]] = np.median(dets[columnMapping["r_au"]].values)
+            allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["r_au_sigma"]] = np.std(dets[columnMapping["r_au"]].values)
+        
+        if calc_Delta == True:
+            allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["Delta_au_median"]] = np.median(dets[columnMapping["Delta_au"]].values)
+            allObjects.loc[allObjects[columnMapping["name"]].isin([obj]), ["Delta_au_sigma"]] = np.std(dets[columnMapping["Delta_au"]].values)
+        
     allObjects.loc[allObjects["findable"] != 1, ["findable"]] = 0
     
     # Prepare summary DataFrame
@@ -546,9 +558,11 @@ def analyzeClusters(observations,
     allClusters["num_fields"] = unique_fields_per_cluster.sort_index().values
 
     # Isolate pure clusters
-    single_member_clusters = cluster_designation[cluster_designation["cluster_id"].isin(allClusters[allClusters["num_members"] == 1]["cluster_id"])]
-    allClusters.loc[allClusters["cluster_id"].isin(single_member_clusters["cluster_id"]), "linked_object"] = single_member_clusters[columnMapping["name"]].values
-    allClusters.loc[(allClusters["linked_object"] != "NS") & (allClusters["linked_object"].notna()), "pure"] = 1
+    single_member_clusters = cluster_designation[cluster_designation["cluster_id"].isin(allClusters[allClusters["num_members"] == 1]["cluster_id"].values)]
+    
+    if len(single_member_clusters) != 0:
+        allClusters.loc[allClusters["cluster_id"].isin(single_member_clusters["cluster_id"]), "linked_object"] = single_member_clusters[columnMapping["name"]].values
+        allClusters.loc[(allClusters["linked_object"] != "NS") & (allClusters["linked_object"].notna()), "pure"] = 1
 
     # Grab all clusters that are not pure, calculate contamination and see if we can accept them
     observations_temp = observations.rename(columns={columnMapping["obs_id"]: "obs_id"})
@@ -556,7 +570,7 @@ def analyzeClusters(observations,
     cluster_designation = observations_temp[["obs_id", columnMapping["name"]]].merge(
         clusterMembers[~clusterMembers["cluster_id"].isin(allClusters[allClusters["pure"] == 1]["cluster_id"].values)], on="obs_id")
     cluster_designation.drop(columns="obs_id", inplace=True)
-    cluster_designation = cluster_designation[["cluster_id", "designation"]].groupby(cluster_designation[["cluster_id", "designation"]].columns.tolist(), as_index=False).size()
+    cluster_designation = cluster_designation[["cluster_id", columnMapping["name"]]].groupby(cluster_designation[["cluster_id", columnMapping["name"]]].columns.tolist(), as_index=False).size()
     cluster_designation = cluster_designation.reset_index()
     cluster_designation.rename(columns={0: "num_obs"}, inplace=True)
     cluster_designation.sort_values(by=["cluster_id", "num_obs"], inplace=True)
@@ -568,14 +582,20 @@ def analyzeClusters(observations,
     partial_clusters = cluster_designation[(cluster_designation["num_obs"] >= minSamples) 
                                             & (cluster_designation["contamination"] <= contaminationThreshold)
                                             & (cluster_designation[columnMapping["name"]] != "NS")]
+    
+    if len(partial_clusters) != 0:
 
-    allClusters.loc[allClusters["cluster_id"].isin(partial_clusters["cluster_id"]), "linked_object"] = partial_clusters[columnMapping["name"]].values
-    allClusters.loc[allClusters["cluster_id"].isin(partial_clusters["cluster_id"]), "partial"] = 1
-    allClusters.loc[(allClusters["pure"] != 1) & (allClusters["partial"] != 1), "false"] = 1
+        allClusters.loc[allClusters["cluster_id"].isin(partial_clusters["cluster_id"]), "linked_object"] = partial_clusters[columnMapping["name"]].values
+        allClusters.loc[allClusters["cluster_id"].isin(partial_clusters["cluster_id"]), "partial"] = 1
+        allClusters.loc[(allClusters["pure"] != 1) & (allClusters["partial"] != 1), "false"] = 1
 
     # Update allObjects DataFrame
-    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["pure"] == 1]["linked_object"]), "found_pure"] = 1
-    allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["partial"] == 1]["linked_object"]), "found_partial"] = 1
+    if len(single_member_clusters) != 0:
+        allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["pure"] == 1]["linked_object"]), "found_pure"] = 1
+    
+    if len(partial_clusters) != 0:
+        allObjects.loc[allObjects[columnMapping["name"]].isin(allClusters[allClusters["partial"] == 1]["linked_object"]), "found_partial"] = 1
+    
     allObjects.loc[(allObjects["found_pure"] == 1) | (allObjects["found_partial"] == 1), "found"] = 1
     allObjects.fillna(value=0, inplace=True)
 
