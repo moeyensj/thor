@@ -83,7 +83,7 @@ def rangeAndShift(observations,
     # If initial doesn't have observations loaded,
     # get them
     if cell.observations is None:
-        cell.getObservations()
+        cell.getObservations(columnMapping=columnMapping)
         
     time_start = time.time()
     if verbose == True:
@@ -102,10 +102,10 @@ def rangeAndShift(observations,
     particle.prepare(verbose=verbose)
     
     if mjds == "auto":
-        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, numNights=numNights, dMax=dMax, verbose=verbose)
+        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, numNights=numNights, dMax=dMax, columnMapping=columnMapping, verbose=verbose)
         
     # Apply tranformations to observations
-    particle.apply(cell, verbose=verbose)
+    particle.apply(cell, columnMapping=columnMapping, verbose=verbose)
     
     # Add initial cell and particle to lists
     cells = [cell]
@@ -173,7 +173,7 @@ def rangeAndShift(observations,
                        dataframe=oldCell.dataframe)
         
         # Get the observations in that cell
-        newCell.getObservations()
+        newCell.getObservations(columnMapping=columnMapping)
         
         # Define new particle at new coordinates
         newParticle = TestParticle(new_coords_eq_ang,
@@ -186,7 +186,7 @@ def rangeAndShift(observations,
         newParticle.prepare(verbose=verbose)
        
         # Apply tranformations to new observations
-        newParticle.apply(newCell, verbose=verbose)
+        newParticle.apply(newCell, verbose=verbose, columnMapping=columnMapping)
         
         if includeEquatorialProjection is True:
             newCell.observations["theta_x_eq_deg"] = newCell.observations[columnMapping["RA_deg"]] - newParticle.coords_eq_ang[0]
@@ -656,8 +656,8 @@ def runRangeAndShiftOnVisit(observations,
         print("Cell shape: {} ".format(cellShape))
         print("")
 
-    small_cell = buildCellForVisit(observations, visitId, area=searchArea, shape=searchShape)
-    small_cell.getObservations()
+    small_cell = buildCellForVisit(observations, visitId, area=searchArea, shape=searchShape, columnMapping=columnMapping)
+    small_cell.getObservations(columnMapping=columnMapping)
     if useAverageObject is True:
         avg_obj = findAverageObject(small_cell.observations)
         if avg_obj == -1:
@@ -680,7 +680,8 @@ def runRangeAndShiftOnVisit(observations,
                                   mjds="auto", 
                                   dMax=dMax, 
                                   numNights=numNights,
-                                  verbose=verbose)
+                                  verbose=verbose,
+                                  columnMapping=columnMapping)
     
     if saveFiles is not None:
         if useAverageObject is True and avg_obj != -1:
