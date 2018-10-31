@@ -48,6 +48,8 @@ def propagateTestParticle(elements,
         Observatory from which to measure ephemerides.
         [Default = `~thor.Config.oorbObservatoryCode`]
     """
+    if os.environ.get("OORB_DATA") == None:
+        os.environ["OORB_DATA"] = os.path.join(os.environ["CONDA_PREFIX"], "share/openorb")
     # Prepare pyoorb
     ephfile = os.path.join(os.getenv('OORB_DATA'), 'de430.dat')
     oo.pyoorb.oorb_init(ephfile)
