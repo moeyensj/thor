@@ -1,3 +1,5 @@
+import numpy as np
+
 __all__ = ["Config"]
 
 class Config:
@@ -157,6 +159,10 @@ class Config:
         "theta_x_deg",
         "theta_y_deg"
     ]
+    
+    unknownIDs = [np.NaN]
+    
+    falsePositiveIDs = ["NS"]
     
     # MUST BE SET ACCORDINGLY
     ### TODO: have code search for oorb directory

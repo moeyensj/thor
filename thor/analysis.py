@@ -11,7 +11,6 @@ __all__ = ["__analyzeLinkages",
            "calcLinkageMissed",
            "calcLinkageEfficiency",
            "analyzeObservations",
-           "analyzeVisit",
            "analyzeProjections",
            "analyzeClusters"]
 
@@ -364,7 +363,8 @@ def calcLinkageEfficiency(allObjects,
 
 def analyzeObservations(observations,
                         minSamples=5, 
-                        saveFiles=None,
+                        unknownIDs=Config.unknownIDs,
+                        falsePositiveIDs=Config.falsePositiveIDs,
                         verbose=True,
                         columnMapping=Config.columnMapping):
     """
@@ -380,9 +380,12 @@ def analyzeObservations(observations,
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
-    saveFiles : {None, list}, optional
-        List of paths to save DataFrames to ([allClusters, clusterMembers, allObjects, summary]) or None. 
-        [Default = None]
+    unknownIDs : list, optional
+        Values in the name column for unknown observations.
+        [Default = `~thor.Config.unknownIDs`]
+    falsePositiveIDs : list, optional
+        Names of false positive IDs.
+        [Default = `~thor.Config.falsePositiveIDs`]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -404,12 +407,13 @@ def analyzeObservations(observations,
         print("Analyzing observations...")
     
     # Count number of noise detections, real object detections, the number of unique objects
-    num_noise_obs = len(observations[observations[columnMapping["name"]] == "NS"])
-    num_object_obs = len(observations[observations[columnMapping["name"]] != "NS"])
-    unique_objects = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].unique()
+    num_noise_obs = len(observations[observations[columnMapping["name"]].isin(falsePositiveIDs)])
+    num_unlinked_obs = len(observations[observations[columnMapping["name"]].isin(unknownIDs)])
+    num_object_obs = len(observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)])
+    unique_objects = observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)][columnMapping["name"]].unique()
     num_unique_objects = len(unique_objects)
-    num_obs_per_object = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().values
-    objects_num_obs_descending = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().index.values
+    num_obs_per_object = observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)][columnMapping["name"]].value_counts().values
+    objects_num_obs_descending = observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)][columnMapping["name"]].value_counts().index.values
     findable = objects_num_obs_descending[np.where(num_obs_per_object >= minSamples)[0]]
     
     # Populate allObjects DataFrame
@@ -424,22 +428,31 @@ def analyzeObservations(observations,
     allObjects.loc[allObjects[columnMapping["name"]].isin(findable), "findable"] = 1
     allObjects.loc[allObjects["findable"] != 1, ["findable"]] = 0
     num_findable = len(allObjects[allObjects["findable"] == 1])
+    percent_known = num_object_obs / len(observations) * 100
+    percent_unknown = num_unlinked_obs / len(observations) * 100
+    percent_false_positive = num_noise_obs / len(observations) * 100
     
     # Prepare summary DataFrame
     summary = pd.DataFrame({
-        "num_observations_object": num_object_obs,
-        "num_observations_noise": num_noise_obs,
-        "obs_contamination" : num_noise_obs / len(observations) * 100,
-        "unique_objects" : num_unique_objects,
-        "unique_objects_findable" : num_findable}, index=[0]) 
+        "unique_known_objects" : num_unique_objects,
+        "unique_known_objects_findable" : num_findable,
+        "num_known_object_observations": num_object_obs,
+        "num_unknown_object_observations": num_unlinked_obs,
+        "num_false_positive_observations": num_noise_obs,
+        "percent_known_object_observations": percent_known,
+        "percent_unknown_object_observations": percent_unknown,
+        "percent_false_positive_observations": percent_false_positive}, index=[0]) 
     
     time_end = time.time()
     if verbose == True:
-        print("Object observations: {}".format(num_object_obs))
-        print("Noise observations: {}".format(num_noise_obs))
-        print("Observation contamination (%): {}".format(num_noise_obs / len(observations) * 100))
-        print("Unique objects: {}".format(num_unique_objects))
-        print("Unique objects with at least {} detections: {}".format(minSamples, num_findable))
+        print("Known object observations: {}".format(num_object_obs))
+        print("Unknown object observations: {}".format(num_unlinked_obs))
+        print("False positive observations: {}".format(num_noise_obs))
+        print("Percent known object observations (%): {:1.3f}".format(percent_known))
+        print("Percent unkown object observations (%): {:1.3f}".format(percent_unknown))
+        print("Percent false positive observations (%): {:1.3f}".format(percent_false_positive))
+        print("Unique known objects: {}".format(num_unique_objects))
+        print("Unique known objects with at least {} detections: {}".format(minSamples, num_findable))
         print("") 
         print("Total time in seconds: {}".format(time_end - time_start))
         print("-------------------------")
@@ -447,94 +460,11 @@ def analyzeObservations(observations,
         
     return allObjects, summary
 
-def analyzeVisit(observations,
-                 visitId, 
-                 minSamples=5, 
-                 verbose=True,
-                 columnMapping=Config.columnMapping):
-    """
-    Count the number of objects that should be findable in the 
-    survey that exist in the visit. Also calculate some visit-level
-    statistics. 
-    
-    Parameters
-    ----------
-    observations : `~pandas.DataFrame`
-        DataFrame containing post-range and shift observations.
-    minSamples : int, optional
-        The number of samples (or total weight) in a neighborhood for a 
-        point to be considered as a core point. This includes the point itself.
-        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
-        [Default = 5]
-    verbose : bool, optional
-        Print progress statements? 
-        [Default = True]
-    columnMapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
-    
-    Returns
-    -------
-    allObjects : `~pandas.DataFrame`
-        Object summary DataFrame.
-    summary : `~pandas.DataFrame`
-        Overall summary DataFrame. 
-    """
-    time_start = time.time()
-    if verbose == True:
-        print("THOR: analyzeVisit")
-        print("-------------------------")
-        print("Analyzing visit {}...".format(visitId))
-        
-    visit = observations[observations[columnMapping["visit_id"]] == visitId]
-    
-    # Count number of noise detections, real object detections, the number of unique objects
-    num_noise_obs = len(visit[visit[columnMapping["name"]] == "NS"])
-    num_object_obs = len(visit[visit[columnMapping["name"]] != "NS"])
-    unique_objects = visit[visit[columnMapping["name"]] != "NS"][columnMapping["name"]].unique()
-    num_unique_objects = len(unique_objects)
-    num_obs_per_object = observations[(observations[columnMapping["name"]] != "NS") & (observations[columnMapping["name"]].isin(unique_objects))][columnMapping["name"]].value_counts().values
-    objects_num_obs_descending = observations[(observations[columnMapping["name"]] != "NS") & (observations[columnMapping["name"]].isin(unique_objects))][columnMapping["name"]].value_counts().index.values
-    findable = objects_num_obs_descending[np.where(num_obs_per_object >= minSamples)[0]]
-    
-    # Populate allObjects DataFrame
-    allObjects = pd.DataFrame(columns=[
-        columnMapping["name"], 
-        "num_obs", 
-        "findable",
-        "found"])
-    
-    allObjects[columnMapping["name"]] = objects_num_obs_descending
-    allObjects["num_obs"] = num_obs_per_object
-    allObjects.loc[allObjects[columnMapping["name"]].isin(findable), "findable"] = 1
-    allObjects.loc[allObjects["findable"] != 1, ["findable"]] = 0
-    num_findable = len(allObjects[allObjects["findable"] == 1])
-    
-    # Prepare summary DataFrame
-    summary = pd.DataFrame({
-        "visit_id": visitId,
-        "num_observations_object": num_object_obs,
-        "num_observations_noise": num_noise_obs,
-        "obs_contamination" : num_noise_obs / len(visit) * 100,
-        "unique_objects" : num_unique_objects,
-        "unique_objects_findable" : num_findable}, index=[0]) 
-    
-    time_end = time.time()
-    if verbose == True:
-        print("Object observations in visit: {}".format(num_object_obs))
-        print("Noise observations in visit: {}".format(num_noise_obs))
-        print("Observation contamination (%): {}".format(num_noise_obs / len(visit) * 100))
-        print("Unique objects in visit: {}".format(num_unique_objects))
-        print("Unique objects with at least {} detections in survey: {}".format(minSamples, num_findable))
-        print("") 
-        print("Total time in seconds: {}".format(time_end - time_start))
-        print("-------------------------")
-        print("")
-        
-    return allObjects, summary
 
 def analyzeProjections(observations,
                        minSamples=5, 
+                       unknownIDs=Config.unknownIDs,
+                       falsePositiveIDs=Config.falsePositiveIDs,
                        verbose=True,
                        columnMapping=Config.columnMapping):
     """
@@ -550,6 +480,12 @@ def analyzeProjections(observations,
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
+    unknownIDs : list, optional
+        Values in the name column for unknown observations.
+        [Default = `~thor.Config.unknownIDs`]
+    falsePositiveIDs : list, optional
+        Names of false positive IDs.
+        [Default = `~thor.Config.falsePositiveIDs`]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -571,12 +507,13 @@ def analyzeProjections(observations,
         print("Analyzing projections...")
     
     # Count number of noise detections, real object detections, the number of unique objects
-    num_noise_obs = len(observations[observations[columnMapping["name"]] == "NS"])
-    num_object_obs = len(observations[observations[columnMapping["name"]] != "NS"])
-    unique_objects = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].unique()
+    num_noise_obs = len(observations[observations[columnMapping["name"]].isin(falsePositiveIDs)])
+    num_unlinked_obs = len(observations[observations[columnMapping["name"]].isin(unknownIDs)])
+    num_object_obs = len(observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)])
+    unique_objects = observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)][columnMapping["name"]].unique()
     num_unique_objects = len(unique_objects)
-    num_obs_per_object = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().values
-    objects_num_obs_descending = observations[observations[columnMapping["name"]] != "NS"][columnMapping["name"]].value_counts().index.values
+    num_obs_per_object = observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)][columnMapping["name"]].value_counts().values
+    objects_num_obs_descending = observations[~observations[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs)][columnMapping["name"]].value_counts().index.values
     findable = objects_num_obs_descending[np.where(num_obs_per_object >= minSamples)[0]]
     
     # Populate allObjects DataFrame
@@ -599,7 +536,11 @@ def analyzeProjections(observations,
     allObjects[columnMapping["name"]] = objects_num_obs_descending
     allObjects["num_obs"] = num_obs_per_object
     allObjects.loc[allObjects[columnMapping["name"]].isin(findable), "findable"] = 1
+    allObjects.loc[allObjects["findable"] != 1, ["findable"]] = 0
     num_findable = len(allObjects[allObjects["findable"] == 1])
+    percent_known = num_object_obs / len(observations) * 100
+    percent_unknown = num_unlinked_obs / len(observations) * 100
+    percent_false_positive = num_noise_obs / len(observations) * 100
     
     calc_r = False
     calc_Delta = False
@@ -607,7 +548,7 @@ def analyzeProjections(observations,
     if columnMapping["r_au"] in observations.columns:
         calc_r = True
     if columnMapping["Delta_au"] in observations.columns:
-        calc_Delta = False
+        calc_Delta = True
 
     for obj in findable:
         dets = observations[observations[columnMapping["name"]].isin([obj])]
@@ -631,26 +572,31 @@ def analyzeProjections(observations,
     
     # Prepare summary DataFrame
     summary = pd.DataFrame({
-        "num_observations_object": num_object_obs,
-        "num_observations_noise": num_noise_obs,
-        "obs_contamination" : num_noise_obs / len(observations) * 100,
-        "unique_objects" : num_unique_objects,
-        "unique_objects_findable" : num_findable}, index=[0]) 
+        "unique_known_objects" : num_unique_objects,
+        "unique_known_objects_findable" : num_findable,
+        "num_known_object_observations": num_object_obs,
+        "num_unknown_object_observations": num_unlinked_obs,
+        "num_false_positive_observations": num_noise_obs,
+        "percent_known_object_observations": percent_known,
+        "percent_unknown_object_observations": percent_unknown,
+        "percent_false_positive_observations": percent_false_positive}, index=[0]) 
     
     time_end = time.time()
     if verbose == True:
-        print("Object observations: {}".format(num_object_obs))
-        print("Noise observations: {}".format(num_noise_obs))
-        print("Observation contamination (%): {}".format(num_noise_obs / len(observations) * 100))
-        print("Unique objects: {}".format(num_unique_objects))
-        print("Unique objects with at least {} detections: {}".format(minSamples, num_findable))
+        print("Known object observations: {}".format(num_object_obs))
+        print("Unknown object observations: {}".format(num_unlinked_obs))
+        print("False positive observations: {}".format(num_noise_obs))
+        print("Percent known object observations (%): {:1.3f}".format(percent_known))
+        print("Percent unkown object observations (%): {:1.3f}".format(percent_unknown))
+        print("Percent false positive observations (%): {:1.3f}".format(percent_false_positive))
+        print("Unique known objects: {}".format(num_unique_objects))
+        print("Unique known objects with at least {} detections: {}".format(minSamples, num_findable))
         print("") 
         print("Total time in seconds: {}".format(time_end - time_start))
         print("-------------------------")
         print("")
         
     return allObjects, summary
-
     
 def analyzeClusters(observations,
                     allClusters, 
