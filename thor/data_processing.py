@@ -8,7 +8,8 @@ from .pyoorb import propagateTestParticle
 
 __all__ = ["findExposureTimes",
            "findAverageObject",
-           "buildCellForVisit"]
+           "buildCellForVisit",
+           "grabLinkedDetections"]
    
 def findExposureTimes(observations, 
                       r, 
@@ -197,4 +198,38 @@ def buildCellForVisit(observations,
     cell = Cell(center, mjd, observations, shape=shape, area=area)
     cell.getObservations(columnMapping=columnMapping)
     return cell
+
+def grabLinkedDetections(observations, allClusters, clusterMembers, columnMapping=Config.columnMapping):
+    """
+    Grabs linked observations from pure and partial clusters.
     
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing post-range and shift observations.
+    allClusters : `~pandas.DataFrame`
+        DataFrame with the cluster ID, the number of observations, and the x and y velocity. 
+    clusterMembers : `~pandas.DataFrame`
+        DataFrame containing the cluster ID and the observation IDs of its members. 
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+    
+    Returns
+    -------
+    `~numpy.ndarray` (N)
+        Observation IDs that have been linked in pure and partial clusters. (Excluded imposter
+        observations in partial clusters)
+    """
+    pure_clusters = allClusters[allClusters["pure"] == 1]["cluster_id"].values
+    pure_obs_ids_linked = clusterMembers[clusterMembers["cluster_id"].isin(pure_clusters)][columnMapping["obs_id"]].values
+
+    partial_clusters = allClusters[allClusters["partial"] == 1]["cluster_id"].values
+    cluster_designation = clusterMembers[clusterMembers["cluster_id"].isin(partial_clusters)].merge(observations[[columnMapping["obs_id"], columnMapping["name"]]], 
+                                                                                                    left_on=columnMapping["obs_id"], 
+                                                                                                    right_on=columnMapping["obs_id"])
+    cluster_designation = cluster_designation.merge(allClusters[["cluster_id", "linked_object"]])
+    partial_obs_ids_linked = cluster_designation[cluster_designation[columnMapping["name"]] == cluster_designation["linked_object"]]["obs_id"].values
+    
+    linked_obs_ids = np.concatenate([pure_obs_ids_linked, partial_obs_ids_linked])
+    return np.unique(linked_obs_ids)
