@@ -13,7 +13,6 @@ from .cell import Cell
 from .particle import TestParticle
 from .pyoorb import propagateTestParticle
 from .data_processing import findExposureTimes
-from .data_processing import buildCellForVisit
 from .plotting import plotScatterContour
 
 __all__ = ["rangeAndShift",

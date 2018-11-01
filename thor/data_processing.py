@@ -8,7 +8,6 @@ from .pyoorb import propagateTestParticle
 
 __all__ = ["findExposureTimes",
            "findAverageOrbits",
-           "buildCellForVisit",
            "grabLinkedDetections"]
    
 def findExposureTimes(observations, 
@@ -100,6 +99,7 @@ def findExposureTimes(observations,
         print("")
   
     return mjds
+
 
 def findAverageOrbits(observations,
                       rValues=None,
@@ -212,44 +212,6 @@ def findAverageOrbits(observations,
         print("-------------------------")
         print("")
     return orbits
-
-
-def buildCellForVisit(observations, 
-                      visitId, 
-                      shape="square", 
-                      area=10, 
-                      columnMapping=Config.columnMapping):
-    """
-    Builds a cell for a unique visit. Populates cell with observations. 
-    
-    Parameters
-    ----------
-    observations : `~pandas.DataFrame`
-        DataFrame containing observations.
-    visitId : int
-        Visit ID.
-    shape : {'square', 'circle'}, optional
-        Cell's shape can be square or circle. Combined with the area parameter, will set the search 
-        area when looking for observations contained within the defined cell. 
-        [Default = 'square']
-    area : float, optional
-        Cell's area in units of square degrees. 
-        [Default = 10]
-    columnMapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
-        
-    Returns
-    -------
-    cell : `~thor.Cell`
-        Cell with observations populated.
-    """
-    visit = observations[observations[columnMapping["visit_id"]] == visitId]
-    center = visit[[columnMapping["field_RA_deg"], columnMapping["field_Dec_deg"]]].values[0]
-    mjd = visit[columnMapping["exp_mjd"]].values[0]
-    cell = Cell(center, mjd, observations, shape=shape, area=area)
-    cell.getObservations(columnMapping=columnMapping)
-    return cell
 
 
 def grabLinkedDetections(observations, allClusters, clusterMembers, columnMapping=Config.columnMapping):
