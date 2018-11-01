@@ -502,7 +502,7 @@ def clusterAndLink(observations,
                 
     if len(populated_clusters) == 0:
         time_end_restr = time.time()
-        clusterMembers = pd.DataFrame(columns=["cluster_id", "obs_id"])
+        clusterMembers = pd.DataFrame(columns=["cluster_id", columnMapping["obs_id"]])
         allClusters = pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy", "num_obs"])
         print("No clusters found.")
         if verbose == True:
@@ -535,7 +535,7 @@ def clusterAndLink(observations,
         members_array = np.concatenate([members_array, cluster])
         
     clusterMembers = pd.DataFrame({"cluster_id" : id_array, 
-                                   "obs_id" : members_array})
+                                   columnMapping["obs_id"] : members_array})
     
     allClusters = pd.DataFrame({"cluster_id" : cluster_ids,
                                 "theta_vx" : vs[:, 0],
@@ -562,7 +562,6 @@ def clusterAndLink(observations,
         print("")
         
     return allClusters, clusterMembers
-
 
 
 def runRangeAndShiftOnVisit(observations,
