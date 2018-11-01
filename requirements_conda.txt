@@ -1,12 +1,13 @@
 numpy
 scipy
 astropy
-sklearn
+scikit-learn
 matplotlib
 pandas
 fortranformat
 plotly
 pyyaml
+openorb
 pytest
 pytest-cov
 coveralls
