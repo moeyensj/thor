@@ -7,7 +7,7 @@ from .cell import Cell
 from .pyoorb import propagateTestParticle
 
 __all__ = ["findExposureTimes",
-           "findAverageObject",
+           "findAverageOrbits",
            "buildCellForVisit",
            "grabLinkedDetections"]
    
@@ -101,7 +101,8 @@ def findExposureTimes(observations,
   
     return mjds
 
-def findAverageObject(observations, 
+def findAverageOrbits(observations,
+                      rValues=None,
                       verbose=True,
                       columnMapping=Config.columnMapping):
     """
@@ -113,6 +114,10 @@ def findAverageObject(observations,
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing observations.
+    rValues : {list (N>=2), None}, optional
+        If None, will find average orbit in all of observations. If a list, will find an 
+        average orbit between each value in the list. For example, passing rValues = [1.0, 2.0, 4.0] will
+        mean an average orbit will be found in the following bins: (1.0 <= r < 2.0), (2.0 <= r < 4.0).
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -122,45 +127,92 @@ def findAverageObject(observations,
     
     Returns
     -------
-    name : {str, -1}
-        The name of the object, if there are no real objects returns -1
+    orbits : `~pandas.DataFrame` 
+        DataFrame with name, r, v, and exposure time of the average orbit in each bin of r. 
     """
     if verbose == True:
         print("THOR: findAverageObject")
         print("-------------------------")
-    objects = observations[observations[columnMapping["name"]] != "NS"]
-    
-    if len(objects) == 0:
-        # No real objects
+        
+    observations_rBins = []
+    if rValues != None:
         if verbose == True:
-            print("No real objects found.")
-        return -1
+            print("Finding average orbit in {} heliocentric distance bins...".format(len(rValues) - 1))
+        for r_i, r_f in zip(rValues[:-1], rValues[1:]):
+            observations_rBins.append(observations[(observations[columnMapping["r_au"]] >= r_i) & (observations[columnMapping["r_au"]] < r_f)])
+    else: 
+        if verbose == True:
+            print("Finding average orbit...")
+        observations_rBins.append(observations)
     
-    rv = objects[[
-        columnMapping["obj_dx/dt_au_p_day"],
-        columnMapping["obj_dy/dt_au_p_day"],
-        columnMapping["obj_dz/dt_au_p_day"],
-        columnMapping["r_au"]
-    ]].values
+    orbits = []
     
-    # Calculate the percent difference between the median of each velocity element
-    # and the heliocentric distance
-    percent_diff = np.abs((rv - np.median(rv, axis=0)) / np.median(rv, axis=0))
+    for i, obs in enumerate(observations_rBins):
+        objects = obs[obs[columnMapping["name"]] != "NS"]
+
+        if len(objects) == 0:
+            # No real objects
+            if verbose == True:
+                print("No real objects found.")
+            
+            orbit = pd.DataFrame({"orbit_id" : i + 1,
+                columnMapping["r_au"] : np.NaN,
+                columnMapping["obj_dx/dt_au_p_day"] : np.NaN,
+                columnMapping["obj_dy/dt_au_p_day"] : np.NaN,
+                columnMapping["obj_dz/dt_au_p_day"] : np.NaN,
+                columnMapping["exp_mjd"] : np.NaN,
+                columnMapping["name"]: np.NaN}, index=[0])
+            orbits.append(orbit)
+            continue
+
+        rv = objects[[
+            columnMapping["obj_dx/dt_au_p_day"],
+            columnMapping["obj_dy/dt_au_p_day"],
+            columnMapping["obj_dz/dt_au_p_day"],
+            columnMapping["r_au"]
+        ]].values
+
+        # Calculate the percent difference between the median of each velocity element
+        # and the heliocentric distance
+        percent_diff = np.abs((rv - np.median(rv, axis=0)) / np.median(rv, axis=0))
+
+        # Sum the percent differences
+        summed_diff = np.sum(percent_diff, axis=1)
+
+        # Find the minimum summed percent difference and call that 
+        # the average object
+        index = np.where(summed_diff == np.min(summed_diff))[0][0]
+        name = objects[columnMapping["name"]].values[index]
+
+        # Grab the objects, name and its r and v.
+        obj_observations = obs[obs[columnMapping["name"]] == name]
+        obj = obj_observations[[
+            columnMapping["exp_mjd"],
+            columnMapping["r_au"], 
+            columnMapping["obj_dx/dt_au_p_day"],
+            columnMapping["obj_dy/dt_au_p_day"],
+            columnMapping["obj_dz/dt_au_p_day"],
+            columnMapping["name"]]].copy()
+        obj["orbit_id"] = i + 1
+        
+        orbits.append(obj[["orbit_id", 
+            columnMapping["r_au"], 
+            columnMapping["obj_dx/dt_au_p_day"],
+            columnMapping["obj_dy/dt_au_p_day"],
+            columnMapping["obj_dz/dt_au_p_day"],
+            columnMapping["exp_mjd"],
+            columnMapping["name"]]])
+        
+    orbits = pd.concat(orbits)
+    orbits.sort_values(by=["orbit_id", columnMapping["exp_mjd"]], inplace=True)
+    orbits.reset_index(inplace=True, drop=True)
     
-    # Sum the percent differences
-    summed_diff = np.sum(percent_diff, axis=1)
-    
-    # Find the minimum summed percent difference and call that 
-    # the average object
-    index = np.where(summed_diff == np.min(summed_diff))[0][0]
-    name = objects[columnMapping["name"]].values[index]
-    if verbose == True:
-        print("{} is the most average object.".format(name))
+    if verbose == True:    
+        print("Done.")
         print("-------------------------")
         print("")
-        
-    return name
-    
+    return orbits
+
 
 def buildCellForVisit(observations, 
                       visitId, 
@@ -198,6 +250,7 @@ def buildCellForVisit(observations,
     cell = Cell(center, mjd, observations, shape=shape, area=area)
     cell.getObservations(columnMapping=columnMapping)
     return cell
+
 
 def grabLinkedDetections(observations, allClusters, clusterMembers, columnMapping=Config.columnMapping):
     """
