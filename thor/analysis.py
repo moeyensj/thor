@@ -434,8 +434,8 @@ def analyzeObservations(observations,
     
     # Prepare summary DataFrame
     summary = pd.DataFrame({
-        "unique_known_objects" : num_unique_objects,
-        "unique_known_objects_findable" : num_findable,
+        "num_unique_known_objects" : num_unique_objects,
+        "num_unique_known_objects_findable" : num_findable,
         "num_known_object_observations": num_object_obs,
         "num_unknown_object_observations": num_unlinked_obs,
         "num_false_positive_observations": num_noise_obs,
@@ -572,8 +572,8 @@ def analyzeProjections(observations,
     
     # Prepare summary DataFrame
     summary = pd.DataFrame({
-        "unique_known_objects" : num_unique_objects,
-        "unique_known_objects_findable" : num_findable,
+        "num_unique_known_objects" : num_unique_objects,
+        "num_unique_known_objects_findable" : num_findable,
         "num_known_object_observations": num_object_obs,
         "num_unknown_object_observations": num_unlinked_obs,
         "num_false_positive_observations": num_noise_obs,
@@ -597,6 +597,7 @@ def analyzeProjections(observations,
         print("")
         
     return allObjects, summary
+
     
 def analyzeClusters(observations,
                     allClusters, 
@@ -605,6 +606,8 @@ def analyzeClusters(observations,
                     summary,
                     minSamples=5, 
                     contaminationThreshold=0.2, 
+                    unknownIDs=Config.unknownIDs,
+                    falsePositiveIDs=Config.falsePositiveIDs,
                     saveFiles=None,
                     verbose=True,
                     columnMapping=Config.columnMapping):
@@ -660,7 +663,10 @@ def analyzeClusters(observations,
         print("-------------------------")
         print("Analyzing clusters...")
 
-    allLinkages, allObjects = __analyzeLinkages(observations, 
+    if "linked_object" in allClusters.columns:
+        allClusters.drop("linked_object", axis=1, inplace=True)
+        
+    allClusters, allObjects = __analyzeLinkages(observations, 
                           clusterMembers, 
                           allLinkages=allClusters, 
                           allTruths=allObjects,
@@ -669,6 +675,7 @@ def analyzeClusters(observations,
                           columnMapping={"linkage_id": "cluster_id",
                                          "obs_id": columnMapping["obs_id"],
                                          "truth":  columnMapping["name"]})
+    allClusters.rename(columns={"linked_truth": "linked_object"}, inplace=True)
     
     # Count number of visits per cluster
     cluster_visit = observations[[columnMapping["obs_id"], columnMapping["visit_id"]]].merge(clusterMembers, on=columnMapping["obs_id"])
@@ -676,46 +683,63 @@ def analyzeClusters(observations,
     cluster_visit.drop_duplicates(inplace=True)
     unique_visits_per_cluster = cluster_visit["cluster_id"].value_counts()
     allClusters["num_visits"] = unique_visits_per_cluster.sort_index().values
-
-    num_pure = len(allClusters[allClusters["pure"] == 1])
-    num_partial = len(allClusters[allClusters["partial"] == 1])
+    
+    # Cluster breakdown for known objects
+    num_pure_known = len(allClusters[(allClusters["pure"] == 1) & ~allClusters["linked_object"].isin(unknownIDs + falsePositiveIDs)])
+    num_partial_known = len(allClusters[(allClusters["partial"] == 1) & ~allClusters["linked_object"].isin(unknownIDs + falsePositiveIDs)])
+    
+    # Cluster breakdown for unknown objects
+    num_pure_unknown = len(allClusters[(allClusters["pure"] == 1) & allClusters["linked_object"].isin(unknownIDs)])
+    num_partial_unknown = len(allClusters[(allClusters["partial"] == 1) & allClusters["linked_object"].isin(unknownIDs)])
+    
+    # Cluster breakdown for false positives
+    num_pure_false_positives = len(allClusters[(allClusters["pure"] == 1) & allClusters["linked_object"].isin(falsePositiveIDs)])
+    num_partial_false_positives = len(allClusters[(allClusters["partial"] == 1) & allClusters["linked_object"].isin(falsePositiveIDs)])
+    
+    # Cluster break down for everything else
     num_false = len(allClusters[allClusters["false"] == 1])
-    num_total = num_pure + num_partial + num_false
+    num_total = len(allClusters)
     num_duplicate_visits = len(allClusters[allClusters["num_obs"] != allClusters["num_visits"]])
 
     if verbose == True:
-        print("Pure clusters: {}".format(num_pure))
-        print("Partial clusters: {}".format(num_partial))
+        print("Known object pure clusters: {}".format(num_pure_known))
+        print("Known object partial clusters: {}".format(num_partial_known))
+        print("Unknown object pure clusters: {}".format(num_pure_unknown))
+        print("Unknown object partial clusters: {}".format(num_partial_unknown))
+        print("False positive pure clusters: {}".format(num_pure_false_positives))
+        print("False positive partial clusters: {}".format(num_partial_false_positives))
         print("Duplicate visit clusters: {}".format(num_duplicate_visits))
         print("False clusters: {}".format(num_false))
         print("Total clusters: {}".format(num_total))
-        print("Cluster contamination (%): {}".format(num_false / num_total * 100))
+        print("Cluster contamination (%): {:1.3f}".format(num_false / num_total * 100))
     
-    found = allObjects[allObjects["found"] == 1]
-    missed = allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)]
-    found_pure = len(allObjects[allObjects["found_pure"] == 1])
-    found_partial = len(allObjects[allObjects["found_partial"] == 1])
-    time_end = time.time()
-    completeness = len(found) / (len(found) + len(missed)) * 100
+    known_found = allObjects[(allObjects["found"] == 1) 
+                       & (~allObjects[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs))]
+    known_missed = allObjects[(allObjects["found"] == 0) 
+                        & (allObjects["findable"] == 1) 
+                        & (~allObjects[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs))]
+    completeness = len(known_found) / (len(known_found) + len(known_missed)) * 100
+    
+    summary["num_unique_known_objects_found"] = len(known_found)
+    summary["num_unique_known_objects_missed"] = len(known_missed)
+    summary["percent_completeness"] = completeness
+    summary["num_known_object_pure_clusters"] = num_pure_known
+    summary["num_known_object_partial_clusters"] = num_partial_known
+    summary["num_unknown_object_pure_clusters"] = num_pure_unknown
+    summary["num_unknown_object_partial_clusters"] = num_partial_unknown
+    summary["num_false_positive_pure_clusters"] = num_pure_false_positives
+    summary["num_false_positive_partial_clusters"] = num_partial_false_positives
+    summary["num_duplicate_visit_clusters"] = num_duplicate_visits
+    summary["num_false_clusters"] = num_false
+    summary["num_total_clusters"] = num_total
     
     if verbose == True:
-        print("Unique linked objects: {}".format(len(found)))
-        print("Unique missed objects: {}".format(len(missed)))
-        print("Completeness (%): {}".format(completeness))
+        time_end = time.time()
+        print("Unique known objects linked: {}".format(len(known_found)))
+        print("Unique known objects missed: {}".format(len(known_missed)))
+        print("Completeness (%): {:1.3f}".format(completeness))
         print("Done.")
         print("Total time in seconds: {}".format(time_end - time_start))
-        
-    summary["unique_objects_found_pure"] = found_pure
-    summary["unique_objects_found_partial"] = found_partial
-    summary["unique_objects_found"] = len(found)
-    summary["unique_objects_missed"] = len(missed)
-    summary["completeness"] = completeness
-    summary["pure_clusters"] = num_pure
-    summary["partial_clusters"] : num_partial
-    summary["duplicate_visit_clusters"] = num_duplicate_visits
-    summary["false_clusters"] = num_false
-    summary["total_clusters"] = num_total
-    summary["cluster_contamination"] = num_false / num_total * 100
         
     if saveFiles is not None:
         if verbose == True:
@@ -734,4 +758,3 @@ def analyzeClusters(observations,
         print("")
 
     return allClusters, clusterMembers, allObjects, summary
-
