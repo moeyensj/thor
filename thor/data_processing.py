@@ -282,7 +282,7 @@ def grabLinkedDetections(observations, allClusters, clusterMembers, columnMappin
                                                                                                     left_on=columnMapping["obs_id"], 
                                                                                                     right_on=columnMapping["obs_id"])
     cluster_designation = cluster_designation.merge(allClusters[["cluster_id", "linked_object"]])
-    partial_obs_ids_linked = cluster_designation[cluster_designation[columnMapping["name"]] == cluster_designation["linked_object"]]["obs_id"].values
+    partial_obs_ids_linked = cluster_designation[cluster_designation[columnMapping["name"]] == cluster_designation["linked_object"]][columnMapping["obs_id"]].values
     
     linked_obs_ids = np.concatenate([pure_obs_ids_linked, partial_obs_ids_linked])
     return np.unique(linked_obs_ids)
