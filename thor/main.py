@@ -12,7 +12,6 @@ from .config import Config
 from .cell import Cell
 from .particle import TestParticle
 from .pyoorb import propagateTestParticle
-from .data_processing import findAverageObject
 from .data_processing import findExposureTimes
 from .data_processing import buildCellForVisit
 from .plotting import plotScatterContour
@@ -20,8 +19,7 @@ from .plotting import plotScatterContour
 __all__ = ["rangeAndShift",
            "clusterVelocity",
            "_clusterVelocity",
-           "clusterAndLink",
-           "runRangeAndShiftOnVisit"]
+           "clusterAndLink"]
 
 def rangeAndShift(observations,
                   cell, 
@@ -562,132 +560,3 @@ def clusterAndLink(observations,
         print("")
         
     return allClusters, clusterMembers
-
-
-def runRangeAndShiftOnVisit(observations,
-                            visitId,
-                            r, 
-                            v,
-                            numNights=14, 
-                            useAverageObject=True,
-                            searchArea=0.5, 
-                            searchShape="square",
-                            cellArea=10, 
-                            cellShape="square",
-                            dMax=20.0,
-                            saveFiles=None,
-                            verbose=True,
-                            columnMapping=Config.columnMapping):
-    """
-    Run range and shift on a visit. 
-    
-    Parameters
-    ----------
-    observations : `~pandas.DataFrame`
-        DataFrame containing observations.
-    visitId : int
-        Visit ID. 
-    r : float
-        Heliocentric distance in AU.
-    v : `~numpy.ndarray` (1, 3)
-        Velocity vector in AU per day (ecliptic).
-    numNights : int, optional
-        Number of nights from the time of the visit to consider 
-        for ranging and shifting. 
-        [Default = 14]
-    useAverageObject : bool, optional
-        Find an object in the original visit that represents
-        the average and use that object's orbit. Ignores given 
-        r and v. 
-        [Default = False]
-    searchArea : float, optional
-        Area of THOR cell used to find average object in
-        degrees squared.
-        [Default = 0.5]
-    searchShape : {'square', 'circle'}, optional
-        Shape of the search cell. 
-        [Default = 'square']
-    cellArea : float, optional
-        Area of THOR cell. Should be the same size as the visit. 
-        [Default = 10]
-    cellShape : {'square', 'circle'}, optional
-        Shape of THOR cell. Should be the same shape as the visit.
-        [Default = 'square']
-    dMax : float, optional
-        Maximum angular distance (in RA and Dec) permitted when searching for exposure times
-        in degrees. 
-        [Default = 20.0]
-    saveFiles : {None, list}, optional
-        List of paths to save DataFrames to ([[projected_obs, avg_object]) or None. 
-        If useAverageObject is False, then the second path will not be used. If
-        there is no averageObject, no files will be saved.
-        [Default = None]
-    verbose : bool, optional
-        Print progress statements? 
-        [Default = True]
-    columnMapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
-        
-    Returns
-    -------
-    projected_obs : `~pandas.DataFrame`
-        Observations dataframe (from cell.observations) with columns containing
-        projected coordinates. 
-    avg_obj : {`~pandas.DataFrame`, int, None}
-        If useAverageObject is True, will return a slice into the observations dataframe
-        with the object's corresponding observation. If there are no real objects, will instead
-        return -1. If useAverageObject is False, returns None. 
-    """
-    
-    if verbose == True:
-        print("THOR: runRangeAndShiftOnVisit")
-        print("-------------------------")
-        print("Running Thor on visit {}...".format(visitId))
-        if useAverageObject != True:
-            print("Assuming orbit with r = {}".format(r))
-            print("Assuming orbit with v = {}".format(v))
-        else:
-            print("Search cell area: {} ".format(searchArea))
-            print("Search cell shape: {} ".format(searchShape))
-    
-        print("Cell area: {} ".format(cellArea))
-        print("Cell shape: {} ".format(cellShape))
-        print("")
-
-    small_cell = buildCellForVisit(observations, visitId, area=searchArea, shape=searchShape, columnMapping=columnMapping)
-    small_cell.getObservations(columnMapping=columnMapping)
-    if useAverageObject is True:
-        avg_obj = findAverageObject(small_cell.observations)
-        if avg_obj == -1:
-            print("Can't run RaSCaLS on this visit.")
-            print("Provide an orbit to run.")
-            return avg_obj
-
-        obj = small_cell.observations[small_cell.observations[columnMapping["name"]] == avg_obj]
-        r = obj[columnMapping["r_au"]].values[0]
-        v = obj[[columnMapping["obj_dx/dt_au_p_day"],
-                 columnMapping["obj_dy/dt_au_p_day"],
-                 columnMapping["obj_dz/dt_au_p_day"]]].values[0]
-        
-
-    cell = Cell(small_cell.center, small_cell.mjd, observations, area=cellArea, shape=cellShape)
-    projected_obs = rangeAndShift(observations, 
-                                  cell, 
-                                  r, 
-                                  v, 
-                                  mjds="auto", 
-                                  dMax=dMax, 
-                                  numNights=numNights,
-                                  verbose=verbose,
-                                  columnMapping=columnMapping)
-    
-    if saveFiles is not None:
-        if useAverageObject is True and avg_obj != -1:
-            obj.to_csv(saveFiles[1], sep=" ", index=False)
-        projected_obs.to_csv(saveFiles[0], sep=" ", index=False)
-    
-    if useAverageObject is True:
-        return projected_obs, obj
-    else:
-        return projected_obs
