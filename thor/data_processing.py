@@ -128,7 +128,7 @@ def findAverageOrbits(observations,
     Returns
     -------
     orbits : `~pandas.DataFrame` 
-        DataFrame with name, r, v, and exposure time of the average orbit in each bin of r. 
+        DataFrame with name, r, v, exposure time, and sky-plane location of the average orbit in each bin of r. 
     """
     if verbose == True:
         print("THOR: findAverageObject")
@@ -161,6 +161,8 @@ def findAverageOrbits(observations,
                 columnMapping["obj_dy/dt_au_p_day"] : np.NaN,
                 columnMapping["obj_dz/dt_au_p_day"] : np.NaN,
                 columnMapping["exp_mjd"] : np.NaN,
+                columnMapping["RA_deg"] : np.NaN,
+                columnMapping["Dec_deg"] : np.NaN,
                 columnMapping["name"]: np.NaN}, index=[0])
             orbits.append(orbit)
             continue
@@ -192,6 +194,8 @@ def findAverageOrbits(observations,
             columnMapping["obj_dx/dt_au_p_day"],
             columnMapping["obj_dy/dt_au_p_day"],
             columnMapping["obj_dz/dt_au_p_day"],
+            columnMapping["RA_deg"],
+            columnMapping["Dec_deg"],
             columnMapping["name"]]].copy()
         obj["orbit_id"] = i + 1
         
@@ -201,6 +205,8 @@ def findAverageOrbits(observations,
             columnMapping["obj_dy/dt_au_p_day"],
             columnMapping["obj_dz/dt_au_p_day"],
             columnMapping["exp_mjd"],
+            columnMapping["RA_deg"],
+            columnMapping["Dec_deg"],
             columnMapping["name"]]])
         
     orbits = pd.concat(orbits)
