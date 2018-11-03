@@ -3,6 +3,7 @@ scipy
 astropy
 scikit-learn
 matplotlib
+seaborn
 pandas
 fortranformat
 plotly
