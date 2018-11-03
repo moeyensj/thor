@@ -220,7 +220,11 @@ def findAverageOrbits(observations,
     return orbits
 
 
-def grabLinkedDetections(observations, allClusters, clusterMembers, columnMapping=Config.columnMapping):
+def grabLinkedDetections(observations, 
+                         allClusters, 
+                         clusterMembers, 
+                         verbose=True,
+                         columnMapping=Config.columnMapping):
     """
     Grabs linked observations from pure and partial clusters.
     
@@ -232,6 +236,9 @@ def grabLinkedDetections(observations, allClusters, clusterMembers, columnMappin
         DataFrame with the cluster ID, the number of observations, and the x and y velocity. 
     clusterMembers : `~pandas.DataFrame`
         DataFrame containing the cluster ID and the observation IDs of its members. 
+    verbose : bool, optional
+        Print progress statements? 
+        [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
         [Default = `~thor.Config.columnMapping`]
@@ -242,6 +249,9 @@ def grabLinkedDetections(observations, allClusters, clusterMembers, columnMappin
         Observation IDs that have been linked in pure and partial clusters. (Excluded imposter
         observations in partial clusters)
     """
+    if verbose == True:
+        print("THOR: grabLinkedDetections")
+        print("-------------------------")
     pure_clusters = allClusters[allClusters["pure"] == 1]["cluster_id"].values
     pure_obs_ids_linked = clusterMembers[clusterMembers["cluster_id"].isin(pure_clusters)][columnMapping["obs_id"]].values
 
@@ -253,4 +263,11 @@ def grabLinkedDetections(observations, allClusters, clusterMembers, columnMappin
     partial_obs_ids_linked = cluster_designation[cluster_designation[columnMapping["name"]] == cluster_designation["linked_object"]][columnMapping["obs_id"]].values
     
     linked_obs_ids = np.concatenate([pure_obs_ids_linked, partial_obs_ids_linked])
-    return np.unique(linked_obs_ids)
+    linked_obs_ids = np.unique(linked_obs_ids)
+    if verbose == True:
+        print("{} detections have been linked.".format(len(linked_obs_ids)))
+        print("-------------------------")
+        print("")
+    return linked_obs_ids
+    
+    
