@@ -359,6 +359,8 @@ def calcLinkageEfficiency(allObjects,
         print("Found objects: {}".format(found))
         print("Missed objects: {}".format(missed))
         print("Efficiency [%]: {}".format(efficiency * 100))
+        print("-------------------------")
+        print("")
     return efficiency
 
 def analyzeObservations(observations,
