@@ -358,7 +358,7 @@ def calcLinkageEfficiency(allObjects,
         print("Findable objects: {}".format(findable))
         print("Found objects: {}".format(found))
         print("Missed objects: {}".format(missed))
-        print("Efficiency [%]: {}".format(efficiency * 100))
+        print("Efficiency (%): {}".format(efficiency * 100))
         print("-------------------------")
         print("")
     return efficiency
