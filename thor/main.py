@@ -13,12 +13,23 @@ from .cell import Cell
 from .particle import TestParticle
 from .pyoorb import propagateTestParticle
 from .data_processing import findExposureTimes
-from .plotting import plotScatterContour
+from .data_processing import grabLinkedDetections
+from .plotting import plotOrbitsFindable
+from .plotting import plotOrbitsFound
+from .plotting import plotOrbitsMissed
+from .plotting import plotProjectionVelocitiesFindable
+from .plotting import plotProjectionVelocitiesFound
+from .plotting import plotProjectionVelocitiesMissed
+from .analysis import calcLinkageEfficiency
+from .analysis import analyzeObservations
+from .analysis import analyzeProjections
+from .analysis import analyzeClusters
 
 __all__ = ["rangeAndShift",
            "clusterVelocity",
            "_clusterVelocity",
-           "clusterAndLink"]
+           "clusterAndLink",
+           "runTHOR"]
 
 def rangeAndShift(observations,
                   cell, 
@@ -28,7 +39,6 @@ def rangeAndShift(observations,
                   mjds="auto",
                   dMax=20.0,
                   includeEquatorialProjection=True,
-                  saveFile=None,
                   verbose=True, 
                   columnMapping=Config.columnMapping):
     """
@@ -61,9 +71,6 @@ def rangeAndShift(observations,
         Include naive shifting in equatorial coordinates without properly projecting
         to the plane of the orbit. This is useful if performance comparisons want to be made.
         [Default = True]
-    saveFile : {None, str}, optional
-        Path to save DataFrame to or None. 
-        [Default = None]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -202,13 +209,6 @@ def rangeAndShift(observations,
     if verbose == True:
         print("Done. Final DataFrame has {} observations.".format(len(final_df)))
         print("Total time in seconds: {}".format(time_end - time_start))  
-        
-    if saveFile is not None:
-        if verbose is True:
-            print("Saving to {}".format(saveFile))
-        final_df.to_csv(saveFile, sep=" ", index=False)
-    
-    if verbose == True:
         print("-------------------------")
         print("")
         
@@ -304,7 +304,6 @@ def clusterAndLink(observations,
                    threads=12, 
                    eps=0.005, 
                    minSamples=5,
-                   saveFiles=None,
                    verbose=True,
                    columnMapping=Config.columnMapping):
     """
@@ -354,9 +353,6 @@ def clusterAndLink(observations,
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
-    saveFiles : {None, list}, optional
-        List of paths to save DataFrames to ([allClusters, clusterMembers]) or None. 
-        [Default = None]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -544,18 +540,451 @@ def clusterAndLink(observations,
         print("Done. Completed in {} seconds.".format(time_end_restr - time_start_restr))
         print("")
         print("Found {} clusters.".format(len(allClusters)))
-        print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))
-    
-    if saveFiles is not None:
-        if verbose == True:
-            print("Saving allClusters to {}".format(saveFiles[0]))
-            print("Saving clusterMembers to {}".format(saveFiles[1]))
-        
-        allClusters.to_csv(saveFiles[0], sep=" ", index=False)
-        clusterMembers.to_csv(saveFiles[1], sep=" ", index=False)
-                
-    if verbose == True:    
+        print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))   
         print("-------------------------")
         print("")
         
     return allClusters, clusterMembers
+
+
+def runTHOR(observations,
+            orbits,
+            knownOrbits=None,
+            runDir=None,
+            cellArea=10, 
+            cellShape="circle",
+            numNights=14,
+            mjds="auto",
+            dMax=20.0,
+            includeEquatorialProjection=True,
+            vxRange=[-0.1, 0.1], 
+            vyRange=[-0.1, 0.1],
+            vxBins=100, 
+            vyBins=100,
+            vxValues=None,
+            vyValues=None,
+            threads=30, 
+            eps=0.005, 
+            minSamples=5,
+            contaminationThreshold=0.2,
+            unknownIDs=Config.unknownIDs,
+            falsePositiveIDs=Config.falsePositiveIDs,
+            verbose=True,
+            columnMapping=Config.columnMapping):
+    """
+    Run THOR on observations using the given orbits.
+    
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations.
+    orbits : `~pandas.DataFrame`
+        DataFrame with test orbits: need sky-plane location, epoch, heliocentric distance and cartesian velocity. 
+    knownOrbits: {None, `~pandas.DataFrame`}, optional
+        DataFrame with Keplerian orbital elements of known objects. Used for plotting
+        purposes. 
+        [Default = None]
+    runDir : {None, str}, optional
+        If None, intermittent files wont be saved. If string path is passed, intermittent files
+        will be saved inside directory. Each orbit will have its own sub-folder, with the relevant files
+        for each saved in these subfolders. 
+        [Default = None]
+    cellArea : float, optional
+        Cell's area in units of square degrees. 
+        [Default = 10]
+    cellShape : {'square', 'circle'}, optional
+        Cell's shape can be square or circle. Combined with the area parameter, will set the search 
+        area when looking for observations contained within the defined cell. 
+        [Default = 'square']
+    numNights : int, optional
+        Number of nights from the first exposure to consider 
+        for ranging and shifting. 
+        [Default = 14]
+    mjds : {'auto', `~numpy.ndarray` (N)}
+        If mjds is 'auto', will propagate the particle to middle of each unique night in 
+        obervations and look for all detections within an angular search radius (defined by a 
+        maximum allowable angular speed) and extract the exposure time. Alternatively, an array
+        of exposure times may be passed. 
+    dMax : float, optional
+        Maximum angular distance (in RA and Dec) permitted when searching for exposure times
+        in degrees. 
+        [Default = 20.0]
+    includeEquatorialProjection : bool, optional
+        Include naive shifting in equatorial coordinates without properly projecting
+        to the plane of the orbit. This is useful if performance comparisons want to be made.
+        [Default = True]
+    vxRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in x. 
+        Will not be used if vxValues are specified. 
+        [Default = [-0.1, 0.1]]
+    vyRange : {None, list or `~numpy.ndarray` (2)}
+        Maximum and minimum velocity range in y. 
+        Will not be used if vyValues are specified. 
+        [Default = [-0.1, 0.1]]
+    vxBins : int, optional
+        Length of x-velocity grid between vxRange[0] 
+        and vxRange[-1]. Will not be used if vxValues are 
+        specified. 
+        [Default = 100]
+    vyBins: int, optional
+        Length of y-velocity grid between vyRange[0] 
+        and vyRange[-1]. Will not be used if vyValues are 
+        specified. 
+        [Default = 100]
+    vxValues : {None, `~numpy.ndarray`}, optional
+        Values of velocities in x at which to cluster
+        and link. 
+        [Default = None]
+    vyValues : {None, `~numpy.ndarray`}, optional
+        Values of velocities in y at which to cluster
+        and link. 
+        [Default = None]
+    threads : int, optional
+        Number of threads to use. 
+        [Default = 12]
+    eps : float, optional
+        The maximum distance between two samples for them to be considered 
+        as in the same neighborhood. 
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 0.005]
+    minSamples : int, optional
+        The number of samples (or total weight) in a neighborhood for a 
+        point to be considered as a core point. This includes the point itself.
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 5]
+    contaminationThreshold : float, optional
+        Percentage (expressed between 0 and 1) of imposter observations in a cluster permitted for the 
+        object to be found. 
+        [Default = 0.2]
+    unknownIDs : list, optional
+        Values in the name column for unknown observations.
+        [Default = `~thor.Config.unknownIDs`]
+    falsePositiveIDs : list, optional
+        Names of false positive IDs.
+        [Default = `~thor.Config.falsePositiveIDs`]
+    verbose : bool, optional
+        Print progress statements? 
+        [Default = True]
+    columnMapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
+    
+    Returns
+    -------
+    allObjects : `~pandas.DataFrame`
+        Object summary DataFrame for the survey.
+    summary : `~pandas.DataFrame`
+        Overall summary DataFrame for the survey.
+    summary_orbits : `~pandas.DataFrame`
+        Overall summary DataFrame each orbit.
+    """
+    if verbose == True:
+        print("THOR: runTHOR")
+        print("-------------------------")
+        print("Running THOR with {} orbits...".format(len(orbits)))
+        print("")
+    
+    found_known_objects = []
+    linked_detections = []
+    summaries = []
+    allObjects = []
+    
+    if runDir != None:
+        try:
+            os.mkdir(runDir)
+        except:
+            raise ValueError("runDir exists!")
+    
+    # Analyze observations for entire survey
+    allObjects_survey, summary_survey = analyzeObservations(
+        observations,
+        minSamples=minSamples, 
+        unknownIDs=unknownIDs,
+        falsePositiveIDs=falsePositiveIDs,
+        verbose=True,
+        columnMapping=columnMapping)
+    
+    # Save survey and orbit dataframes
+    if runDir != None:
+        allObjects_survey.to_csv(os.path.join(runDir, "allObjects_survey.txt"), sep=" ", index=False)
+        summary_survey.to_csv(os.path.join(runDir, "summary_survey.txt"), sep=" ", index=False)
+        orbits.to_csv(os.path.join(runDir, "orbits.txt"), sep=" ", index=False)
+    
+    # Plot findable orbits if known orbits are provided
+    if type(knownOrbits) == pd.DataFrame:
+        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits)
+        ax.set_xlim(0.0, 5.0)
+        ax.text(_setPercentage(ax.get_xlim(), 0.02), 
+                _setPercentage(ax.get_ylim(), 0.93), 
+               "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
+        if runDir != None:
+            fig.savefig(os.path.join(runDir, "known_orbits_findable.png"))
+            
+        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits)
+        ax.set_xscale("log")
+        ax.text(_setPercentage(ax.get_xlim(), 0.001), 
+                _setPercentage(ax.get_ylim(), 0.93), 
+               "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
+        if runDir != None:
+            fig.savefig(os.path.join(runDir, "known_orbits_findable_log.png"))
+            
+    # Run orbits
+    for orbit_id in orbits["orbit_id"].unique():
+        time_start = time.time()
+        if verbose == True:
+            print("THOR: runTHOR")
+            print("-------------------------")
+            print("Running orbit {}...".format(orbit_id))
+            print("")
+        
+        # Make orbitDir variable
+        if runDir != None:
+            orbitDir = os.path.join(runDir, "orbit_{:04d}".format(orbit_id))
+            os.mkdir(orbitDir)
+    
+        # Select orbit
+        orbit = orbits[orbits["orbit_id"] == orbit_id]
+       
+        # Save orbit to file
+        if runDir != None:
+            orbit.to_csv(os.path.join(orbitDir, "orbit.txt"), sep=" ", index=False)
+
+        # Build a cell with the test orbit at its center
+        center = orbit[[columnMapping["RA_deg"], columnMapping["Dec_deg"]]].values[0]
+        mjd = orbit[columnMapping["exp_mjd"]].values[0]
+        cell = Cell(center, mjd, observations, shape=cellShape, area=cellArea)
+        cell.getObservations(columnMapping=columnMapping)
+
+        # Propagate the orbit and gather all nearby detections
+        projected_obs = rangeAndShift(
+            observations, 
+            cell, 
+            orbit[[columnMapping["r_au"]]].values[0], 
+            orbit[[columnMapping["obj_dx/dt_au_p_day"],
+                   columnMapping["obj_dy/dt_au_p_day"],
+                   columnMapping["obj_dz/dt_au_p_day"]]].values[0], 
+            mjds=mjds, 
+            dMax=dMax, 
+            numNights=numNights,
+            includeEquatorialProjection=includeEquatorialProjection,
+            verbose=False,
+            columnMapping=columnMapping)
+        
+        # Save projected observations to file
+        if runDir != None:
+            projected_obs.to_csv(os.path.join(orbitDir, "projected_obs.txt"), sep=" ", index=False)
+
+        # Analyze propagated observations
+        allObjects_projection, summary_projection = analyzeProjections(
+            projected_obs[~projected_obs[columnMapping["obs_id"]].isin(linked_detections)],
+            columnMapping=columnMapping)
+        summary_projection["orbit_id"] = orbit_id
+        allObjects_projection["orbit_id"] = np.ones(len(allObjects_projection), dtype=int) * orbit_id
+        
+        # Save projected observations to file
+        if runDir != None:
+            allObjects_projection.to_csv(os.path.join(orbitDir, "allObjects.txt"), sep=" ", index=False)
+            summary_projection.to_csv(os.path.join(orbitDir, "summary.txt"), sep=" ", index=False)
+        
+        # Plot projection velocities of findable known objects
+        fig, ax = plotProjectionVelocitiesFindable(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+        if runDir != None:
+            fig.savefig(os.path.join(orbitDir, "projection_findable.png"))
+
+        # Cluster and link
+        allClusters_projection, clusterMembers_projection = clusterAndLink(
+            projected_obs[~projected_obs[columnMapping["obs_id"]].isin(linked_detections)],
+            vxRange=vxRange, 
+            vyRange=vyRange,
+            vxBins=vxBins, 
+            vyBins=vyBins,
+            vxValues=vxValues,
+            vyValues=vyValues,
+            threads=threads, 
+            eps=eps, 
+            minSamples=minSamples,
+            verbose=True,
+            columnMapping=columnMapping)
+        
+        # Save cluster files to file
+        if runDir != None:
+            allClusters_projection.to_csv(os.path.join(orbitDir, "allClusters.txt"), sep=" ", index=False)
+            clusterMembers_projection.to_csv(os.path.join(orbitDir, "clusterMembers.txt"), sep=" ", index=False)
+            
+        # Analyze resulting clusters
+        allClusters_projection, clusterMembers_projection, allObjects_projection, summary_projection = analyzeClusters(
+            projected_obs[~projected_obs[columnMapping["obs_id"]].isin(linked_detections)],
+            allClusters_projection, 
+            clusterMembers_projection, 
+            allObjects_projection,
+            summary_projection,  
+            minSamples=minSamples, 
+            contaminationThreshold=contaminationThreshold, 
+            unknownIDs=unknownIDs,
+            falsePositiveIDs=falsePositiveIDs,
+            verbose=True,
+            columnMapping=columnMapping)
+        
+        # Save cluster files to file
+        if runDir != None:
+            allClusters_projection.to_csv(os.path.join(orbitDir, "allClusters.txt"), sep=" ", index=False)
+            clusterMembers_projection.to_csv(os.path.join(orbitDir, "clusterMembers.txt"), sep=" ", index=False)
+            allObjects_projection.to_csv(os.path.join(orbitDir, "allObjects.txt"), sep=" ", index=False)
+            summary_projection.to_csv(os.path.join(orbitDir, "summary.txt"), sep=" ", index=False)
+        
+        # Calculate linkage efficiency for known objects
+        summary_projection["linkage_efficiency"] = calcLinkageEfficiency(
+            allObjects_projection, 
+            vxRange=vxRange, 
+            vyRange=vyRange,
+            verbose=True)
+
+        # Plot projection velocities of found and missed known objects
+        fig, ax = plotProjectionVelocitiesFound(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+        if runDir != None:
+            fig.savefig(os.path.join(orbitDir, "projection_found.png"))
+        fig, ax = plotProjectionVelocitiesMissed(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+        if runDir != None:
+            fig.savefig(os.path.join(orbitDir, "projection_missed.png"))
+
+        # Grab the linked detections
+        linked_detections_projection = grabLinkedDetections(projected_obs, allClusters_projection, clusterMembers_projection, columnMapping=columnMapping)
+        summary_projection["num_linked_observations"] = len(linked_detections_projection)
+        linked_detections = np.concatenate([linked_detections, linked_detections_projection])
+        
+        # Grab time to complete orbit processing
+        time_end = time.time()
+        duration = time_end - time_start
+        summary_projection["time_seconds"] = duration
+        
+        # Arrange columns in projection summary dataframe
+        summary_projection = summary_projection[[
+            'orbit_id',
+            'percent_completeness', 
+            'linkage_efficiency',
+            'time_seconds',
+            'num_unique_known_objects', 
+            'num_unique_known_objects_findable',
+            'num_unique_known_objects_found', 
+            'num_unique_known_objects_missed',
+            'num_known_object_observations', 
+            'num_unknown_object_observations',
+            'num_false_positive_observations', 
+            'percent_known_object_observations',
+            'percent_unknown_object_observations',
+            'percent_false_positive_observations', 
+            'num_known_object_pure_clusters',
+            'num_known_object_partial_clusters', 
+            'num_unknown_object_pure_clusters',
+            'num_unknown_object_partial_clusters',
+            'num_false_positive_pure_clusters',
+            'num_false_positive_partial_clusters',
+            'num_duplicate_visit_clusters',
+            'num_false_clusters', 
+            'num_total_clusters', 
+            'num_linked_observations']]
+        
+        # Update tracking arrays
+        found_known_objects.append(allObjects_projection[allObjects_projection["found"] == 1][columnMapping["name"]].values)
+        allObjects.append(allObjects_projection)
+        summaries.append(summary_projection)
+        
+        # Save summary dataframe
+        if runDir != None:
+            summary_projection.to_csv(os.path.join(orbitDir, "summary.txt"), sep=" ", index=False)
+        
+        if verbose == True:
+            print("Finished orbit {}.".format(orbit_id))
+            print("") 
+            print("Total time in seconds: {}".format(duration))
+            print("-------------------------")
+            print("")
+        
+    # Concatenate the projection based dataframes
+    allObjects = pd.concat(allObjects)
+    allObjects.reset_index(inplace=True, drop=True)
+    summaries_projection = pd.concat(summaries)
+    summaries_projection.reset_index(inplace=True, drop=True)
+    
+    # Update the survey allObjects dataframe with the found known objects
+    found_known_objects = np.concatenate(found_known_objects)
+    found_known_objects = np.unique(found_known_objects)
+    allObjects_survey.loc[allObjects_survey[columnMapping["name"]].isin(found_known_objects), "found"] = 1
+    allObjects_survey.loc[allObjects_survey["found"] != 1, "found"] = 0
+    
+    # Add completeness to summary dataframe
+    num_known_found = len(allObjects_survey[allObjects_survey["found"] == 1])
+    num_known_missed =  len(allObjects_survey[(allObjects_survey["found"] == 0)
+                                              & (allObjects_survey["findable"] == 1)])
+    completeness =  num_known_found / len(allObjects_survey[allObjects_survey["findable"] == 1])
+    summary_survey["percent_completeness"] = completeness
+    summary_survey["num_unique_known_objects_found"] = num_known_found
+    summary_survey["num_unique_known_objects_missed"] = num_known_missed
+    
+    # Rearrange survey summary dataframe columns
+    summary_survey = summary_survey[[
+        'percent_completeness',
+        'num_unique_known_objects', 
+        'num_unique_known_objects_findable',
+        'num_unique_known_objects_found',
+        'num_unique_known_objects_missed',
+        'num_known_object_observations', 
+        'num_unknown_object_observations',
+        'num_false_positive_observations', 
+        'percent_known_object_observations',
+        'percent_unknown_object_observations',
+        'percent_false_positive_observations', 
+    ]]
+    
+    # Save survey dataframes
+    if runDir != None:
+        allObjects_survey.to_csv(os.path.join(runDir, "allObjects_survey.txt"), sep=" ", index=False)
+        summary_survey.to_csv(os.path.join(runDir, "summary_survey.txt"), sep=" ", index=False)
+        summaries_projection.to_csv(os.path.join(runDir, "summary_orbits.txt"), sep=" ", index=False)
+    
+    # Plot found and missed orbits if known orbits are provided
+    if type(knownOrbits) == pd.DataFrame:
+        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits)
+        ax.set_xlim(0.0, 5.0)
+        ax.text(_setPercentage(ax.get_xlim(), 0.02), 
+                _setPercentage(ax.get_ylim(), 0.93), 
+               "Found Objects: {}".format(len(allObjects_survey[allObjects_survey["found"] == 1])))
+        if runDir != None:
+            fig.savefig(os.path.join(runDir, "known_orbits_found.png"))
+
+        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits)
+        ax.set_xscale("log")
+        ax.text(_setPercentage(ax.get_xlim(), 0.001), 
+                _setPercentage(ax.get_ylim(), 0.93), 
+               "Found Objects: {}".format(len(allObjects_survey[allObjects_survey["found"] == 1])))
+        if runDir != None:
+            fig.savefig(os.path.join(runDir, "known_orbits_found_log.png"))
+
+        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits)
+        ax.set_xlim(0.0, 5.0)
+        ax.text(_setPercentage(ax.get_xlim(), 0.02), 
+                _setPercentage(ax.get_ylim(), 0.93), 
+               "Missed Objects: {}".format(len(allObjects_survey[(allObjects_survey["found"] == 0) 
+                                                                 & (allObjects_survey["findable"] == 1)])))
+        if runDir != None:
+            fig.savefig(os.path.join(runDir, "known_orbits_missed.png"))
+
+        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits)
+        ax.set_xscale("log")
+        ax.text(_setPercentage(ax.get_xlim(), 0.001), 
+                _setPercentage(ax.get_ylim(), 0.93), 
+               "Missed Objects: {}".format(len(allObjects_survey[(allObjects_survey["found"] == 0) 
+                                                                & (allObjects_survey["findable"] == 1)])))
+        if runDir != None:
+            fig.savefig(os.path.join(runDir, "known_orbits_missed_log.png"))
+            
+    if verbose == True:
+        print("THOR: runTHOR")
+        print("-------------------------")
+        print("Done. Finished running THOR with {} orbits.".format(len(orbits)))
+        print("Completeness for known objects (%): {:1.3f}".format(completeness))
+        print("")
+        print("-------------------------")
+            
+    return allObjects_survey, summary_survey, summaries_projection
+        
