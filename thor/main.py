@@ -20,6 +20,7 @@ from .plotting import plotOrbitsMissed
 from .plotting import plotProjectionVelocitiesFindable
 from .plotting import plotProjectionVelocitiesFound
 from .plotting import plotProjectionVelocitiesMissed
+from .plotting import _setPercentage
 from .analysis import calcLinkageEfficiency
 from .analysis import analyzeObservations
 from .analysis import analyzeProjections
