@@ -78,7 +78,8 @@ def plotProjectionVelocitiesFindable(allObjects,
                     s=0.1,
                     c=allObjects[allObjects["findable"] == 1]["r_au_median"].values,
                     vmin=0,
-                    vmax=5.0)
+                    vmax=5.0,
+                    cmap="viridis")
     cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
     ax.set_aspect("equal")
 
@@ -151,7 +152,8 @@ def plotProjectionVelocitiesFound(allObjects,
                     s=0.1,
                     c=allObjects[allObjects["found"] == 1]["r_au_median"].values,
                     vmin=0,
-                    vmax=5.0)
+                    vmax=5.0,
+                    cmap="viridis")
     cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
     ax.set_aspect("equal")
 
@@ -225,7 +227,8 @@ def plotProjectionVelocitiesMissed(allObjects,
                     s=0.1,
                     c=allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["r_au_median"].values,
                     vmin=0,
-                    vmax=5.0)
+                    vmax=5.0,
+                    cmap="viridis")
     cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
     ax.set_aspect("equal")
 
@@ -273,7 +276,7 @@ def plotOrbitsFindable(allObjects,
     ax : `~matplotlib.axes._subplots.AxesSubplot`
         The matplotlib axes object. 
     """
-    findable = orbits[orbits[columnMapping["name"]].isin(allObjects[allObjects["findable"] == 1][columnMapping["name"]])]
+    findable = orbits[orbits[columnMapping["name"]].isin(allObjects[allObjects["findable"] == 1][columnMapping["name"]].values)]
     fig, ax = plotScatterContour(findable, 
                                  columnMapping["a_au"],
                                  columnMapping["i_deg"],
@@ -285,7 +288,7 @@ def plotOrbitsFindable(allObjects,
                                  xLabel="a [AU]",
                                  yLabel="i [Degrees]",
                                  zLabel="e",
-                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1})
+                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
     return fig, ax
     
     
@@ -314,7 +317,7 @@ def plotOrbitsFound(allObjects,
     ax : `~matplotlib.axes._subplots.AxesSubplot`
         The matplotlib axes object. 
     """
-    found = orbits[orbits[columnMapping["name"]].isin(allObjects[allObjects["found"] == 1][columnMapping["name"]])]
+    found = orbits[orbits[columnMapping["name"]].isin(allObjects[allObjects["found"] == 1][columnMapping["name"]].values)]
     fig, ax = plotScatterContour(found, 
                                  columnMapping["a_au"],
                                  columnMapping["i_deg"],
@@ -326,7 +329,7 @@ def plotOrbitsFound(allObjects,
                                  xLabel="a [AU]",
                                  yLabel="i [Degrees]",
                                  zLabel="e",
-                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1})
+                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
     return fig, ax
     
 def plotOrbitsMissed(allObjects, orbits, columnMapping=Config.columnMapping):
@@ -352,7 +355,7 @@ def plotOrbitsMissed(allObjects, orbits, columnMapping=Config.columnMapping):
     ax : `~matplotlib.axes._subplots.AxesSubplot`
         The matplotlib axes object. 
     """
-    missed = orbits[orbits[columnMapping["name"]].isin(allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)][columnMapping["name"]])]
+    missed = orbits[orbits[columnMapping["name"]].isin(allObjects[(allObjects["found"] == 0) & (allObjects["findable"] == 1)][columnMapping["name"]].values)]
     fig, ax = plotScatterContour(missed, 
                                  columnMapping["a_au"],
                                  columnMapping["i_deg"],
@@ -364,5 +367,5 @@ def plotOrbitsMissed(allObjects, orbits, columnMapping=Config.columnMapping):
                                  xLabel="a [AU]",
                                  yLabel="i [Degrees]",
                                  zLabel="e",
-                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1})
+                                 scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
     return fig, ax
