@@ -728,7 +728,7 @@ def runTHOR(observations,
                        s=2, 
                        c="r",
                        label="Test Orbits")
-            ax.legend()
+            ax.legend(loc='upper right')
         
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_findable.png"))
@@ -747,7 +747,7 @@ def runTHOR(observations,
                        s=2, 
                        c="r",
                        label="Test Orbits")
-            ax.legend()
+            ax.legend(loc='upper right')
             
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_findable_log.png"))
@@ -982,7 +982,7 @@ def runTHOR(observations,
                        s=2, 
                        c="r",
                        label="Test Orbits")
-            ax.legend()
+            ax.legend(loc='upper right')
         
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_found.png"))
@@ -1001,7 +1001,7 @@ def runTHOR(observations,
                        s=2, 
                        c="r",
                        label="Test Orbits")
-            ax.legend()
+            ax.legend(loc='upper right')
             
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_found_log.png"))
@@ -1021,7 +1021,7 @@ def runTHOR(observations,
                        s=2, 
                        c="r",
                        label="Test Orbits")
-            ax.legend()
+            ax.legend(loc='upper right')
             
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_missed.png"))
@@ -1041,7 +1041,7 @@ def runTHOR(observations,
                        s=2, 
                        c="r",
                        label="Test Orbits")
-            ax.legend()
+            ax.legend(loc='upper right')
     
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_missed_log.png"))
