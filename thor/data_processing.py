@@ -103,6 +103,8 @@ def findExposureTimes(observations,
 
 def findAverageOrbits(observations,
                       rValues=None,
+                      unknownIDs=Config.unknownIDs,
+                      falsePositiveIDs=Config.falsePositiveIDs,
                       verbose=True,
                       columnMapping=Config.columnMapping):
     """
@@ -118,6 +120,12 @@ def findAverageOrbits(observations,
         If None, will find average orbit in all of observations. If a list, will find an 
         average orbit between each value in the list. For example, passing rValues = [1.0, 2.0, 4.0] will
         mean an average orbit will be found in the following bins: (1.0 <= r < 2.0), (2.0 <= r < 4.0).
+    unknownIDs : list, optional
+        Values in the name column for unknown observations.
+        [Default = `~thor.Config.unknownIDs`]
+    falsePositiveIDs : list, optional
+        Names of false positive IDs.
+        [Default = `~thor.Config.falsePositiveIDs`]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -148,7 +156,7 @@ def findAverageOrbits(observations,
     orbits = []
     
     for i, obs in enumerate(observations_rBins):
-        objects = obs[obs[columnMapping["name"]] != "NS"]
+        objects = obs[~obs[columnMapping["name"]].isin(falsePositiveIDs + unknownIDs)]
 
         if len(objects) == 0:
             # No real objects
