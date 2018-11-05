@@ -254,6 +254,7 @@ def plotProjectionVelocitiesMissed(allObjects,
 
 def plotOrbitsFindable(allObjects, 
                        orbits, 
+                       testOrbits=None,
                        columnMapping=Config.columnMapping):
     """
     Plots orbits that should be findable in semi-major axis, inclination 
@@ -266,6 +267,9 @@ def plotOrbitsFindable(allObjects,
     orbits : `~pandas.DataFrame`
         Orbit DataFrame, should contain the orbits for the objects in 
         the allObjects DataFrame.
+    testOrbits : {None, `~pandas.DataFrame`}, optional
+        If passed, will plot test orbits in red. 
+        [Default = None]
     columnMapping : dict, optional
         Column name mapping of orbits DataFrame to internally used column names. 
         [Default = `~thor.Config.columnMapping`]
@@ -290,11 +294,21 @@ def plotOrbitsFindable(allObjects,
                                  yLabel="i [Degrees]",
                                  zLabel="e",
                                  scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
+    if type(testOrbits) != None:
+        # If test orbits exist in known orbits, plot them
+        test_orbits_in_known = orbits[orbits[columnMapping["name"]].isin(testOrbits[columnMapping["name"]].values)]
+        if len(test_orbits_in_known) != 0:
+            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
+                       s=2, 
+                       c="r",
+                       label="Test Orbits")
+            ax.legend(loc='upper right')
     return fig, ax
     
     
 def plotOrbitsFound(allObjects, 
                     orbits, 
+                    testOrbits=None,
                     columnMapping=Config.columnMapping):
     """
     Plots orbits that have been found in semi-major axis, inclination 
@@ -307,6 +321,9 @@ def plotOrbitsFound(allObjects,
     orbits : `~pandas.DataFrame`
         Orbit DataFrame, should contain the orbits for the objects in 
         the allObjects DataFrame.
+    testOrbits : {None, `~pandas.DataFrame`}, optional
+        If passed, will plot test orbits in red. 
+        [Default = None]
     columnMapping : dict, optional
         Column name mapping of orbits DataFrame to internally used column names. 
         [Default = `~thor.Config.columnMapping`]
@@ -331,9 +348,21 @@ def plotOrbitsFound(allObjects,
                                  yLabel="i [Degrees]",
                                  zLabel="e",
                                  scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
+    if type(testOrbits) != None:
+        # If test orbits exist in known orbits, plot them
+        test_orbits_in_known = orbits[orbits[columnMapping["name"]].isin(testOrbits[columnMapping["name"]].values)]
+        if len(test_orbits_in_known) != 0:
+            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
+                       s=2, 
+                       c="r",
+                       label="Test Orbits")
+            ax.legend(loc='upper right')
     return fig, ax
     
-def plotOrbitsMissed(allObjects, orbits, columnMapping=Config.columnMapping):
+def plotOrbitsMissed(allObjects, 
+                     orbits, 
+                     testOrbits=None, 
+                     columnMapping=Config.columnMapping):
     """
     Plots orbits that have been missed (but were findable) in semi-major axis, inclination 
     and eccentrity space.
@@ -345,6 +374,9 @@ def plotOrbitsMissed(allObjects, orbits, columnMapping=Config.columnMapping):
     orbits : `~pandas.DataFrame`
         Orbit DataFrame, should contain the orbits for the objects in 
         the allObjects DataFrame.
+    testOrbits : {None, `~pandas.DataFrame`}, optional
+        If passed, will plot test orbits in red. 
+        [Default = None]
     columnMapping : dict, optional
         Column name mapping of orbits DataFrame to internally used column names. 
         [Default = `~thor.Config.columnMapping`]
@@ -369,4 +401,14 @@ def plotOrbitsMissed(allObjects, orbits, columnMapping=Config.columnMapping):
                                  yLabel="i [Degrees]",
                                  zLabel="e",
                                  scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
+    if type(testOrbits) != None:
+        # If test orbits exist in known orbits, plot them
+        test_orbits_in_known = orbits[orbits[columnMapping["name"]].isin(testOrbits[columnMapping["name"]].values)]
+        if len(test_orbits_in_known) != 0:
+            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
+                       s=2, 
+                       c="r",
+                       label="Test Orbits")
+            ax.legend(loc='upper right')
+
     return fig, ax

@@ -715,39 +715,27 @@ def runTHOR(observations,
     # Plot findable orbits if known orbits are provided
     if type(knownOrbits) == pd.DataFrame:
         # Plot findable orbits (linear semi-major axis)
-        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits, columnMapping=columnMapping)
+        fig, ax = plotOrbitsFindable(allObjects_survey, 
+                                     knownOrbits, 
+                                     testOrbits=orbits, 
+                                     columnMapping=columnMapping)
         ax.set_xlim(0.0, 5.0)
         ax.text(_setPercentage(ax.get_xlim(), 0.02), 
                 _setPercentage(ax.get_ylim(), 0.93), 
                "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
         
-        # If test orbits exist in known orbits, plot them
-        test_orbits_in_known = knownOrbits[knownOrbits[columnMapping["name"]].isin(orbits[columnMapping["name"]].values)]
-        if len(test_orbits_in_known) != 0:
-            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
-                       s=2, 
-                       c="r",
-                       label="Test Orbits")
-            ax.legend(loc='upper right')
-        
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_findable.png"))
         
         # Plot findable orbits (log semi-major axis)
-        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits, columnMapping=columnMapping)
+        fig, ax = plotOrbitsFindable(allObjects_survey, 
+                                     knownOrbits, 
+                                     testOrbits=orbits, 
+                                     columnMapping=columnMapping)
         ax.set_xscale("log")
-        ax.text(_setPercentage(ax.get_xlim(), 0.001), 
+        ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
                 _setPercentage(ax.get_ylim(), 0.93), 
                "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
-        
-        # If test orbits exist in known orbits, plot them
-        test_orbits_in_known = knownOrbits[knownOrbits[columnMapping["name"]].isin(orbits[columnMapping["name"]].values)]
-        if len(test_orbits_in_known) != 0:
-            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
-                       s=2, 
-                       c="r",
-                       label="Test Orbits")
-            ax.legend(loc='upper right')
             
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_findable_log.png"))
@@ -970,79 +958,55 @@ def runTHOR(observations,
     # Plot found and missed orbits if known orbits are provided
     if type(knownOrbits) == pd.DataFrame:
         # Plot found orbits (linear semi-major axis)
-        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits, columnMapping=columnMapping)
+        fig, ax = plotOrbitsFound(allObjects_survey, 
+                                  knownOrbits, 
+                                  testOrbits=orbits, 
+                                  columnMapping=columnMapping)
         ax.set_xlim(0.0, 5.0)
         ax.text(_setPercentage(ax.get_xlim(), 0.02), 
                 _setPercentage(ax.get_ylim(), 0.93), 
                "Found Objects: {}".format(len(allObjects_survey[allObjects_survey["found"] == 1])))
-        
-        # If test orbits exist in known orbits, plot them
-        test_orbits_in_known = knownOrbits[knownOrbits[columnMapping["name"]].isin(orbits[columnMapping["name"]].values)]
-        if len(test_orbits_in_known) != 0:
-            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
-                       s=2, 
-                       c="r",
-                       label="Test Orbits")
-            ax.legend(loc='upper right')
         
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_found.png"))
         
         # Plot found orbits (log semi-major axis)
-        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits, columnMapping=columnMapping)
+        fig, ax = plotOrbitsFound(allObjects_survey, 
+                                  knownOrbits, 
+                                  testOrbits=orbits, 
+                                  columnMapping=columnMapping)
         ax.set_xscale("log")
-        ax.text(_setPercentage(ax.get_xlim(), 0.001), 
+        ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
                 _setPercentage(ax.get_ylim(), 0.93), 
                "Found Objects: {}".format(len(allObjects_survey[allObjects_survey["found"] == 1])))
-        
-        # If test orbits exist in known orbits, plot them
-        test_orbits_in_known = knownOrbits[knownOrbits[columnMapping["name"]].isin(orbits[columnMapping["name"]].values)]
-        if len(test_orbits_in_known) != 0:
-            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
-                       s=2, 
-                       c="r",
-                       label="Test Orbits")
-            ax.legend(loc='upper right')
             
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_found_log.png"))
 
         # Plot missed orbits (linear semi-major axis)
-        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits, columnMapping=columnMapping)
+        fig, ax = plotOrbitsMissed(allObjects_survey, 
+                                   knownOrbits, 
+                                   testOrbits=orbits, 
+                                   columnMapping=columnMapping)
         ax.set_xlim(0.0, 5.0)
         ax.text(_setPercentage(ax.get_xlim(), 0.02), 
                 _setPercentage(ax.get_ylim(), 0.93), 
                "Missed Objects: {}".format(len(allObjects_survey[(allObjects_survey["found"] == 0) 
                                                                  & (allObjects_survey["findable"] == 1)])))
-        
-        # If test orbits exist in known orbits, plot them
-        test_orbits_in_known = knownOrbits[knownOrbits[columnMapping["name"]].isin(orbits[columnMapping["name"]].values)]
-        if len(test_orbits_in_known) != 0:
-            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
-                       s=2, 
-                       c="r",
-                       label="Test Orbits")
-            ax.legend(loc='upper right')
-            
+
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_missed.png"))
         
         # Plot missed orbits (log semi-major axis)
-        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits, columnMapping=columnMapping)
+        fig, ax = plotOrbitsMissed(allObjects_survey, 
+                                   knownOrbits, 
+                                   testOrbits=orbits, 
+                                   columnMapping=columnMapping)
         ax.set_xscale("log")
-        ax.text(_setPercentage(ax.get_xlim(), 0.001), 
+        ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
                 _setPercentage(ax.get_ylim(), 0.93), 
                "Missed Objects: {}".format(len(allObjects_survey[(allObjects_survey["found"] == 0) 
                                                                 & (allObjects_survey["findable"] == 1)])))
-        
-        # If test orbits exist in known orbits, plot them
-        test_orbits_in_known = knownOrbits[knownOrbits[columnMapping["name"]].isin(orbits[columnMapping["name"]].values)]
-        if len(test_orbits_in_known) != 0:
-            ax.scatter(*test_orbits_in_known[[columnMapping["a_au"], columnMapping["i_deg"]]].values.T, 
-                       s=2, 
-                       c="r",
-                       label="Test Orbits")
-            ax.legend(loc='upper right')
     
         if runDir != None:
             fig.savefig(os.path.join(runDir, "known_orbits_missed_log.png"))
