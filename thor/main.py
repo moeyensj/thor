@@ -802,6 +802,34 @@ def runTHOR(observations,
         fig, ax = plotProjectionVelocitiesFindable(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
         if runDir != None:
             fig.savefig(os.path.join(orbitDir, "projection_findable.png"))
+            
+        # Plot findable orbits if known orbits are provided
+        if type(knownOrbits) == pd.DataFrame:
+            # Plot findable orbits (linear semi-major axis)
+            fig, ax = plotOrbitsFindable(allObjects_projection, 
+                                         knownOrbits, 
+                                         testOrbits=orbit, 
+                                         columnMapping=columnMapping)
+            ax.set_xlim(0.0, 5.0)
+            ax.text(_setPercentage(ax.get_xlim(), 0.02), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Findable Objects: {}".format(len(allObjects_projection[allObjects_projection["findable"] == 1])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "known_orbits_findable.png"))
+
+            # Plot findable orbits (log semi-major axis)
+            fig, ax = plotOrbitsFindable(allObjects_projection, 
+                                        knownOrbits, 
+                                        testOrbits=orbit, 
+                                        columnMapping=columnMapping)
+            ax.set_xscale("log")
+            ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Findable Objects: {}".format(len(allObjects_projection[allObjects_projection["findable"] == 1])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "known_orbits_findable_log.png"))
 
         # Cluster and link
         allClusters_projection, clusterMembers_projection = clusterAndLink(
@@ -913,6 +941,62 @@ def runTHOR(observations,
             print("-------------------------")
             print("")
         
+        # Plot found and missed orbits if known orbits are provided
+        if type(knownOrbits) == pd.DataFrame:
+            # Plot found orbits (linear semi-major axis)
+            fig, ax = plotOrbitsFound(allObjects_projection, 
+                                      knownOrbits, 
+                                      testOrbits=orbit, 
+                                      columnMapping=columnMapping)
+            ax.set_xlim(0.0, 5.0)
+            ax.text(_setPercentage(ax.get_xlim(), 0.02), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Found Objects: {}".format(len(allObjects_projection[allObjects_projection["found"] == 1])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "known_orbits_found.png"))
+
+            # Plot found orbits (log semi-major axis)
+            fig, ax = plotOrbitsFound(allObjects_projection, 
+                                      knownOrbits, 
+                                      testOrbits=orbit, 
+                                      columnMapping=columnMapping)
+            ax.set_xscale("log")
+            ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Found Objects: {}".format(len(allObjects_projection[allObjects_projection["found"] == 1])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "known_orbits_found_log.png"))
+
+            # Plot missed orbits (linear semi-major axis)
+            fig, ax = plotOrbitsMissed(allObjects_projection, 
+                                       knownOrbits, 
+                                       testOrbits=orbit, 
+                                       columnMapping=columnMapping)
+            ax.set_xlim(0.0, 5.0)
+            ax.text(_setPercentage(ax.get_xlim(), 0.02), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Missed Objects: {}".format(len(allObjects_projection[(allObjects_projection["found"] == 0) 
+                                                                     & (allObjects_projection["findable"] == 1)])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "known_orbits_missed.png"))
+
+            # Plot missed orbits (log semi-major axis)
+            fig, ax = plotOrbitsMissed(allObjects_projection, 
+                                       knownOrbits, 
+                                       testOrbits=orbit, 
+                                       columnMapping=columnMapping)
+            ax.set_xscale("log")
+            ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Missed Objects: {}".format(len(allObjects_projection[(allObjects_projection["found"] == 0) 
+                                                                    & (allObjects_projection["findable"] == 1)])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "known_orbits_missed_log.png"))
+
     # Concatenate the projection based dataframes
     allObjects = pd.concat(allObjects)
     allObjects.reset_index(inplace=True, drop=True)
