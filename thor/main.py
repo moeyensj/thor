@@ -857,11 +857,12 @@ def runTHOR(observations,
             summary_projection.to_csv(os.path.join(orbitDir, "summary.txt"), sep=" ", index=False)
         
         # Calculate linkage efficiency for known objects
-        summary_projection["linkage_efficiency"] = calcLinkageEfficiency(
+        linkage_efficiency = calcLinkageEfficiency(
             allObjects_projection, 
             vxRange=vxRange, 
             vyRange=vyRange,
             verbose=True)
+        summary_projection["percent_linkage_efficiency"] = linkage_efficiency * 100
 
         # Plot projection velocities of found and missed known objects
         fig, ax = plotProjectionVelocitiesFound(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
@@ -885,7 +886,7 @@ def runTHOR(observations,
         summary_projection = summary_projection[[
             'orbit_id',
             'percent_completeness', 
-            'linkage_efficiency',
+            'percent_linkage_efficiency',
             'time_seconds',
             'num_unique_known_objects', 
             'num_unique_known_objects_findable',
@@ -940,7 +941,7 @@ def runTHOR(observations,
     num_known_found = len(allObjects_survey[allObjects_survey["found"] == 1])
     num_known_missed =  len(allObjects_survey[(allObjects_survey["found"] == 0)
                                               & (allObjects_survey["findable"] == 1)])
-    completeness =  num_known_found / len(allObjects_survey[allObjects_survey["findable"] == 1])
+    completeness =  100 * (num_known_found / len(allObjects_survey[allObjects_survey["findable"] == 1]))
     summary_survey["percent_completeness"] = completeness
     summary_survey["num_unique_known_objects_found"] = num_known_found
     summary_survey["num_unique_known_objects_missed"] = num_known_missed
