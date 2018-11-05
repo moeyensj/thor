@@ -715,7 +715,7 @@ def runTHOR(observations,
     # Plot findable orbits if known orbits are provided
     if type(knownOrbits) == pd.DataFrame:
         # Plot findable orbits (linear semi-major axis)
-        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits)
+        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits, columnMapping=columnMapping)
         ax.set_xlim(0.0, 5.0)
         ax.text(_setPercentage(ax.get_xlim(), 0.02), 
                 _setPercentage(ax.get_ylim(), 0.93), 
@@ -734,7 +734,7 @@ def runTHOR(observations,
             fig.savefig(os.path.join(runDir, "known_orbits_findable.png"))
         
         # Plot findable orbits (log semi-major axis)
-        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits)
+        fig, ax = plotOrbitsFindable(allObjects_survey, knownOrbits, columnMapping=columnMapping)
         ax.set_xscale("log")
         ax.text(_setPercentage(ax.get_xlim(), 0.001), 
                 _setPercentage(ax.get_ylim(), 0.93), 
@@ -969,7 +969,7 @@ def runTHOR(observations,
     # Plot found and missed orbits if known orbits are provided
     if type(knownOrbits) == pd.DataFrame:
         # Plot found orbits (linear semi-major axis)
-        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits)
+        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits, columnMapping=columnMapping)
         ax.set_xlim(0.0, 5.0)
         ax.text(_setPercentage(ax.get_xlim(), 0.02), 
                 _setPercentage(ax.get_ylim(), 0.93), 
@@ -988,7 +988,7 @@ def runTHOR(observations,
             fig.savefig(os.path.join(runDir, "known_orbits_found.png"))
         
         # Plot found orbits (log semi-major axis)
-        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits)
+        fig, ax = plotOrbitsFound(allObjects_survey, knownOrbits, columnMapping=columnMapping)
         ax.set_xscale("log")
         ax.text(_setPercentage(ax.get_xlim(), 0.001), 
                 _setPercentage(ax.get_ylim(), 0.93), 
@@ -1007,7 +1007,7 @@ def runTHOR(observations,
             fig.savefig(os.path.join(runDir, "known_orbits_found_log.png"))
 
         # Plot missed orbits (linear semi-major axis)
-        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits)
+        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits, columnMapping=columnMapping)
         ax.set_xlim(0.0, 5.0)
         ax.text(_setPercentage(ax.get_xlim(), 0.02), 
                 _setPercentage(ax.get_ylim(), 0.93), 
@@ -1027,7 +1027,7 @@ def runTHOR(observations,
             fig.savefig(os.path.join(runDir, "known_orbits_missed.png"))
         
         # Plot missed orbits (log semi-major axis)
-        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits)
+        fig, ax = plotOrbitsMissed(allObjects_survey, knownOrbits, columnMapping=columnMapping)
         ax.set_xscale("log")
         ax.text(_setPercentage(ax.get_xlim(), 0.001), 
                 _setPercentage(ax.get_ylim(), 0.93), 
