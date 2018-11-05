@@ -893,6 +893,10 @@ def runTHOR(observations,
         summary_projection["num_linked_observations"] = len(linked_detections_projection)
         linked_detections = np.concatenate([linked_detections, linked_detections_projection])
         
+        # Save linked detections
+        if runDir != None:
+            np.savetxt(os.path.join(orbitDir, "linked_detections.txt"), linked_detections_projection, fmt="%i")
+            
         # Grab time to complete orbit processing
         time_end = time.time()
         duration = time_end - time_start
@@ -1038,6 +1042,7 @@ def runTHOR(observations,
         allObjects_survey.to_csv(os.path.join(runDir, "allObjects_survey.txt"), sep=" ", index=False)
         summary_survey.to_csv(os.path.join(runDir, "summary_survey.txt"), sep=" ", index=False)
         summaries_projection.to_csv(os.path.join(runDir, "summary_orbits.txt"), sep=" ", index=False)
+        np.savetxt(os.path.join(runDir, "linked_detections.txt"), linked_detections, fmt="%i")
     
     # Plot found and missed orbits if known orbits are provided
     if type(knownOrbits) == pd.DataFrame:
