@@ -16,6 +16,7 @@ def findExposureTimes(observations,
                       mjd, 
                       numNights=14, 
                       dMax=20.0, 
+                      observatoryCode=Config.oorbObservatoryCode,
                       verbose=True,
                       columnMapping=Config.columnMapping):
     
@@ -41,6 +42,9 @@ def findExposureTimes(observations,
         Maximum angular distance (in RA and Dec) permitted when searching for exposure times
         in degrees. 
         [Default = 20.0]
+    observatoryCode : str, optional
+        Observatory from which to measure ephemerides.
+        [Default = `~thor.Config.oorbObservatoryCode`]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -72,7 +76,7 @@ def findExposureTimes(observations,
     times = np.unique(times_nights[(times_nights[columnMapping["night"]] >= nightStart) 
                          & (times_nights[columnMapping["night"]] <= nightStart + numNights)][columnMapping["exp_mjd"]].values)
     
-    eph = propagateTestParticle([*r, *v], mjd, times)
+    eph = propagateTestParticle([*r, *v], mjd, times, elementType="cartesian", mjdScale="UTC", observatoryCode=observatoryCode)
     eph.rename(columns={"RA_deg": "RA_deg_orbit", "Dec_deg": "Dec_deg_orbit"}, inplace=True)
     
     df = pd.merge(observations[[columnMapping["obs_id"],

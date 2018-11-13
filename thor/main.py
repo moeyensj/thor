@@ -33,13 +33,18 @@ __all__ = ["rangeAndShift",
            "runTHOR"]
 
 def rangeAndShift(observations,
-                  cell, 
-                  r, 
+                  ra,
+                  dec,
+                  r,
                   v,
+                  mjd,
+                  cellArea=10,
+                  cellShape="circle",
                   numNights=14,
                   mjds="auto",
                   dMax=20.0,
                   includeEquatorialProjection=True,
+                  observatoryCode=Config.oorbObservatoryCode,
                   verbose=True, 
                   columnMapping=Config.columnMapping):
     """
@@ -49,12 +54,23 @@ def rangeAndShift(observations,
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing observations.
-    cell : `~thor.Cell`
-        THOR cell. 
+    ra : float
+        Right Ascension of the test orbit in degrees.
+    dec : float
+        Declination of the test orbit in degrees.
     r : float
-        Heliocentric distance in AU.
+        Test orbit's heliocentric distance in AU.
     v : `~numpy.ndarray` (1, 3)
-        Velocity vector in AU per day (ecliptic).
+        Test orbits's velocity vector in AU per day (ecliptic).
+    mjd : float
+        Test orbit's epoch in MJD. 
+    cellArea : float, optional
+        Cell's area in units of square degrees. 
+        [Default = 10]
+    cellShape : {'square', 'circle'}, optional
+        Cell's shape can be square or circle. Combined with the area parameter, will set the search 
+        area when looking for observations contained within the defined cell. 
+        [Default = 'square']
     numNights : int, optional
         Number of nights from the first exposure to consider 
         for ranging and shifting. 
@@ -72,6 +88,9 @@ def rangeAndShift(observations,
         Include naive shifting in equatorial coordinates without properly projecting
         to the plane of the orbit. This is useful if performance comparisons want to be made.
         [Default = True]
+    observatoryCode : str, optional
+        Observatory from which to measure ephemerides.
+        [Default = `~thor.Config.oorbObservatoryCode`]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -85,11 +104,6 @@ def rangeAndShift(observations,
         Observations dataframe (from cell.observations) with columns containing
         projected coordinates. 
     """
-    # If initial doesn't have observations loaded,
-    # get them
-    if cell.observations is None:
-        cell.getObservations(columnMapping=columnMapping)
-        
     time_start = time.time()
     if verbose == True:
         print("THOR: rangeAndShift")
@@ -97,6 +111,16 @@ def rangeAndShift(observations,
         print("Running range and shift...")
         print("Assuming r = {} AU".format(r))
         print("Assuming v = {} AU per day".format(v))
+        
+    # Build a cell with the test orbit at its center
+    center = [ra, dec]
+    cell = Cell(center, mjd, observations, shape=cellShape, area=cellArea)
+    cell.getObservations(columnMapping=columnMapping)
+    
+    # If the initial test orbit doesn't appear in data, we cannot proceed (TO FIX)
+    if len(cell.observations) == 0:
+        raise ValueError("Initial test orbit does not appear in observations. Cannot proceed.")
+        return
         
     x_e = cell.observations[[columnMapping["obs_x_au"], columnMapping["obs_y_au"], columnMapping["obs_z_au"]]].values[0]
    
@@ -107,7 +131,7 @@ def rangeAndShift(observations,
     particle.prepare(verbose=verbose)
     
     if mjds == "auto":
-        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, numNights=numNights, dMax=dMax, columnMapping=columnMapping, verbose=verbose)
+        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, numNights=numNights, dMax=dMax, observatoryCode=observatoryCode, columnMapping=columnMapping, verbose=verbose)
         
     # Apply tranformations to observations
     particle.apply(cell, columnMapping=columnMapping, verbose=verbose)
@@ -571,6 +595,7 @@ def runTHOR(observations,
             contaminationThreshold=0.2,
             unknownIDs=Config.unknownIDs,
             falsePositiveIDs=Config.falsePositiveIDs,
+            observatoryCode=Config.oorbObservatoryCode,
             verbose=True,
             columnMapping=Config.columnMapping):
     """
@@ -664,6 +689,9 @@ def runTHOR(observations,
     falsePositiveIDs : list, optional
         Names of false positive IDs.
         [Default = `~thor.Config.falsePositiveIDs`]
+    observatoryCode : str, optional
+        Observatory from which to measure ephemerides.
+        [Default = `~thor.Config.oorbObservatoryCode`]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -761,24 +789,23 @@ def runTHOR(observations,
         if runDir != None:
             orbit.to_csv(os.path.join(orbitDir, "orbit.txt"), sep=" ", index=False)
 
-        # Build a cell with the test orbit at its center
-        center = orbit[[columnMapping["RA_deg"], columnMapping["Dec_deg"]]].values[0]
-        mjd = orbit[columnMapping["exp_mjd"]].values[0]
-        cell = Cell(center, mjd, observations, shape=cellShape, area=cellArea)
-        cell.getObservations(columnMapping=columnMapping)
-
         # Propagate the orbit and gather all nearby detections
         projected_obs = rangeAndShift(
             observations, 
-            cell, 
+            orbit[columnMapping["RA_deg"]].values[0],
+            orbit[columnMapping["Dec_deg"]].values[0],
             orbit[[columnMapping["r_au"]]].values[0], 
             orbit[[columnMapping["obj_dx/dt_au_p_day"],
                    columnMapping["obj_dy/dt_au_p_day"],
                    columnMapping["obj_dz/dt_au_p_day"]]].values[0], 
+            orbit[columnMapping["exp_mjd"]].values[0],
             mjds=mjds, 
+            cellArea=cellArea,
+            cellShape=cellShape,
             dMax=dMax, 
             numNights=numNights,
             includeEquatorialProjection=includeEquatorialProjection,
+            observatoryCode=observatoryCode,
             verbose=False,
             columnMapping=columnMapping)
         
