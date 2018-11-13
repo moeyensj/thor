@@ -816,6 +816,9 @@ def runTHOR(observations,
         # Analyze propagated observations
         allObjects_projection, summary_projection = analyzeProjections(
             projected_obs[~projected_obs[columnMapping["obs_id"]].isin(linked_detections)],
+            minSamples=minSamples,
+            unknownIDs=unknownIDs,
+            falsePositiveIDs=falsePositiveIDs,
             columnMapping=columnMapping)
         summary_projection["orbit_id"] = orbit_id
         allObjects_projection["orbit_id"] = np.ones(len(allObjects_projection), dtype=int) * orbit_id
