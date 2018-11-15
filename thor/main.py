@@ -526,13 +526,6 @@ def clusterAndLink(observations,
         print("No clusters found.")
         if verbose == True:
             print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))
-        
-        if saveFiles is not None:
-            if verbose == True:
-                print("Saving allClusters to {}".format(saveFiles[0]))
-                allClusters.to_csv(saveFiles[0], sep=" ", index=False)
-                print("Saving clusterMembers to {}".format(saveFiles[1]))
-                clusterMembers.to_csv(saveFiles[1], sep=" ", index=False)
                 
         if verbose == True:    
             print("-------------------------")
