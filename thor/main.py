@@ -295,7 +295,7 @@ def clusterVelocity(obsIds,
         for cluster in np.unique(clusters):
             cluster_ids.append(obsIds[np.where(db.labels_ == cluster)[0]])
     else:
-        cluster_ids = -1
+        cluster_ids = np.NaN
     
     del db
     return cluster_ids
@@ -506,55 +506,58 @@ def clusterAndLink(observations,
         
     if verbose == True:
         print("Restructuring clusters...")
-    
-    # Clean up returned arrays and remove empty cases
     time_start_restr = time.time()
-    populated_clusters = []
-    populated_cluster_velocities = []
-    for cluster, vxi, vyi in zip(possible_clusters, vxx, vyy):
-        if type(cluster) == int:
-            continue
-        else:
-            for c in cluster:
-                populated_clusters.append(c)
-                populated_cluster_velocities.append([vxi, vyi])
-                
-    if len(populated_clusters) == 0:
-        time_end_restr = time.time()
-        clusterMembers = pd.DataFrame(columns=["cluster_id", columnMapping["obs_id"]])
-        allClusters = pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy", "num_obs"])
-        print("No clusters found.")
-        if verbose == True:
-            print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))
-                
-        if verbose == True:    
-            print("-------------------------")
-            print("")
     
-        return allClusters, clusterMembers
-                
-    cluster_ids = np.arange(1, len(populated_clusters) + 1, dtype=int)
-    num_members = np.zeros(len(populated_clusters), dtype=int)
-    members_array = np.empty(0, dtype=int)
-    id_array = np.empty(0, dtype=int)
-    vs = np.array(populated_cluster_velocities)
-    
-    for i, (cluster_id, cluster) in enumerate(zip(cluster_ids, populated_clusters)):
-        num_obs = len(cluster)
-        num_members[i] = num_obs
-        id_array_i = np.ones(num_obs, dtype=int) * cluster_id
-        id_array = np.concatenate([id_array, id_array_i])
-        members_array = np.concatenate([members_array, cluster])
+    possible_clusters = pd.DataFrame({"clusters": possible_clusters})
+
+    # Remove empty clusters
+    possible_clusters = possible_clusters[~possible_clusters["clusters"].isna()]
+
+    if len(possible_clusters) != 0:
+        # Make DataFrame with cluster velocities so we can figure out which 
+        # velocities yielded clusters, add names to index so we can enable the join
+        cluster_velocities = pd.DataFrame({"theta_vx": vxx, "theta_vy": vyy})
+        cluster_velocities.index.set_names("velocity_id", inplace=True)
+        #possible_clusters.index.set_names("velocity_id", inplace=True)
+
+        # Split lists of cluster ids into one column per cluster for each different velocity
+        # then stack the result
+        possible_clusters = pd.DataFrame(possible_clusters["clusters"].values.tolist(), index=possible_clusters.index)
+        possible_clusters = pd.DataFrame(possible_clusters.stack())
+        possible_clusters.rename(columns={0: "obs_ids"}, inplace=True)
+        possible_clusters = pd.DataFrame(possible_clusters["obs_ids"].values.tolist(), index=possible_clusters.index)
+
+        # Drop duplicate clusters
+        possible_clusters.drop_duplicates(inplace=True)
+
+        # Set index names
+        possible_clusters.index.set_names(["velocity_id", "cluster_id"], inplace=True)
+
+        # Reset index
+        possible_clusters.reset_index("cluster_id", drop=True, inplace=True)
+        possible_clusters["cluster_id"] = np.arange(1, len(possible_clusters) + 1)
+
+        # Make allClusters DataFrame
+        allClusters = possible_clusters.join(cluster_velocities)
+        allClusters.reset_index(drop=True, inplace=True)
+        allClusters = allClusters[["cluster_id", "theta_vx", "theta_vy"]]
+
+        # Make clusterMembers DataFrame
+        clusterMembers = possible_clusters.reset_index(drop=True).copy()
+        clusterMembers.index = clusterMembers["cluster_id"]
+        clusterMembers.drop("cluster_id", axis=1, inplace=True)
+        clusterMembers = pd.DataFrame(clusterMembers.stack())
+        clusterMembers.rename(columns={0: columnMapping["obs_id"]}, inplace=True)
+        clusterMembers.reset_index(inplace=True)
+        clusterMembers.drop("level_1", axis=1, inplace=True)
+        clusterMembers["obs_id"] = clusterMembers["obs_id"].astype(int)
         
-    clusterMembers = pd.DataFrame({"cluster_id" : id_array, 
-                                   columnMapping["obs_id"] : members_array})
-    
-    allClusters = pd.DataFrame({"cluster_id" : cluster_ids,
-                                "theta_vx" : vs[:, 0],
-                                "theta_vy" : vs[:, 1],
-                                "num_obs" : num_members})
+    else: 
+        clusterMembers = pd.DataFrame(columns=["cluster_id", columnMapping["obs_id"]])
+        allClusters = pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy"])
     
     time_end_restr = time.time()
+   
     if verbose == True:
         print("Done. Completed in {} seconds.".format(time_end_restr - time_start_restr))
         print("")
@@ -564,7 +567,6 @@ def clusterAndLink(observations,
         print("")
         
     return allClusters, clusterMembers
-
 
 def runTHOR(observations,
             orbits,
