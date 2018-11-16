@@ -550,7 +550,7 @@ def clusterAndLink(observations,
         clusterMembers.rename(columns={0: columnMapping["obs_id"]}, inplace=True)
         clusterMembers.reset_index(inplace=True)
         clusterMembers.drop("level_1", axis=1, inplace=True)
-        clusterMembers["obs_id"] = clusterMembers["obs_id"].astype(int)
+        clusterMembers[columnMapping["obs_id"]] = clusterMembers[columnMapping["obs_id"]].astype(int)
         
     else: 
         clusterMembers = pd.DataFrame(columns=["cluster_id", columnMapping["obs_id"]])
