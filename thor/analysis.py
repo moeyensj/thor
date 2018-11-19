@@ -94,113 +94,115 @@ def __analyzeLinkages(observations,
     allTruths["found_pure"] = np.zeros(len(allTruths), dtype=int)
     allTruths["found_partial"] = np.zeros(len(allTruths), dtype=int)
     allTruths["found"] = np.zeros(len(allTruths), dtype=int)
+    
+    if len(linkageMembers) > 0:
         
-    ### Calculate the number of unique truth's per linkage
-    
-    # Grab only observation IDs and truth from observations
-    linkage_truth = observations[[columnMapping["obs_id"], columnMapping["truth"]]]
-    
-    # Merge truth from observations with linkageMembers on observation IDs
-    linkage_truth = linkage_truth.merge(
-        linkageMembers[[columnMapping["linkage_id"],
-                        columnMapping["obs_id"]]], 
-        on=columnMapping["obs_id"])
-    
-    # Drop observation ID column
-    linkage_truth.drop(columns=columnMapping["obs_id"], inplace=True)
-    
-    # Drop duplicate rows, any correct linkage will now only have one row since
-    # all the truth values would have been the same, any incorrect linkage
-    # will now have multiple rows for each unique truth value
-    linkage_truth.drop_duplicates(inplace=True)
-    
-    # Sort by linkage IDs and reset index
-    linkage_truth.sort_values(by=columnMapping["linkage_id"], inplace=True)
-    linkage_truth.reset_index(inplace=True, drop=True)
-    
-    # Grab the number of unique truths per linkage and update 
-    # the allLinkages DataFrame with the result
-    unique_truths_per_linkage = linkage_truth[columnMapping["linkage_id"]].value_counts()
-    allLinkages["num_members"] = unique_truths_per_linkage.sort_index().values
-    
-    ### Find all the pure linkages and identify them as such
-    
-    # All the linkages where num_members = 1 are pure linkages
-    single_member_linkages = linkage_truth[
-        linkage_truth[columnMapping["linkage_id"]].isin(
-            allLinkages[(allLinkages["num_members"] == 1) & (allLinkages["num_obs"] >= minObs)][columnMapping["linkage_id"]])]
-    
-    # Update the linked_truth field in allLinkages with the linked object
-    pure_linkages = allLinkages[columnMapping["linkage_id"]].isin(single_member_linkages[columnMapping["linkage_id"]])
-    allLinkages.loc[pure_linkages, "linked_truth"] = single_member_linkages[columnMapping["truth"]].values
-    
-    # Update the pure field in allLinkages to indicate which linkages are pure
-    allLinkages.loc[(allLinkages["linked_truth"].notna()), "pure"] = 1
-    
-    ### Find all the partial linkages and identify them as such
-    
-    # Grab only observation IDs and truth from observations
-    linkage_truth = observations[[columnMapping["obs_id"], columnMapping["truth"]]]
+        ### Calculate the number of unique truth's per linkage
 
-    # Merge truth from observations with linkageMembers on observation IDs
-    linkage_truth = linkage_truth.merge(
-        linkageMembers[[columnMapping["linkage_id"],
-                        columnMapping["obs_id"]]], 
-        on=columnMapping["obs_id"])
+        # Grab only observation IDs and truth from observations
+        linkage_truth = observations[[columnMapping["obs_id"], columnMapping["truth"]]]
 
-    # Remove non-pure linkages
-    linkage_truth = linkage_truth[linkage_truth[columnMapping["linkage_id"]].isin(
-        allLinkages[allLinkages["pure"] != 1][columnMapping["linkage_id"]])]
+        # Merge truth from observations with linkageMembers on observation IDs
+        linkage_truth = linkage_truth.merge(
+            linkageMembers[[columnMapping["linkage_id"],
+                            columnMapping["obs_id"]]], 
+            on=columnMapping["obs_id"])
 
-    # Drop observation ID column
-    linkage_truth.drop(columns=columnMapping["obs_id"], inplace=True)
+        # Drop observation ID column
+        linkage_truth.drop(columns=columnMapping["obs_id"], inplace=True)
 
-    # Group by linkage IDs and truths, creates a multi-level index with linkage ID
-    # as the first index, then truth as the second index and as values is the count 
-    # of the number of times the truth shows up in the linkage
-    linkage_truth = linkage_truth.groupby(linkage_truth[[
-        columnMapping["linkage_id"],
-        columnMapping["truth"]]].columns.tolist(), as_index=False).size()
+        # Drop duplicate rows, any correct linkage will now only have one row since
+        # all the truth values would have been the same, any incorrect linkage
+        # will now have multiple rows for each unique truth value
+        linkage_truth.drop_duplicates(inplace=True)
 
-    # Reset the index to create a DataFrame
-    linkage_truth = linkage_truth.reset_index()
+        # Sort by linkage IDs and reset index
+        linkage_truth.sort_values(by=columnMapping["linkage_id"], inplace=True)
+        linkage_truth.reset_index(inplace=True, drop=True)
 
-    # Rename 0 column to num_obs which counts the number of observations
-    # each unique truth has in each linkage
-    linkage_truth.rename(columns={0: "num_obs"}, inplace=True)
+        # Grab the number of unique truths per linkage and update 
+        # the allLinkages DataFrame with the result
+        unique_truths_per_linkage = linkage_truth[columnMapping["linkage_id"]].value_counts()
+        allLinkages["num_members"] = unique_truths_per_linkage.sort_index().values
 
-    # Sort by linkage ID and num_obs so that the truth with the most observations
-    # in each linkage is last for each linkage
-    linkage_truth.sort_values(by=[columnMapping["linkage_id"], "num_obs"], inplace=True)
+        ### Find all the pure linkages and identify them as such
 
-    # Drop duplicate rows, keeping only the last row 
-    linkage_truth.drop_duplicates(subset=[columnMapping["linkage_id"]], inplace=True, keep="last")
+        # All the linkages where num_members = 1 are pure linkages
+        single_member_linkages = linkage_truth[
+            linkage_truth[columnMapping["linkage_id"]].isin(
+                allLinkages[(allLinkages["num_members"] == 1) & (allLinkages["num_obs"] >= minObs)][columnMapping["linkage_id"]])]
 
-    # Grab all linkages and merge truth from observations with linkageMembers on observation IDs
-    linkage_truth = linkage_truth.merge(allLinkages[[columnMapping["linkage_id"], "num_obs"]], on=columnMapping["linkage_id"])
+        # Update the linked_truth field in allLinkages with the linked object
+        pure_linkages = allLinkages[columnMapping["linkage_id"]].isin(single_member_linkages[columnMapping["linkage_id"]])
+        allLinkages.loc[pure_linkages, "linked_truth"] = single_member_linkages[columnMapping["truth"]].values
 
-    # Rename num_obs column in allLinkages to total_num_obs
-    linkage_truth.rename(columns={"num_obs_x": "num_obs", "num_obs_y": "total_num_obs"}, inplace=True)
+        # Update the pure field in allLinkages to indicate which linkages are pure
+        allLinkages.loc[(allLinkages["linked_truth"].notna()), "pure"] = 1
 
-    # Calculate contamination 
-    linkage_truth["contamination"] = (1 - linkage_truth["num_obs"] / linkage_truth["total_num_obs"])
-    
-    # Select partial linkages: have at least the minimum observations of a single truth and have no
-    # more than x% contamination
-    partial_linkages = linkage_truth[(linkage_truth["num_obs"] >= minObs) 
-                                   & (linkage_truth["contamination"] <= contaminationThreshold)]
-    
-    # Update allLinkages to indicate partial linkages, update linked_truth field
-    # Set every linkage that isn't partial or pure to false
-    allLinkages.loc[allLinkages[columnMapping["linkage_id"]].isin(partial_linkages[columnMapping["linkage_id"]]), "linked_truth"] = partial_linkages[columnMapping["truth"]].values
-    allLinkages.loc[allLinkages[columnMapping["linkage_id"]].isin(partial_linkages[columnMapping["linkage_id"]]), "partial"] = 1
-    allLinkages.loc[allLinkages[columnMapping["linkage_id"]].isin(partial_linkages[columnMapping["linkage_id"]]), "contamination"] = partial_linkages["contamination"].values
-    allLinkages.loc[(allLinkages["pure"] != 1) & (allLinkages["partial"] != 1), "false"] = 1
+        ### Find all the partial linkages and identify them as such
 
-    # Update allTruths to indicate which objects were found in pure and partial clusters, if found in either the object is found
-    allTruths.loc[allTruths[columnMapping["truth"]].isin(allLinkages[allLinkages["pure"] == 1]["linked_truth"].values), "found_pure"] = 1
-    allTruths.loc[allTruths[columnMapping["truth"]].isin(allLinkages[allLinkages["partial"] == 1]["linked_truth"].values), "found_partial"] = 1
-    allTruths.loc[(allTruths["found_pure"] == 1) | (allTruths["found_partial"] == 1), "found"] = 1
+        # Grab only observation IDs and truth from observations
+        linkage_truth = observations[[columnMapping["obs_id"], columnMapping["truth"]]]
+
+        # Merge truth from observations with linkageMembers on observation IDs
+        linkage_truth = linkage_truth.merge(
+            linkageMembers[[columnMapping["linkage_id"],
+                            columnMapping["obs_id"]]], 
+            on=columnMapping["obs_id"])
+
+        # Remove non-pure linkages
+        linkage_truth = linkage_truth[linkage_truth[columnMapping["linkage_id"]].isin(
+            allLinkages[allLinkages["pure"] != 1][columnMapping["linkage_id"]])]
+
+        # Drop observation ID column
+        linkage_truth.drop(columns=columnMapping["obs_id"], inplace=True)
+
+        # Group by linkage IDs and truths, creates a multi-level index with linkage ID
+        # as the first index, then truth as the second index and as values is the count 
+        # of the number of times the truth shows up in the linkage
+        linkage_truth = linkage_truth.groupby(linkage_truth[[
+            columnMapping["linkage_id"],
+            columnMapping["truth"]]].columns.tolist(), as_index=False).size()
+
+        # Reset the index to create a DataFrame
+        linkage_truth = linkage_truth.reset_index()
+
+        # Rename 0 column to num_obs which counts the number of observations
+        # each unique truth has in each linkage
+        linkage_truth.rename(columns={0: "num_obs"}, inplace=True)
+
+        # Sort by linkage ID and num_obs so that the truth with the most observations
+        # in each linkage is last for each linkage
+        linkage_truth.sort_values(by=[columnMapping["linkage_id"], "num_obs"], inplace=True)
+
+        # Drop duplicate rows, keeping only the last row 
+        linkage_truth.drop_duplicates(subset=[columnMapping["linkage_id"]], inplace=True, keep="last")
+
+        # Grab all linkages and merge truth from observations with linkageMembers on observation IDs
+        linkage_truth = linkage_truth.merge(allLinkages[[columnMapping["linkage_id"], "num_obs"]], on=columnMapping["linkage_id"])
+
+        # Rename num_obs column in allLinkages to total_num_obs
+        linkage_truth.rename(columns={"num_obs_x": "num_obs", "num_obs_y": "total_num_obs"}, inplace=True)
+
+        # Calculate contamination 
+        linkage_truth["contamination"] = (1 - linkage_truth["num_obs"] / linkage_truth["total_num_obs"])
+
+        # Select partial linkages: have at least the minimum observations of a single truth and have no
+        # more than x% contamination
+        partial_linkages = linkage_truth[(linkage_truth["num_obs"] >= minObs) 
+                                       & (linkage_truth["contamination"] <= contaminationThreshold)]
+
+        # Update allLinkages to indicate partial linkages, update linked_truth field
+        # Set every linkage that isn't partial or pure to false
+        allLinkages.loc[allLinkages[columnMapping["linkage_id"]].isin(partial_linkages[columnMapping["linkage_id"]]), "linked_truth"] = partial_linkages[columnMapping["truth"]].values
+        allLinkages.loc[allLinkages[columnMapping["linkage_id"]].isin(partial_linkages[columnMapping["linkage_id"]]), "partial"] = 1
+        allLinkages.loc[allLinkages[columnMapping["linkage_id"]].isin(partial_linkages[columnMapping["linkage_id"]]), "contamination"] = partial_linkages["contamination"].values
+        allLinkages.loc[(allLinkages["pure"] != 1) & (allLinkages["partial"] != 1), "false"] = 1
+
+        # Update allTruths to indicate which objects were found in pure and partial clusters, if found in either the object is found
+        allTruths.loc[allTruths[columnMapping["truth"]].isin(allLinkages[allLinkages["pure"] == 1]["linked_truth"].values), "found_pure"] = 1
+        allTruths.loc[allTruths[columnMapping["truth"]].isin(allLinkages[allLinkages["partial"] == 1]["linked_truth"].values), "found_partial"] = 1
+        allTruths.loc[(allTruths["found_pure"] == 1) | (allTruths["found_partial"] == 1), "found"] = 1
     
     return allLinkages, allTruths
 
@@ -599,7 +601,6 @@ def analyzeProjections(observations,
         print("")
         
     return allObjects, summary
-
     
 def analyzeClusters(observations,
                     allClusters, 
@@ -610,6 +611,7 @@ def analyzeClusters(observations,
                     contaminationThreshold=0.2, 
                     unknownIDs=Config.unknownIDs,
                     falsePositiveIDs=Config.falsePositiveIDs,
+                    saveFiles=None,
                     verbose=True,
                     columnMapping=Config.columnMapping):
     """
@@ -698,6 +700,11 @@ def analyzeClusters(observations,
     num_false = len(allClusters[allClusters["false"] == 1])
     num_total = len(allClusters)
     num_duplicate_visits = len(allClusters[allClusters["num_obs"] != allClusters["num_visits"]])
+    
+    try: 
+        cluster_contamination = num_false / num_total * 100
+    except:
+        cluster_contamination = 0.0
 
     if verbose == True:
         print("Known object pure clusters: {}".format(num_pure_known))
@@ -709,7 +716,7 @@ def analyzeClusters(observations,
         print("Duplicate visit clusters: {}".format(num_duplicate_visits))
         print("False clusters: {}".format(num_false))
         print("Total clusters: {}".format(num_total))
-        print("Cluster contamination (%): {:1.3f}".format(num_false / num_total * 100))
+        print("Cluster contamination (%): {:1.3f}".format(cluster_contamination))
     
     known_found = allObjects[(allObjects["found"] == 1) 
                        & (~allObjects[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs))]
