@@ -610,7 +610,6 @@ def analyzeClusters(observations,
                     contaminationThreshold=0.2, 
                     unknownIDs=Config.unknownIDs,
                     falsePositiveIDs=Config.falsePositiveIDs,
-                    saveFiles=None,
                     verbose=True,
                     columnMapping=Config.columnMapping):
     """
@@ -637,9 +636,6 @@ def analyzeClusters(observations,
         Percentage (expressed between 0 and 1) of imposter observations in a cluster permitted for the 
         object to be found. 
         [Default = 0.2]
-    saveFiles : {None, list}, optional
-        List of paths to save DataFrames to ([allClusters, clusterMembers, allObjects, summary]) or None. 
-        [Default = None]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
@@ -741,21 +737,7 @@ def analyzeClusters(observations,
         print("Unique known objects missed: {}".format(len(known_missed)))
         print("Completeness (%): {:1.3f}".format(completeness))
         print("Done.")
-        print("Total time in seconds: {}".format(time_end - time_start))
-        
-    if saveFiles is not None:
-        if verbose == True:
-            print("Saving allClusters to {}".format(saveFiles[0]))
-            print("Saving clusterMembers to {}".format(saveFiles[1]))
-            print("Saving allObjects to {}".format(saveFiles[2]))
-            print("Saving summary to {}".format(saveFiles[3]))
-            
-        allClusters.to_csv(saveFiles[0], sep=" ", index=False)
-        clusterMembers.to_csv(saveFiles[1], sep=" ", index=False) 
-        allObjects.to_csv(saveFiles[2], sep=" ", index=False) 
-        summary.to_csv(saveFiles[3], sep=" ", index=False) 
-        
-    if verbose == True:    
+        print("Total time in seconds: {}".format(time_end - time_start))   
         print("-------------------------")
         print("")
 
