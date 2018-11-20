@@ -100,9 +100,10 @@ def rangeAndShift(observations,
         
     Returns
     -------
-    projected_obs : `~pandas.DataFrame`
+    projected_obs : {`~pandas.DataFrame`, -1}
         Observations dataframe (from cell.observations) with columns containing
-        projected coordinates. 
+        projected coordinates. If the orbit at the defined intial epoch doesn't have any
+        nearby observations returns -1.
     """
     time_start = time.time()
     if verbose == True:
@@ -119,8 +120,8 @@ def rangeAndShift(observations,
     
     # If the initial test orbit doesn't appear in data, we cannot proceed (TO FIX)
     if len(cell.observations) == 0:
-        raise ValueError("Initial test orbit does not appear in observations. Cannot proceed.")
-        return
+        print("Initial test orbit does not have nearby observations. Cannot proceed.")
+        return -1
         
     x_e = cell.observations[[columnMapping["obs_x_au"], columnMapping["obs_y_au"], columnMapping["obs_z_au"]]].values[0]
    
@@ -717,7 +718,7 @@ def runTHOR(observations,
     if runDir != None:
         try:
             os.mkdir(runDir)
-            errFile = open(os.path.join(runDir, "errors.txt"), "w")
+            errFile = open(os.path.join(runDir, "errors.txt"), "a", 0)
         except:
             raise ValueError("runDir exists!")
     
@@ -810,6 +811,15 @@ def runTHOR(observations,
             observatoryCode=observatoryCode,
             verbose=False,
             columnMapping=columnMapping)
+        
+        if type(projected_obs) == int:
+            if runDir!= None:
+                errFile.write("Orbit ID {:04d}: Error 0: Skipping orbit.\n".format(orbit_id))
+            if verbose == True:
+                print("Skipping orbit {}.".format(orbit_id))
+                print("-------------------------")
+                print("")
+            continue
         
         # Save projected observations to file
         if runDir != None:
