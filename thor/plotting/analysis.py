@@ -1,3 +1,4 @@
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
@@ -223,21 +224,22 @@ def plotProjectionVelocitiesMissed(allObjects,
                 capsize=0.1,
                 elinewidth=0.1,
                 c="k", zorder=-1)
-    cm = ax.scatter(allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["dtheta_x/dt_median"].values,
-                    allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["dtheta_y/dt_median"].values,
-                    s=0.1,
-                    c=allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["r_au_median"].values,
-                    vmin=0,
-                    vmax=5.0,
-                    cmap="viridis")
-    cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
+    if len(allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]) > 0:
+        cm = ax.scatter(allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["dtheta_x/dt_median"].values,
+                        allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["dtheta_y/dt_median"].values,
+                        s=0.1,
+                        c=allObjects[(allObjects["findable"] == 1) & (allObjects["found"] == 0)]["r_au_median"].values,
+                        vmin=0,
+                        vmax=5.0,
+                        cmap="viridis")
+        cb = fig.colorbar(cm, fraction=0.02, pad=0.02)
+        cb.set_label("r [AU]", size=10)
     ax.set_aspect("equal")
 
     if vxRange is not None and vyRange is not None:
         _plotGrid(ax, vxRange, vyRange)
 
     # Add labels and text
-    cb.set_label("r [AU]", size=10)
     ax.set_xlabel(r"Median $ d\theta_X / dt$ [Degrees Per Day]", size=10)
     ax.set_ylabel(r"Median $ d\theta_Y / dt$ [Degrees Per Day]", size=10)
 
@@ -294,7 +296,7 @@ def plotOrbitsFindable(allObjects,
                                  yLabel="i [Degrees]",
                                  zLabel="e",
                                  scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
-    if type(testOrbits) != None:
+    if type(testOrbits) == pd.DataFrame:
         # If test orbits exist in known orbits, plot them
         test_orbits_in_known = orbits[orbits[columnMapping["name"]].isin(testOrbits[columnMapping["name"]].values)]
         if len(test_orbits_in_known) != 0:
@@ -348,7 +350,7 @@ def plotOrbitsFound(allObjects,
                                  yLabel="i [Degrees]",
                                  zLabel="e",
                                  scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
-    if type(testOrbits) != None:
+    if type(testOrbits) == pd.DataFrame:
         # If test orbits exist in known orbits, plot them
         test_orbits_in_known = orbits[orbits[columnMapping["name"]].isin(testOrbits[columnMapping["name"]].values)]
         if len(test_orbits_in_known) != 0:
@@ -401,7 +403,7 @@ def plotOrbitsMissed(allObjects,
                                  yLabel="i [Degrees]",
                                  zLabel="e",
                                  scatterKwargs={"s": 0.1, "vmin": 0, "vmax": 1, "cmap": "viridis"})
-    if type(testOrbits) != None:
+    if type(testOrbits) == pd.DataFrame:
         # If test orbits exist in known orbits, plot them
         test_orbits_in_known = orbits[orbits[columnMapping["name"]].isin(testOrbits[columnMapping["name"]].values)]
         if len(test_orbits_in_known) != 0:
