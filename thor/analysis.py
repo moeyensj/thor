@@ -353,14 +353,24 @@ def calcLinkageEfficiency(allObjects,
     # Find the objects that were found
     in_zone_found = calcLinkageFound(allObjects, vxRange=vxRange, vyRange=vyRange)
     found = len(in_zone_found)
-
-    efficiency = found / findable
     
+    efficiency = -1
+    # Calculate efficiency
+    efficiency = -1
+    if findable > 0 and found > 0:
+        efficiency = found / findable
+    elif findable == 0 and found > 0:
+        efficiency = found
+    elif findable >= 0 and found == 0:
+        efficiency = 0
+    else:
+        pass
+
     if verbose == True:
         print("Findable objects: {}".format(findable))
         print("Found objects: {}".format(found))
         print("Missed objects: {}".format(missed))
-        print("Efficiency (%): {}".format(efficiency * 100))
+        print("Efficiency (%): {:1.3f}".format(efficiency * 100))
         print("-------------------------")
         print("")
     return efficiency
