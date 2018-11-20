@@ -717,6 +717,7 @@ def runTHOR(observations,
     if runDir != None:
         try:
             os.mkdir(runDir)
+            errFile = open(os.path.join(runDir, "errors.txt"), "w")
         except:
             raise ValueError("runDir exists!")
     
@@ -738,30 +739,36 @@ def runTHOR(observations,
     # Plot findable orbits if known orbits are provided
     if type(knownOrbits) == pd.DataFrame:
         # Plot findable orbits (linear semi-major axis)
-        fig, ax = plotOrbitsFindable(allObjects_survey, 
-                                     knownOrbits, 
-                                     testOrbits=orbits, 
-                                     columnMapping=columnMapping)
-        ax.set_xlim(0.0, 5.0)
-        ax.text(_setPercentage(ax.get_xlim(), 0.02), 
-                _setPercentage(ax.get_ylim(), 0.93), 
-               "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
-        
-        if runDir != None:
-            fig.savefig(os.path.join(runDir, "known_orbits_findable.png"))
-        
+        try:
+            fig, ax = plotOrbitsFindable(allObjects_survey, 
+                                         knownOrbits, 
+                                         testOrbits=orbits, 
+                                         columnMapping=columnMapping)
+            ax.set_xlim(0.0, 5.0)
+            ax.text(_setPercentage(ax.get_xlim(), 0.02), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(runDir, "known_orbits_findable.png"))
+        except:
+            errFile.write("Survey: Error 1: Could not plot findable orbits.\n")
+
         # Plot findable orbits (log semi-major axis)
-        fig, ax = plotOrbitsFindable(allObjects_survey, 
-                                     knownOrbits, 
-                                     testOrbits=orbits, 
-                                     columnMapping=columnMapping)
-        ax.set_xscale("log")
-        ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
-                _setPercentage(ax.get_ylim(), 0.93), 
-               "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
-            
-        if runDir != None:
-            fig.savefig(os.path.join(runDir, "known_orbits_findable_log.png"))
+        try:
+            fig, ax = plotOrbitsFindable(allObjects_survey, 
+                                         knownOrbits, 
+                                         testOrbits=orbits, 
+                                         columnMapping=columnMapping)
+            ax.set_xscale("log")
+            ax.text(_setPercentage(ax.get_xlim(), 0.0001), 
+                    _setPercentage(ax.get_ylim(), 0.93), 
+                   "Findable Objects: {}".format(len(allObjects_survey[allObjects_survey["findable"] == 1])))
+
+            if runDir != None:
+                fig.savefig(os.path.join(runDir, "known_orbits_findable_log.png"))
+        except:
+            errFile.write("Survey: Error 2: Could not plot findable orbits (log).\n")
             
     # Run orbits
     for orbit_id in orbits["orbit_id"].unique():
@@ -776,7 +783,7 @@ def runTHOR(observations,
         if runDir != None:
             orbitDir = os.path.join(runDir, "orbit_{:04d}".format(orbit_id))
             os.mkdir(orbitDir)
-    
+            
         # Select orbit
         orbit = orbits[orbits["orbit_id"] == orbit_id]
        
@@ -824,9 +831,12 @@ def runTHOR(observations,
             summary_projection.to_csv(os.path.join(orbitDir, "summary.txt"), sep=" ", index=False)
         
         # Plot projection velocities of findable known objects
-        fig, ax = plotProjectionVelocitiesFindable(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
-        if runDir != None:
-            fig.savefig(os.path.join(orbitDir, "projection_findable.png"))
+        try:
+            fig, ax = plotProjectionVelocitiesFindable(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "projection_findable.png"))
+        except:
+            errFile.write("Orbit ID {:04d}: Error 3: Could not plot projection velocities findable.\n".format(orbit_id))
             
         # Plot findable orbits if known orbits are provided
         if type(knownOrbits) == pd.DataFrame:
@@ -844,7 +854,7 @@ def runTHOR(observations,
                 if runDir != None:
                     fig.savefig(os.path.join(orbitDir, "known_orbits_findable.png"))
             except:
-                pass
+                errFile.write("Orbit ID {:04d}: Error 4: Could not plot findable orbits.\n".format(orbit_id))
 
             # Plot findable orbits (log semi-major axis)
             try:
@@ -860,8 +870,8 @@ def runTHOR(observations,
                 if runDir != None:
                     fig.savefig(os.path.join(orbitDir, "known_orbits_findable_log.png"))
             except:
-                pass
-
+                errFile.write("Orbit ID {:04d}: Error 5: Could not plot findable orbits (log).\n".format(orbit_id))
+                
         # Cluster and link
         allClusters_projection, clusterMembers_projection = clusterAndLink(
             projected_obs[~projected_obs[columnMapping["obs_id"]].isin(linked_detections)],
@@ -912,12 +922,20 @@ def runTHOR(observations,
         summary_projection["percent_linkage_efficiency"] = linkage_efficiency * 100
 
         # Plot projection velocities of found and missed known objects
-        fig, ax = plotProjectionVelocitiesFound(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
-        if runDir != None:
-            fig.savefig(os.path.join(orbitDir, "projection_found.png"))
-        fig, ax = plotProjectionVelocitiesMissed(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
-        if runDir != None:
-            fig.savefig(os.path.join(orbitDir, "projection_missed.png"))
+        try:
+            fig, ax = plotProjectionVelocitiesFound(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "projection_found.png"))
+        except:
+            errFile.write("Orbit ID {:04d}: Error 6: Could not plot projection velocities found.\n".format(orbit_id))
+        
+        try:
+            fig, ax = plotProjectionVelocitiesMissed(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+            if runDir != None:
+                fig.savefig(os.path.join(orbitDir, "projection_missed.png"))
+        except:
+            errFile.write("Orbit ID {:04d}: Error 7: Could not plot projection velocities missed.\n".format(orbit_id))
+
 
         # Grab the linked detections
         linked_detections_projection = grabLinkedDetections(projected_obs, allClusters_projection, clusterMembers_projection, columnMapping=columnMapping)
@@ -992,7 +1010,8 @@ def runTHOR(observations,
                 if runDir != None:
                     fig.savefig(os.path.join(orbitDir, "known_orbits_found.png"))
             except:
-                pass
+                errFile.write("Orbit ID {:04d}: Error 8: Could not plot found orbits.\n".format(orbit_id))
+
 
             # Plot found orbits (log semi-major axis)
             try:
@@ -1008,7 +1027,7 @@ def runTHOR(observations,
                 if runDir != None:
                     fig.savefig(os.path.join(orbitDir, "known_orbits_found_log.png"))
             except:
-                pass
+                errFile.write("Orbit ID {:04d}: Error 9: Could not plot found orbits (log).\n".format(orbit_id))
 
             # Plot missed orbits (linear semi-major axis)
             try:
@@ -1025,7 +1044,7 @@ def runTHOR(observations,
                 if runDir != None:
                     fig.savefig(os.path.join(orbitDir, "known_orbits_missed.png"))
             except:
-                pass
+                errFile.write("Orbit ID {:04d}: Error 10: Could not plot missed orbits.\n".format(orbit_id))
 
             # Plot missed orbits (log semi-major axis)
             try:
@@ -1042,7 +1061,7 @@ def runTHOR(observations,
                 if runDir != None:
                     fig.savefig(os.path.join(orbitDir, "known_orbits_missed_log.png"))
             except: 
-                pass
+                errFile.write("Orbit ID {:04d}: Error 11: Could not plot missed orbits (log).\n".format(orbit_id))
 
     # Concatenate the projection based dataframes
     allObjects = pd.concat(allObjects)
@@ -1104,7 +1123,7 @@ def runTHOR(observations,
             if runDir != None:
                 fig.savefig(os.path.join(runDir, "known_orbits_found.png"))
         except:
-            pass
+            errFile.write("Survey: Error 12: Could not plot found orbits.\n")
     
         # Plot found orbits (log semi-major axis)
         try:
@@ -1120,7 +1139,7 @@ def runTHOR(observations,
             if runDir != None:
                 fig.savefig(os.path.join(runDir, "known_orbits_found_log.png"))
         except:
-            pass
+            errFile.write("Survey: Error 13: Could not plot found orbits (log).\n")
 
         # Plot missed orbits (linear semi-major axis)
         try:
@@ -1137,7 +1156,7 @@ def runTHOR(observations,
             if runDir != None:
                 fig.savefig(os.path.join(runDir, "known_orbits_missed.png"))
         except:
-            pass
+            errFile.write("Survey: Error 14: Could not plot missed orbits.\n")
         
         # Plot missed orbits (log semi-major axis)
         try:
@@ -1154,8 +1173,11 @@ def runTHOR(observations,
             if runDir != None:
                 fig.savefig(os.path.join(runDir, "known_orbits_missed_log.png"))
         except:
-            pass
+            errFile.write("Survey: Error 15: Could not plot missed orbits (log).\n")
             
+    if runDir != None:
+        errFile.close()
+        
     if verbose == True:
         print("THOR: runTHOR")
         print("-------------------------")
