@@ -718,9 +718,9 @@ def runTHOR(observations,
     if runDir != None:
         try:
             os.mkdir(runDir)
-            errFile = open(os.path.join(runDir, "errors.txt"), "a", 0)
         except:
             raise ValueError("runDir exists!")
+        errFile = open(os.path.join(runDir, "errors.txt"), "a")
     
     # Analyze observations for entire survey
     allObjects_survey, summary_survey = analyzeObservations(
