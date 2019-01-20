@@ -733,7 +733,13 @@ def analyzeClusters(observations,
     known_missed = allObjects[(allObjects["found"] == 0) 
                         & (allObjects["findable"] == 1) 
                         & (~allObjects[columnMapping["name"]].isin(unknownIDs + falsePositiveIDs))]
-    completeness = len(known_found) / (len(known_found) + len(known_missed)) * 100
+    
+    if len(known_found) == 0:
+        completeness = 0.0   
+    elif len(known_missed) == 0 and len(known_found) != 0:
+        completeness = len(known_found) * 100
+    else:
+        completeness = len(known_found) / (len(known_found) + len(known_missed)) * 100
     
     summary["num_unique_known_objects_found"] = len(known_found)
     summary["num_unique_known_objects_missed"] = len(known_missed)
