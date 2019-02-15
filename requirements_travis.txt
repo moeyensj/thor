@@ -1,0 +1,14 @@
+numpy
+scipy
+astropy
+scikit-learn
+matplotlib
+seaborn
+pandas
+fortranformat
+plotly
+pyyaml
+openorb
+pytest
+pytest-cov<2.6.0
+coveralls

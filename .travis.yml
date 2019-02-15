@@ -9,7 +9,7 @@ python:
   
 install:
   - pip install --upgrade setuptools
-  - pip install -r requirements.txt
+  - pip install -r requirements_travis.txt
 
 script: 
   - py.test thor --cov=thor
