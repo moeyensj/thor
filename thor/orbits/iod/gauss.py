@@ -1,5 +1,11 @@
 import numpy as np
 
+from scipy import roots
+from astropy import constants as c
+from astropy import units as u
+
+MU = (c.G * c.M_sun).to(u.AU**3 / u.day**2).value
+
 __all__ = [
     "_calcV",
     "_calcA",
