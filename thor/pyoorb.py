@@ -5,25 +5,25 @@ import pyoorb as oo
 
 from .config import Config
 
-__all__ = ["propagateTestParticle"]
+__all__ = ["propagateOrbits"]
 
-def propagateTestParticle(elements,
-                          mjdStart,
-                          mjds,
-                          elementType="cartesian",
-                          mjdScale="UTC",
-                          H=10,
-                          G=0.15,
-                          M1=1,
-                          K1=1,
-                          observatoryCode=Config.oorbObservatoryCode):
+def propagateOrbits(elements,
+                    mjdStart,
+                    mjds,
+                    elementType="cartesian",
+                    mjdScale="UTC",
+                    H=10,
+                    G=0.15,
+                    M1=1,
+                    K1=1,
+                    observatoryCode=Config.oorbObservatoryCode):
     """
     Propagate a test particle using its ecliptic coordinates and velocity to 
     a given epoch and generate an ephemeris. 
     
     Parameters
     ----------
-    elements : `~np.ndarray` (1, 6)
+    elements : `~np.ndarray` (N, 6)
         Orbital elements of type defined by elementType.
     mjdStart : float
         Epoch at which ecliptic coordinates and velocity are measured in MJD.
@@ -34,15 +34,15 @@ def propagateTestParticle(elements,
         [Default = "cartesian"]
     mjdScale : {"UTC", "UT1", "TT", "TAI"}
         The mjd scale of the passed mjds.
-    H : float, optional
+    H : float or `~np.ndarray` (N), optional
         Absolute H magnitude, used if elements are given as cartesian or kelperian. 
         [Default = 10]
-    G : float, optional
+    G : float or `~np.ndarray` (N), optional
         HG phase function slope, used if elements are given as cartesian or kelperian. 
         [Default = 0.15]
-    M1 : float, optional
+    M1 : float or `~np.ndarray` (N), optional
     
-    K1 : float, optional
+    K1 : float or `~np.ndarray` (N), optional
 
     observatoryCode : str, optional
         Observatory from which to measure ephemerides.
@@ -53,36 +53,67 @@ def propagateTestParticle(elements,
     # Prepare pyoorb
     ephfile = os.path.join(os.getenv('OORB_DATA'), 'de430.dat')
     oo.pyoorb.oorb_init(ephfile)
-    
+
+    if elements.shape == (6,):
+        num_orbits = 1
+    else:
+        num_orbits = elements.shape[0]
+
     if elementType == "cartesian":
-        orbitType = 1
+        orbitType = [1 for i in range(num_orbits)]
     elif elementType == "cometary":
-        orbitType = 2
+        orbitType = [2 for i in range(num_orbits)]
         H = M1
         G = K1
     elif elementType == "keplerian":
-        orbitType = 3
+        orbitType = [3 for i in range(num_orbits)]
     else:
         raise ValueError("elementType should be one of {'cartesian', 'keplerian', 'cometary'}")
-        
+
     if mjdScale == "UTC":
-        mjdScale = 1
+        mjdScale = [1 for i in range(num_orbits)]
     elif mjdScale == "UT1": 
-        mjdScale = 2
+        mjdScale = [2 for i in range(num_orbits)]
     elif mjdScale == "TT":
-        mjdScale = 3
+        mjdScale = [3 for i in range(num_orbits)]
     elif mjdScale == "TAI":
-        mjdScale = 4
+        mjdScale = [4 for i in range(num_orbits)]
     else:
         raise ValueError("mjdScale should be one of {'UTC', 'UT1', 'TT', 'TAI'}")
-        
-    orbits = np.array([[0, *elements, orbitType, mjdStart, mjdScale, H, G]], dtype=np.double, order='F')
-   
-    epochs = np.array(list(zip(mjds, [mjdScale]*len(mjds))), dtype=np.double, order='F')
+
+    if type(G) != np.ndarray:
+        G = [G for i in range(num_orbits)]
+    if type(H) != np.ndarray:
+        H = [H for i in range(num_orbits)]
+    if type(mjdStart) != np.ndarray:
+        mjdStart = [mjdStart for i in range(num_orbits)]
+
+    ids = [i for i in range(num_orbits)]
+    # Cater to pyoorb formatting
+    if num_orbits > 1:
+        orbits = np.array(
+            np.array([ids, 
+                     *list(elements.T), 
+                     orbitType, 
+                     mjdStart, 
+                     mjdScale, 
+                     H, 
+                     G]).T, dtype=np.double, order='F')
+    else:
+        orbits = np.array([[ids[0], 
+                     *list(elements.T), 
+                     orbitType[0], 
+                     mjdStart[0], 
+                     mjdScale[0], 
+                     H[0], 
+                     G[0]]], dtype=np.double, order='F')
+        mjdScale = [mjdScale[0] for i in mjds]
+
+    epochs = np.array(list(np.vstack([mjds, mjdScale]).T), dtype=np.double, order='F')
     ephemeris, err = oo.pyoorb.oorb_ephemeris_full(in_orbits=orbits,
                                              in_obscode=observatoryCode,
                                              in_date_ephems=epochs,
-                                             in_dynmodel='2', 
+                                             in_dynmodel='N', 
                                              )
     columns = ["mjd",
                "RA_deg",
@@ -118,7 +149,8 @@ def propagateTestParticle(elements,
                "HEclObsy_Y_au",
                "HEclObsy_Z_au",
                "TrueAnom"]
-    
-    eph = pd.DataFrame(ephemeris[0], 
+
+    eph = pd.DataFrame(np.vstack(ephemeris), 
                        columns=columns)
-    return eph
+    eph["orbit_id"] = [i for i in ids for j in mjds]
+    return eph[["orbit_id"] + columns]

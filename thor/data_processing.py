@@ -4,7 +4,7 @@ import pandas as pd
 
 from .config import Config
 from .cell import Cell
-from .pyoorb import propagateTestParticle
+from .pyoorb import propagateOrbits
 
 __all__ = ["findExposureTimes",
            "findAverageOrbits",
@@ -76,7 +76,7 @@ def findExposureTimes(observations,
     times = np.unique(times_nights[(times_nights[columnMapping["night"]] >= nightStart) 
                          & (times_nights[columnMapping["night"]] <= nightStart + numNights)][columnMapping["exp_mjd"]].values)
     
-    eph = propagateTestParticle([*r, *v], mjd, times, elementType="cartesian", mjdScale="UTC", observatoryCode=observatoryCode)
+    eph = propagateOrbits([*r, *v], mjd, times, elementType="cartesian", mjdScale="UTC", observatoryCode=observatoryCode)
     eph.rename(columns={"RA_deg": "RA_deg_orbit", "Dec_deg": "Dec_deg_orbit"}, inplace=True)
     
     df = pd.merge(observations[[columnMapping["obs_id"],
