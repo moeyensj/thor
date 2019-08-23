@@ -2,8 +2,8 @@ import os
 import subprocess
 import fortranformat as ff
 
-from .config import Config
-from .io import readEPHFile
+from ..config import Config
+from ..io import readEPHFile
 
 __all__ = ["setupOorb",
            "propagateTestParticle",

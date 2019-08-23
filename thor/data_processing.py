@@ -4,7 +4,7 @@ import pandas as pd
 
 from .config import Config
 from .cell import Cell
-from .pyoorb import propagateOrbits
+from .orbits import propagateOrbits
 
 __all__ = ["findExposureTimes",
            "findAverageOrbits",

@@ -11,7 +11,7 @@ from astropy import constants as c
 from .config import Config
 from .cell import Cell
 from .particle import TestParticle
-from .pyoorb import propagateOrbits
+from .orbits import propagateOrbits
 from .data_processing import findExposureTimes
 from .data_processing import grabLinkedDetections
 from .plotting import plotOrbitsFindable
