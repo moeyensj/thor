@@ -11,7 +11,7 @@ from astropy import constants as c
 from .config import Config
 from .cell import Cell
 from .particle import TestParticle
-from .pyoorb import propagateTestParticle
+from .orbits import propagateOrbits
 from .data_processing import findExposureTimes
 from .data_processing import grabLinkedDetections
 from .plotting import plotOrbitsFindable
@@ -144,7 +144,7 @@ def rangeAndShift(observations,
     # Propagate test particle and generate ephemeris for all mjds
     if verbose == True:
         print("Propagating test particle...")
-    ephemeris = propagateTestParticle(
+    ephemeris = propagateOrbits(
         particle.elements,
         particle.mjd, 
         mjds,
