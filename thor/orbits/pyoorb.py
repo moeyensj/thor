@@ -107,13 +107,13 @@ def propagateOrbits(elements,
                      mjdScale[0], 
                      H[0], 
                      G[0]]], dtype=np.double, order='F')
-        mjdScale = [mjdScale[0] for i in mjds]
-
+    
+    mjdScale = [mjdScale[0] for i in mjds]
     epochs = np.array(list(np.vstack([mjds, mjdScale]).T), dtype=np.double, order='F')
     ephemeris, err = oo.pyoorb.oorb_ephemeris_full(in_orbits=orbits,
                                              in_obscode=observatoryCode,
                                              in_date_ephems=epochs,
-                                             in_dynmodel='N', 
+                                             in_dynmodel='2', 
                                              )
     columns = ["mjd",
                "RA_deg",
