@@ -1,6 +1,7 @@
 numpy
 scipy
 astropy
+astroquery
 scikit-learn
 matplotlib
 seaborn
