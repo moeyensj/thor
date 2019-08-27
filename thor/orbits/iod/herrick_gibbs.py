@@ -6,7 +6,7 @@ MU = (c.G * c.M_sun).to(u.AU**3 / u.day**2).value
 
 __all__ = ["calcHerrickGibbs"]
 
-def calcHerrickGibbs(r1, r2, r3, t1, t2, t3)
+def calcHerrickGibbs(r1, r2, r3, t1, t2, t3):
     """
     Calculates the velocity vector at the second position of an object using the 
     Herrick-Gibbs formula: 
