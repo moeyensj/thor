@@ -8,7 +8,7 @@ __all__ = ["calcHerrickGibbs"]
 
 def calcHerrickGibbs(r1, r2, r3, t1, t2, t3):
     """
-    Calculates the velocity vector at the second position of an object using the 
+    Calculates the velocity vector at using the 
     Herrick-Gibbs formula.
     
     .. math::
