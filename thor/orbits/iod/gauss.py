@@ -58,7 +58,7 @@ def _calcFG(r2_mag, t32, t21):
 
 def calcGauss(r1, r2, r3, t1, t2, t3):
     """
-    Calculates the velocity vector at the second position of an object Gauss'
+    Calculates the velocity vector at the location of the second position vector (r2) with Gauss'
     original method.
     
     .. math::        

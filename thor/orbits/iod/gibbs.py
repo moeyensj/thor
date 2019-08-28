@@ -8,7 +8,7 @@ __all__ = ["calcGibbs"]
 
 def calcGibbs(r1, r2, r3):
     """
-    Calculates the velocity vector at the second position of an object using the 
+    Calculates the velocity vector at the location of the second position vector (r2) using the 
     Gibbs method.
     
     .. math::
