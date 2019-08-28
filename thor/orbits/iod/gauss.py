@@ -4,6 +4,12 @@ from scipy import roots
 from astropy import constants as c
 from astropy import units as u
 
+from ...coordinates import equatorialToEclipticCartesian
+from ...coordinates import equatorialAngularToCartesian
+from .gibbs import calcGibbs
+from .herrick_gibbs import calcHerrickGibbs
+
+C = c.c.to(u.au / u.d).value
 MU = (c.G * c.M_sun).to(u.AU**3 / u.day**2).value
 
 __all__ = [
@@ -14,6 +20,7 @@ __all__ = [
     "_calcRhos",
     "_calcFG",
     "calcGauss",
+    "gaussIOD"
 ]
 
 
@@ -107,3 +114,103 @@ def calcGauss(r1, r2, r3, t1, t2, t3):
     r2_mag = np.linalg.norm(r2)
     f1, g1, f3, g3 = _calcFG(r2_mag, t32, t21)
     return (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
+
+def gaussIOD(coords_eq_ang, t, coords_obs, velocityMethod="gauss"):
+    """
+    Compute up to three intial orbits using three observations in angular equatorial
+    coordinates. 
+    
+    Parameters
+    ----------
+    coords_eq_ang : `~numpy.ndarray` (3, 2)
+        RA and Dec of three observations in units of degrees.
+    t : `~numpy.ndarray` (3)
+        Times of the three observations in units of decimal days (MJD or JD for example).
+    coords_obs : `~numpy.ndarray` (3, 2)
+        Heliocentric position vector of the observer at times t in units of AU.
+    velocityMethod : {'gauss', gibbs', 'herrick+gibbs'}, optional
+        Which method to use for calculating the velocity at the second observation.
+        [Default = 'gauss']
+        
+    Returns
+    -------
+    orbits : `~numpy.ndarray` ((<3, 6) or (0))
+        Up to three preliminary orbits (as cartesian state vectors).
+    """
+    rho = equatorialToEclipticCartesian(equatorialAngularToCartesian(coords_eq_ang))
+    rho1 = rho[0]
+    rho2 = rho[1]
+    rho3 = rho[2]
+    q1 = coords_obs[0]
+    q2 = coords_obs[1]
+    q3 = coords_obs[2]
+    q2_mag = np.linalg.norm(q2)
+
+    rho1hat = rho1 / np.linalg.norm(rho1)
+    rho2hat = rho2 / np.linalg.norm(rho2)
+    rho3hat = rho3 / np.linalg.norm(rho3)
+    
+    t1 = t[0]
+    t2 = t[1]
+    t3 = t[2]
+    t31 = t3 - t1
+    t21 = t2 - t1
+    t32 = t3 - t2
+    
+    A = _calcA(q1, q2, q3, rho1hat, rho3hat, t31, t32, t21)
+    B = _calcB(q1, q3, rho1hat, rho3hat, t31, t32, t21)
+    V = _calcV(rho1hat, rho2hat, rho3hat)
+    coseps2 = np.dot(q2 / np.linalg.norm(q2), rho2hat) 
+    C0 = V * t31 * q2_mag**4 / B
+    h0 = - A / B
+    
+    if np.isnan(C0) or np.isnan(h0):
+        return np.array([])
+    
+    # Find roots to eighth order polynomial
+    all_roots = roots([
+        C0**2,
+        0,
+        -q2_mag**2 * (h0**2 + 2 * C0 * h0 * coseps2 + C0**2),
+        0,
+        0,
+        2 * q2_mag**5 * (h0 + C0 * coseps2),
+        0,
+        0,
+        -q2_mag**8
+    ])
+    
+    # Keep only positive real roots (which should at most be 3)
+    r2_mags = np.real(all_roots[np.isreal(all_roots) & (np.real(all_roots) >= 0)])
+    num_solutions = len(r2_mags)
+    if num_solutions == 0:
+        return np.array([])
+    
+    orbits = []
+    for r2_mag in r2_mags:
+        lambda1, lambda3 = _calcLambdas(r2_mag, t31, t32, t21)
+        rho1, rho2, rho3 = _calcRhos(lambda1, lambda3, q1, q2, q3, rho1hat, rho2hat, rho3hat, V)
+
+        # Test if we get the same rho2 as using equation 22 in Milani et al. 2008
+        rho2_mag = (h0 - q2_mag**3 / r2_mag**3) * q2_mag / C0
+        np.testing.assert_almost_equal(np.dot(rho2_mag, rho2hat), rho2)
+
+        r1 = q1 + rho1
+        r2 = q2 + rho2
+        r3 = q3 + rho3
+        
+        if velocityMethod == "gauss":
+            v2 = calcGauss(r1, r2, r3, t1, t2, t3)
+        elif velocityMethod == "gibbs":
+            v2 = calcGibbs(r1, r2, r3)
+        elif velocityMethod == "herrick+gibbs":
+            v2 = calcHerrickGibbs(r1, r2, r3, t1, t2, t3)
+        else:
+            raise ValueError("velocityMethod should be one of {'gauss', 'gibbs', 'herrick+gibbs'}")
+        orbit = np.concatenate([r2, v2])
+        
+        if np.linalg.norm(v2) >= C:
+            print("Velocity is greater than speed of light!")
+        orbits.append(orbit)
+    
+    return np.array(orbits)
