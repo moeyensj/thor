@@ -11,6 +11,7 @@ plotly
 pyyaml
 openorb
 ipykernel
+numba
 pytest
 pytest-cov
 coveralls
