@@ -6,12 +6,13 @@ from astropy import units as u
 from .stumpff import calcC2C3
 
 __all__ = [
-    "calcChi"
+    "calcChi",
+    "propagateUniversal"
 ]
 
 MU = (c.G * c.M_sun).to(u.AU**3 / u.day**2).value
 
-@jit("f8(f8[:], f8[:], f8, f8, i8, f8)", nopython=True)
+@jit(["f8(f8[::1], f8[::1], f8, f8, i8, f8)"], nopython=True)
 def calcChi(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
     """
     Calculate universal anomaly chi using Newton-Raphson. 
@@ -70,3 +71,58 @@ def calcChi(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
             break
         
     return chi
+
+@jit(["UniTuple(f8[:], 2)(f8[::1], f8[::1], f8, f8, i8, f8)"], nopython=True)
+def propagateUniversal(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
+    """
+    Propagate an orbit using the universal anomaly formalism. 
+    
+    Parameters
+    ----------
+    r : `~numpy.ndarray` (3)
+        Heliocentric position vector in units of AU. [J2000 ECLIPTIC]
+    v : `~numpy.ndarray` (3)
+        Heliocentric velocity vector in units of AU per day. [J2000 ECLIPTIC]
+    dt : float
+        Time from current epoch in units of decimal days to which to propagate
+        the orbit.
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of 
+        AU**3 / d**2. 
+    iterations : int, optional
+        Maximum number of iterations over which to converge. If number of iterations is 
+        exceeded, will return the value of the universal anomaly at the last iteration. 
+    tol : float, optional
+        Numerical tolerance to which to compute universal anomaly using the Newtown-Raphson 
+        method. 
+
+    Returns
+    -------
+    r : `~numpy.ndarray` (3)
+        Heliocentric position vector at new epoch in units of AU. [J2000 ECLIPTIC]
+    v : `~numpy.ndarray` (3)
+        Heliocentric velocity vector at new epoch in units of AU per day. [J2000 ECLIPTIC]
+    """
+    chi = calcChi(r, v, dt, mu=mu, maxIterations=maxIterations, tol=tol)
+
+    v_mag = np.linalg.norm(v)
+    r_mag = np.linalg.norm(r)
+    sqrt_mu = np.sqrt(mu)
+    chi2 = chi**2
+
+    alpha = -v_mag**2 / mu + 2 / r_mag
+    psi = alpha * chi2
+    c2, c3 = calcC2C3(psi)
+    
+    f = 1 - chi**2 / r_mag * c2
+    g = dt - 1 / sqrt_mu * chi**3 * c3
+    
+    r_new = f * r + g * v
+    r_new_mag = np.linalg.norm(r_new)
+    
+    f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
+    g_dot = 1 - chi2 / r_new_mag * c2
+    
+    v_new = f_dot * r + g_dot * v
+    
+    return r_new, v_new   
