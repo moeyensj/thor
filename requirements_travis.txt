@@ -10,6 +10,7 @@ fortranformat
 plotly
 pyyaml
 openorb
+numba
 pytest
 pytest-cov<2.6.0
 coveralls
