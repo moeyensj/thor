@@ -5,7 +5,7 @@ __all__ = [
     "calcC2C3"
 ]
 
-@jit(nopython=True)
+@jit("UniTuple(f8, 2)(f8)", nopython=True)
 def calcC2C3(psi):
     """
     Calculate the second and third Stumpff functions. 
