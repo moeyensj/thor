@@ -1,8 +1,7 @@
 import numpy as np
 from numba import jit
-from astropy import constants as c
-from astropy import units as u
 
+from ...constants import Constants as c
 from .stumpff import calcC2C3
 
 __all__ = [
@@ -10,7 +9,7 @@ __all__ = [
     "propagateUniversal"
 ]
 
-MU = (c.G * c.M_sun).to(u.AU**3 / u.day**2).value
+MU = c.G * c.M_SUN
 
 @jit(["f8(f8[::1], f8[::1], f8, f8, i8, f8)"], nopython=True)
 def calcChi(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):

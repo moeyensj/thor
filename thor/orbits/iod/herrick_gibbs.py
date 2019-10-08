@@ -1,10 +1,10 @@
 import numpy as np
-from astropy import units as u
-from astropy import constants as c
 
-MU = (c.G * c.M_sun).to(u.AU**3 / u.day**2).value
+from ...constants import Constants as c
 
 __all__ = ["calcHerrickGibbs"]
+
+MU = c.G * c.M_SUN
 
 def calcHerrickGibbs(r1, r2, r3, t1, t2, t3):
     """

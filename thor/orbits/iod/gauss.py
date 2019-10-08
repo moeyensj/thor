@@ -1,16 +1,11 @@
 import numpy as np
-
 from scipy import roots
-from astropy import constants as c
-from astropy import units as u
 
+from ...constants import Constants as c
 from ...coordinates import equatorialToEclipticCartesian
 from ...coordinates import equatorialAngularToCartesian
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
-
-C = c.c.to(u.au / u.d).value
-MU = (c.G * c.M_sun).to(u.AU**3 / u.day**2).value
 
 __all__ = [
     "_calcV",
@@ -23,6 +18,7 @@ __all__ = [
     "gaussIOD"
 ]
 
+MU = c.G * c.M_SUN
 
 def _calcV(rho1hat, rho2hat, rho3hat):
     # Vector triple product that gives the area of 
