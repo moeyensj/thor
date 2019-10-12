@@ -9,6 +9,7 @@ fortranformat
 plotly
 pyyaml
 openorb
+ipykernel
 pytest
 pytest-cov
 coveralls
