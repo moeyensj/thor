@@ -19,8 +19,8 @@ Clone this repository using either `ssh` or `https`.
 To create a `conda` environment in which to run the code:  
 ```conda create -n thor_py36 -c defaults -c conda-forge -c astropy --file requirements.txt python=3.6```
 
-To install pre-requisite software into any `conda` enviroment:  
-```conda activate env```
+To install pre-requisite software into a `conda` enviroment named env:  
+```conda activate env```  
 ```conda install -c defaults -c conda-forge --file requirements.txt```
 
 To install pre-requisite software using pip:  
