@@ -15,7 +15,7 @@ RUN conda update -n base -c defaults conda
 # Download THOR
 RUN mkdir projects \
 	&& cd projects \
-	&& git clone https://github.com/moeyensj/thor.git 
+	&& git clone https://github.com/moeyensj/thor.git --depth=1
 
 # Create Python 3.6 conda environment and install requirements
 RUN cd projects/thor \
