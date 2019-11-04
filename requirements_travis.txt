@@ -11,6 +11,7 @@ plotly
 pyyaml
 openorb
 numba
+spiceypy
 pytest
 pytest-cov<2.6.0
 coveralls

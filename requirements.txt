@@ -12,6 +12,7 @@ pyyaml
 openorb
 ipykernel
 numba
+spiceypy
 pytest
 pytest-cov
 coveralls
