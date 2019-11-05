@@ -10,7 +10,7 @@ def test_getMPCOBSCodeFile():
     obscodes = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data/ObsCodes.html"))
     obscodes_backup = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data/ObsCodes_backup.html"))
     obscodes_test = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data/.ObsCodes_test.html"))
-    obscodes_old = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data/ObsCodes_old.html"))
+    obscodes_old = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data/ObsCodes.html_old"))
     
     getMPCObsCodeFile()
     
