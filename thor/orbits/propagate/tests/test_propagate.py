@@ -31,8 +31,10 @@ def test_propagateUniversal():
                 vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
                 elements = sp.prop2b(MU, list(vectors), dt)
                 
-                r, v = propagateUniversal(vectors[:3], vectors[3:], dt, mu=MU, maxIterations=1000, tol=1e-15)
+                vectors_new = propagateUniversal(vectors, dt, mu=MU, maxIterations=1000, tol=1e-15)
                 
+                r = vectors_new[:3]
+                v = vectors_new[3:]
                 r_mag = np.sqrt(np.sum(r**2))
                 r_spice_mag = np.sqrt(np.sum(elements[:3]**2))
                 v_mag = np.sqrt(np.sum(v**2))

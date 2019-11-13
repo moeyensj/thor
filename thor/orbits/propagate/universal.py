@@ -11,17 +11,15 @@ __all__ = [
 
 MU = c.G * c.M_SUN
 
-@jit(["f8(f8[::1], f8[::1], f8, f8, i8, f8)"], nopython=True)
-def calcChi(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
+@jit(["f8(f8[::1], f8, f8, i8, f8)"], nopython=True)
+def calcChi(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
     """
     Calculate universal anomaly chi using Newton-Raphson. 
     
     Parameters
     ----------
-    r : `~numpy.ndarray` (3)
-        Heliocentric position vector in units of AU. [J2000 ECLIPTIC]
-    v : `~numpy.ndarray` (3)
-        Heliocentric velocity vector in units of AU per day. [J2000 ECLIPTIC]
+    orbit : `~numpy.ndarray` (6)
+        Orbital state vector (X_0) with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
     dt : float
         Time from epoch to which calculate chi in units of decimal days.
     mu : float, optional
@@ -39,6 +37,8 @@ def calcChi(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
     chi : float
         Universal anomaly. 
     """
+    r = orbit[:3]
+    v = orbit[3:]
     v_mag = np.linalg.norm(v)
     r_mag = np.linalg.norm(r)
     rv_mag = np.dot(r, v) / r_mag
@@ -71,17 +71,15 @@ def calcChi(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
         
     return chi
 
-@jit(["UniTuple(f8[:], 2)(f8[::1], f8[::1], f8, f8, i8, f8)"], nopython=True)
-def propagateUniversal(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
+@jit(["f8[::1](f8[::1], f8, f8, i8, f8)"], nopython=True)
+def propagateUniversal(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
     """
     Propagate an orbit using the universal anomaly formalism. 
     
     Parameters
     ----------
-    r : `~numpy.ndarray` (3)
-        Heliocentric position vector in units of AU. [J2000 ECLIPTIC]
-    v : `~numpy.ndarray` (3)
-        Heliocentric velocity vector in units of AU per day. [J2000 ECLIPTIC]
+    orbit : `~numpy.ndarray` (6)
+        Orbital state vector (X_0) with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
     dt : float
         Time from current epoch in units of decimal days to which to propagate
         the orbit.
@@ -97,13 +95,14 @@ def propagateUniversal(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
 
     Returns
     -------
-    r : `~numpy.ndarray` (3)
-        Heliocentric position vector at new epoch in units of AU. [J2000 ECLIPTIC]
-    v : `~numpy.ndarray` (3)
-        Heliocentric velocity vector at new epoch in units of AU per day. [J2000 ECLIPTIC]
+    orbit : `~numpy.ndarray` (6)
+        Orbital state vector at time dt from original state vector 
+        with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
     """
-    chi = calcChi(r, v, dt, mu=mu, maxIterations=maxIterations, tol=tol)
-
+    chi = calcChi(orbit, dt, mu=mu, maxIterations=maxIterations, tol=tol)
+    
+    r = orbit[:3]
+    v = orbit[3:]
     v_mag = np.linalg.norm(v)
     r_mag = np.linalg.norm(r)
     sqrt_mu = np.sqrt(mu)
@@ -124,4 +123,4 @@ def propagateUniversal(r, v, dt, mu=MU, maxIterations=10000, tol=1e-14):
     
     v_new = f_dot * r + g_dot * v
     
-    return r_new, v_new   
+    return np.concatenate((r_new, v_new))   
