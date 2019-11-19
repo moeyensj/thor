@@ -1,27 +1,33 @@
 import numpy as np
-
 from astropy.time import Time
 from astropy import units as u
 from astroquery.jplhorizons import Horizons
 
-from .. import convertCartesianToKeplerian
+from ...constants import Constants as c
+from ..kepler import convertCartesianToKeplerian
+
+MU = c.G * c.M_SUN
 
 def test_convertCartesianToKeplerian():
-    # Grab orbital elements and state vectors of 1719 Jens and Eros at the defined epoch 
-    start_epoch = Time("1993-02-02T00:00:00.000", format="isot", scale="utc")
+    epochs = Time(["{}-02-02T00:00:00.000".format(i) for i in range(1993, 2050)], format="isot", scale="tdb")
     
-    jens_horizons = Horizons(id="1719", epochs=start_epoch.mjd)
-    jens_elements = jens_horizons.elements()
-    jens_elements = np.array(jens_elements["a", "e", "incl", "Omega", "w", "M"]).view("float64")
-    jens_vectors  = jens_horizons.vectors()
-    jens_vectors  = np.array(jens_vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
-    
-    eros_horizons = Horizons(id="Eros", epochs=start_epoch.mjd)
-    eros_elements = eros_horizons.elements()
-    eros_elements = np.array(eros_elements["a", "e", "incl", "Omega", "w", "M"]).view("float64")
-    eros_vectors  = eros_horizons.vectors()
-    eros_vectors = np.array(eros_vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
-    
-    # Convert cartesian state vector to Keplerian elements 
-    np.testing.assert_allclose(convertCartesianToKeplerian(jens_vectors), jens_elements)
-    np.testing.assert_allclose(convertCartesianToKeplerian(eros_vectors), eros_elements)
+    targets = [
+        "Amor",
+        "Eros", 
+        "Eugenia",
+        "Ceres",
+        "C/2019 Q4" #Borisov
+    ] 
+
+    for name in targets:
+        target = Horizons(id=name, epochs=epochs.mjd)
+        vectors = target.vectors()
+        vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
+        vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
+       
+        elements = target.elements()
+        elements = np.array(elements["a", "q", "e", "incl", "Omega", "w", "M", "nu"])
+        elements = elements.view("float64").reshape(elements.shape + (-1,))    
+     
+        for v, e in zip(vectors, elements):
+            np.testing.assert_allclose(convertCartesianToKeplerian(v, mu=MU), e)
