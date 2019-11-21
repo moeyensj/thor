@@ -3,13 +3,14 @@ from numba import jit
 
 from ..constants import Constants as c
 
-__all__ = ["convertCartesianToKeplerian",
-           "convertKeplerianToCartesian"]
+__all__ = ["_convertCartesianToKeplerian",
+           "_convertKeplerianToCartesian",
+           "convertOrbitalElements"]
 
 MU = c.G * c.M_SUN
 
 @jit(["f8[:,:](f8[:,:], f8)"], nopython=True)
-def convertCartesianToKeplerian(elements_cart, mu=MU):
+def _convertCartesianToKeplerian(elements_cart, mu=MU):
     """
     Convert cartesian orbital elements to Keplerian orbital elements.
     
@@ -34,8 +35,8 @@ def convertCartesianToKeplerian(elements_cart, mu=MU):
     Returns
     -------
     elements_kepler : `~numpy.ndarray (N, 8)
-        Keplerian elements with angles in degrees and semi-major
-        axis in AU. 
+        Keplerian elements with angles in degrees and semi-major axis and pericenter distance
+        in AU. 
         
     """
     elements_kepler = []
@@ -97,8 +98,8 @@ def convertCartesianToKeplerian(elements_cart, mu=MU):
         
     return np.array(elements_kepler)
 
-@jit(["f8[:,:](f8[:,:], f8, f8, i8)"], nopython=True)
-def convertKeplerianToCartesian(elements_kepler, mu=MU, tol=1e-15, maxIterations=100):
+@jit(["f8[:,:](f8[:,:], f8, i8, f8)"], nopython=True)
+def _convertKeplerianToCartesian(elements_kepler, mu=MU, maxIterations=100, tol=1e-15):
     """
     Convert Keplerian orbital elements to cartesian orbital elements.
     
@@ -118,6 +119,12 @@ def convertKeplerianToCartesian(elements_kepler, mu=MU, tol=1e-15, maxIterations
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of 
         AU**3 / d**2. 
+    maxIterations : int, optional
+        Maximum number of iterations over which to converge. If number of iterations is 
+        exceeded, will return the value of the universal anomaly at the last iteration. 
+    tol : float, optional
+        Numerical tolerance to which to compute chi using the Newtown-Raphson 
+        method. 
     
     Returns
     -------
@@ -221,3 +228,64 @@ def convertKeplerianToCartesian(elements_kepler, mu=MU, tol=1e-15, maxIterations
         elements_cart.append([r[0], r[1], r[2], v[0], v[1], v[2]])
     
     return np.array(elements_cart)
+
+def convertOrbitalElements(orbits, typeIn, typeOut, mu=MU, maxIterations=100, tol=1e-15):
+    """
+    Convert orbital elements from typeIn to typeOut. 
+    
+    Parameters
+    ----------
+    orbits : `~numpy.ndarray` (6) or (N, 6)
+        Array or orbits. 
+        If cartesian [J2000 Heliocentric Ecliptic]:
+            x: x-position in AU
+            y: y-position in AU 
+            z: z-position in AU 
+            vx: x-velocity in AU per day
+            vy: y-velocity in AU per day
+            vz: z-velocity in AU per day
+        If keplerian:
+            a: semi-major axis in AU
+            e: eccentricity 
+            i: inclination in degrees
+            ascNode: right ascension of the ascending node in degrees
+            argPeri : argument of perihelion/perigee/pericenter in degrees
+            meanAnom : mean anomaly in degrees
+    typeIn : str
+        Type of orbital elements to convert from (keplerian or cartesian).
+    typeOut : str
+        Type of orbital elements to convert to (keplerian or cartesian).
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of 
+        AU**3 / d**2. 
+    maxIterations : int, optional
+        Maximum number of iterations over which to converge. If number of iterations is 
+        exceeded, will return the value of the universal anomaly at the last iteration. 
+    tol : float, optional
+        Numerical tolerance to which to compute chi using the Newtown-Raphson 
+        method. 
+        
+    Returns
+    -------
+    orbits : `~numpy.ndarray` (N, 6)
+        Array of orbits in typeOut elements.
+    """
+    # Check that typeIn is not typeOut
+    if typeIn == typeOut:
+        raise valueError("typeIn cannot be equal to typeOut.")
+    
+    # If a single orbit was passed, reshape the array
+    if orbits.shape == (6, ):
+        orbits.reshape(1, -1)
+    
+    # If there are not enough or too many elements, raise error
+    if orbits.shape[1] != 6:
+        raise valueError("Please ensure orbits have 6 quantities!")
+        
+    if typeIn == "cartesian" and typeOut == "keplerian":
+        return _convertCartesianToKeplerian(orbits, mu=MU)[:, [0, 2, 3, 4, 5, 6]]
+    elif typeIn == "keplerian" and typeOut == "cartesian":
+        return _convertKeplerianToCartesian(orbits, mu=MU, tol=tol, maxIterations=maxIterations)
+    else:
+        raise ValueError("Conversion from {} to {} not supported!".format(typeIn, typeOut))
+    return 

@@ -25,7 +25,7 @@ def calcChi(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of 
         AU**3 / d**2. 
-    iterations : int, optional
+    maxIterations : int, optional
         Maximum number of iterations over which to converge. If number of iterations is 
         exceeded, will return the value of the universal anomaly at the last iteration. 
     tol : float, optional
@@ -86,7 +86,7 @@ def propagateUniversal(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of 
         AU**3 / d**2. 
-    iterations : int, optional
+    maxIterations : int, optional
         Maximum number of iterations over which to converge. If number of iterations is 
         exceeded, will return the value of the universal anomaly at the last iteration. 
     tol : float, optional
