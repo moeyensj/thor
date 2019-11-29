@@ -12,7 +12,7 @@ __all__ = [
 MU = c.G * c.M_SUN
 
 @jit(["f8(f8[::1], f8, f8, i8, f8)"], nopython=True)
-def calcChi(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
+def calcChi(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
     """
     Calculate universal anomaly chi using Newton-Raphson. 
     
@@ -25,7 +25,7 @@ def calcChi(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of 
         AU**3 / d**2. 
-    maxIterations : int, optional
+    max_iter : int, optional
         Maximum number of iterations over which to converge. If number of iterations is 
         exceeded, will return the value of the universal anomaly at the last iteration. 
     tol : float, optional
@@ -66,13 +66,13 @@ def calcChi(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
         ratio = f / fp
         chi -= ratio
         iterations += 1
-        if iterations >= maxIterations:
+        if iterations >= max_iter:
             break
         
     return chi
 
 @jit(["f8[::1](f8[::1], f8, f8, i8, f8)"], nopython=True)
-def propagateUniversal(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
+def propagateUniversal(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
     """
     Propagate an orbit using the universal anomaly formalism. 
     
@@ -86,7 +86,7 @@ def propagateUniversal(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of 
         AU**3 / d**2. 
-    maxIterations : int, optional
+    max_iter : int, optional
         Maximum number of iterations over which to converge. If number of iterations is 
         exceeded, will return the value of the universal anomaly at the last iteration. 
     tol : float, optional
@@ -99,7 +99,7 @@ def propagateUniversal(orbit, dt, mu=MU, maxIterations=10000, tol=1e-14):
         Orbital state vector at time dt from original state vector 
         with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
     """
-    chi = calcChi(orbit, dt, mu=mu, maxIterations=maxIterations, tol=tol)
+    chi = calcChi(orbit, dt, mu=mu, max_iter=max_iter, tol=tol)
     
     r = orbit[:3]
     v = orbit[3:]

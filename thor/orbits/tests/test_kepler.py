@@ -24,7 +24,7 @@ def test_convertOrbitalElements():
         vectors = target.vectors()
         vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
         vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
-       
+        
         elements = target.elements()
         elements = np.array(elements["a", "e", "incl", "Omega", "w", "M", "nu"])
         elements = elements.view("float64").reshape(elements.shape + (-1,))    
@@ -46,11 +46,11 @@ def test_convertCartesianToKeplerian_elliptical():
         vectors = target.vectors()
         vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
         vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
-       
+        
         elements = target.elements()
         elements = np.array(elements["a", "q", "e", "incl", "Omega", "w", "M", "nu"])
         elements = elements.view("float64").reshape(elements.shape + (-1,))    
-     
+        
         for v, e in zip(vectors, elements):
             np.testing.assert_allclose(_convertCartesianToKeplerian(v.reshape(1, -1), mu=MU), e.reshape(1, -1))
 
@@ -69,11 +69,11 @@ def test_convertCartesianToKeplerian_hyperbolic():
         vectors = target.vectors()
         vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
         vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
-       
+        
         elements = target.elements()
         elements = np.array(elements["a", "q", "e", "incl", "Omega", "w", "M", "nu"])
         elements = elements.view("float64").reshape(elements.shape + (-1,))    
-       
+        
         for v, e in zip(vectors, elements):
             np.testing.assert_allclose(_convertCartesianToKeplerian(v.reshape(1, -1), mu=MU), e.reshape(1, -1))
         
@@ -97,7 +97,7 @@ def test_convertKeplerianToCartesian_elliptical():
         elements = elements.view("float64").reshape(elements.shape + (-1,))    
        
         for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(_convertKeplerianToCartesian(e.reshape(1, -1), mu=MU, maxIterations=100, tol=1e-15), v.reshape(1, -1))
+            np.testing.assert_allclose(_convertKeplerianToCartesian(e.reshape(1, -1), mu=MU, max_iter=100, tol=1e-15), v.reshape(1, -1))
             
 def test_convertKeplerianToCartesian_parabolic():
     warnings.warn("Need to implement and test parabolic conversions!!!")
@@ -120,4 +120,4 @@ def test_convertKeplerianToCartesian_hyperbolic():
         elements = elements.view("float64").reshape(elements.shape + (-1,))    
        
         for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(_convertKeplerianToCartesian(e.reshape(1, -1), mu=MU, maxIterations=100, tol=1e-15), v.reshape(1, -1))
+            np.testing.assert_allclose(_convertKeplerianToCartesian(e.reshape(1, -1), mu=MU, max_iter=100, tol=1e-15), v.reshape(1, -1))

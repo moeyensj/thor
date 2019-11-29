@@ -130,7 +130,7 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocityMethod="gauss"):
         
     Returns
     -------
-    orbits : `~numpy.ndarray` ((<3, 6) or (0))
+    orbits : `~numpy.ndarray` ((<=3, 6) or (0))
         Up to three preliminary orbits (as cartesian state vectors).
     """
     rho = equatorialToEclipticCartesian(equatorialAngularToCartesian(coords_eq_ang))

@@ -31,7 +31,7 @@ def test_propagateUniversal():
                 vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
                 elements = sp.prop2b(MU, list(vectors), dt)
                 
-                vectors_new = propagateUniversal(vectors, dt, mu=MU, maxIterations=1000, tol=1e-15)
+                vectors_new = propagateUniversal(vectors, dt, mu=MU, max_iter=1000, tol=1e-15)
                 
                 r = vectors_new[:3]
                 v = vectors_new[3:]
