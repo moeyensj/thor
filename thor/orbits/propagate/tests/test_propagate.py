@@ -19,22 +19,23 @@ def test_propagateUniversal():
         "C/2019 Q4" #Borisov
     ] 
     
-    epochs = [57257]
+    epochs = [57257.0]
     dts = np.linspace(0.01, 500, num=1000)
     
     for name in targets: 
         for epoch in epochs:
             target = Horizons(id=name, epochs=epoch, location="@sun")
             for dt in dts:
-                #print("Target: {}, Epoch: {}, dt: {}".format(name, epoch, dt))
                 vectors = target.vectors()
                 vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
                 elements = sp.prop2b(MU, list(vectors), dt)
                 
-                vectors_new = propagateUniversal(vectors, dt, mu=MU, max_iter=1000, tol=1e-15)
+                vectors_new = propagateUniversal(vectors.reshape(1, -1), np.array(epochs), np.array(epochs+dt),  mu=MU, max_iter=1000, tol=1e-15)
                 
-                r = vectors_new[:3]
-                v = vectors_new[3:]
+                orbit_id = vectors_new[0, 0]
+                new_epoch = vectors_new[0, 1]
+                r = vectors_new[0, 2:5]
+                v = vectors_new[0, 5:]
                 r_mag = np.sqrt(np.sum(r**2))
                 r_spice_mag = np.sqrt(np.sum(elements[:3]**2))
                 v_mag = np.sqrt(np.sum(v**2))

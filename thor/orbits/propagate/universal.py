@@ -11,7 +11,9 @@ __all__ = [
 
 MU = c.G * c.M_SUN
 
-@jit(["f8(f8[::1], f8, f8, i8, f8)"], nopython=True)
+
+@jit(["f8(f8[::1], f8, f8, i8, f8)",
+      "f8(f8[:], f8, f8, i8, f8)"], nopython=True)
 def calcChi(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
     """
     Calculate universal anomaly chi using Newton-Raphson. 
@@ -71,18 +73,20 @@ def calcChi(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
         
     return chi
 
-@jit(["f8[::1](f8[::1], f8, f8, i8, f8)"], nopython=True)
-def propagateUniversal(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
+@jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True)
+def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=10000, tol=1e-14):
     """
-    Propagate an orbit using the universal anomaly formalism. 
+    Propagate orbits using the universal anomaly formalism. 
     
     Parameters
     ----------
-    orbit : `~numpy.ndarray` (6)
-        Orbital state vector (X_0) with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
-    dt : float
-        Time from current epoch in units of decimal days to which to propagate
-        the orbit.
+    orbits : `~numpy.ndarray` (N, 6)
+        Orbital state vectors (X_0) with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
+    t0 : `~numpy.ndarray` (N)
+        Epoch in MJD at which orbits are defined.
+    t1 : `~numpy.ndarray` (M)
+        Epochs to which to propagate each orbit. If a single epoch is given, all orbits are propagated to this
+        epoch. If multiple epochs are given, then will propagate each orbit to that epoch. 
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of 
         AU**3 / d**2. 
@@ -95,32 +99,42 @@ def propagateUniversal(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
 
     Returns
     -------
-    orbit : `~numpy.ndarray` (6)
-        Orbital state vector at time dt from original state vector 
-        with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
+    orbits : `~numpy.ndarray` (N*M, 8)
+        Orbits propagated to each MJD with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
+        The first two columns are the orbit ID (a zero-based integer value assigned to each unique input orbit)
+        and the MJD of each propagated state.
     """
-    chi = calcChi(orbit, dt, mu=mu, max_iter=max_iter, tol=tol)
+    new_orbits = []
+    num_orbits = orbits.shape[0]
     
-    r = orbit[:3]
-    v = orbit[3:]
-    v_mag = np.linalg.norm(v)
-    r_mag = np.linalg.norm(r)
-    sqrt_mu = np.sqrt(mu)
-    chi2 = chi**2
+    for i in range(num_orbits):
+        dt = t1 - t0[i]
+        
+        for j, t in enumerate(dt):
+            chi = calcChi(orbits[i,:], t, mu=mu, max_iter=max_iter, tol=tol)
 
-    alpha = -v_mag**2 / mu + 2 / r_mag
-    psi = alpha * chi2
-    c2, c3 = calcC2C3(psi)
-    
-    f = 1 - chi**2 / r_mag * c2
-    g = dt - 1 / sqrt_mu * chi**3 * c3
-    
-    r_new = f * r + g * v
-    r_new_mag = np.linalg.norm(r_new)
-    
-    f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
-    g_dot = 1 - chi2 / r_new_mag * c2
-    
-    v_new = f_dot * r + g_dot * v
-    
-    return np.concatenate((r_new, v_new))   
+            r = orbits[i, :3]
+            v = orbits[i, 3:]
+            v_mag = np.linalg.norm(v)
+            r_mag = np.linalg.norm(r)
+            sqrt_mu = np.sqrt(mu)
+            chi2 = chi**2
+
+            alpha = -v_mag**2 / mu + 2 / r_mag
+            psi = alpha * chi2
+            c2, c3 = calcC2C3(psi)
+
+            f = 1 - chi**2 / r_mag * c2
+            g = dt - 1 / sqrt_mu * chi**3 * c3
+
+            r_new = f * r + g * v
+            r_new_mag = np.linalg.norm(r_new)
+
+            f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
+            g_dot = 1 - chi2 / r_new_mag * c2
+
+            v_new = f_dot * r + g_dot * v
+
+            new_orbits.append([i, t1[j], r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
+            
+    return np.array(new_orbits)
