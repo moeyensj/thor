@@ -108,10 +108,9 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=10000, tol=1e-14):
     num_orbits = orbits.shape[0]
     
     for i in range(num_orbits):
-        dt = t1 - t0[i]
-        
-        for j, t in enumerate(dt):
-            chi = calcChi(orbits[i,:], t, mu=mu, max_iter=max_iter, tol=tol)
+        for j, t in enumerate(t1):
+            dt = t - t0[i]
+            chi = calcChi(orbits[i,:], dt, mu=mu, max_iter=max_iter, tol=tol)
 
             r = orbits[i, :3]
             v = orbits[i, 3:]
@@ -135,6 +134,6 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=10000, tol=1e-14):
 
             v_new = f_dot * r + g_dot * v
 
-            new_orbits.append([i, t1[j], r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
+            new_orbits.append([i, t, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
             
     return np.array(new_orbits)

@@ -24,27 +24,42 @@ def test_propagateUniversal():
     
     for name in targets: 
         for epoch in epochs:
+            # Grab vectors from Horizons at epoch
             target = Horizons(id=name, epochs=epoch, location="@sun")
+            vectors = target.vectors()
+            vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
+            vectors = vectors.reshape(-1, 6)
+            
+            # Propagate vector to each new epoch (epoch + dt)
+            spice_elements = []
             for dt in dts:
-                vectors = target.vectors()
-                vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
-                elements = sp.prop2b(MU, list(vectors), dt)
-                
-                vectors_new = propagateUniversal(vectors.reshape(1, -1), np.array(epochs), np.array(epochs+dt),  mu=MU, max_iter=1000, tol=1e-15)
-                
-                orbit_id = vectors_new[0, 0]
-                new_epoch = vectors_new[0, 1]
-                r = vectors_new[0, 2:5]
-                v = vectors_new[0, 5:]
-                r_mag = np.sqrt(np.sum(r**2))
-                r_spice_mag = np.sqrt(np.sum(elements[:3]**2))
-                v_mag = np.sqrt(np.sum(v**2))
-                v_spice_mag = np.sqrt(np.sum(elements[3:]**2))
-                
-                r_diff = (r_mag - r_spice_mag) / r_spice_mag
-                v_diff = (v_mag - v_spice_mag) / v_spice_mag
+                spice_elements.append(sp.prop2b(MU, list(vectors[0, :]), dt))
+            spice_elements = np.array(spice_elements)
+            
+            # Repeat but now using THOR's universal propagator
+            vectors_new = propagateUniversal(vectors[0:1, :], np.array(epochs), dts + epochs[0],  mu=MU, max_iter=1000, tol=1e-15)
+               
+            orbit_id = vectors_new[:, 0]
+            new_epochs = vectors_new[:, 1]
+            
+            # Make sure the first column is a bunch of 0s since only one orbit was passed
+            np.testing.assert_allclose(orbit_id, np.zeros(len(dts)))
+            # Make sure the second column has all the new epochs
+            np.testing.assert_allclose(new_epochs, dts + epochs[0])
+            
+            # Extract position and velocity components and compare them
+            r = vectors_new[:, 2:5]
+            v = vectors_new[:, 5:]
+            
+            r_mag = np.sqrt(np.sum(r**2, axis=1))
+            v_mag = np.sqrt(np.sum(v**2, axis=1))
+            
+            r_spice_mag = np.sqrt(np.sum(spice_elements[:, :3]**2, axis=1))
+            v_spice_mag = np.sqrt(np.sum(spice_elements[:, 3:]**2, axis=1))
 
-                # Test position to within a meter and velocity to within a mm/s
-                np.testing.assert_allclose(r_diff, np.zeros(3), atol=1e-12, rtol=1e-12)
-                np.testing.assert_allclose(v_diff, np.zeros(3), atol=1e-10, rtol=1e-10)
-    
+            r_diff = (r_mag - r_spice_mag) / r_spice_mag
+            v_diff = (v_mag - v_spice_mag) / v_spice_mag
+
+            # Test position to within a meter and velocity to within a mm/s
+            np.testing.assert_allclose(r_diff, np.zeros(len(dts)), atol=1e-12, rtol=1e-12)
+            np.testing.assert_allclose(v_diff, np.zeros(len(dts)), atol=1e-10, rtol=1e-10)
