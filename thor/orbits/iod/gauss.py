@@ -4,6 +4,8 @@ from scipy import roots
 from ...constants import Constants as c
 from ...coordinates import equatorialToEclipticCartesian
 from ...coordinates import equatorialAngularToCartesian
+from ..propagate import calcC2C3
+from ..propagate import calcChi
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
 
@@ -14,12 +16,15 @@ __all__ = [
     "_calcLambdas",
     "_calcRhos",
     "_calcFG",
+    "_iterateGaussIOD",
     "calcGauss",
     "gaussIOD"
 ]
 
 MU = c.G * c.M_SUN
+C = c.C
 
+#@jit(["f8(f8[::1], f8[::1], f8[::1])"], nopython=True)
 def _calcV(rho1hat, rho2hat, rho3hat):
     # Vector triple product that gives the area of 
     # the "volume of the parallelepiped" or according to 
@@ -27,20 +32,24 @@ def _calcV(rho1hat, rho2hat, rho3hat):
     # Note that vector triple product rules apply here.
     return np.dot(np.cross(rho1hat, rho2hat), rho3hat)
 
+#@jit(["f8(f8[::1], f8[::1], f8[::1], f8[::1], f8[::1], f8, f8, f8)"], nopython=True)
 def _calcA(q1, q2, q3, rho1hat, rho3hat, t31, t32, t21):
     # Equation 21 from Milani et al. 2008
-    return np.dot(np.cross(np.linalg.norm(q2)**3 * rho1hat, rho3hat), (t32 * q1 - t31 * q2 + t21 * q3))
+    return np.linalg.norm(q2)**3 * np.dot(np.cross(rho1hat, rho3hat), (t32 * q1 - t31 * q2 + t21 * q3))
 
+#@jit(["f8(f8[::1], f8[::1], f8[::1], f8[::1], f8, f8, f8)"], nopython=True)
 def _calcB(q1, q3, rho1hat, rho3hat, t31, t32, t21):
     # Equation 19 from Milani et al. 2008
-    return np.dot(np.cross(MU / 6 * t32 * t21 * rho1hat, rho3hat), ((t31 + t32) * q1 + (t31 + t21) * q3))
+    return MU / 6 * t32 * t21 * np.dot(np.cross(rho1hat, rho3hat), ((t31 + t32) * q1 + (t31 + t21) * q3))
 
+#@jit(["UniTuple(f8, 2)(f8, f8, f8, f8)"], nopython=True)
 def _calcLambdas(r2_mag, t31, t32, t21):
     # Equations 16 and 17 from Milani et al. 2008
     lambda1 = t32 / t31 * (1 + MU / (6 * r2_mag**3) * (t31**2 - t32**2))
     lambda3 = t21 / t31 * (1 + MU / (6 * r2_mag**3) * (t31**2 - t21**2))
     return lambda1, lambda3
 
+#@jit(["UniTuple(f8[::1], 3)(f8, f8, f8[::1], f8[::1], f8[::1], f8[::1], f8[::1], f8[::1], f8)"], nopython=True)
 def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1hat, rho2hat, rho3hat, V):
     # This can be derived by taking a series of scalar products of the coplanarity condition equation
     # with cross products of unit vectors in the direction of the observer, in particular, see Chapter 9 in
@@ -53,11 +62,97 @@ def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1hat, rho2hat, rho3hat, V):
 
 def _calcFG(r2_mag, t32, t21):
     # Calculate the Lagrange coefficients (Gauss f and g series)
-    f1 = 1 - (1 / 2) * MU / r2_mag**3 * (-t21)**2
+    f1 = 1 - (1 / 2) * MU / r2_mag**3 * (-t21)**2 
     f3 = 1 - (1 / 2) * MU / r2_mag**3 * t32**2
     g1 = -t21 - (1 / 6) * MU / r2_mag**3 * (-t21)**2
     g3 = t32 - (1 / 6) * MU / r2_mag**3 * t32**2
     return f1, g1, f3, g3
+
+def _iterateGaussIOD(orbit, t21, t32, q1, q2, q3, rho1hat, rho2hat, rho3hat, mu=MU, max_iter=10, tol=1e-15):
+    # Iterate over the polynomial solution from Gauss using the universal anomaly 
+    # formalism until the solution converges or the maximum number of iterations is reached
+    
+    # Calculate variables that won't change per iteration
+    sqrt_mu = np.sqrt(mu)
+    V = _calcV(rho1hat, rho2hat, rho3hat)
+    
+    # Set up temporary variables that change iteration to iteration
+    orbit_iter = orbit
+    rho1_ratio = 1e10
+    rho2_ratio = 1e10
+    rho3_ratio = 1e10
+    rho1_mag = -1e10
+    rho2_mag = -1e10
+    rho3_mag = -1e10
+    
+    i = 0
+    while ((np.abs(rho1_ratio) > tol) 
+            & (np.abs(rho2_ratio) > tol) 
+            & (np.abs(rho3_ratio) > tol)):
+        
+        r = orbit_iter[:3]
+        v = orbit_iter[3:]
+        v_mag = np.linalg.norm(v)
+        r_mag = np.linalg.norm(r)
+        
+        # Calculate the universal anomaly for both the first and third observations
+        # then calculate the Lagrange coefficients
+        for j, dt in enumerate([-t21, t32]):
+            alpha = -v_mag**2 / mu + 2 / r_mag
+            
+            chi = calcChi(orbit_iter, dt, mu=mu, max_iter=max_iter, tol=tol)
+            chi2 = chi**2
+
+            psi = alpha * chi2
+            c2, c3 = calcC2C3(psi)
+
+            f = 1 - chi**2 / r_mag * c2
+            g = dt - 1 / sqrt_mu * chi**3 * c3
+
+            if j == 0:
+                g1 = g
+                f1 = f
+            else:
+                g3 = g
+                f3 = f
+    
+        # Calculate the coplanarity coefficients
+        lambda1 = g3 / (f1 * g3 - f3 * g1) 
+        lambda3 = -g1 / (f1 * g3 - f3 * g1)   
+        
+        # Calculate new topocentric observer to target vectors
+        rho1_temp, rho2_temp, rho3_temp = _calcRhos(lambda1, lambda3, 
+                                                    q1, q2, 
+                                                    q3, rho1hat, 
+                                                    rho2hat, rho3hat, 
+                                                    V)
+        
+        # Calculate heliocentric position vector
+        r1 = q1 + rho1_temp
+        r2 = q2 + rho2_temp
+        r3 = q3 + rho3_temp
+        
+        # Update topocentric observer to target magnitudes ratios
+        rho1_ratio = rho1_mag / np.linalg.norm(rho1_temp)
+        rho2_ratio = rho2_mag / np.linalg.norm(rho2_temp)
+        rho3_ratio = rho3_mag / np.linalg.norm(rho3_temp)
+        
+        # Update running topocentric observer to target magnitudes variables
+        rho1_mag = np.linalg.norm(rho1_temp)
+        rho2_mag = np.linalg.norm(rho2_temp)
+        rho3_mag = np.linalg.norm(rho3_temp)
+
+        # Calculate the velocity at the second observation
+        v2 = 1 / (f1 * g3 - f3 * g1) * (-f3 * r1 + f1 * r3)
+
+        # Update the guess of the orbit
+        orbit_iter = np.concatenate((r2, v2))
+        
+        i += 1
+        if i >= max_iter:
+            break
+    
+    return orbit_iter
 
 def calcGauss(r1, r2, r3, t1, t2, t3):
     """
@@ -111,7 +206,7 @@ def calcGauss(r1, r2, r3, t1, t2, t3):
     f1, g1, f3, g3 = _calcFG(r2_mag, t32, t21)
     return (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
 
-def gaussIOD(coords_eq_ang, t, coords_obs, velocityMethod="gauss"):
+def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True, mu=MU, max_iter=10, tol=1e-15):
     """
     Compute up to three intial orbits using three observations in angular equatorial
     coordinates. 
@@ -124,27 +219,39 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocityMethod="gauss"):
         Times of the three observations in units of decimal days (MJD or JD for example).
     coords_obs : `~numpy.ndarray` (3, 2)
         Heliocentric position vector of the observer at times t in units of AU.
-    velocityMethod : {'gauss', gibbs', 'herrick+gibbs'}, optional
+    velocity_method : {'gauss', gibbs', 'herrick+gibbs'}, optional
         Which method to use for calculating the velocity at the second observation.
-        [Default = 'gauss']
+        [Default = 'gibbs']
+    iterate : bool, optional
+        Iterate initial orbit using universal anomaly to better approximate the 
+        Lagrange coefficients. 
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of 
+        AU**3 / d**2. 
+    max_iter : int, optional
+        Maximum number of iterations over which to converge to solution.
+    tol : float, optional
+        Numerical tolerance to which to compute chi using the Newtown-Raphson 
+        method. 
         
     Returns
     -------
-    orbits : `~numpy.ndarray` ((<=3, 6) or (0))
+    orbits : `~numpy.ndarray` ((<3, 6) or (0))
         Up to three preliminary orbits (as cartesian state vectors).
     """
-    rho = equatorialToEclipticCartesian(equatorialAngularToCartesian(coords_eq_ang))
-    rho1 = rho[0]
-    rho2 = rho[1]
-    rho3 = rho[2]
-    q1 = coords_obs[0]
-    q2 = coords_obs[1]
-    q3 = coords_obs[2]
+    rho = equatorialToEclipticCartesian(equatorialAngularToCartesian(np.radians(coords_eq_ang)))
+    rho1hat = rho[0, :]
+    rho2hat = rho[1, :]
+    rho3hat = rho[2, :]
+    q1 = coords_obs[0,:]
+    q2 = coords_obs[1,:]
+    q3 = coords_obs[2,:]
     q2_mag = np.linalg.norm(q2)
-
-    rho1hat = rho1 / np.linalg.norm(rho1)
-    rho2hat = rho2 / np.linalg.norm(rho2)
-    rho3hat = rho3 / np.linalg.norm(rho3)
+    
+    # Make sure rhohats are unit vectors
+    rho1hat = rho1hat / np.linalg.norm(rho1hat)
+    rho2hat = rho2hat / np.linalg.norm(rho2hat)
+    rho3hat = rho3hat / np.linalg.norm(rho3hat)
     
     t1 = t[0]
     t2 = t[1]
@@ -156,7 +263,7 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocityMethod="gauss"):
     A = _calcA(q1, q2, q3, rho1hat, rho3hat, t31, t32, t21)
     B = _calcB(q1, q3, rho1hat, rho3hat, t31, t32, t21)
     V = _calcV(rho1hat, rho2hat, rho3hat)
-    coseps2 = np.dot(q2 / np.linalg.norm(q2), rho2hat) 
+    coseps2 = np.dot(q2, rho2hat) / q2_mag
     C0 = V * t31 * q2_mag**4 / B
     h0 = - A / B
     
@@ -195,15 +302,21 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocityMethod="gauss"):
         r2 = q2 + rho2
         r3 = q3 + rho3
         
-        if velocityMethod == "gauss":
+        if velocity_method == "gauss":
             v2 = calcGauss(r1, r2, r3, t1, t2, t3)
-        elif velocityMethod == "gibbs":
+        elif velocity_method == "gibbs":
             v2 = calcGibbs(r1, r2, r3)
-        elif velocityMethod == "herrick+gibbs":
+        elif velocity_method == "herrick+gibbs":
             v2 = calcHerrickGibbs(r1, r2, r3, t1, t2, t3)
         else:
-            raise ValueError("velocityMethod should be one of {'gauss', 'gibbs', 'herrick+gibbs'}")
+            raise ValueError("velocity_method should be one of {'gauss', 'gibbs', 'herrick+gibbs'}")
         orbit = np.concatenate([r2, v2])
+        
+        if iterate == True:
+            orbit = _iterateGaussIOD(orbit, t21, t32, 
+                                     q1, q2, q3, 
+                                     rho1hat, rho2hat, rho3hat, 
+                                     mu=MU, max_iter=max_iter, tol=tol)
         
         if np.linalg.norm(v2) >= C:
             print("Velocity is greater than speed of light!")
