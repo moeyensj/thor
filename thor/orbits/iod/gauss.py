@@ -4,7 +4,7 @@ from scipy import roots
 from ...constants import Constants as c
 from ...coordinates import equatorialToEclipticCartesian
 from ...coordinates import equatorialAngularToCartesian
-from ..propagate import calcC2C3
+from ..propagate import calcStumpff
 from ..propagate import calcChi
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
@@ -104,7 +104,7 @@ def _iterateGaussIOD(orbit, t21, t32, q1, q2, q3, rho1hat, rho2hat, rho3hat, mu=
             chi2 = chi**2
 
             psi = alpha * chi2
-            c2, c3 = calcC2C3(psi)
+            c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
 
             f = 1 - chi**2 / r_mag * c2
             g = dt - 1 / sqrt_mu * chi**3 * c3

@@ -2,29 +2,31 @@ import numpy as np
 from numba import jit
 
 __all__ = [
-    "calcC2C3"
+    "calcStumpff"
 ]
 
-@jit("UniTuple(f8, 2)(f8)", nopython=True)
-def calcC2C3(psi):
+@jit("UniTuple(f8, 6)(f8)", nopython=True)
+def calcStumpff(psi):
     """
-    Calculate the second and third Stumpff functions. 
+    Calculate the first 6 Stumpff functions for universal variable psi. 
     
     .. math::
+    
+        c_0(\Psi) = \begin{cases}
+            \cos{\sqrt{\Psi}} & \text{ if } \Psi > 0 \\ 
+            \cosh{\sqrt{-\Psi}} & \text{ if } \Psi < 0 \\ 
+            1 & \text{ if } \Psi= 0
+        \end{cases} 
         
-        c_2(\Psi) = \begin{cases}
-            \frac{1 - \cos{\sqrt{\Psi}}}{\Psi} & \text{ if } \Psi > 0 \\ 
-            \frac{1 - \cosh{\sqrt{-\Psi}}}{\Psi} & \text{ if } \Psi < 0 \\ 
-            \frac{1}{2} & \text{ if } \Psi= 0
+        c_1(\Psi) = \begin{cases}
+            \frac{\sin{\sqrt{\Psi}}{\sqrt{\Psi}} & \text{ if } \Psi > 0 \\ 
+            \frac{\sinh{\sqrt{-\Psi}}{\sqrt{-\Psi}} & \text{ if } \Psi < 0 \\ 
+            1 & \text{ if } \Psi= 0
         \end{cases}
         
-        c_3(\Psi) = \begin{cases}
-            \frac{\sqrt{\Psi} - \sin{\sqrt{\Psi}}}{\sqrt{\Psi^3}} & \text{ if } \Psi > 0 \\ 
-            \frac{\sinh{\sqrt{-\Psi}} - \sqrt{-\Psi}}{\sqrt{(-\Psi)^3}} & \text{ if } \Psi < 0 \\ 
-            \frac{1}{6} & \text{ if } \Psi= 0
-        \end{cases}
+        \Psi c_{n+2} = \frac{1}{k!} - c_n(\Psi)
         
-    For more details on theory see Chapter 2 in David A. Vallado's "Fundamentals of Astrodynamics
+    For more details on the universal variable formalism see Chapter 2 in David A. Vallado's "Fundamentals of Astrodynamics
     and Applications" or Chapter 3 in Howard Curtis' "Orbital Mechanics for Engineering Students".
     
     Parameters
@@ -34,17 +36,29 @@ def calcC2C3(psi):
         
     Returns
     -------
-    c2, c3 : float, float
-        Second and third Stumpff functions.
+    s0, s1, s2, s3, s4, s5 : 6 x float
+        First six Stumpff functions.
     """
     if psi > 0.0:
-        c2 = (1 - np.cos(np.sqrt(psi))) / psi
-        c3 = (np.sqrt(psi) - np.sin(np.sqrt(psi))) / np.sqrt(psi)**3
+        c0 = np.cos(np.sqrt(psi))
+        c1 = np.sin(np.sqrt(psi)) / np.sqrt(psi)
+        c2 = (1. - c0) / psi
+        c3 = (1. - c1) / psi
+        c4 = (1/2. - c2) / psi
+        c5 = (1/6. - c3) / psi
     elif psi < 0.0:
-        c2 = (np.cosh(np.sqrt(-psi)) - 1) / (-psi)
-        c3 = (np.sinh(np.sqrt(-psi)) - np.sqrt(-psi)) / np.sqrt(-psi)**3
+        c0 = np.cosh(np.sqrt(-psi))
+        c1 = np.sinh(np.sqrt(-psi)) / np.sqrt(-psi)
+        c2 = (1. - c0) / psi
+        c3 = (1. - c1) / psi
+        c4 = (1/2. - c2) / psi
+        c5 = (1/6. - c3) / psi
     else:
+        c0 = 1.
+        c1 = 1.
         c2 = 1/2.
         c3 = 1/6.
+        c4 = 1/24.
+        c5 = 1/120.
     
-    return c2, c3
+    return c0, c1, c2, c3, c4, c5

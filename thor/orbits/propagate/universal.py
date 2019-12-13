@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit
 
 from ...constants import Constants as c
-from .stumpff import calcC2C3
+from .stumpff import calcStumpff
 
 __all__ = [
     "calcChi",
@@ -54,7 +54,7 @@ def calcChi(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
     while np.abs(ratio) > tol:
         chi2 = chi**2
         psi = alpha * chi2
-        c2, c3 = calcC2C3(psi)
+        c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
         
         # Newton-Raphson
         f = (r_mag * rv_mag / sqrt_mu * chi2 * c2 
@@ -121,7 +121,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=10000, tol=1e-14):
 
             alpha = -v_mag**2 / mu + 2 / r_mag
             psi = alpha * chi2
-            c2, c3 = calcC2C3(psi)
+            c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
 
             f = 1 - chi**2 / r_mag * c2
             g = dt - 1 / sqrt_mu * chi**3 * c3
