@@ -8,9 +8,15 @@ __all__ = [
 @jit("UniTuple(f8, 6)(f8)", nopython=True)
 def calcStumpff(psi):
     """
-    Calculate the first 6 Stumpff functions for universal variable psi. 
+    Calculate the first 6 Stumpff functions for universal variable psi.  
     
     .. math::
+    
+        \Psi = \alpha \chi^2 
+        
+        \frac{d\chi}{dt} = \frac{\sqrt{\mu}}{r}
+        
+        \alpha = \frac{1}{a}
     
         c_0(\Psi) = \begin{cases}
             \cos{\sqrt{\Psi}} & \text{ if } \Psi > 0 \\ 

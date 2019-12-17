@@ -50,42 +50,45 @@ def test_gaussIOD():
         coords_eq = _cartesianToAngular(*rho_eq.T)[:, :2]
         coords_eq = np.degrees(coords_eq)
 
-        selected_obs = [0, 4, 8]
-        truth_r = states_target[selected_obs, :3]
-        truth_v = states_target[selected_obs, 3:]
-        coords_obs = states_observer[selected_obs, :3]
-        coords_ec_ang = coords_ec[selected_obs]
-        coords_eq_ang = coords_eq[selected_obs]
-        t = t1[selected_obs]
-        
-        orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True, mu=MU, max_iter=100, tol=1e-15)
-        
-        closest_r = 1e10
-        closest_v = 1e10
-
-        for i, orbit in enumerate(orbits):
-            print(orbit)
+        for selected_obs in [[0, 5, 10], 
+                             [100, 120, 140],
+                             [22, 23, 24],
+                             [1000, 1005, 1010],
+                             [3600, 3620, 3630],
+                             [1999, 2009, 2034]]:
+            truth_r = states_target[selected_obs, :3]
+            truth_v = states_target[selected_obs, 3:]
+            coords_obs = states_observer[selected_obs, :3]
+            coords_ec_ang = coords_ec[selected_obs]
+            coords_eq_ang = coords_eq[selected_obs]
+            t = t1[selected_obs]
             
-            r2 = orbit[:3]
-            v2 = orbit[3:]
-            r2_mag = np.linalg.norm(r2)
-            v2_mag = np.linalg.norm(v2)
-
-            r2_truth = truth_r[1,:]
-            v2_truth = truth_v[1,:]
-            r2_truth_mag = np.linalg.norm(r2_truth)
-            v2_truth_mag = np.linalg.norm(v2_truth)
-
-
-            r_diff = (r2_mag - r2_truth_mag) / r2_truth_mag
-            v_diff = (v2_mag - v2_truth_mag) / v2_truth_mag
+            orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True, mu=MU, max_iter=1000, tol=1e-15)
             
-            if closest_r > np.abs(r_diff):
-                closest_r = r_diff
-                closest_v = v_diff
-            
-        # Test position to within a couple of meters and velocity to within a mm/s
-        np.testing.assert_allclose(closest_r, 0.0, atol=1e-11, rtol=1e-11)
-        np.testing.assert_allclose(closest_v, 0.0, atol=1e-10, rtol=1e-10)
+            closest_r = 1e10
+            closest_v = 1e10
+
+            for i, orbit in enumerate(orbits):            
+                r2 = orbit[:3]
+                v2 = orbit[3:]
+                r2_mag = np.linalg.norm(r2)
+                v2_mag = np.linalg.norm(v2)
+
+                r2_truth = truth_r[1,:]
+                v2_truth = truth_v[1,:]
+                r2_truth_mag = np.linalg.norm(r2_truth)
+                v2_truth_mag = np.linalg.norm(v2_truth)
+
+
+                r_diff = np.abs(r2_mag - r2_truth_mag) / r2_truth_mag
+                v_diff = np.abs(v2_mag - v2_truth_mag) / v2_truth_mag
+                
+                if closest_r > np.abs(r_diff):
+                    closest_r = r_diff
+                    closest_v = v_diff
+                
+            # Test position to within 100 meters and velocity to within 10 cm/s
+            np.testing.assert_allclose(closest_r, 0.0, atol=6.68459e-10, rtol=6.68459e-10)
+            np.testing.assert_allclose(closest_v, 0.0, atol=5.77548e-8, rtol=5.77548e-8)
                 
                 
