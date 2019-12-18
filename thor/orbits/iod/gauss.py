@@ -71,7 +71,10 @@ def _calcFG(r2_mag, t32, t21, mu=MU):
 
 def _calcM(r0_mag, r_mag, f, g, f_dot, g_dot, c0, c1, c2, c3, c4, c5, alpha, chi, mu=MU):
     # Universal variables will differ between different texts and works in the literature.
-    # c0, c1, c2, c3, c4, c5 are expected to be 
+    # c0, c1, c2, c3, c4, c5 are expected to follow the Battin formalism (adopted by both
+    # Vallado and Curtis in their books). The M matrix is proposed by Shepperd 1985 and follows
+    # the Goodyear formalism. Conversions between the two formalisms can be derived from Table 1 in
+    # Everhart & Pitkin 1982.
     w = chi / np.sqrt(mu)
     alpha_alt = - mu * alpha
     U0 = (1 - alpha_alt * chi**2) * c0
@@ -84,7 +87,7 @@ def _calcM(r0_mag, r_mag, f, g, f_dot, g_dot, c0, c1, c2, c3, c4, c5, alpha, chi
     F = f_dot
     G = g_dot
     
-    # Equations 18 and 19 in Sheppard 1985
+    # Equations 18 and 19 in Shepperd 1985
     U = (U2 * U3 + w * U4 - 3 * U5) / 3
     W = g * U2 + 3 * mu * U
     
