@@ -1,13 +1,9 @@
 import numpy as np
 
-OBLIQUITY = np.radians(23.43928)
-TRANSFORM_EQ2EC = np.matrix([[1, 0, 0],
-                             [0, np.cos(OBLIQUITY), np.sin(OBLIQUITY)],
-                             [0, -np.sin(OBLIQUITY), np.cos(OBLIQUITY)]])
-TRANSFORM_EC2EQ = np.matrix([[1, 0, 0],
-                             [0, np.cos(OBLIQUITY), -np.sin(OBLIQUITY)],
-                             [0, np.sin(OBLIQUITY), np.cos(OBLIQUITY)]])
+from ..constants import Constants as c
 
+TRANSFORM_EQ2EC = c.TRANSFORM_EQ2EC
+TRANSFORM_EC2EQ = c.TRANSFORM_EC2EQ
 
 __all__ = ["equatorialToEclipticCartesian",
            "eclipticToEquatorialCartesian",

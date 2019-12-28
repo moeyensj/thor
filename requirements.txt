@@ -1,6 +1,7 @@
 numpy
 scipy
 astropy
+astroquery
 scikit-learn
 matplotlib
 seaborn
@@ -10,6 +11,8 @@ plotly
 pyyaml
 openorb
 ipykernel
+numba
+spiceypy
 pytest
 pytest-cov
 coveralls

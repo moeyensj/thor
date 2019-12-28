@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pyoorb as oo
 
-from ..config import Config
+from ...config import Config
 
 __all__ = ["propagateOrbits"]
 
