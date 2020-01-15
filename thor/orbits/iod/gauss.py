@@ -388,7 +388,7 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", light_time=T
 
         # Test if we get the same rho2 as using equation 22 in Milani et al. 2008
         rho2_mag = (h0 - q2_mag**3 / r2_mag**3) * q2_mag / C0
-        np.testing.assert_almost_equal(np.dot(rho2_mag, rho2_hat), rho2)
+        #np.testing.assert_almost_equal(np.dot(rho2_mag, rho2_hat), rho2)
 
         r1 = q1 + rho1
         r2 = q2 + rho2
