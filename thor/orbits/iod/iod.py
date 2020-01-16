@@ -41,6 +41,9 @@ def selectObservations(observations, method="combinations", columnMapping=Config
         not be selected then returns an empty array. 
     """
     obs_ids = observations[columnMapping["obs_id"]].values
+    if len(obs_ids) < 3:
+        return np.array([])
+    
     indexes = np.arange(0, len(obs_ids))
     times = observations[columnMapping["exp_mjd"]].values
     selected = np.array([])
