@@ -358,7 +358,7 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", light_time=T
     coseps2 = np.dot(q2, rho2_hat) / q2_mag
     C0 = V * t31 * q2_mag**4 / B
     h0 = - A / B
-    
+
     if np.isnan(C0) or np.isnan(h0):
         return np.array([])
     
@@ -422,6 +422,10 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", light_time=T
         
         if np.linalg.norm(orbit[3:]) >= C:
             print("Velocity is greater than speed of light!")
+        
+        if (np.linalg.norm(orbit[:3]) > 300.) and (np.linalg.norm(orbit[3:]) > 25.):
+            continue
+            
         orbits.append(np.hstack([epoch, orbit]))
     
     return np.array(orbits)
