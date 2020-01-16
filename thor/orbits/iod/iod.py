@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from itertools import combinations
 
@@ -133,9 +134,13 @@ def iod(observations,
 
         # Run IOD 
         orbits_iod = gaussIOD(coords_eq_ang, times, coords_obs, light_time=light_time, iterate=iterate, max_iter=max_iter, tol=tol)
-        
+        if np.all(np.isnan(orbits_iod)) == True:
+            continue
+
         # Propagate initial orbit to all observation times
         orbits = propagateOrbits(orbits_iod[:, 1:], orbits_iod[:, 0], times_all, **propagatorKwargs)
+        if np.all(orbits.values) == 0.0:
+            continue
         orbits = orbits[['orbit_id', 'mjd', 'RA_deg', 'Dec_deg', 
                          'HEclObj_X_au', 'HEclObj_Y_au', 'HEclObj_Z_au',
                          'HEclObj_dX/dt_au_p_day', 'HEclObj_dY/dt_au_p_day', 'HEclObj_dZ/dt_au_p_day']].values
