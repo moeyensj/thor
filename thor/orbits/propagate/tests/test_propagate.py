@@ -6,29 +6,30 @@ from ....constants import Constants as c
 from ..universal import propagateUniversal
 
 MU = c.G * c.M_SUN
+MAX_ITER = 100
+TOL = 1e-15
+
+TARGETS = [
+    "Amor",
+    "Eros", 
+    "Eugenia",
+    "C/2019 Q4" # Borisov
+] 
+EPOCHS = [57257.0, 59000.0]
 
 def test_propagateUniversal():
     """
     Using a selection of 4 asteroids, this function queries Horizons for an initial state vector at one epoch, then propagates
     that state to 1000 different times and compares each propagation to the SPICE 2-body propagator. 
     """
-    targets = [
-        "Amor",
-        "Eros", 
-        "Eugenia",
-        "C/2019 Q4" #Borisov
-    ] 
-    
-    epochs = [57257.0]
     dts = np.linspace(0.01, 500, num=1000)
     
-    for name in targets: 
-        for epoch in epochs:
+    for name in TARGETS: 
+        for epoch in EPOCHS:
             # Grab vectors from Horizons at epoch
             target = Horizons(id=name, epochs=epoch, location="@sun")
-            vectors = target.vectors()
-            vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
-            vectors = vectors.reshape(-1, 6)
+            vectors = target.vectors().to_pandas()
+            vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
             
             # Propagate vector to each new epoch (epoch + dt)
             spice_elements = []
@@ -37,7 +38,14 @@ def test_propagateUniversal():
             spice_elements = np.array(spice_elements)
             
             # Repeat but now using THOR's universal propagator
-            vectors_new = propagateUniversal(vectors[0:1, :], np.array(epochs), dts + epochs[0],  mu=MU, max_iter=1000, tol=1e-15)
+            vectors_new = propagateUniversal(
+                vectors[0:1, :], 
+                np.array([epoch]), 
+                dts + epoch,  
+                mu=MU, 
+                max_iter=MAX_ITER, 
+                tol=TOL
+            )
                
             orbit_id = vectors_new[:, 0]
             new_epochs = vectors_new[:, 1]
@@ -45,7 +53,7 @@ def test_propagateUniversal():
             # Make sure the first column is a bunch of 0s since only one orbit was passed
             np.testing.assert_allclose(orbit_id, np.zeros(len(dts)))
             # Make sure the second column has all the new epochs
-            np.testing.assert_allclose(new_epochs, dts + epochs[0])
+            np.testing.assert_allclose(new_epochs, dts + epoch)
             
             # Extract position and velocity components and compare them
             r = vectors_new[:, 2:5]
