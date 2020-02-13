@@ -87,19 +87,20 @@ def test_gaussIOD():
             for i, observation in enumerate(coords_eq_ang):
                 print("\tt [MJD]: {}, RA [Deg]: {}, Dec [Deg]: {}, obs_x [AU]: {}, obs_y [AU]: {}, obs_z [AU]: {}".format(t[i], *observation, *coords_obs[i]))
 
-            print("Actual State [AU, AU/d]:\n\t{}".format(states_target[selected_obs[1]]))
+            state_truth = np.concatenate([np.array([t[1]]), states_target[selected_obs[1]]])
+            print("Actual State [MJD, AU, AU/d]:\n\t{}".format(state_truth))
 
             # Using observables, run IOD without iteration
-            orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=False, mu=MU, max_iter=100, tol=1e-15)
+            orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=False, mu=MU, max_iter=100, tol=1e-15, light_time=False)
 
-            print("Predicted States (without iteration) [AU, AU/d]:")
+            print("Predicted States (without iteration) [MJD, AU, AU/d]:")
             for orbit in orbits:
                 print("\t{}".format(orbit))
             
             # Using observables, run IOD
-            orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True, mu=MU, max_iter=100, tol=1e-15)
+            orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True, mu=MU, max_iter=100, tol=1e-15, light_time=False)
 
-            print("Predicted States (with iteration) [AU, AU/d]:")
+            print("Predicted States (with iteration) [MJD, AU, AU/d]:")
             for orbit in orbits:
                 print("\t{}".format(orbit))
             
@@ -110,8 +111,8 @@ def test_gaussIOD():
             closest_v = 1e10
 
             for i, orbit in enumerate(orbits):            
-                r2 = orbit[:3]
-                v2 = orbit[3:]
+                r2 = orbit[1:4]
+                v2 = orbit[4:]
                 r2_mag = np.linalg.norm(r2)
                 v2_mag = np.linalg.norm(v2)
 
@@ -129,7 +130,7 @@ def test_gaussIOD():
 
             print("(Actual - Predicted) / Actual:")
             for orbit in orbits:
-                print("\t{}".format((states_target[selected_obs[1]] - orbit) / states_target[selected_obs[1]]))
+                print("\t{}".format((states_target[selected_obs[1]] - orbit[1:]) / states_target[selected_obs[1]]))
             print("")
                 
             # Test position to within 100 meters and velocity to within 10 cm/s

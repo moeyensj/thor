@@ -71,7 +71,10 @@ def _calcFG(r2_mag, t32, t21, mu=MU):
 
 def _calcM(r0_mag, r_mag, f, g, f_dot, g_dot, c0, c1, c2, c3, c4, c5, alpha, chi, mu=MU):
     # Universal variables will differ between different texts and works in the literature.
-    # c0, c1, c2, c3, c4, c5 are expected to be 
+    # c0, c1, c2, c3, c4, c5 are expected to follow the Battin formalism (adopted by both
+    # Vallado and Curtis in their books). The M matrix is proposed by Shepperd 1985 and follows
+    # the Goodyear formalism. Conversions between the two formalisms can be derived from Table 1 in
+    # Everhart & Pitkin 1982.
     w = chi / np.sqrt(mu)
     alpha_alt = - mu * alpha
     U0 = (1 - alpha_alt * chi**2) * c0
@@ -84,7 +87,7 @@ def _calcM(r0_mag, r_mag, f, g, f_dot, g_dot, c0, c1, c2, c3, c4, c5, alpha, chi
     F = f_dot
     G = g_dot
     
-    # Equations 18 and 19 in Sheppard 1985
+    # Equations 18 and 19 in Shepperd 1985
     U = (U2 * U3 + w * U4 - 3 * U5) / 3
     W = g * U2 + 3 * mu * U
     
@@ -124,7 +127,7 @@ def _calcStateTransitionMatrix(M, r0, v0, f, g, f_dot, g_dot, r, v):
     ])
     return phi
 
-def _iterateGaussIOD(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, mu=MU, max_iter=10, tol=1e-15):
+def _iterateGaussIOD(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_time=True, mu=MU, max_iter=10, tol=1e-15):
     # Iterate over the polynomial solution from Gauss using the universal anomaly 
     # formalism until the solution converges or the maximum number of iterations is reached
     
@@ -159,6 +162,12 @@ def _iterateGaussIOD(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, mu=MU, max_i
         # then calculate the Lagrange coefficients and the state for each observation.
         # Use those to calculate the state transition matrix
         for j, dt in enumerate([-t21, t32]):
+            if light_time is True:
+                if j == 1:
+                    dt += (rho2_mag - rho1_mag) / C
+                else:
+                    dt -= (rho3_mag - rho2_mag) / C
+            
             # Calculate the universal anomaly 
             # Universal anomaly here is defined in such a way that it satisfies the following
             # differential equation:
@@ -286,7 +295,7 @@ def calcGauss(r1, r2, r3, t1, t2, t3):
     f1, g1, f3, g3 = _calcFG(r2_mag, t32, t21)
     return (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
 
-def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True, mu=MU, max_iter=10, tol=1e-15):
+def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", light_time=True, iterate=True, mu=MU, max_iter=10, tol=1e-15):
     """
     Compute up to three intial orbits using three observations in angular equatorial
     coordinates. 
@@ -302,6 +311,9 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True
     velocity_method : {'gauss', gibbs', 'herrick+gibbs'}, optional
         Which method to use for calculating the velocity at the second observation.
         [Default = 'gibbs']
+    light_time : bool, optional
+        Correct for light travel time. 
+        [Default = True]
     iterate : bool, optional
         Iterate initial orbit using universal anomaly to better approximate the 
         Lagrange coefficients. 
@@ -346,7 +358,7 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True
     coseps2 = np.dot(q2, rho2_hat) / q2_mag
     C0 = V * t31 * q2_mag**4 / B
     h0 = - A / B
-    
+
     if np.isnan(C0) or np.isnan(h0):
         return np.array([])
     
@@ -376,7 +388,7 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True
 
         # Test if we get the same rho2 as using equation 22 in Milani et al. 2008
         rho2_mag = (h0 - q2_mag**3 / r2_mag**3) * q2_mag / C0
-        np.testing.assert_almost_equal(np.dot(rho2_mag, rho2_hat), rho2)
+        #np.testing.assert_almost_equal(np.dot(rho2_mag, rho2_hat), rho2)
 
         r1 = q1 + rho1
         r2 = q2 + rho2
@@ -390,16 +402,30 @@ def gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True
             v2 = calcHerrickGibbs(r1, r2, r3, t1, t2, t3)
         else:
             raise ValueError("velocity_method should be one of {'gauss', 'gibbs', 'herrick+gibbs'}")
+        
+        epoch = t2
         orbit = np.concatenate([r2, v2])
         
         if iterate == True:
             orbit = _iterateGaussIOD(orbit, t21, t32, 
                                      q1, q2, q3, 
                                      rho1, rho2, rho3,
-                                     mu=mu, max_iter=max_iter, tol=tol)
+                                     light_time=light_time,
+                                     mu=mu, 
+                                     max_iter=max_iter,
+                                     tol=tol)
+        
+        if light_time == True:
+            rho2_mag = np.linalg.norm(orbit[:3] - q2)
+            lt = rho2_mag / C
+            epoch -= lt
         
         if np.linalg.norm(orbit[3:]) >= C:
             print("Velocity is greater than speed of light!")
-        orbits.append(orbit)
+        
+        if (np.linalg.norm(orbit[:3]) > 300.) and (np.linalg.norm(orbit[3:]) > 25.):
+            continue
+            
+        orbits.append(np.hstack([epoch, orbit]))
     
     return np.array(orbits)

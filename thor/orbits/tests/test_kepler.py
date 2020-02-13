@@ -10,114 +10,147 @@ from ..kepler import _convertCartesianToKeplerian
 from ..kepler import _convertKeplerianToCartesian
 
 MU = c.G * c.M_SUN
+TOL = 1e-15
+MAX_ITER = 100
+
+EPOCHS = Time(
+    ["{}-02-02T00:00:00.000".format(i) for i in range(1993, 2050)], 
+    format="isot", 
+    scale="tdb"
+)
+ISO_EPOCHS = Time(
+    ["{}-02-02T00:00:00.000".format(i) for i in range(2017, 2022)], 
+    format="isot", 
+    scale="tdb"
+)
+TARGETS = [
+    "Amor",
+    "Eros", 
+    "Eugenia",
+    "Ceres",
+] 
+ISO_TARGETS = [
+    "1I/2017 U1", # Oumuamua  
+    "C/2019 Q4" # Borisov
+]
+        
 
 def test_convertOrbitalElements():
-    epochs = Time(["{}-02-02T00:00:00.000".format(i) for i in range(1993, 2050)], format="isot", scale="tdb")
-    targets = [
-        "Amor",
-        "Eros", 
-        "Eugenia",
-        "Ceres"
-    ] 
-    for name in targets:
-        target = Horizons(id=name, epochs=epochs.mjd)
-        vectors = target.vectors()
-        vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
-        vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
+    for name in TARGETS:
+        target = Horizons(id=name, epochs=EPOCHS.mjd)
         
-        elements = target.elements()
-        elements = np.array(elements["a", "e", "incl", "Omega", "w", "M", "nu"])
-        elements = elements.view("float64").reshape(elements.shape + (-1,))    
+        vectors = target.vectors().to_pandas()
+        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
         
-        np.testing.assert_allclose(elements[:, :6], convertOrbitalElements(vectors, "cartesian", "keplerian"))
-        np.testing.assert_allclose(vectors, convertOrbitalElements(elements[:, :6], "keplerian", "cartesian"))
+        elements = target.elements().to_pandas()
+        elements = elements[["a", "e", "incl", "Omega", "w", "M", "nu"]].values
+        
+        np.testing.assert_allclose(
+            elements[:, :6], 
+            convertOrbitalElements(
+                vectors, 
+                "cartesian", 
+                "keplerian", 
+                max_iter=MAX_ITER, 
+                tol=TOL,
+            )
+        )
+        
+        np.testing.assert_allclose(
+            vectors, 
+            convertOrbitalElements(
+                elements[:, :6], 
+                "keplerian", 
+                "cartesian",
+                max_iter=MAX_ITER, 
+                tol=TOL,
+            )
+        )
+    return
 
 def test_convertCartesianToKeplerian_elliptical():
-    epochs = Time(["{}-02-02T00:00:00.000".format(i) for i in range(1993, 2050)], format="isot", scale="tdb")
-    targets = [
-        "Amor",
-        "Eros", 
-        "Eugenia",
-        "Ceres",
-    ] 
-
-    for name in targets:
-        target = Horizons(id=name, epochs=epochs.mjd)
-        vectors = target.vectors()
-        vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
-        vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
+    for name in TARGETS:
+        target = Horizons(id=name, epochs=EPOCHS.mjd)
+        vectors = target.vectors().to_pandas()
+        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
         
-        elements = target.elements()
-        elements = np.array(elements["a", "q", "e", "incl", "Omega", "w", "M", "nu"])
-        elements = elements.view("float64").reshape(elements.shape + (-1,))    
+        elements = target.elements().to_pandas()
+        elements = elements[["a", "q", "e", "incl", "Omega", "w", "M", "nu"]].values
         
         for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(_convertCartesianToKeplerian(v.reshape(1, -1), mu=MU), e.reshape(1, -1))
+            np.testing.assert_allclose(
+                _convertCartesianToKeplerian(
+                    v.reshape(1, -1), 
+                    mu=MU,
+                ), 
+                e.reshape(1, -1)
+            )
+    return
 
 def test_convertCartesianToKeplerian_parabolic():
     warnings.warn("Need to implement and test parabolic conversions!!!")
+    return
     
 def test_convertCartesianToKeplerian_hyperbolic():
-    epochs = Time(["{}-02-02T00:00:00.000".format(i) for i in range(2017, 2023)], format="isot", scale="tdb")       
-    iso_targets = [
-        "1I/2017 U1", #Oumuamua  
-        "C/2019 Q4" #Borisov
-    ]
+    for name in ISO_TARGETS:
+        target = Horizons(id=name, epochs=ISO_EPOCHS.mjd)
+        vectors = target.vectors().to_pandas()
+        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
         
-    for name in iso_targets:
-        target = Horizons(id=name, epochs=epochs.mjd)
-        vectors = target.vectors()
-        vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
-        vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
-        
-        elements = target.elements()
-        elements = np.array(elements["a", "q", "e", "incl", "Omega", "w", "M", "nu"])
-        elements = elements.view("float64").reshape(elements.shape + (-1,))    
+        elements = target.elements().to_pandas()
+        elements = elements[["a", "q", "e", "incl", "Omega", "w", "M", "nu"]].values
         
         for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(_convertCartesianToKeplerian(v.reshape(1, -1), mu=MU), e.reshape(1, -1))
+            np.testing.assert_allclose(
+                _convertCartesianToKeplerian(
+                    v.reshape(1, -1),
+                    mu=MU,
+                ), 
+                e.reshape(1, -1)
+            )     
+    return
         
 def test_convertKeplerianToCartesian_elliptical():
-    epochs = Time(["{}-02-02T00:00:00.000".format(i) for i in range(1993, 2050)], format="isot", scale="tdb")
-    targets = [
-        "Amor",
-        "Eros", 
-        "Eugenia",
-        "Ceres"
-    ] 
-
-    for name in targets:
-        target = Horizons(id=name, epochs=epochs.mjd)
-        vectors = target.vectors()
-        vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
-        vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
+    for name in TARGETS:
+        target = Horizons(id=name, epochs=EPOCHS.mjd)
+        vectors = target.vectors().to_pandas()
+        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values   
        
-        elements = target.elements()
-        elements = np.array(elements["a", "e", "incl", "Omega", "w", "M", "nu"])
-        elements = elements.view("float64").reshape(elements.shape + (-1,))    
+        elements = target.elements().to_pandas()
+        elements = elements[["a", "e", "incl", "Omega", "w", "M", "nu"]].values
        
         for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(_convertKeplerianToCartesian(e.reshape(1, -1), mu=MU, max_iter=100, tol=1e-15), v.reshape(1, -1))
+            np.testing.assert_allclose(
+                _convertKeplerianToCartesian(
+                    e.reshape(1, -1), 
+                    mu=MU, 
+                    max_iter=MAX_ITER,
+                    tol=TOL,
+                ), 
+                v.reshape(1, -1)
+            )
+    return
             
 def test_convertKeplerianToCartesian_parabolic():
     warnings.warn("Need to implement and test parabolic conversions!!!")
 
 def test_convertKeplerianToCartesian_hyperbolic():
-    epochs = Time(["{}-02-02T00:00:00.000".format(i) for i in range(2017, 2023)], format="isot", scale="tdb")       
-    iso_targets = [
-        "1I/2017 U1", #Oumuamua  
-        "C/2019 Q4" #Borisov
-    ]
-        
-    for name in iso_targets:
-        target = Horizons(id=name, epochs=epochs.mjd)
-        vectors = target.vectors()
-        vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"])
-        vectors = vectors.view("float64").reshape(vectors.shape + (-1,))    
+    for name in ISO_TARGETS:
+        target = Horizons(id=name, epochs=ISO_EPOCHS.mjd)
+        vectors = target.vectors().to_pandas()
+        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values 
        
-        elements = target.elements()
-        elements = np.array(elements["a", "e", "incl", "Omega", "w", "M"])
-        elements = elements.view("float64").reshape(elements.shape + (-1,))    
+        elements = target.elements().to_pandas()
+        elements = elements[["a", "e", "incl", "Omega", "w", "M", "nu"]].values
        
         for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(_convertKeplerianToCartesian(e.reshape(1, -1), mu=MU, max_iter=100, tol=1e-15), v.reshape(1, -1))
+            np.testing.assert_allclose(
+                _convertKeplerianToCartesian(
+                    e.reshape(1, -1), 
+                    mu=MU,
+                    max_iter=MAX_ITER, 
+                    tol=TOL,
+                ), 
+                v.reshape(1, -1)
+            )
+    return

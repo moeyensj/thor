@@ -4,8 +4,9 @@ Tracklet-less Heliocentric Orbit Recovery
 [![Build Status](https://dev.azure.com/moeyensj/thor/_apis/build/status/moeyensj.thor?branchName=master)](https://dev.azure.com/moeyensj/thor/_build/latest?definitionId=2&branchName=master)
 [![Build Status](https://www.travis-ci.com/moeyensj/thor.svg?token=sWjpnqPgpHyuq3j7qPuj&branch=master)](https://www.travis-ci.com/moeyensj/thor)
 [![Coverage Status](https://coveralls.io/repos/github/moeyensj/thor/badge.svg?branch=master&t=pdSkQA)](https://coveralls.io/github/moeyensj/thor?branch=master)
-[![Docker Pulls](https://img.shields.io/docker/pulls/moeyensj/thor)](https://hub.docker.com/r/moeyensj/thor)
-[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![Docker Pulls](https://img.shields.io/docker/pulls/moeyensj/thor)](https://hub.docker.com/r/moeyensj/thor)  
+[![Python 3.6](https://img.shields.io/badge/Python-3.6%2B-blue)](https://img.shields.io/badge/Python-3.6%2B-blue)
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)  
 
 ## Installation
 

@@ -16,6 +16,7 @@ def propagateOrbits(elements,
                     G=0.15,
                     M1=1,
                     K1=1,
+                    dynamical_model="2",
                     observatoryCode=Config.oorbObservatoryCode):
     """
     Propagate a test particle using its ecliptic coordinates and velocity to 
@@ -43,7 +44,10 @@ def propagateOrbits(elements,
     M1 : float or `~np.ndarray` (N), optional
     
     K1 : float or `~np.ndarray` (N), optional
-
+    
+    dynamical_model : str, optional
+        Propagate orbits using 2-body or n-body integration. 
+        [Default = "2"]
     observatoryCode : str, optional
         Observatory from which to measure ephemerides.
         [Default = `~thor.Config.oorbObservatoryCode`]
@@ -113,7 +117,7 @@ def propagateOrbits(elements,
     ephemeris, err = oo.pyoorb.oorb_ephemeris_full(in_orbits=orbits,
                                              in_obscode=observatoryCode,
                                              in_date_ephems=epochs,
-                                             in_dynmodel='2', 
+                                             in_dynmodel=dynamical_model, 
                                              )
     columns = ["mjd",
                "RA_deg",
