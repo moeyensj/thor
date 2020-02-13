@@ -9,8 +9,8 @@ class Constants:
     # Speed of light: AU per day (173.14463267424034)
     C = c.c.to(u.au / u.d).value 
     
-    # Gravitational constant: AU**3 / M_sun / d**2 (0.00029591220819207784)
-    G = c.G.to(u.AU**3 / u.M_sun / u.d**2).value 
+    # Gravitational constant:  AU**3 / M_sun / d**2 (0.295912208285591100E-3 -- DE431/DE430)
+    G = 0.295912208285591100E-3
     
     # Solar Mass: M_sun (1.0)
     M_SUN = 1.0
@@ -18,7 +18,7 @@ class Constants:
     # Earth Mass: M_sun (3.0034893488507934e-06)
     M_EARTH = u.M_earth.to(u.M_sun)
     
-    # Earth Equatorial Radius (6378.1363 km (DE431/DE430))
+    # Earth Equatorial Radius: km (6378.1363 -- DE431/DE430)
     R_EARTH = (6378.1363 * u.km).to(u.AU)
 
     # Mean Obliquity at J2000: radians (0.40909280422232897)
