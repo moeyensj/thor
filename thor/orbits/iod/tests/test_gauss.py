@@ -36,9 +36,8 @@ def test_gaussIOD():
         
         # Grab target's state at t0 from Horizons
         target = Horizons(id=name, epochs=epoch, location="@sun")
-        vectors = target.vectors()
-        vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
-        vectors_target = vectors.reshape(1, -1)
+        vectors_target = target.vectors().to_pandas()
+        vectors_target = vectors_target[["x", "y", "z", "vx", "vy", "vz"]].values
         
         # Propagate target to each t1 epoch from the initial state
         states_target = propagateUniversal(vectors_target, t0, t1, mu=MU, max_iter=1000, tol=1e-15)
@@ -135,6 +134,5 @@ def test_gaussIOD():
                 
             # Test position to within 100 meters and velocity to within 10 cm/s
             np.testing.assert_allclose(closest_r, 0.0, atol=6.68459e-10, rtol=6.68459e-10)
-            np.testing.assert_allclose(closest_v, 0.0, atol=5.77548e-8, rtol=5.77548e-8)
-                
+            np.testing.assert_allclose(closest_v, 0.0, atol=5.77548e-8, rtol=5.77548e-8)        
                 
