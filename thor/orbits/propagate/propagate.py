@@ -90,7 +90,7 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
         t1_tt = t1.tt.value
         backend_kwargs["time_scale"] = "TT"
         
-        propagated = propagateOrbitsPYOORB(orbits, t0_tdb, t1_tdb, **backend_kwargs) 
+        propagated = propagateOrbitsPYOORB(orbits, t0_tt, t1_tt, **backend_kwargs) 
     else:
         err = (
             "backend should be one of 'THOR' or 'PYOORB'"
