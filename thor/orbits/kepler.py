@@ -15,14 +15,12 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
     Convert cartesian orbital elements to Keplerian orbital elements.
     
     Keplerian orbital elements are returned in an array with the following elements:
-        a: semi-major axis in AU
-        q: pericenter distance in AU
-        e: eccentricity 
-        i: inclination in degrees
-        ascNode: right ascension of the ascending node in degrees
-        argPeri : argument of perihelion/perigee/pericenter in degrees
-        meanAnom : mean anomaly in degrees
-        trueAnom_deg : true anomaly in degrees
+        a : semi-major axis [AU]
+        e : eccentricity [degrees]
+        i : inclination [degrees]
+        Omega : longitude of the ascending node [degrees]
+        omega : argument of periapsis [degrees]
+        M0 : mean anomaly [degrees]
     
     Parameters
     ----------
@@ -104,12 +102,12 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
     Convert Keplerian orbital elements to cartesian orbital elements.
     
     Keplerian orbital elements should have following elements:
-        a: semi-major axis in AU
-        e: eccentricity 
-        i: inclination in degrees
-        ascNode: right ascension of the ascending node in degrees
-        argPeri : argument of perihelion/perigee/pericenter in degrees
-        meanAnom : mean anomaly in degrees
+        a : semi-major axis [AU]
+        e : eccentricity [degrees]
+        i : inclination [degrees]
+        Omega : longitude of the ascending node [degrees]
+        omega : argument of periapsis [degrees]
+        M0 : mean anomaly [degrees]
     
     Parameters
     ----------
@@ -237,20 +235,20 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1
     ----------
     orbits : `~numpy.ndarray` (6) or (N, 6)
         Array or orbits. 
-        If cartesian [J2000 Heliocentric Ecliptic]:
-            x: x-position in AU
-            y: y-position in AU 
-            z: z-position in AU 
-            vx: x-velocity in AU per day
-            vy: y-velocity in AU per day
-            vz: z-velocity in AU per day
-        If keplerian:
-            a: semi-major axis in AU
-            e: eccentricity 
-            i: inclination in degrees
-            ascNode: right ascension of the ascending node in degrees
-            argPeri : argument of perihelion/perigee/pericenter in degrees
-            meanAnom : mean anomaly in degrees
+        If 'cartesian':
+            x : x-position [AU]
+            y : y-position [AU]
+            z : z-position [AU]
+            vx : x-velocity [AU per day]
+            vy : y-velocity [AU per day]
+            vz : z-velocity [AU per day]
+        If 'keplerian':
+            a : semi-major axis [AU]
+            e : eccentricity [degrees]
+            i : inclination [degrees]
+            Omega : longitude of the ascending node [degrees]
+            omega : argument of periapsis [degrees]
+            M0 : mean anomaly [degrees]
     type_in : str
         Type of orbital elements to convert from (keplerian or cartesian).
     type_out : str

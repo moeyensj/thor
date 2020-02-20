@@ -4,157 +4,125 @@ import pandas as pd
 import pyoorb as oo
 
 from ...config import Config
+from ...utils import setupPYOORB
+from ...utils import _configureOrbitsPYOORB
+from ...utils import _configureEpochsPYOORB
 
-__all__ = ["propagateOrbits"]
+__all__ = [
+    "propagateOrbitsPYOORB"
+]
 
-def propagateOrbits(elements,
-                    mjdStart,
-                    mjds,
-                    elementType="cartesian",
-                    mjdScale="UTC",
-                    H=10,
-                    G=0.15,
-                    M1=1,
-                    K1=1,
-                    dynamical_model="2",
-                    observatoryCode=Config.oorbObservatoryCode):
+def propagateOrbitsPYOORB(
+        orbits, 
+        t0, 
+        t1, 
+        orbit_type="cartesian", 
+        time_scale="TT", 
+        magnitude=20, 
+        slope=0.15, 
+        dynamical_model="N",
+        ephemeris_file="de430.dat"):
     """
-    Propagate a test particle using its ecliptic coordinates and velocity to 
-    a given epoch and generate an ephemeris. 
+    Propagate orbits using PYOORB.
     
     Parameters
     ----------
-    elements : `~np.ndarray` (N, 6)
-        Orbital elements of type defined by elementType.
-    mjdStart : float
-        Epoch at which ecliptic coordinates and velocity are measured in MJD.
-    mjds : '~np.ndarray' (N)
-        List of mjds to which to propagate test particle. 
-    elementType : {"cartesian", "keplerian", "cometary"}, optional
-        The element type of the passed elements. 
-        [Default = "cartesian"]
-    mjdScale : {"UTC", "UT1", "TT", "TAI"}
-        The mjd scale of the passed mjds.
-    H : float or `~np.ndarray` (N), optional
-        Absolute H magnitude, used if elements are given as cartesian or kelperian. 
-        [Default = 10]
-    G : float or `~np.ndarray` (N), optional
-        HG phase function slope, used if elements are given as cartesian or kelperian. 
-        [Default = 0.15]
-    M1 : float or `~np.ndarray` (N), optional
-    
-    K1 : float or `~np.ndarray` (N), optional
-    
-    dynamical_model : str, optional
-        Propagate orbits using 2-body or n-body integration. 
-        [Default = "2"]
-    observatoryCode : str, optional
-        Observatory from which to measure ephemerides.
-        [Default = `~thor.Config.oorbObservatoryCode`]
+    orbits : `~numpy.ndarray` (N, 6)
+        Orbits to propagate. See orbit_type for expected input format.
+    t0 : `~numpy.ndarray` (N)
+        Epoch in MJD at which the orbits are defined. 
+    t1 : `~numpy.ndarray` (N)
+        Epoch in MJD to which to propagate the orbits. 
+    orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
+        Heliocentric ecliptic J2000 orbital element representation of the provided orbits
+        If 'cartesian':
+            x : x-position [AU]
+            y : y-position [AU]
+            z : z-position [AU]
+            vx : x-velocity [AU per day]
+            vy : y-velocity [AU per day]
+            vz : z-velocity [AU per day]
+        If 'keplerian':
+            a : semi-major axis [AU]
+            e : eccentricity [degrees]
+            i : inclination [degrees]
+            Omega : longitude of the ascending node [degrees]
+            omega : argument of periapsis [degrees]
+            M0 : mean anomaly [degrees]
+        If 'cometary':
+            p : perihelion distance [AU]
+            e : eccentricity [degrees]
+            i : inclination [degrees]
+            Omega : longitude of the ascending node [degrees]
+            omega : argument of periapsis [degrees]
+            T0 : time of perihelion passage [degrees]
+    time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
+        Time scale of the MJD epochs.
+    magnitude : float or `~numpy.ndarray` (N), optional
+        Absolute H-magnitude or M1 magnitude. 
+    slope : float or `~numpy.ndarray` (N), optional
+        Photometric slope parameter G or K1.
+    dynamical_model : {'N', '2'}, optional
+        Propagate using N or 2-body dynamics.
+    ephemeris_file : str, optional
+        Which JPL ephemeris file to use with PYOORB.
+        
+    Returns
+    -------
+    propagated : `~pandas.DataFrame`
+        Orbits at new epochs.
     """
-    if os.environ.get("OORB_DATA") == None:
-        os.environ["OORB_DATA"] = os.path.join(os.environ["CONDA_PREFIX"], "share/openorb")
-    # Prepare pyoorb
-    ephfile = os.path.join(os.getenv('OORB_DATA'), 'de430.dat')
-    oo.pyoorb.oorb_init(ephfile)
-
-    if elements.shape == (6,):
-        num_orbits = 1
-    else:
-        num_orbits = elements.shape[0]
-
-    if elementType == "cartesian":
-        orbitType = [1 for i in range(num_orbits)]
-    elif elementType == "cometary":
-        orbitType = [2 for i in range(num_orbits)]
-        H = M1
-        G = K1
-    elif elementType == "keplerian":
-        orbitType = [3 for i in range(num_orbits)]
-    else:
-        raise ValueError("elementType should be one of {'cartesian', 'keplerian', 'cometary'}")
-
-    if mjdScale == "UTC":
-        mjdScale = [1 for i in range(num_orbits)]
-    elif mjdScale == "UT1": 
-        mjdScale = [2 for i in range(num_orbits)]
-    elif mjdScale == "TT":
-        mjdScale = [3 for i in range(num_orbits)]
-    elif mjdScale == "TAI":
-        mjdScale = [4 for i in range(num_orbits)]
-    else:
-        raise ValueError("mjdScale should be one of {'UTC', 'UT1', 'TT', 'TAI'}")
-
-    if type(G) != np.ndarray:
-        G = [G for i in range(num_orbits)]
-    if type(H) != np.ndarray:
-        H = [H for i in range(num_orbits)]
-    if type(mjdStart) != np.ndarray:
-        mjdStart = [mjdStart for i in range(num_orbits)]
-
-    ids = [i for i in range(num_orbits)]
-    # Cater to pyoorb formatting
-    if num_orbits > 1:
-        orbits = np.array(
-            np.array([ids, 
-                     *list(elements.T), 
-                     orbitType, 
-                     mjdStart, 
-                     mjdScale, 
-                     H, 
-                     G]).T, dtype=np.double, order='F')
-    else:
-        orbits = np.array([[ids[0], 
-                     *list(elements.T), 
-                     orbitType[0], 
-                     mjdStart[0], 
-                     mjdScale[0], 
-                     H[0], 
-                     G[0]]], dtype=np.double, order='F')
+    setupPYOORB(ephemeris_file=ephemeris_file, verbose=False)
     
-    mjdScale = [mjdScale[0] for i in mjds]
-    epochs = np.array(list(np.vstack([mjds, mjdScale]).T), dtype=np.double, order='F')
-    ephemeris, err = oo.pyoorb.oorb_ephemeris_full(in_orbits=orbits,
-                                             in_obscode=observatoryCode,
-                                             in_date_ephems=epochs,
-                                             in_dynmodel=dynamical_model, 
-                                             )
-    columns = ["mjd",
-               "RA_deg",
-               "Dec_deg",
-               "dRAcosDec/dt_deg_p_day",
-               "dDec/dt_deg_p_day",
-               "PhaseAngle_deg",
-               "SolarElon_deg",
-               "r_au",
-               "Delta_au",
-               "VMag",
-               "PosAngle_deg",
-               "TLon_deg",
-               "TLat_deg",
-               "TOCLon_deg",
-               "TOCLat_deg",
-               "HLon_deg",
-               "HLat_deg",
-               "HOCLon_deg",
-               "HOCLat_deg",
-               "Alt_deg",
-               "SolarAlt_deg",
-               "LunarAlt_deg",
-               "LunarPhase",
-               "LunarElon_deg",
-               "HEclObj_X_au",
-               "HEclObj_Y_au",
-               "HEclObj_Z_au",
-               "HEclObj_dX/dt_au_p_day",
-               "HEclObj_dY/dt_au_p_day",
-               "HEclObj_dZ/dt_au_p_day",
-               "HEclObsy_X_au",
-               "HEclObsy_Y_au",
-               "HEclObsy_Z_au",
-               "TrueAnom"]
-
-    eph = pd.DataFrame(np.vstack(ephemeris), 
-                       columns=columns)
-    eph["orbit_id"] = [i for i in ids for j in mjds]
-    return eph[["orbit_id"] + columns]
+    # Convert orbits into PYOORB format
+    orbits_pyoorb = _configureOrbitsPYOORB(
+        orbits, 
+        t0, 
+        orbit_type=orbit_type, 
+        time_scale=time_scale, 
+        magnitude=magnitude, 
+        slope=slope
+    )
+    
+    # Convert epochs into PYOORB format
+    epochs_pyoorb = _configureEpochsPYOORB(t1, time_scale)
+    
+    # Propagate orbits to each epoch and append to list 
+    # of new states
+    states = []
+    for epoch in epochs_pyoorb:
+        new_state, err = oo.pyoorb.oorb_propagation(
+            in_orbits=orbits_pyoorb,
+            in_epoch=epoch,
+            in_dynmodel=dynamical_model
+        )
+        states.append(new_state)
+    
+    # Convert list of new states into a pandas data frame
+    if orbit_type == "cartesian":
+        elements = ["x", "y", "z", "vx", "vy", "vz"]
+    elif orbit_type == "keplerian":
+        elements = ["a", "e", "i", "Omega", "omega", "M0"]
+    elif orbit_type == "cometary":
+        elements = ["q", "e", "i", "Omega", "omega", "T0"]
+    else:
+        raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
+        
+    columns = [
+        "orbit_id",
+        *elements,
+        "orbit_type",
+        "epoch_mjd",
+        "time_scale",
+        "H/M1",
+        "G/K1"
+    ]
+    propagated = pd.DataFrame(
+        np.concatenate(states),
+        columns=columns
+    )
+    propagated["orbit_id"] = propagated["orbit_id"].astype(int)
+    propagated["orbit_type"] = propagated["orbit_type"].astype(int)
+    propagated["time_scale"] = propagated["time_scale"].astype(int)
+    return propagated
+    
