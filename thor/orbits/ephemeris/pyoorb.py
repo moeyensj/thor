@@ -1,0 +1,139 @@
+import os
+import numpy as np
+import pandas as pd
+import pyoorb as oo
+
+from ...config import Config
+from ...utils import setupPYOORB
+from ...utils import _configureOrbitsPYOORB
+from ...utils import _configureEpochsPYOORB
+
+__all__ = [
+    "generateEphemerisPYOORB"
+]
+
+def generateEphemerisPYOORB(
+    orbits,
+    t0,
+    t1,
+    orbit_type="cartesian", 
+    time_scale="TT", 
+    magnitude=20, 
+    slope=0.15, 
+    observtory_code="I11",
+    dynamical_model="N",
+    ephemeris_file="de430.dat"):
+    """
+    Generate ephemeris using PYOORB
+    
+    Parameters
+    ----------
+    orbits : `~numpy.ndarray` (N, 6)
+        Orbits to propagate. See orbit_type for expected input format.
+    t0 : `~numpy.ndarray` (N)
+        Epoch in MJD at which the orbits are defined. 
+    t1 : `~numpy.ndarray` (N)
+        Epoch in MJD to which to propagate the orbits. 
+    orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
+        Heliocentric ecliptic J2000 orbital element representation of the provided orbits
+        If 'cartesian':
+            x : x-position [AU]
+            y : y-position [AU]
+            z : z-position [AU]
+            vx : x-velocity [AU per day]
+            vy : y-velocity [AU per day]
+            vz : z-velocity [AU per day]
+        If 'keplerian':
+            a : semi-major axis [AU]
+            e : eccentricity [degrees]
+            i : inclination [degrees]
+            Omega : longitude of the ascending node [degrees]
+            omega : argument of periapsis [degrees]
+            M0 : mean anomaly [degrees]
+        If 'cometary':
+            p : perihelion distance [AU]
+            e : eccentricity [degrees]
+            i : inclination [degrees]
+            Omega : longitude of the ascending node [degrees]
+            omega : argument of periapsis [degrees]
+            T0 : time of perihelion passage [degrees]
+    time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
+        Time scale of the MJD epochs.
+    magnitude : float or `~numpy.ndarray` (N), optional
+        Absolute H-magnitude or M1 magnitude. 
+    slope : float or `~numpy.ndarray` (N), optional
+        Photometric slope parameter G or K1.
+    observatory_code : str, optional
+        Observatory code for which to generate topocentric ephemeris.
+    dynamical_model : {'N', '2'}, optional
+        Propagate using N or 2-body dynamics.
+    ephemeris_file : str, optional
+        Which JPL ephemeris file to use with PYOORB.
+    """
+    setupPYOORB(ephemeris_file=ephemeris_file, verbose=False)
+    
+    # Convert orbits into PYOORB format
+    orbits_pyoorb = _configureOrbitsPYOORB(
+        orbits, 
+        t0, 
+        orbit_type=orbit_type, 
+        time_scale=time_scale, 
+        magnitude=magnitude, 
+        slope=slope
+    )
+    
+    # Convert epochs into PYOORB format
+    epochs_pyoorb = _configureEpochsPYOORB(t1, time_scale)
+    
+    
+    # Generate ephemeris
+    ephemeris, err = oo.pyoorb.oorb_ephemeris_full(
+      in_orbits=orbits_pyoorb,
+      in_obscode=observatory_code,
+      in_date_ephems=epochs_pyoorb,
+      in_dynmodel=dynamical_model
+    )
+    
+    columns = [
+        "mjd",
+        "RA_deg",
+        "Dec_deg",
+        "dRAcosDec/dt_deg_p_day",
+        "dDec/dt_deg_p_day",
+        "PhaseAngle_deg",
+        "SolarElon_deg",
+        "r_au",
+        "Delta_au",
+        "VMag",
+        "PosAngle_deg",
+        "TLon_deg",
+        "TLat_deg",
+        "TOCLon_deg",
+        "TOCLat_deg",
+        "HLon_deg",
+        "HLat_deg",
+        "HOCLon_deg",
+        "HOCLat_deg",
+        "Alt_deg",
+        "SolarAlt_deg",
+        "LunarAlt_deg",
+        "LunarPhase",
+        "LunarElon_deg",
+        "HEclObj_X_au",
+        "HEclObj_Y_au",
+        "HEclObj_Z_au",
+        "HEclObj_dX/dt_au_p_day",
+        "HEclObj_dY/dt_au_p_day",
+        "HEclObj_dZ/dt_au_p_day",
+        "HEclObsy_X_au",
+        "HEclObsy_Y_au",
+        "HEclObsy_Z_au",
+        "TrueAnom"
+    ]
+
+    ephemeris = pd.DataFrame(
+        np.vstack(ephemeris), 
+        columns=columns)
+    ephemeris["orbit_id"] = [i for i in ids for j in t1]
+    ephemeris = ephemeris[["orbit_id"] + columns]
+    return ephemeris
