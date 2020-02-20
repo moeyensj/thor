@@ -1,5 +1,6 @@
 import os
 import warnings
+import numpy as np
 import pyoorb as oo
 
 __all__ = [

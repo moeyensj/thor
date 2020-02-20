@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import pyoorb as oo
+from astropy.time import Time
 
 from ...config import Config
 from ...utils import setupPYOORB
@@ -107,7 +108,8 @@ def propagateOrbitsPYOORB(
         elements = ["q", "e", "i", "Omega", "omega", "T0"]
     else:
         raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
-        
+    
+    # Create pandas data frame 
     columns = [
         "orbit_id",
         *elements,
@@ -122,7 +124,24 @@ def propagateOrbitsPYOORB(
         columns=columns
     )
     propagated["orbit_id"] = propagated["orbit_id"].astype(int)
-    propagated["orbit_type"] = propagated["orbit_type"].astype(int)
-    propagated["time_scale"] = propagated["time_scale"].astype(int)
+
+    # Convert output epochs to TDB
+    epochs = Time(propagated["epoch_mjd"].values, format="mjd", scale=time_scale.lower())
+    propagated["epoch_mjd_tdb"] = epochs.tdb.value
+
+    # Drop PYOORB specific columns (may want to consider this option later on.)
+    propagated.drop(
+        columns=[
+            "epoch_mjd",
+            "orbit_type", 
+            "time_scale",
+            "H/M1",
+            "G/K1"
+        ],
+        inplace=True
+    )
+
+    # Re-order columns
+    propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
     return propagated
     
