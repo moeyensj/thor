@@ -87,7 +87,8 @@ def setupSPICE(kernels=["LSK - Latest",
                         "Planetary Constants", 
                         "Earth PCK - Historical High Accuracy", 
                         "Earth PCK - Latest High Accuracy", 
-                        "Planetary SPK"]):
+                        "Planetary SPK"],
+        verbose=True):
     """
     Loads the leapsecond, the Earth planetary constants and the planetary ephemerides kernels into SPICE. 
     
@@ -101,17 +102,22 @@ def setupSPICE(kernels=["LSK - Latest",
             "Earth PCK - Historical High Accuracy"
             "Earth PCK - Long Term Predict Low Accuracy"
             "Planetary SPK"
+    verbose : bool, optional
+        Print progress statements.
     
     Returns
     -------
     None
     """
     if "THOR_SPICE" in os.environ.keys() and os.environ["THOR_SPICE"] == "True":
-        print("SPICE is already enabled.")
+        if verbose:
+            print("SPICE is already enabled.")
     else:
-        print("Enabling SPICE...")
+        if verbose:
+            print("Enabling SPICE...")
         for kernel in kernels:
             sp.furnsh(os.path.join(os.path.dirname(__file__), "data", KERNELS[kernel][0]))
         os.environ["THOR_SPICE"] = "True"
-        print("Done.")
+        if verbose:
+            print("Done.")
     return

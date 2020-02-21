@@ -19,7 +19,7 @@ class Constants:
     M_EARTH = u.M_earth.to(u.M_sun)
     
     # Earth Equatorial Radius: km (6378.1363 -- DE431/DE430)
-    R_EARTH = (6378.1363 * u.km).to(u.AU)
+    R_EARTH = (6378.1363 * u.km).to(u.AU).value
 
     # Mean Obliquity at J2000: radians (0.40909280422232897)
     OBLIQUITY = (84381.448 * u.arcsecond).to(u.radian).value
