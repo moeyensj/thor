@@ -24,6 +24,12 @@ class Constants:
     # Mean Obliquity at J2000: radians (0.40909280422232897)
     OBLIQUITY = (84381.448 * u.arcsecond).to(u.radian).value
 
+    # km to au
+    KM_TO_AU = u.km.to(u.AU)
+
+    # seconds to days
+    S_TO_DAY = u.s.to(u.d)
+
     # Transformation matrix from Equatorial J2000 to Ecliptic J2000
     TRANSFORM_EQ2EC = np.array([
         [1, 0, 0],

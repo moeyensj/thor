@@ -45,4 +45,3 @@ def test_getMPCOBSCodeFile():
     os.remove(obscodes_backup)
     os.remove(obscodes_old)
     os.remove(obscodes_test)
-    os.remove(obscodes)

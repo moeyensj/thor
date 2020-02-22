@@ -1,17 +1,17 @@
 import numpy as np
 import pandas as pd 
 import spiceypy as sp
-from astropy import units as u
 
 from ..constants import Constants as c
 from ..utils import _checkTime
 from ..utils import setupSPICE
+from ..orbits.ephemeris import getMajorBodyState
 from .codes import readMPCObsCodeFile
 
 __all__ = ["getObserverState"]
 
 R_EARTH = c.R_EARTH
-KM_TO_AU = u.km.to(u.AU)
+KM_TO_AU = c.KM_TO_AU
 
 def getObserverState(observatory_codes, observation_times):
     """
@@ -38,7 +38,7 @@ def getObserverState(observatory_codes, observation_times):
     -------
     `~pandas.DataFrame`
         Pandas DataFrame with a column of observatory codes, MJDs (in UTC), and the heliocentric 
-        ecliptic J2000 postion vector in three columns (obs_x_au, obs_y_au, obs_z_au). 
+        ecliptic J2000 postion vector in three columns (obs_x, obs_y, obs_z). 
     """
     setupSPICE(verbose=False)
 
@@ -74,16 +74,13 @@ def getObserverState(observatory_codes, observation_times):
         
         # Multiply pointing vector with Earth radius to get actual vector
         o_vec_ITRF93 = np.dot(R_EARTH, o_hat_ITRF93)
+
+        # Grab earth state vector
+        state = getMajorBodyState("earth", observation_times)
         
         # Convert MJD epochs in UTC to ET in TDB
         epochs_utc = observation_times.utc
         epochs_et = np.array([sp.str2et("JD {:.16f} UTC".format(i)) for i in epochs_utc.jd])
-        
-        # Get position of the geocenter in ecliptic J2000 coordinates 
-        state, lt = sp.spkpos('EARTH', epochs_et, 'ECLIPJ2000', 'NONE', 'SUN')
-        
-        ### Added spkez
-        r_geo = [np.array(i) * KM_TO_AU for i in state]
         
         # Grab rotaton matrices from ITRF93 to ecliptic J2000
         # The ITRF93 high accuracy Earth rotation model takes into account:
@@ -94,7 +91,7 @@ def getObserverState(observatory_codes, observation_times):
         rotation_matrices = np.array([sp.pxform('ITRF93', 'ECLIPJ2000', i) for i in epochs_et])
         
         # Add o_vec + r_geo to get r_obs
-        r_obs = np.array([rg + rm @ o_vec_ITRF93 for rg, rm in zip(r_geo, rotation_matrices)])
+        r_obs = np.array([rg + rm @ o_vec_ITRF93 for rg, rm in zip(state[:, :3], rotation_matrices)])
 
         # Create table of mjds and positions
         table = np.empty((len(observation_times), 4))

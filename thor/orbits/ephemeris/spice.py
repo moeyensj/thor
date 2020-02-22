@@ -1,3 +1,4 @@
+import numpy as np
 import spiceypy as sp
 
 from ...constants import Constants as c
@@ -48,7 +49,7 @@ def getMajorBodyState(body_name, times):
     _checkTime(times, "times")
 
     # Convert MJD epochs in UTC to ET in TDB
-    epochs_utc = observation_times.utc
+    epochs_utc = times.utc
     epochs_et = np.array([sp.str2et("JD {:.16f} UTC".format(i)) for i in epochs_utc.jd])
     
     # Get position of the body in heliocentric ecliptic J2000 coordinates 
