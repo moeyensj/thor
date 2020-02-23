@@ -14,8 +14,8 @@ C = c.C
 @jit(["Tuple((f8[:,:], f8[:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True)
 def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
     """
-    Light has a finite speed and so when generating ephemeris orbits need to be backwards propagated to the time
-    at which the light emitted or relflected the object towards the observer.
+    When generating ephemeris, orbits need to be backwards propagated to the time
+    at which the light emitted or relflected from the object towards the observer.
     
     Parameters
     ----------
@@ -39,11 +39,11 @@ def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max
     Returns
     -------
     corrected_orbits : `~numpy.ndarray` (N, 6)
-		Orbits adjusted for planetary aberration.
+        Orbits adjusted for planetary aberration.
     corrected_t0 : `~numpy.ndarray` (N)
-		Aberration adjusted epochs.
+        Aberration adjusted epochs.
     lt : `~numpy.ndarray` (N)
-		Light time correction (t0 - corrected_t0).
+        Light time correction (t0 - corrected_t0).
     """
     corrected_orbits = np.zeros((len(orbits), 6))
     corrected_t0 = np.zeros(len(orbits))

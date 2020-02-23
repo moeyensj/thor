@@ -35,11 +35,11 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
     ----------
     orbits : `~numpy.ndarray` (N, 6)
         Orbits to propagate. If backend is 'THOR', then these orbits must be expressed
-        as helicentric ecliptic cartesian elements. If backend is 'PYOORB' orbits may be 
+        as heliocentric ecliptic cartesian elements. If backend is 'PYOORB' orbits may be 
         expressed in keplerian, cometary or cartesian elements.
-    t0 : `astropy.time.core.Time` (N)
+    t0 : `~astropy.time.core.Time` (N)
         Epoch at which orbits are defined.
-    t1 : `astropy.time.core.Time` (M)
+    t1 : `~astropy.time.core.Time` (M)
         Epochs to which to propagate each orbit.
     backend : {'THOR', 'PYOORB'}, optional
         Which backend to use. 
@@ -49,16 +49,16 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
 
     Returns
     -------
-    propagated_orbits : `~pandas.DataFrame`
-        A DataFrame containing the propagated orbits with length of NxM. 
+    propagated_orbits : `~pandas.DataFrame` (N x M, 8)
+        A DataFrame containing the propagated orbits.
     """
     # Check that both t0 and t1 are astropy.time objects
     _checkTime(t0, "t0")
     _checkTime(t1, "t1")
 
     # All propagations in THOR should be done with times in the TDB time scale
-    t0_tdb = t0.tdb.value
-    t1_tdb = t1.tdb.value
+    t0_tdb = t0.tdb.mjd
+    t1_tdb = t1.tdb.mjd
 
     if backend == "THOR":
         if backend_kwargs == None:
@@ -86,8 +86,8 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
             backend_kwargs = PYOORB_PROPAGATOR_KWARGS
 
         # PYOORB does not support TDB (similar to TT), so set times to TT
-        t0_tt = t0.tt.value
-        t1_tt = t1.tt.value
+        t0_tt = t0.tt.mjd
+        t1_tt = t1.tt.mjd
         backend_kwargs["time_scale"] = "TT"
         
         propagated = propagateOrbitsPYOORB(orbits, t0_tt, t1_tt, **backend_kwargs) 

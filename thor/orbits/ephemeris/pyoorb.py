@@ -20,11 +20,11 @@ def generateEphemerisPYOORB(
     time_scale="TT", 
     magnitude=20, 
     slope=0.15, 
-    observtory_code="I11",
+    observatory_code="I11",
     dynamical_model="N",
     ephemeris_file="de430.dat"):
     """
-    Generate ephemeris using PYOORB
+    Generate ephemeris using PYOORB.
     
     Parameters
     ----------
@@ -85,7 +85,6 @@ def generateEphemerisPYOORB(
     # Convert epochs into PYOORB format
     epochs_pyoorb = _configureEpochsPYOORB(t1, time_scale)
     
-    
     # Generate ephemeris
     ephemeris, err = oo.pyoorb.oorb_ephemeris_full(
       in_orbits=orbits_pyoorb,
@@ -95,11 +94,11 @@ def generateEphemerisPYOORB(
     )
     
     columns = [
-        "mjd",
+        "mjd_utc",
         "RA_deg",
         "Dec_deg",
-        "dRAcosDec/dt_deg_p_day",
-        "dDec/dt_deg_p_day",
+        "vRA",
+        "vDec",
         "PhaseAngle_deg",
         "SolarElon_deg",
         "r_au",
@@ -119,21 +118,23 @@ def generateEphemerisPYOORB(
         "LunarAlt_deg",
         "LunarPhase",
         "LunarElon_deg",
-        "HEclObj_X_au",
-        "HEclObj_Y_au",
-        "HEclObj_Z_au",
-        "HEclObj_dX/dt_au_p_day",
-        "HEclObj_dY/dt_au_p_day",
-        "HEclObj_dZ/dt_au_p_day",
-        "HEclObsy_X_au",
-        "HEclObsy_Y_au",
-        "HEclObsy_Z_au",
+        "obj_x",
+        "obj_y",
+        "obj_z",
+        "obj_vx",
+        "obj_vy",
+        "obj_vz",
+        "obs_x",
+        "obs_y",
+        "obs_z",
         "TrueAnom"
     ]
 
     ephemeris = pd.DataFrame(
         np.vstack(ephemeris), 
-        columns=columns)
+        columns=columns
+    )
+    ids = np.arange(0, len(orbits))
     ephemeris["orbit_id"] = [i for i in ids for j in t1]
     ephemeris = ephemeris[["orbit_id"] + columns]
     return ephemeris

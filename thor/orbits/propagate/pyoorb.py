@@ -141,7 +141,9 @@ def propagateOrbitsPYOORB(
         inplace=True
     )
 
-    # Re-order columns
+    # Re-order columns and sort
     propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
+    propagated.sort_values(by=["orbit_id", "epoch_mjd_tdb"], inplace=True)
+    propagated.reset_index(inplace=True, drop=True)
     return propagated
     
