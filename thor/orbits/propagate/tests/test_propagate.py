@@ -57,4 +57,6 @@ def test_propagateOrbits():
 
     v_diff = np.linalg.norm(propagated_thor[["vx", "vy", "vz"]].values - propagated_pyoorb[["vx", "vy", "vz"]].values, axis=1)
     np.testing.assert_allclose(v_diff, np.zeros(len(v_diff)), atol=MM_P_SEC, rtol=0.0)
+
+    np.testing.assert_equal(propagated_thor["epoch_mjd_tdb"].values, propagated_pyoorb["epoch_mjd_tdb"].values,)
     return

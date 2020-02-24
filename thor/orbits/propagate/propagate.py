@@ -31,6 +31,8 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
     """
     Propagate orbits using desired backend. 
 
+    To insure consistency, propagated epochs are always returned in TDB regardless of the backend.
+
     Parameters
     ----------
     orbits : `~numpy.ndarray` (N, 6)
@@ -86,12 +88,16 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
             backend_kwargs = PYOORB_PROPAGATOR_KWARGS
 
         # PYOORB does not support TDB, so set times to TT and add a TDB correction
-        t0_tdb = t0.tt.mjd + (t0.tdb.mjd - t0.tt.mjd)
-        t1_tdb = t1.tt.mjd + (t1.tdb.mjd - t1.tt.mjd)
+        t0_tt = t0.tt.mjd + (t0.tdb.mjd - t0.tt.mjd)
+        t1_tt = t1.tt.mjd + (t1.tdb.mjd - t1.tt.mjd)
         backend_kwargs["time_scale"] = "TT"
         
-        propagated = propagateOrbitsPYOORB(orbits, t0_tdb, t1_tdb, **backend_kwargs) 
+        propagated = propagateOrbitsPYOORB(orbits, t0_tt, t1_tt, **backend_kwargs) 
+
+        # Convert return epoch back to TDB
         propagated.rename(columns={"epoch_mjd" : "epoch_mjd_tdb"}, inplace=True)
+        epoch_mjd_tdb = [t1_tdb for i in range(len(orbits))]
+        propagated["epoch_mjd_tdb"] = np.concatenate(epoch_mjd_tdb)
 
     else:
         err = (
@@ -99,6 +105,4 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
         )
         raise ValueError(err)
 
-
     return propagated
-
