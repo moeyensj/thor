@@ -1,12 +1,15 @@
 import numpy as np
 import pandas as pd
 from astropy.time import Time
+from astropy import units as u
 from astroquery.jplhorizons import Horizons
 
 from ....constants import Constants as c
 from ..propagate import propagateOrbits
 
 MU = c.G * c.M_SUN
+CM = (1.0 * u.cm).to(u.AU).value
+MM_P_SEC = (1.0 * u.mm / u.s).to(u.AU / u.d).value
 
 TARGETS = [
     "Amor",
@@ -49,5 +52,9 @@ def test_propagateOrbits():
     propagated_thor = propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=THOR_PROPAGATOR_KWARGS)
     propagated_pyoorb = propagateOrbits(orbits, t0, t1, backend="PYOORB", backend_kwargs=PYOORB_PROPAGATOR_KWARGS)
 
-    pd.testing.assert_frame_equal(propagated_thor, propagated_pyoorb)
+    r_diff = np.linalg.norm(propagated_thor[["x", "y", "z"]].values - propagated_pyoorb[["x", "y", "z"]].values, axis=1)
+    np.testing.assert_allclose(r_diff, np.zeros(len(r_diff)), atol=CM, rtol=0.0)
+
+    v_diff = np.linalg.norm(propagated_thor[["vx", "vy", "vz"]].values - propagated_pyoorb[["vx", "vy", "vz"]].values, axis=1)
+    np.testing.assert_allclose(v_diff, np.zeros(len(v_diff)), atol=MM_P_SEC, rtol=0.0)
     return

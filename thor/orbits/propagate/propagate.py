@@ -85,17 +85,20 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
         if backend_kwargs == None:
             backend_kwargs = PYOORB_PROPAGATOR_KWARGS
 
-        # PYOORB does not support TDB (similar to TT), so set times to TT
-        t0_tt = t0.tt.mjd
-        t1_tt = t1.tt.mjd
+        # PYOORB does not support TDB, so set times to TT and add a TDB correction
+        t0_tdb = t0.tt.mjd + (t0.tdb.mjd - t0.tt.mjd)
+        t1_tdb = t1.tt.mjd + (t1.tdb.mjd - t1.tt.mjd)
         backend_kwargs["time_scale"] = "TT"
         
-        propagated = propagateOrbitsPYOORB(orbits, t0_tt, t1_tt, **backend_kwargs) 
+        propagated = propagateOrbitsPYOORB(orbits, t0_tdb, t1_tdb, **backend_kwargs) 
+        propagated.rename(columns={"epoch_mjd" : "epoch_mjd_tdb"}, inplace=True)
+
     else:
         err = (
             "backend should be one of 'THOR' or 'PYOORB'"
         )
         raise ValueError(err)
+
 
     return propagated
 
