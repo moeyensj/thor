@@ -19,6 +19,11 @@ def test_getObserverState_geocenter():
     
     # Assert that a geocentric observer is at the exact same location of the geocenter
     np.testing.assert_equal(r_observer, r_geo)
+
+    # Assert that a geocentric observer has the same velocity as the Earth
+    v_observer = observer_states[["obs_vx", "obs_vy", "obs_vz"]].values
+    v_geo = geocenter_state[:, 3:]
+    np.testing.assert_equal(v_observer, v_geo)
     return
 
 def test_getObserverState_observatories():

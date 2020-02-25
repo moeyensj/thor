@@ -12,6 +12,7 @@ __all__ = ["getObserverState"]
 
 R_EARTH = c.R_EARTH
 KM_TO_AU = c.KM_TO_AU
+OMEGA_EARTH = 2 * np.pi / 0.997269675925926 
 
 def getObserverState(observatory_codes, observation_times):
     """
@@ -24,9 +25,6 @@ def getObserverState(observatory_codes, observation_times):
         - polar motion
     This frame is retrieved through SPICE. 
     
-    TODO: We will want to eventually replace this function with getObserverState so we get the heliocentric
-    velocity of the observer at each epoch as well. 
-    
     Parameters
     ----------
     observatory_codes : list or `~numpy.ndarray`
@@ -38,7 +36,8 @@ def getObserverState(observatory_codes, observation_times):
     -------
     `~pandas.DataFrame`
         Pandas DataFrame with a column of observatory codes, MJDs (in UTC), and the heliocentric 
-        ecliptic J2000 postion vector in three columns (obs_x, obs_y, obs_z). 
+        ecliptic J2000 postion vector in three columns (obs_x, obs_y, obs_z) and heliocentric ecliptic
+        velocity in three columns (obs_vx, obs_vy, obs_vg). 
     """
     setupSPICE(verbose=False)
 
@@ -93,10 +92,14 @@ def getObserverState(observatory_codes, observation_times):
         # Add o_vec + r_geo to get r_obs
         r_obs = np.array([rg + rm @ o_vec_ITRF93 for rg, rm in zip(state[:, :3], rotation_matrices)])
 
+        # Calculate velocity
+        v_obs = np.array([vg + rm @ (- OMEGA_EARTH * R_EARTH * cos_phi * np.cross(o_hat_ITRF93, np.array([0, 0, 1]))) for vg, rm in zip(state[:, 3:], rotation_matrices)])
+
         # Create table of mjds and positions
-        table = np.empty((len(observation_times), 4))
+        table = np.empty((len(observation_times), 7))
         table[:, 0] = observation_times.utc.mjd
-        table[:, 1:] = r_obs
+        table[:, 1:4] = r_obs
+        table[:, 4:] = v_obs
         
         # Add to dictionary
         positions[code] = table
@@ -104,11 +107,11 @@ def getObserverState(observatory_codes, observation_times):
     # Process dictionary into a clean pandas DataFrame
     dfs = []
     for code, table in positions.items():
-        dfi = pd.DataFrame(table, columns=["mjd_utc", "obs_x", "obs_y", "obs_z"])
-        dfi["code"] = [code for i in range(len(dfi))]
+        dfi = pd.DataFrame(table, columns=["mjd_utc", "obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"])
+        dfi["observatory_code"] = [code for i in range(len(dfi))]
         dfs.append(dfi)
                            
     df = pd.concat(dfs)
-    df = df[["code", "mjd_utc", "obs_x", "obs_y", "obs_z"]]
+    df = df[["observatory_code", "mjd_utc", "obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]]
     df.reset_index(inplace=True, drop=True)
     return df
