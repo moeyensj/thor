@@ -1,11 +1,14 @@
 import numpy as np
 import spiceypy as sp
+from astropy import units as u
 from astroquery.jplhorizons import Horizons
 
 from ....constants import Constants as c
 from ..universal import propagateUniversal
 
 MU = c.G * c.M_SUN
+CM = (1.0 * u.cm).to(u.AU).value
+MM_P_SEC = (1.0 * u.mm / u.s).to(u.AU / u.d).value
 MAX_ITER = 100
 TOL = 1e-15
 
@@ -55,19 +58,9 @@ def test_propagateUniversal():
             # Make sure the second column has all the new epochs
             np.testing.assert_allclose(new_epochs, dts + epoch)
             
-            # Extract position and velocity components and compare them
-            r = vectors_new[:, 2:5]
-            v = vectors_new[:, 5:]
-            
-            r_mag = np.sqrt(np.sum(r**2, axis=1))
-            v_mag = np.sqrt(np.sum(v**2, axis=1))
-            
-            r_spice_mag = np.sqrt(np.sum(spice_elements[:, :3]**2, axis=1))
-            v_spice_mag = np.sqrt(np.sum(spice_elements[:, 3:]**2, axis=1))
-
-            r_diff = (r_mag - r_spice_mag) / r_spice_mag
-            v_diff = (v_mag - v_spice_mag) / v_spice_mag
+            r_diff = np.linalg.norm(vectors_new[:, 2:5] - spice_elements[:, :3], axis=1)
+            v_diff = np.linalg.norm(vectors_new[:, 5:] - spice_elements[:, 3:], axis=1)
 
             # Test position to within a meter and velocity to within a mm/s
-            np.testing.assert_allclose(r_diff, np.zeros(len(dts)), atol=1e-12, rtol=1e-12)
-            np.testing.assert_allclose(v_diff, np.zeros(len(dts)), atol=1e-10, rtol=1e-10)
+            np.testing.assert_allclose(r_diff, np.zeros(len(dts)), atol=10.*CM, rtol=0)
+            np.testing.assert_allclose(v_diff, np.zeros(len(dts)), atol=MM_P_SEC, rtol=0)
