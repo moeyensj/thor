@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.linalg import norm
-from ..coordinates import _angularToCartesian
+from ..coordinates import _convertSphericalToCartesian
 
 __all__ = ["calcNae",
            "calcDelta",
@@ -38,7 +38,13 @@ def calcNae(coords_ec_ang):
         Cartesian unit vector in direction of provided
         angular coordinates.
     """
-    return _angularToCartesian(coords_ec_ang[:, 0], coords_ec_ang[:, 1], 1)
+    
+    rho = np.ones(len(coords_ec_ang))
+    lon = coords_ec_ang[:, 0]
+    lat = coords_ec_ang[:, 1]
+    velocities = np.zeros(len(rho))
+    x, y, z, vx, vy, vz = _convertSphericalToCartesian(rho, lon, lat, velocities, velocities, velocities)
+    return np.array([x, y, z])
 
 
 def calcDelta(r, x_e, n_ae):

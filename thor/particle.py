@@ -11,7 +11,7 @@ from .vectors import calcNhat
 from .vectors import calcR1
 from .vectors import calcR2
 from .projections import cartesianToGnomonic
-from .coordinates import equatorialToEclipticAngular
+from .coordinates import transformCoordinates
 
 __all__ = ["TestParticle"]
 
@@ -70,7 +70,7 @@ class TestParticle:
         if verbose is True:
             print("Preparing rotation matrices...")
             print("Convering to ecliptic coordinates...")
-        self.coords_ec = equatorialToEclipticAngular(np.radians([self.coords_eq_ang]))
+        self.coords_ec = transformCoordinates(self.coords_eq_ang, "equatorial", "ecliptic")
         
         if verbose is True:
             print("Calculating object to observer unit vector...")
