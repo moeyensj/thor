@@ -39,6 +39,12 @@ def getObserverState(observatory_codes, observation_times):
         ecliptic J2000 postion vector in three columns (obs_x, obs_y, obs_z) and heliocentric ecliptic
         velocity in three columns (obs_vx, obs_vy, obs_vg). 
     """
+    if type(observatory_codes) not in [list, np.ndarray]:
+        err = (
+            "observatory_codes should be a list or `~numpy.ndarray`."
+        )
+        raise TypeError(err)
+
     setupSPICE(verbose=False)
 
     # Check that times is an astropy time object
