@@ -146,6 +146,7 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
     elif backend == "PYOORB":
         if backend_kwargs == None:
             backend_kwargs = PYOORB_EPHEMERIS_KWARGS
+            backend_kwargs["time_scale"] = "UTC"
             
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
@@ -153,8 +154,8 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
             # Generate ephemeris using PYOORB
             ephemeris = generateEphemerisPYOORB(
                 orbits, 
-                t0.tt.mjd, 
-                observation_times.tt.mjd, 
+                t0.utc.mjd, 
+                observation_times.utc.mjd, 
                 observatory_code=observatory_code)
 
             # Add observatory_code to data frame

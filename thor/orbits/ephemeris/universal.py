@@ -202,7 +202,7 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
     )
 
     # Output results
-    ephemeris = np.zeros((len(orbits) * len(observation_times), 21))
+    ephemeris = np.zeros((len(orbits) * len(observation_times_utc), 21))
     ephemeris[:, 0] = propagated_orbits[:, 0]
     ephemeris[:, 1] = observation_times_utc_stacked
     ephemeris[:, 2] = state_spherical[:, 1]
