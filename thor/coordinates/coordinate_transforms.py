@@ -206,8 +206,8 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
     
     # Check that the coords has either shape (N, 3), or (N, 6), if 
     # neither raise an error! 
+    coords_ = np.zeros((len(coords), 6))
     if coords.shape[1] == 3:
-        coords_ = np.zeros((len(coords), 6))
         coords_[:, :3] = coords[:, :3]
     elif coords.shape[1] == 6:
         coords_ = coords.copy()
@@ -224,7 +224,7 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
     
     # If the input and output frames don't match, regardless of the representation types, 
     # we need to convert to cartesian coordinates so we can rotate to the correct frame.
-    coords_rotated = np.zeros_like(coords)
+    coords_rotated = np.zeros_like(coords_)
     if frame_in != frame_out:
         
         if representation_in == "spherical":
@@ -234,7 +234,7 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
             rotation_matrix = TRANSFORM_EC2EQ
         else: # frame_in == "equatorial"
             rotation_matrix = TRANSFORM_EQ2EC
-                
+        
         coords_rotated[:, 0:3] = (rotation_matrix @ coords_[:, 0:3].T).T
         coords_rotated[:, 3:6] = (rotation_matrix @ coords_[:, 3:6].T).T
         
