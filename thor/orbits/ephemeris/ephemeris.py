@@ -42,6 +42,8 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
     observers : dict or `~pandas.DataFrame`
         A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values. 
         Or a data frame with observatory codes, observation times (in UTC), and the observer's heliocentric ecliptic state.
+        The expected data frame columns are obs_x, obs_y, obs_y and optionally the velocity columns obs_vx, obs_vy, obs_vz.
+        If no velocities are not correctly given, then sky-plane velocities will all be zero.
         (See: `~thor.observatories.getObserverState`)
     backend : {'THOR', 'PYOORB'}, optional
         Which backend to use. 
@@ -74,8 +76,16 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
             observer_states = pd.concat(observer_states_list)
         
     elif type(observers) == pd.DataFrame:
-        observer_states = observers
-    
+        if backend == "PYOORB":
+            err = (
+                "observers as a `~pandas.DataFrame` is not supported with PYOORB.\n" \
+                "Please provide a dictionary with observatory codes as keys and\n" \
+                "`~astropy.time.core.Time` objects for observation times as values.\n"
+            )
+            raise TypeError(err)
+        else:
+            observer_states = observers
+
     else:
         err = (
             "observers type not understood.\n" \
@@ -101,13 +111,12 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
             observation_times_utc = observer_selected["mjd_utc"].values
             
             # Grab observer state vectors
-            observer_states = observer_selected[[
-                "obs_x",
-                "obs_y",
-                "obs_z",
-                "obs_vx",
-                "obs_vy",
-                "obs_vz"]].values
+            cols = ["obs_x", "obs_y", "obs_z"]
+            velocity_cols =  ["obs_vx", "obs_vy", "obs_vz"]
+            if set(velocity_cols).intersection(set(observer_states.columns)) == set(velocity_cols):
+                observer_states = observer_selected[cols + velocity_cols].values
+            else:
+                observer_states = observer_selected[cols].values
             
             # Generate ephemeris for each orbit 
             ephemeris = generateEphemerisUniversal(

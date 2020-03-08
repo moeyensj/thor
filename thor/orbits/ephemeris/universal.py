@@ -97,8 +97,8 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
         Orbits for which to generate ephemeris.
     t0_utc : `~numpy.ndarray` (N)
         Epoch at which orbits are defined ()
-    observer_states : `~numpy.ndarray` (M, 6)
-        State of the observer (including velocity) at the time of observations.
+    observer_states : `~numpy.ndarray` (M, 6) or (M, 3)
+        State of the observer (optionally, including velocities) at the time of observations.
     observation_times_utc : `~numpy.ndarray` (M)
         Observation times at which the observer state vectors are true.
     light_time : bool, optional
@@ -172,7 +172,19 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
     
     # Stack observation times and observer states (so we can add/subtract arrays later instead of looping)
     observation_times_utc_stacked = np.hstack([observation_times_utc for i in range(len(orbits))])
-    observer_states_stacked = np.vstack([observer_states for i in range(len(orbits))])
+    observer_states_stacked_ = np.vstack([observer_states for i in range(len(orbits))])
+    
+    # Check observer_states to see if velocities have been passed
+    if observer_states_stacked_.shape[1] == 3:
+        observer_states_stacked = np.zeros((len(observer_states_stacked_), 6))
+        observer_states_stacked[:, :3] = observer_states_stacked_   
+    elif observer_states_stacked_.shape[1] == 6:
+        observer_states_stacked = observer_states_stacked_
+    else:
+        err = (
+            "observer_states should have shape (M, 3) or (M, 6).\n"
+        )
+        raise ValueError(err)
 
     # Add light time correction 
     lt = np.zeros(len(propagated_orbits))
@@ -207,8 +219,12 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
     ephemeris[:, 1] = observation_times_utc_stacked
     ephemeris[:, 2] = state_spherical[:, 1]
     ephemeris[:, 3] = state_spherical[:, 2]
-    ephemeris[:, 4] = state_spherical[:, 4] * np.cos(np.radians(state_spherical[:, 5]))
-    ephemeris[:, 5] = state_spherical[:, 5] 
+    if observer_states_stacked_.shape[1] == 6:
+        ephemeris[:, 4] = state_spherical[:, 4] * np.cos(np.radians(state_spherical[:, 5]))
+        ephemeris[:, 5] = state_spherical[:, 5] 
+    else:
+        ephemeris[:, 4] = np.zeros(len(state_spherical), dtype=float)
+        ephemeris[:, 5] = np.zeros(len(state_spherical), dtype=float)
     ephemeris[:, 6] = np.linalg.norm(propagated_orbits[:, 2:5], axis=1)
     ephemeris[:, 7] = np.linalg.norm(delta_state[:, :3], axis=1)
     ephemeris[:, 8] = lt
