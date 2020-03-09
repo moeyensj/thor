@@ -66,6 +66,16 @@ def selectObservations(observations, method="combinations", columnMapping=Config
     elif method == "combinations":
         # Make all possible combinations of 3 observations
         selected_index = np.array([np.array(index) for index in combinations(indexes, 3)])
+
+        # Calculate arc length
+        arc_length = times[selected_index][:, 2] - times[selected_index][:, 0]
+
+        # Calculate distance of second observation from middle point (last + first) / 2
+        time_from_mid = np.abs((times[selected_index][:, 2] + times[selected_index][:, 0])/2 - times[selected_index][:, 1])
+
+        # Sort by descending arc length and ascending time from midpoint
+        sort = np.lexsort((time_from_mid, -arc_length))
+        selected_index = selected_index[sort]
         
     else:
         raise ValueError("method should be one of {'first+middle+last', 'thirds'}")
@@ -81,8 +91,10 @@ def selectObservations(observations, method="combinations", columnMapping=Config
     # Return an empty array if no observations satisfy the criteria
     if len(keep) == 0:
         return np.array([])
+    else:
+        selected_index = selected_index[keep, :]
     
-    return obs_ids[selected_index[keep, :]]
+    return obs_ids[selected_index]
 
 
 def iod(observations,
