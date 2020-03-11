@@ -3,8 +3,7 @@ from numpy import roots
 from numba import jit
 
 from ...constants import Constants as c
-from ...coordinates import equatorialToEclipticCartesian
-from ...coordinates import equatorialAngularToCartesian
+from ...coordinates import transformCoordinates
 from ..propagate import calcStumpff
 from ..propagate import calcChi
 from .gibbs import calcGibbs
@@ -119,23 +118,25 @@ def calcGauss(r1, r2, r3, t1, t2, t3):
     f1, g1, f3, g3 = _calcFG(r2_mag, t32, t21)
     return (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
 
-def gaussIOD(coords_eq_ang, t, coords_obs, 
-        velocity_method="gibbs", 
-        light_time=True, 
-        iterate=True, 
-        iterator="state transition", 
-        mu=MU, 
-        max_iter=10, 
-        tol=1e-15):
+def gaussIOD(coords, 
+             observation_times, 
+             coords_obs, 
+             velocity_method="gibbs", 
+             light_time=True, 
+             iterate=True, 
+             iterator="state transition", 
+             mu=MU, 
+             max_iter=10, 
+             tol=1e-15):
     """
     Compute up to three intial orbits using three observations in angular equatorial
     coordinates. 
     
     Parameters
     ----------
-    coords_eq_ang : `~numpy.ndarray` (3, 2)
+    coords : `~numpy.ndarray` (3, 2)
         RA and Dec of three observations in units of degrees.
-    t : `~numpy.ndarray` (3)
+    observation_times : `~numpy.ndarray` (3)
         Times of the three observations in units of decimal days (MJD or JD for example).
     coords_obs : `~numpy.ndarray` (3, 2)
         Heliocentric position vector of the observer at times t in units of AU.
@@ -162,7 +163,14 @@ def gaussIOD(coords_eq_ang, t, coords_obs,
     orbits : `~numpy.ndarray` ((<3, 6) or (0))
         Up to three preliminary orbits (as cartesian state vectors).
     """
-    rho = equatorialToEclipticCartesian(equatorialAngularToCartesian(np.radians(coords_eq_ang)))
+    coords = np.array([np.ones(len(coords)), coords[:, 0], coords[:, 1]]).T.copy()
+    rho = transformCoordinates(
+        coords,
+        "equatorial",
+        "ecliptic",
+        representation_in="spherical",
+        representation_out="cartesian"
+    )
     rho1_hat = rho[0, :]
     rho2_hat = rho[1, :]
     rho3_hat = rho[2, :]
@@ -176,9 +184,9 @@ def gaussIOD(coords_eq_ang, t, coords_obs,
     rho2_hat = rho2_hat / np.linalg.norm(rho2_hat)
     rho3_hat = rho3_hat / np.linalg.norm(rho3_hat)
     
-    t1 = t[0]
-    t2 = t[1]
-    t3 = t[2]
+    t1 = observation_times[0]
+    t2 = observation_times[1]
+    t3 = observation_times[2]
     t31 = t3 - t1
     t21 = t2 - t1
     t32 = t3 - t2
