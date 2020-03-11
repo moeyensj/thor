@@ -73,18 +73,45 @@ def _calcStateTransitionMatrix(M, r0, v0, f, g, f_dot, g_dot, r, v):
 
 def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_time=True, mu=MU, max_iter=10, tol=1e-15):
     """
+    Improve an initial orbit by iteratively solving for improved Langrange coefficients and minimizing the phi error vector
+    by calculating the state transition matrix required to achieve this minimization. 
     
     Parameters
     ----------
-    orbit : 
+    orbit : `~numpy.ndarray` (6)
+        Preliminary orbit from IOD to improve by iteration. 
+    t21 : float
+        Time between the second and first observation (units of decimal days).
+    t32 : float
+        Time between the third and second observation (units of decimal days).
+    q1 : `~numpy.ndarray` (3)
+        Observer position vector at first observation. 
+    q2 : `~numpy.ndarray` (3)
+        Observer position vector at second observation. 
+    q3 : `~numpy.ndarray` (3)
+        Observer position vector at third observation. 
+    rho1 : `~numpy.ndarray` (3)
+        Observer to target position vector at the first observation.
+    rho2 : `~numpy.ndarray` (3)
+        Observer to target position vector at the second observation.
+    rho3 : `~numpy.ndarray` (3)
+        Observer to target position vector at the third observation.
+    light_time : bool, optional
+        Correct for light travel time. 
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of 
+        AU**3 / d**2. 
+    max_iter : int, optional
+        Maximum number of iterations over which to converge.
+    tol : float, optional
+        Numerical tolerance to which to compute chi using the Newtown-Raphson 
+        method. 
 
-    t21 : 
 
-
-
-
-
-
+    Returns
+    -------
+    orbit_iter : `~numpy.ndarray` (7)
+        Improved orbit after iterating using the state transition matrix.
     """
     # Iterate over the polynomial solution from Gauss using the universal anomaly 
     # formalism until the solution converges or the maximum number of iterations is reached
@@ -101,7 +128,9 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
     rho3_hat = rho3 / rho3_mag
     
     orbit_iter = orbit
+    orbit_iter_prev = orbit
     i = 0
+    phi_mag_prev = 1e10
     for i in range(max_iter):
         # Grab orbit position and velocity vectors 
         # These should belong to the state of the object at the time of the second
@@ -130,7 +159,7 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             # Universal anomaly here is defined in such a way that it satisfies the following
             # differential equation:
             #   d\chi / dt = \sqrt{mu} / r
-            chi = calcChi(orbit_iter, dt, mu=mu, max_iter=10, tol=tol)
+            chi = calcChi(orbit_iter, dt, mu=mu, max_iter=100, tol=tol)
             chi2 = chi**2
 
             # Calculate the values of the Stumpff functions
@@ -169,9 +198,9 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             r1 - q1 - rho1_mag * rho1_hat, 
             r - q2 - rho2_mag * rho2_hat, 
             r3 - q3 - rho3_mag * rho3_hat))
-        if np.linalg.norm(phi) == 0:
+        if np.linalg.norm(phi) > phi_mag_prev:
             break
-
+        
         dphi = np.zeros((9, 9), dtype=float)
         dphi[0:3, 0:3] = STM1[0:3, 0:3]   # dr1/dr2
         dphi[3:6, 0:3] = np.identity(3)   # dr2/dr2
@@ -194,8 +223,14 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
         rho1_mag -= delta[6]
         rho2_mag -= delta[7]
         rho3_mag -= delta[8]
+
+        if np.any(np.isnan(orbit_iter)):
+            orbit_iter = orbit_iter_prev
+            break
                 
         i += 1
+        orbit_iter_prev = orbit_iter
+        phi_mag_prev = np.linalg.norm(phi)
         if i >= max_iter:
             break
     
