@@ -19,7 +19,7 @@ THOR_EPHEMERIS_KWARGS = {
 
 PYOORB_EPHEMERIS_KWARGS = {
     "orbit_type" : "cartesian", 
-    "time_scale" : "TT", 
+    "time_scale" : "UTC", 
     "magnitude" : 20, 
     "slope" : 0.15, 
     "dynamical_model" : "2",
@@ -74,6 +74,7 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
 
             # Concatenate the dataframes
             observer_states = pd.concat(observer_states_list)
+            observer_states.reset_index(inplace=True, drop=True)
         
     elif type(observers) == pd.DataFrame:
         if backend == "PYOORB":
@@ -104,7 +105,7 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
         ephemeris_dfs = []
         for observatory_code in observer_states["observatory_code"].unique():
             
-            observer_selected = observer_states[observer_states["observatory_code"] == observatory_code]
+            observer_selected = observer_states[observer_states["observatory_code"].isin([observatory_code])]
             
             # All ephemeris in THOR are done in UTC
             t0_utc = t0.utc.mjd
@@ -113,44 +114,50 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
             # Grab observer state vectors
             cols = ["obs_x", "obs_y", "obs_z"]
             velocity_cols =  ["obs_vx", "obs_vy", "obs_vz"]
-            if set(velocity_cols).intersection(set(observer_states.columns)) == set(velocity_cols):
-                observer_states = observer_selected[cols + velocity_cols].values
+            if set(velocity_cols).intersection(set(observer_selected.columns)) == set(velocity_cols):
+                observer_selected = observer_selected[cols + velocity_cols].values
             else:
-                observer_states = observer_selected[cols].values
+                observer_selected = observer_selected[cols].values
             
             # Generate ephemeris for each orbit 
             ephemeris = generateEphemerisUniversal(
                 orbits, 
                 t0_utc, 
-                observer_states, 
+                observer_selected, 
                 observation_times_utc, 
                 **backend_kwargs)
             
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
-            ephemeris = ephemeris[[
-                "orbit_id",
-                "observatory_code",
-                "mjd_utc",
-                "RA_deg",
-                "Dec_deg",
-                "vRAcosDec",
-                "vDec",
-                "r_au",
-                "delta_au",
-                "light_time",
-                "obj_x",
-                "obj_y",
-                "obj_z",
-                "obj_vx",
-                "obj_vy",
-                "obj_vz",
-                "obs_x",
-                "obs_y",
-                "obs_z",
-                "obs_vx",
-                "obs_vy",
-                "obs_vz",
-            ]]
+            ephemeris_dfs.append(ephemeris)
+
+        # Concatenate data frames, reset index and then keep only the columns
+        # we care about 
+        ephemeris = pd.concat(ephemeris_dfs)
+        ephemeris.reset_index(inplace=True, drop=True)
+        ephemeris = ephemeris[[
+            "orbit_id",
+            "observatory_code",
+            "mjd_utc",
+            "RA_deg",
+            "Dec_deg",
+            "vRAcosDec",
+            "vDec",
+            "r_au",
+            "delta_au",
+            "light_time",
+            "obj_x",
+            "obj_y",
+            "obj_z",
+            "obj_vx",
+            "obj_vy",
+            "obj_vz",
+            "obs_x",
+            "obs_y",
+            "obs_z",
+            "obs_vx",
+            "obs_vy",
+            "obs_vz",
+        ]]
 
     elif backend == "PYOORB":
         if backend_kwargs == None:

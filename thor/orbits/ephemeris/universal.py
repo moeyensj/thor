@@ -61,7 +61,6 @@ def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max
         dlt = 1e30
         lt_i = 1e30
      
-        j = 0 
         while dlt > lt_tol:
             # Calculate topocentric distance
             rho = np.linalg.norm(orbit_i[:, :3] - observer_state_i)
@@ -81,7 +80,7 @@ def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max
             orbit_i = orbit[:, 2:]
             lt_i = lt
             
-        corrected_orbits[i, :] = orbit[:, 2:]
+        corrected_orbits[i, :] = orbit[0, 2:]
         corrected_t0[i] = orbit[0, 1]
         lts[i] = lt
         
@@ -192,7 +191,7 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
         propagated_orbits_lt, t0_lt, lt = addPlanetaryAberration(
             propagated_orbits[:, 2:], 
             observation_times_utc_stacked, 
-            observer_states[:, :3], 
+            observer_states_stacked[:, :3], 
             lt_tol=lt_tol,  
             mu=mu, 
             max_iter=max_iter, 
@@ -231,7 +230,7 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
     ephemeris[:, 9:15] = propagated_orbits[:, 2:]
     ephemeris[:, 15:] = observer_states_stacked
 
-    # Make a dataframe with the output results
+    # Make a dataframe with the results
     ephemeris = pd.DataFrame(
         ephemeris,
         columns=[
