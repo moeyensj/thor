@@ -1,19 +1,38 @@
 import sys
 import numpy as np
+from astropy.time import Time
 from itertools import combinations
 
 from ...config import Config
 from ...constants import Constants as c
+from ..ephemeris import generateEphemeris
 from .gauss import gaussIOD
-from ..propagate import propagateOrbits
 
-__all__ = ["selectObservations",
-           "iod"]
+__all__ = [
+    "selectObservations",
+    "iod"
+]
 
 MU = c.G * c.M_SUN
+THOR_EPHEMERIS_KWARGS = {
+    "light_time" : True, 
+    "lt_tol" : 1e-10,
+    "mu" : MU,
+    "max_iter" : 1000, 
+    "tol" : 1e-16
+}
+
+PYOORB_EPHEMERIS_KWARGS = {
+    "orbit_type" : "cartesian", 
+    "time_scale" : "TT", 
+    "magnitude" : 20, 
+    "slope" : 0.15, 
+    "dynamical_model" : "N",
+    "ephemeris_file" : "de430.dat"
+}
 
 
-def selectObservations(observations, method="combinations", columnMapping=Config.columnMapping):
+def selectObservations(observations, method="combinations", column_mapping=Config.columnMapping):
     """
     Selects which three observations to use for IOD depending on the method. 
     
@@ -31,9 +50,9 @@ def selectObservations(observations, method="combinations", columnMapping=Config
     method : {'first+middle+last', 'thirds', 'combinations'}, optional
         Which method to use to select observations. 
         [Default = 'combinations']
-    columnMapping : dict, optional
+    column_mapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.column_mapping`]
         
     Returns
     -------
@@ -41,12 +60,12 @@ def selectObservations(observations, method="combinations", columnMapping=Config
         An array of selected observation IDs. If three unique observations could 
         not be selected then returns an empty array. 
     """
-    obs_ids = observations[columnMapping["obs_id"]].values
+    obs_ids = observations[column_mapping["obs_id"]].values
     if len(obs_ids) < 3:
         return np.array([])
     
     indexes = np.arange(0, len(obs_ids))
-    times = observations[columnMapping["exp_mjd"]].values
+    times = observations[column_mapping["exp_mjd"]].values
     selected = np.array([])
 
     if method == "first+middle+last":
@@ -96,82 +115,232 @@ def selectObservations(observations, method="combinations", columnMapping=Config
     
     return obs_ids[selected_index]
 
-
 def iod(observations,
         observation_selection_method="combinations",
+        chi2_threshold=10**3,
+        contamination_percentage=20.0,
         iterate=True, 
         light_time=True,
-        max_iter=50, 
-        tol=1e-15, 
-        propagatorKwargs={
-            "observatoryCode" : "I11",
-            "mjdScale" : "UTC",
-            "dynamical_model" : "2",
-        },
-        mu=MU, 
-        columnMapping=Config.columnMapping):
+        backend="THOR",
+        backend_kwargs=None,
+        column_mapping=Config.columnMapping):
+    """
+    Run initial orbit determination on a set of observations believed to belong to a single
+    object. 
 
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        Data frame containing the observations of a possible linkage. 
+    observation_selection_method : {'first+middle+last', 'thirds', 'combinations'}, optional
+        Which method to use to select observations. 
+        [Default = 'combinations']
+    chi2_threshold : float, optional
+        Minimum reduced chi2 required for an initial orbit to be accepted. Note that reduced chi2 here needs to be 
+        interpreted carefully, residuals of order a few arcseconds easily contribute significantly 
+        to the total reduced chi2. 
+    contamination_percentage : float, optional
+        Maximum percent of observations that can flagged as outliers. 
+    iterate : bool, optional
+        Iterate the preliminary orbit solution using the state transition iterator. 
+    light_time : bool, optional
+        Correct preliminary orbit for light travel time.
+    backend : {'THOR', 'PYOORB'}, optional
+        Which backend to use for ephemeris generation.
+    backend_kwargs : dict, optional
+        Settings and additional parameters to pass to selected 
+        backend.
+    column_mapping : dict, optional
+
+    Returns
+    -------
+    orbit_sol : `~numpy.ndarray` (7)
+        Preliminary orbit with epoch_mjd (in UTC) as the first element and the
+        remaining six elements dedicated to the cartesian state vector.
+    obs_ids_sol : `~numpy.ndarray` (3)
+        Observation IDs used to compute the solution.
+    chi2_sol : float
+        Reduced chi2 of the solution (calculated using sky-plane residuals). 
+    outliers : `~numpy.ndarray`, None
+        Observation IDs of potential outlier detections.
+    """
     # Extract column names
-    obs_id_col = columnMapping["obs_id"]
-    ra_col = columnMapping["RA_deg"]
-    dec_col = columnMapping["Dec_deg"]
-    time_col = columnMapping["exp_mjd"]
-    ra_err_col = columnMapping["RA_sigma_deg"]
-    dec_err_col = columnMapping["Dec_sigma_deg"]
-    obs_x_col = columnMapping["obs_x_au"]
-    obs_y_col = columnMapping["obs_y_au"]
-    obs_z_col = columnMapping["obs_z_au"]
+    obs_id_col = column_mapping["obs_id"]
+    ra_col = column_mapping["RA_deg"]
+    dec_col = column_mapping["Dec_deg"]
+    time_col = column_mapping["exp_mjd"]
+    ra_err_col = column_mapping["RA_sigma_deg"]
+    dec_err_col = column_mapping["Dec_sigma_deg"]
+    obs_code_col = column_mapping["observatory_code"]
+    obs_x_col = column_mapping["obs_x_au"]
+    obs_y_col = column_mapping["obs_y_au"]
+    obs_z_col = column_mapping["obs_z_au"]
     
     # Extract observation IDs, sky-plane positions, sky-plane position uncertainties, times of observation,
     # and the location of the observer at each time
     obs_ids_all = observations[obs_id_col].values
-    coords_eq_ang_all = observations[observations[obs_id_col].isin(obs_ids_all)][[ra_col, dec_col]].values
-    coords_eq_ang_err_all = observations[observations[obs_id_col].isin(obs_ids_all)][[ra_err_col, dec_err_col]].values
-    coords_obs_all = observations[observations[obs_id_col].isin(obs_ids_all)][[obs_x_col, obs_y_col, obs_z_col]].values
-    times_all = observations[observations[obs_id_col].isin(obs_ids_all)][time_col].values
+    coords_all = observations[[ra_col, dec_col]].values
+    ra = observations[ra_col].values
+    dec = observations[dec_col].values
+    sigma_ra = observations[ra_err_col].values
+    sigma_dec = observations[dec_err_col].values
+
+    coords_obs_all = observations[[ obs_x_col, obs_y_col, obs_z_col]].values
+    times_all = observations[time_col].values
+    times_all = Time(times_all, scale="utc", format="mjd")
     
+    if backend == "THOR":
+        if backend_kwargs == None:
+            backend_kwargs = THOR_EPHEMERIS_KWARGS
+        backend_kwargs["light_time"] = light_time
+
+        observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
+        
+    elif backend == "PYOORB":
+        if light_time == False:
+            err = (
+                "PYOORB does not support turning light time correction off."
+            )
+            raise ValueError(err)
+        
+        if backend_kwargs == None:
+            backend_kwargs = PYOORB_EPHEMERIS_KWARGS
+
+        observers = {}
+        for code in observations[obs_code_col].unique():
+            observers[code] = Time(
+                observations[observations[obs_code_col] == code][time_col].values,
+                scale="utc",
+                format="mjd"
+            )
+    else:
+        err = (
+            "backend should be one of 'THOR' or 'PYOORB'"
+        )
+        raise ValueError(err)
+
     # Select observation IDs to use for IOD
-    obs_ids = selectObservations(observations, method=observation_selection_method, columnMapping=columnMapping)
+    obs_ids = selectObservations(
+        observations, 
+        method=observation_selection_method, 
+        column_mapping=column_mapping
+    )
 
-    min_chi2 = 1e10
-    best_orbit = None
-    best_obs_ids = None
-
-    for ids in obs_ids:
+    chi2_sol = 1e10
+    orbit_sol = None
+    obs_ids_sol = None
+    outliers = None
+    num_obs = len(observations)
+    num_outliers = int(num_obs * contamination_percentage / 100.)
+    converged = False
+    j = 0
+    while not converged:
+        ids = obs_ids[j]
+        mask = np.isin(obs_ids_all, ids)
+       
         # Grab sky-plane positions of the selected observations, the heliocentric ecliptic position of the observer,
         # and the times at which the observations occur
-        coords_eq_ang = observations[observations[obs_id_col].isin(ids)][[ra_col, dec_col]].values
-        coords_obs = observations[observations[obs_id_col].isin(ids)][[obs_x_col, obs_y_col, obs_z_col]].values
-        times = observations[observations[obs_id_col].isin(ids)][time_col].values
+        coords = coords_all[mask, :]
+        coords_obs = coords_obs_all[mask, :]
+        times = times_all[mask]
 
         # Run IOD 
-        orbits_iod = gaussIOD(coords_eq_ang, times, coords_obs, light_time=light_time, iterate=iterate, max_iter=max_iter, tol=tol)
+        orbits_iod = gaussIOD(
+            coords, 
+            times.utc.mjd, 
+            coords_obs, 
+            light_time=light_time, 
+            iterate=iterate, 
+            max_iter=100, 
+            tol=1e-15
+        )
         if np.all(np.isnan(orbits_iod)) == True:
-            continue
-
+            
+            j += 1
+            
+            if j == len(obs_ids):
+                break
+            else:
+                continue
+        
         # Propagate initial orbit to all observation times
-        orbits = propagateOrbits(orbits_iod[:, 1:], orbits_iod[:, 0], times_all, **propagatorKwargs)
-        orbits = orbits[['orbit_id', 'mjd', 'RA_deg', 'Dec_deg', 
-                         'HEclObj_X_au', 'HEclObj_Y_au', 'HEclObj_Z_au',
-                         'HEclObj_dX/dt_au_p_day', 'HEclObj_dY/dt_au_p_day', 'HEclObj_dZ/dt_au_p_day']].values
+        ephemeris = generateEphemeris(
+            orbits_iod[:, 1:], 
+            Time(orbits_iod[:, 0], scale="utc", format="mjd"),
+            observers,
+            backend=backend, 
+            backend_kwargs=backend_kwargs
+        )
+        ephemeris = ephemeris[['orbit_id', 'mjd_utc', 'RA_deg', 'Dec_deg', 'obj_x', 'obj_y', 'obj_z', 'obj_vx', 'obj_vy', 'obj_vz']].values
         
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
-        orbit_ids = np.unique(orbits[:, 0])
+        orbit_ids = np.unique(ephemeris[:, 0])
         for i, orbit_id in enumerate(orbit_ids):
-            orbit = orbits[np.where(orbits[:, 0] == orbit_id)]
-            
-            pred_dec = np.radians(orbit[:, 3])
-            residual_ra = (coords_eq_ang_all[:, 0] - orbit[:, 2]) * np.cos(pred_dec)
-            residual_dec =  (coords_eq_ang_all[:, 1] - orbit[:, 3])
-        
-            chi2 = np.sum(residual_ra**2 / coords_eq_ang_err_all[:, 0]**2 + residual_dec**2 / coords_eq_ang_err_all[:, 1]**2) / (2 * len(residual_ra) - 6)
+            # Select unique orbit solution
+            orbit = ephemeris[np.where(ephemeris[:, 0] == orbit_id)]
 
-            if chi2 < min_chi2:
-                best_orbit = orbits_iod[i, :]
-                best_obs_ids = ids
-                min_chi2 = chi2
-                
-    return best_orbit, best_obs_ids, min_chi2
+            # Calculate residuals in RA, make sure to fix any potential wrap around errors
+            pred_dec = np.radians(orbit[:, 3])
+            residual_ra = (ra - orbit[:, 2]) * np.cos(pred_dec)
+            residual_ra = np.where(residual_ra > 180., 360. - residual_ra, residual_ra)
+
+            # Calculate residuals in Dec
+            residual_dec = dec - orbit[:, 3]
+
+            # Calculate reduced chi2
+            chi2 = (((residual_ra**2 / sigma_ra**2) 
+                + (residual_dec**2 / sigma_dec**2))
+                / (2 * num_obs - 6))
+            chi2_total = np.sum(chi2)
+
+            # All chi2 values are above the threshold, continue loop
+            if np.all(chi2 >= chi2_threshold):
+                continue
+
+            # If the total chi2 is less than the threshold accept the orbit
+            elif chi2_total <= chi2_threshold:
+                orbit_sol = orbits_iod[i, :]
+                obs_ids_sol = ids
+                chi2_sol = chi2_total
+                       
+                converged = True
+
+            # Let's now test to see if we can remove some outliers, we 
+            # anticipate we get to this stage if the three selected observations 
+            # belonging to one object yield a good initial orbit but the presence of outlier
+            # observations is skewing the sum total of the residuals and chi2
+            elif num_outliers > 0:
+                for i in range(num_outliers):
+                    # Select i highest observations that contribute to 
+                    # chi2 (and thereby the residuals)
+                    remove = chi2[~mask].argsort()[-(i+1):]
+                    
+                    # Grab the obs_ids for these outliers
+                    obs_id_outlier = obs_ids_all[~mask][remove]
+
+                    # Subtract the outlier's chi2 contribution 
+                    # from the total chi2 
+                    chi2_new = chi2_total - np.sum(chi2[~mask][remove])
+                    
+                    # If the update chi2 total is lower than our desired
+                    # threshold, accept the soluton. If not, keep going.
+                    if chi2_new <= chi2_threshold:
+                        orbit_sol = orbits_iod[i, :]
+                        obs_ids_sol = ids
+                        chi2_sol = chi2_new
+                        outliers = obs_id_outlier
+                        
+                        converged = True
+                        
+            else:
+                continue
+
+        j += 1
+        if j == len(obs_ids):
+            break
+
+             
+    return orbit_sol, obs_ids_sol, chi2_sol, outliers
         
    

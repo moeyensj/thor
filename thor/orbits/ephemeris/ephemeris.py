@@ -53,7 +53,7 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
 
     Returns
     -------
-    ephemeris : `~pandas.DataFrame` (N x M, 21) or (N x M, 21)
+    ephemeris : `~pandas.DataFrame` (N x M, 21) or (N x M, 18)
         A DataFrame containing the generated ephemeris.
     """
     # Check that t0 is an astropy.time object
