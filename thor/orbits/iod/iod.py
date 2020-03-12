@@ -1,7 +1,12 @@
+import os
 import sys
+import time
 import numpy as np
+import pandas as pd
+import multiprocessing as mp
 from astropy.time import Time
 from itertools import combinations
+from functools import partial
 
 from ...config import Config
 from ...constants import Constants as c
@@ -52,7 +57,7 @@ def selectObservations(observations, method="combinations", column_mapping=Confi
         [Default = 'combinations']
     column_mapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.column_mapping`]
+        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
@@ -136,9 +141,9 @@ def iod(observations,
         Which method to use to select observations. 
         [Default = 'combinations']
     chi2_threshold : float, optional
-        Minimum reduced chi2 required for an initial orbit to be accepted. Note that reduced chi2 here needs to be 
+        Minimum chi2 required for an initial orbit to be accepted. Note that chi2 here needs to be 
         interpreted carefully, residuals of order a few arcseconds easily contribute significantly 
-        to the total reduced chi2. 
+        to the total chi2. 
     contamination_percentage : float, optional
         Maximum percent of observations that can flagged as outliers. 
     iterate : bool, optional
@@ -151,16 +156,17 @@ def iod(observations,
         Settings and additional parameters to pass to selected 
         backend.
     column_mapping : dict, optional
+        Column name mapping of observations to internally used column names. 
+        [Default = `~thor.Config.columnMapping`]
 
     Returns
     -------
-    orbit_sol : `~numpy.ndarray` (7)
-        Preliminary orbit with epoch_mjd (in UTC) as the first element and the
-        remaining six elements dedicated to the cartesian state vector.
-    obs_ids_sol : `~numpy.ndarray` (3)
-        Observation IDs used to compute the solution.
-    chi2_sol : float
-        Reduced chi2 of the solution (calculated using sky-plane residuals). 
+    orbit : `~pandas.DataFrame` (7)
+        Preliminary orbit with epoch_mjd (in UTC) and the the cartesian state vector. Also
+        has a column for number of observations after outliers have been removed, arc length
+        of the remaining observations and the value of chi2 for the solution.
+    orbit_members : `~pandas.DataFrame` (3)
+        Data frame with two columns: orbit_id and observation IDs.
     outliers : `~numpy.ndarray`, None
         Observation IDs of potential outlier detections.
     """
@@ -229,6 +235,8 @@ def iod(observations,
     chi2_sol = 1e10
     orbit_sol = None
     obs_ids_sol = None
+    remaining_ids = None
+    arc_length = None
     outliers = None
     num_obs = len(observations)
     num_outliers = int(num_obs * contamination_percentage / 100.)
@@ -254,10 +262,13 @@ def iod(observations,
             max_iter=100, 
             tol=1e-15
         )
+
+        # If all the IOD orbits are NaN, we can't 
+        # continue with these observations
         if np.all(np.isnan(orbits_iod)) == True:
-            
+
             j += 1
-            
+
             if j == len(obs_ids):
                 break
             else:
@@ -277,6 +288,7 @@ def iod(observations,
         # Find the orbit which yields the lowest chi-squared
         orbit_ids = np.unique(ephemeris[:, 0])
         for i, orbit_id in enumerate(orbit_ids):
+            orbit_name = np.array(["{}_v{}".format("_".join(ids.astype(str)), i+1)])
             # Select unique orbit solution
             orbit = ephemeris[np.where(ephemeris[:, 0] == orbit_id)]
 
@@ -288,10 +300,9 @@ def iod(observations,
             # Calculate residuals in Dec
             residual_dec = dec - orbit[:, 3]
 
-            # Calculate reduced chi2
-            chi2 = (((residual_ra**2 / sigma_ra**2) 
+            # Calculate chi2
+            chi2 = ((residual_ra**2 / sigma_ra**2) 
                 + (residual_dec**2 / sigma_dec**2))
-                / (2 * num_obs - 6))
             chi2_total = np.sum(chi2)
 
             # All chi2 values are above the threshold, continue loop
@@ -300,10 +311,11 @@ def iod(observations,
 
             # If the total chi2 is less than the threshold accept the orbit
             elif chi2_total <= chi2_threshold:
-                orbit_sol = orbits_iod[i, :]
+                orbit_sol = orbits_iod[i:i+1, :]
                 obs_ids_sol = ids
-                chi2_sol = chi2_total
-                       
+                chi2_sol = chi2_total    
+                remaining_ids = obs_ids_all
+                arc_length = times_all.max() - times_all.min()
                 converged = True
 
             # Let's now test to see if we can remove some outliers, we 
@@ -311,10 +323,10 @@ def iod(observations,
             # belonging to one object yield a good initial orbit but the presence of outlier
             # observations is skewing the sum total of the residuals and chi2
             elif num_outliers > 0:
-                for i in range(num_outliers):
+                for o in range(num_outliers):
                     # Select i highest observations that contribute to 
                     # chi2 (and thereby the residuals)
-                    remove = chi2[~mask].argsort()[-(i+1):]
+                    remove = chi2[~mask].argsort()[-(o+1):]
                     
                     # Grab the obs_ids for these outliers
                     obs_id_outlier = obs_ids_all[~mask][remove]
@@ -326,11 +338,14 @@ def iod(observations,
                     # If the update chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
                     if chi2_new <= chi2_threshold:
-                        orbit_sol = orbits_iod[i, :]
+                        orbit_sol = orbits_iod[i:i+1, :]
                         obs_ids_sol = ids
                         chi2_sol = chi2_new
                         outliers = obs_id_outlier
-                        
+                        num_obs -= len(remove)
+                        ids_mask = np.isin(obs_ids_all, outliers, invert=True)
+                        arc_length = times_all[ids_mask].max() - times_all[ids_mask].min()
+                        remaining_ids = obs_ids_all[ids_mask]
                         converged = True
                         
             else:
@@ -340,7 +355,55 @@ def iod(observations,
         if j == len(obs_ids):
             break
 
-             
-    return orbit_sol, obs_ids_sol, chi2_sol, outliers
+
+    if converged:
+        orbit = pd.DataFrame(
+            orbit_sol,
+            columns=[
+                "epoch_mjd_utc", 
+                "obj_x", 
+                "obj_y", 
+                "obj_z", 
+                "obj_vx", 
+                "obj_vy", 
+                "obj_vz"])
+        orbit["arc_length"] = arc_length
+        orbit["num_obs"] = num_obs
+        orbit["chi2"] = chi2_sol
+        orbit.insert(0, "orbit_id", orbit_name)
         
+        orbit_members = pd.DataFrame(
+            np.vstack([
+                [orbit_name[0] for i in range(num_obs)], 
+                remaining_ids]).T,
+            columns=[
+                "orbit_id",
+                "obs_id",
+            ]
+        )
+    else:
+        orbit = pd.DataFrame(
+            columns=[
+                "orbit_id",
+                "epoch_mjd_utc",
+                "obj_x", 
+                "obj_y", 
+                "obj_z", 
+                "obj_vx", 
+                "obj_vy", 
+                "obj_vz",
+                "arc_length",
+                "num_obs",
+                "chi2"
+            ]
+        )
+        orbit_members = pd.DataFrame(
+            columns=[
+                "orbit_id",
+                "obs_id"
+            ]
+        )
+        outliers = np.array([])
+             
+    return orbit, orbit_members, outliers
    
