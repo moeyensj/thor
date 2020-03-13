@@ -269,5 +269,7 @@ def gaussIOD(coords,
             continue
             
         orbits.append(np.hstack([epoch, orbit]))
-    
-    return np.array(orbits)
+
+    orbits = np.array(orbits)
+    orbits = orbits[~np.isnan(orbits).any(axis=1)]
+    return orbits
