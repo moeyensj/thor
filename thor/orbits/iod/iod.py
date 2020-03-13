@@ -225,24 +225,52 @@ def iod(observations,
         )
         raise ValueError(err)
 
+    chi2_sol = 1e10
+    orbit_sol = None
+    obs_ids_sol = None
+    remaining_ids = None
+    arc_length = None
+    outliers = np.array([])
+    converged = False
+    num_obs = len(observations)
+    num_outliers = int(num_obs * contamination_percentage / 100.)
+    
+    orbit = pd.DataFrame(
+            columns=[
+                "orbit_id",
+                "epoch_mjd_utc",
+                "obj_x", 
+                "obj_y", 
+                "obj_z", 
+                "obj_vx", 
+                "obj_vy", 
+                "obj_vz",
+                "arc_length",
+                "num_obs",
+                "chi2"
+            ]
+        )
+    orbit_members = pd.DataFrame(
+        columns=[
+            "orbit_id",
+            "obs_id"
+        ]
+    )
+
     # Select observation IDs to use for IOD
     obs_ids = selectObservations(
         observations, 
         method=observation_selection_method, 
         column_mapping=column_mapping
     )
+    if len(obs_ids) == 0:
+        return orbit, orbit_members, outliers
 
-    chi2_sol = 1e10
-    orbit_sol = None
-    obs_ids_sol = None
-    remaining_ids = None
-    arc_length = None
-    outliers = None
-    num_obs = len(observations)
-    num_outliers = int(num_obs * contamination_percentage / 100.)
-    converged = False
     j = 0
     while not converged:
+        if j == len(obs_ids):
+            break
+
         ids = obs_ids[j]
         mask = np.isin(obs_ids_all, ids)
        
@@ -262,17 +290,9 @@ def iod(observations,
             max_iter=100, 
             tol=1e-15
         )
-
-        # If all the IOD orbits are NaN, we can't 
-        # continue with these observations
-        if np.all(np.isnan(orbits_iod)) == True:
-
+        if len(orbits_iod) == 0:
             j += 1
-
-            if j == len(obs_ids):
-                break
-            else:
-                continue
+            continue
         
         # Propagate initial orbit to all observation times
         ephemeris = generateEphemeris(
@@ -290,15 +310,15 @@ def iod(observations,
         for i, orbit_id in enumerate(orbit_ids):
             orbit_name = np.array(["{}_v{}".format("_".join(ids.astype(str)), i+1)])
             # Select unique orbit solution
-            orbit = ephemeris[np.where(ephemeris[:, 0] == orbit_id)]
+            orbit_i = ephemeris[np.where(ephemeris[:, 0] == orbit_id)]
 
             # Calculate residuals in RA, make sure to fix any potential wrap around errors
-            pred_dec = np.radians(orbit[:, 3])
-            residual_ra = (ra - orbit[:, 2]) * np.cos(pred_dec)
+            pred_dec = np.radians(orbit_i[:, 3])
+            residual_ra = (ra - orbit_i[:, 2]) * np.cos(pred_dec)
             residual_ra = np.where(residual_ra > 180., 360. - residual_ra, residual_ra)
 
             # Calculate residuals in Dec
-            residual_dec = dec - orbit[:, 3]
+            residual_dec = dec - orbit_i[:, 3]
 
             # Calculate chi2
             chi2 = ((residual_ra**2 / sigma_ra**2) 
@@ -335,26 +355,24 @@ def iod(observations,
                     # from the total chi2 
                     chi2_new = chi2_total - np.sum(chi2[~mask][remove])
                     
-                    # If the update chi2 total is lower than our desired
+                    # If the updated chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
                     if chi2_new <= chi2_threshold:
                         orbit_sol = orbits_iod[i:i+1, :]
                         obs_ids_sol = ids
                         chi2_sol = chi2_new
                         outliers = obs_id_outlier
-                        num_obs -= len(remove)
+                        num_obs = len(observations) - len(remove)
                         ids_mask = np.isin(obs_ids_all, outliers, invert=True)
                         arc_length = times_all[ids_mask].max() - times_all[ids_mask].min()
                         remaining_ids = obs_ids_all[ids_mask]
                         converged = True
+                        break
                         
             else:
                 continue
 
         j += 1
-        if j == len(obs_ids):
-            break
-
 
     if converged:
         orbit = pd.DataFrame(
@@ -381,29 +399,6 @@ def iod(observations,
                 "obs_id",
             ]
         )
-    else:
-        orbit = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "epoch_mjd_utc",
-                "obj_x", 
-                "obj_y", 
-                "obj_z", 
-                "obj_vx", 
-                "obj_vy", 
-                "obj_vz",
-                "arc_length",
-                "num_obs",
-                "chi2"
-            ]
-        )
-        orbit_members = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "obs_id"
-            ]
-        )
-        outliers = np.array([])
-             
+    
     return orbit, orbit_members, outliers
    
