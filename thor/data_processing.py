@@ -107,16 +107,17 @@ def findExposureTimes(observations,
 
 def findAverageOrbits(observations,
                       orbits,
-                      dValues=None,
-                      elementType="keplerian",
-                      unknownIDs=Config.unknownIDs,
-                      falsePositiveIDs=Config.falsePositiveIDs,
+                      d_values=None,
+                      element_type="keplerian",
                       verbose=True,
-                      columnMapping=Config.columnMapping):
+                      column_mapping=Config.columnMapping):
     """
     Find the object with observations that represents 
     the most average in terms of cartesian velocity and the
-    heliocentric distance.
+    heliocentric distance. Assumes that a subset of the designations in the orbits 
+    dataframe are identical to at least some of the designations in the observations 
+    dataframe. No propagation is done, so the orbits need to be defined at an epoch near
+    the time of observations, for example like the midpoint or start of a two-week window. 
     
     Parameters
     ----------
@@ -124,24 +125,18 @@ def findAverageOrbits(observations,
         DataFrame containing observations.
     orbits : `~pandas.DataFrame`
         DataFrame containing orbits for each unique object in observations.
-    dValues : {list (N>=2), None}, optional
+    d_values : {list (N>=2), None}, optional
         If None, will find average orbit in all of observations. If a list, will find an 
         average orbit between each value in the list. For example, passing dValues = [1.0, 2.0, 4.0] will
         mean an average orbit will be found in the following bins: (1.0 <= d < 2.0), (2.0 <= d < 4.0).
-    elementType : {'keplerian', 'cartesian'}, optional
+    element_type : {'keplerian', 'cartesian'}, optional
         Find average orbits using which elements. If 'keplerian' will use a-e-i for average, 
         if 'cartesian' will use r, v. 
         [Default = 'keplerian']
-    unknownIDs : list, optional
-        Values in the name column for unknown observations.
-        [Default = `~thor.Config.unknownIDs`]
-    falsePositiveIDs : list, optional
-        Names of false positive IDs.
-        [Default = `~thor.Config.falsePositiveIDs`]
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
-    columnMapping : dict, optional
+    column_mapping : dict, optional
         Column name mapping of observations to internally used column names. 
         [Default = `~thor.Config.columnMapping`] 
     
@@ -154,59 +149,63 @@ def findAverageOrbits(observations,
         print("THOR: findAverageObject")
         print("-------------------------")
         
-    if elementType == "keplerian":
-        dColumn = columnMapping["a_au"]
-    elif elementType == "cartesian":
-        dColumn = columnMapping["r_au"]
+    if element_type == "keplerian":
+        d_col = column_mapping["a_au"]
+    elif element_type == "cartesian":
+        d_col = column_mapping["r_au"]
     else:
-        raise ValueError("elementType should be one of {'keplerian', 'cartesian'}")
+        err = (
+            "element_type should be one of {'keplerian', 'cartesian'}"
+        )
+        raise ValueError(err)
         
-    dataframe = pd.merge(orbits, observations, on=columnMapping["name"])
+    dataframe = pd.merge(orbits, observations, on=column_mapping["name"])
     dataframe.reset_index(inplace=True, drop=True)
         
-    dBins = []
-    if dValues != None:
+    d_bins = []
+    if d_values != None:
         if verbose == True:
-            print("Finding average orbit in {} distance bins...".format(len(dValues) - 1))
-        for d_i, d_f in zip(dValues[:-1], dValues[1:]):
-            dBins.append(dataframe[(dataframe[dColumn] >= d_i) & (dataframe[dColumn] < d_f)])
+            print("Finding average orbit in {} distance bins...".format(len(d_values) - 1))
+        for d_i, d_f in zip(d_values[:-1], d_values[1:]):
+            d_bins.append(dataframe[(dataframe[d_col] >= d_i) & (dataframe[d_col] < d_f)])
     else: 
         if verbose == True:
             print("Finding average orbit...")
-        dBins.append(dataframe)
+        d_bins.append(dataframe)
     
     average_orbits = []
     
-    for i, obs in enumerate(dBins):
-        objects = obs[~obs[columnMapping["name"]].isin(falsePositiveIDs + unknownIDs)]
-
-        if len(objects) == 0:
+    for i, obs in enumerate(d_bins):
+        if len(obs) == 0:
             # No real objects
             if verbose == True:
                 print("No real objects found.")
             
             orbit = pd.DataFrame({"orbit_id" : i + 1,
-                columnMapping["r_au"] : np.NaN,
-                columnMapping["obj_dx/dt_au_p_day"] : np.NaN,
-                columnMapping["obj_dy/dt_au_p_day"] : np.NaN,
-                columnMapping["obj_dz/dt_au_p_day"] : np.NaN,
-                columnMapping["exp_mjd"] : np.NaN,
-                columnMapping["RA_deg"] : np.NaN,
-                columnMapping["Dec_deg"] : np.NaN,
-                columnMapping["a_au"] : np.NaN,
-                columnMapping["i_deg"] : np.NaN,
-                columnMapping["e"] : np.NaN,
-                columnMapping["name"]: np.NaN}, index=[0])
+                column_mapping["exp_mjd"] : np.NaN,
+                column_mapping["obj_x_au"] : np.NaN,
+                column_mapping["obj_y_au"] : np.NaN,
+                column_mapping["obj_z_au"] : np.NaN,
+                column_mapping["obj_dx/dt_au_p_day"] : np.NaN,
+                column_mapping["obj_dy/dt_au_p_day"] : np.NaN,
+                column_mapping["obj_dz/dt_au_p_day"] : np.NaN,
+                column_mapping["RA_deg"] : np.NaN,
+                column_mapping["Dec_deg"] : np.NaN,
+                column_mapping["r_au"] : np.NaN,
+                column_mapping["a_au"] : np.NaN,
+                column_mapping["i_deg"] : np.NaN,
+                column_mapping["e"] : np.NaN,
+                column_mapping["name"]: np.NaN}, index=[0])
             average_orbits.append(orbit)
             continue
             
-        if elementType == "cartesian":
+        if element_type == "cartesian":
 
-            rv = objects[[
-                columnMapping["obj_dx/dt_au_p_day"],
-                columnMapping["obj_dy/dt_au_p_day"],
-                columnMapping["obj_dz/dt_au_p_day"],
-                columnMapping["r_au"]
+            rv = obs[[
+                column_mapping["obj_dx/dt_au_p_day"],
+                column_mapping["obj_dy/dt_au_p_day"],
+                column_mapping["obj_dz/dt_au_p_day"],
+                column_mapping["r_au"]
             ]].values
 
             # Calculate the percent difference between the median of each velocity element
@@ -214,9 +213,9 @@ def findAverageOrbits(observations,
             percent_diff = np.abs((rv - np.median(rv, axis=0)) / np.median(rv, axis=0))
             
         else:
-            aie = objects[[columnMapping["a_au"], 
-                           columnMapping["i_deg"], 
-                           columnMapping["e"]]].values
+            aie = obs[[column_mapping["a_au"], 
+                       column_mapping["i_deg"], 
+                       column_mapping["e"]]].values
 
             # Calculate the percent difference between the median of each velocity element
             # and the heliocentric distance
@@ -229,39 +228,45 @@ def findAverageOrbits(observations,
         # Find the minimum summed percent difference and call that 
         # the average object
         index = np.where(summed_diff == np.min(summed_diff))[0][0]
-        name = obs[columnMapping["name"]].values[index]
+        name = obs[column_mapping["name"]].values[index]
 
         # Grab the objects, name and its r and v.
-        obj_observations = obs[obs[columnMapping["name"]] == name]
+        obj_observations = obs[obs[column_mapping["name"]] == name]
         obj = obj_observations[[
-            columnMapping["exp_mjd"],
-            columnMapping["r_au"], 
-            columnMapping["obj_dx/dt_au_p_day"],
-            columnMapping["obj_dy/dt_au_p_day"],
-            columnMapping["obj_dz/dt_au_p_day"],
-            columnMapping["RA_deg"],
-            columnMapping["Dec_deg"],
-            columnMapping["a_au"],
-            columnMapping["i_deg"],
-            columnMapping["e"],
-            columnMapping["name"]]].copy()
+            column_mapping["exp_mjd"],
+            column_mapping["obj_x_au"],
+            column_mapping["obj_y_au"],
+            column_mapping["obj_z_au"],
+            column_mapping["obj_dx/dt_au_p_day"],
+            column_mapping["obj_dy/dt_au_p_day"],
+            column_mapping["obj_dz/dt_au_p_day"],
+            column_mapping["RA_deg"],
+            column_mapping["Dec_deg"],
+            column_mapping["r_au"], 
+            column_mapping["a_au"],
+            column_mapping["i_deg"],
+            column_mapping["e"],
+            column_mapping["name"]]].copy()
         obj["orbit_id"] = i + 1
         
         average_orbits.append(obj[["orbit_id", 
-            columnMapping["r_au"], 
-            columnMapping["obj_dx/dt_au_p_day"],
-            columnMapping["obj_dy/dt_au_p_day"],
-            columnMapping["obj_dz/dt_au_p_day"],
-            columnMapping["exp_mjd"],
-            columnMapping["RA_deg"],
-            columnMapping["Dec_deg"],
-            columnMapping["a_au"],
-            columnMapping["i_deg"],
-            columnMapping["e"],
-            columnMapping["name"]]])
+            column_mapping["exp_mjd"],
+            column_mapping["obj_x_au"],
+            column_mapping["obj_y_au"],
+            column_mapping["obj_z_au"],
+            column_mapping["obj_dx/dt_au_p_day"],
+            column_mapping["obj_dy/dt_au_p_day"],
+            column_mapping["obj_dz/dt_au_p_day"],
+            column_mapping["RA_deg"],
+            column_mapping["Dec_deg"],
+            column_mapping["r_au"], 
+            column_mapping["a_au"],
+            column_mapping["i_deg"],
+            column_mapping["e"],
+            column_mapping["name"]]])
         
     average_orbits = pd.concat(average_orbits)
-    average_orbits.sort_values(by=["orbit_id", columnMapping["exp_mjd"]], inplace=True)
+    average_orbits.sort_values(by=["orbit_id", column_mapping["exp_mjd"]], inplace=True)
     average_orbits.reset_index(inplace=True, drop=True)
     
     if verbose == True:    
@@ -269,7 +274,6 @@ def findAverageOrbits(observations,
         print("-------------------------")
         print("")
     return average_orbits
-
 
 def grabLinkedDetections(observations, 
                          allClusters, 
