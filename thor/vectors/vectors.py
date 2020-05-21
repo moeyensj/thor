@@ -30,7 +30,7 @@ def calcNae(coords_ec_ang):
     Parameters
     ----------
     coords_ec_ang : `~numpy.ndarray` (N, 2)
-        Ecliptic longitude and latitude in radians.
+        Ecliptic longitude and latitude in degrees.
 
     Returns
     -------
@@ -40,11 +40,11 @@ def calcNae(coords_ec_ang):
     """
     
     rho = np.ones(len(coords_ec_ang))
-    lon = coords_ec_ang[:, 0]
-    lat = coords_ec_ang[:, 1]
+    lon = np.radians(coords_ec_ang[:, 0])
+    lat = np.radians(coords_ec_ang[:, 1])
     velocities = np.zeros(len(rho))
     x, y, z, vx, vy, vz = _convertSphericalToCartesian(rho, lon, lat, velocities, velocities, velocities)
-    return np.array([x, y, z])
+    return np.array([x, y, z]).T
 
 
 def calcDelta(r, x_e, n_ae):
