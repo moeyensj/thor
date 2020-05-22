@@ -2,8 +2,6 @@ import numpy as np
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 
-from .config import Config
-
 __all__ = ["Cell"]
 
 class Cell:
@@ -31,7 +29,7 @@ class Cell:
         self.area = area
         return
         
-    def getObservations(self, observations, column_mapping=Config.columnMapping):
+    def getObservations(self, observations):
         """
         Get the observations that lie within the cell. Populates 
         self.observations with the observations from self.dataframe 
@@ -45,24 +43,21 @@ class Cell:
             Data frame containing observations with at minimum the following columns:
             exposure time in MJD, observation ID, RA in degrees, Dec in degrees, the heliocentric ecliptic location of 
             the observer in AU.
-        column_mapping : dict, optional
-            Column name mapping of observations to internally used column names. 
-            [Default = `~thor.Config.columnMapping`]
             
         Returns
         -------
         None
         """
-        exp_observations = observations[(observations[column_mapping["exp_mjd"]] <= self.mjd_utc + 0.00001) 
-                                        & (observations[column_mapping["exp_mjd"]] >= self.mjd_utc - 0.00001)]
-        obs_ids = exp_observations[column_mapping["obs_id"]].values
+        exp_observations = observations[(observations["mjd_utc"] <= self.mjd_utc + 0.00001) 
+                                        & (observations["mjd_utc"] >= self.mjd_utc - 0.00001)]
+        obs_ids = exp_observations["obs_id"].values
         
-        coords_observations = SkyCoord(*exp_observations[[column_mapping["RA_deg"], column_mapping["Dec_deg"]]].values.T, unit=u.degree, frame="icrs")
+        coords_observations = SkyCoord(*exp_observations[["RA_deg", "Dec_deg"]].values.T, unit=u.degree, frame="icrs")
         coords_center = SkyCoord(*self.center, unit=u.degree, frame="icrs")
         
         # Find all coordinates within circular region centered about the center coordinate
         distance = coords_center.separation(coords_observations).degree
         keep = obs_ids[np.where(distance <= np.sqrt(self.area / np.pi))[0]]
         
-        self.observations = exp_observations[exp_observations[column_mapping["obs_id"]].isin(keep)].copy()
+        self.observations = exp_observations[exp_observations["obs_id"].isin(keep)].copy()
         return

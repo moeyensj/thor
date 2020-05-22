@@ -1,6 +1,5 @@
 import numpy as np
 
-from .config import Config
 from .utils import _checkTime
 from .vectors import calcNae
 from .vectors import calcDelta
@@ -76,7 +75,7 @@ class TestOrbit:
             print("")
         return
         
-    def apply(self, cell, verbose=True, column_mapping=Config.columnMapping):
+    def apply(self, cell, verbose=True):
         """
         Apply the prepared rotations to the given cell. Adds the gnomonic 
         plane coordinates to the cell's observations (columns: theta_x_deg, theta_y_deg) 
@@ -88,9 +87,6 @@ class TestOrbit:
         verbose : bool, optional
             Print progress statements? 
             [Default = True]
-        column_mapping : dict, optional
-            Column name mapping of observations to internally used column names. 
-            [Default = `~thor.Config.columnMapping`]
         
         Returns
         -------
@@ -100,7 +96,7 @@ class TestOrbit:
         if verbose is True:
             print("Applying rotation matrices to observations...")
             print("Converting to ecliptic coordinates...")
-        coords_eq = cell.observations[[column_mapping["RA_deg"], column_mapping["Dec_deg"]]].values
+        coords_eq = cell.observations[["RA_deg", "Dec_deg"]].values
         coords_eq = np.hstack([np.ones((len(coords_eq), 1)), coords_eq])        
         coords_ec = transformCoordinates(coords_eq, 
             "equatorial", 
@@ -111,7 +107,7 @@ class TestOrbit:
         if verbose is True:
             print("Calculating object to observer unit vector...")
         n_ae = calcNae(coords_ec[:, 1:])
-        x_e = cell.observations[[column_mapping["obs_x_au"], column_mapping["obs_y_au"], column_mapping["obs_z_au"]]].values
+        x_e = cell.observations[["obs_x", "obs_y", "obs_z"]].values
         
         if verbose is True:
             print("Calculating object to observer distance assuming r = {} AU...".format(np.linalg.norm(self.elements[:3])))

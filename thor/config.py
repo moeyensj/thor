@@ -51,6 +51,9 @@ class Config:
         
         # Dec in degrees
         "Dec_deg" : "Dec_deg",
+
+        # Observatory code
+        "observatory_code" : "code", 
         
         # Observer's x coordinate in AU
         "obs_x_au" : "HEclObsy_X_au",

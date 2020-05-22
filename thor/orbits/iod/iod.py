@@ -37,7 +37,7 @@ PYOORB_EPHEMERIS_KWARGS = {
 }
 
 
-def selectObservations(observations, method="combinations", column_mapping=Config.columnMapping):
+def selectObservations(observations, method="combinations"):
     """
     Selects which three observations to use for IOD depending on the method. 
     
@@ -55,9 +55,6 @@ def selectObservations(observations, method="combinations", column_mapping=Confi
     method : {'first+middle+last', 'thirds', 'combinations'}, optional
         Which method to use to select observations. 
         [Default = 'combinations']
-    column_mapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
@@ -65,12 +62,12 @@ def selectObservations(observations, method="combinations", column_mapping=Confi
         An array of selected observation IDs. If three unique observations could 
         not be selected then returns an empty array. 
     """
-    obs_ids = observations[column_mapping["obs_id"]].values
+    obs_ids = observations["obs_id"].values
     if len(obs_ids) < 3:
         return np.array([])
     
     indexes = np.arange(0, len(obs_ids))
-    times = observations[column_mapping["exp_mjd"]].values
+    times = observations["mjd_utc"].values
     selected = np.array([])
 
     if method == "first+middle+last":
@@ -127,8 +124,7 @@ def iod(observations,
         iterate=True, 
         light_time=True,
         backend="THOR",
-        backend_kwargs=None,
-        column_mapping=Config.columnMapping):
+        backend_kwargs=None):
     """
     Run initial orbit determination on a set of observations believed to belong to a single
     object. 
@@ -155,9 +151,6 @@ def iod(observations,
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected 
         backend.
-    column_mapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
 
     Returns
     -------
@@ -171,16 +164,16 @@ def iod(observations,
         Observation IDs of potential outlier detections.
     """
     # Extract column names
-    obs_id_col = column_mapping["obs_id"]
-    ra_col = column_mapping["RA_deg"]
-    dec_col = column_mapping["Dec_deg"]
-    time_col = column_mapping["exp_mjd"]
-    ra_err_col = column_mapping["RA_sigma_deg"]
-    dec_err_col = column_mapping["Dec_sigma_deg"]
-    obs_code_col = column_mapping["observatory_code"]
-    obs_x_col = column_mapping["obs_x_au"]
-    obs_y_col = column_mapping["obs_y_au"]
-    obs_z_col = column_mapping["obs_z_au"]
+    obs_id_col = "obs_id"
+    time_col = "mjd_utc"
+    ra_col = "RA_deg"
+    dec_col = "Dec_deg"
+    ra_err_col = "RA_sigma_deg"
+    dec_err_col = "Dec_sigma_deg"
+    obs_code_col = "observatory_code"
+    obs_x_col = "obs_x"
+    obs_y_col = "obs_y"
+    obs_z_col = "obs_z"
     
     # Extract observation IDs, sky-plane positions, sky-plane position uncertainties, times of observation,
     # and the location of the observer at each time
@@ -261,7 +254,6 @@ def iod(observations,
     obs_ids = selectObservations(
         observations, 
         method=observation_selection_method, 
-        column_mapping=column_mapping
     )
     if len(obs_ids) == 0:
         return orbit, orbit_members, outliers
