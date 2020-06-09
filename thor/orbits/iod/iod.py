@@ -9,7 +9,7 @@ from itertools import combinations
 from functools import partial
 
 from ...config import Config
-from ...constants import Constants as c
+from ..handler import _backendHandler
 from ..ephemeris import generateEphemeris
 from .gauss import gaussIOD
 
@@ -17,25 +17,6 @@ __all__ = [
     "selectObservations",
     "iod"
 ]
-
-MU = c.G * c.M_SUN
-THOR_EPHEMERIS_KWARGS = {
-    "light_time" : True, 
-    "lt_tol" : 1e-10,
-    "mu" : MU,
-    "max_iter" : 1000, 
-    "tol" : 1e-16
-}
-
-PYOORB_EPHEMERIS_KWARGS = {
-    "orbit_type" : "cartesian", 
-    "time_scale" : "TT", 
-    "magnitude" : 20, 
-    "slope" : 0.15, 
-    "dynamical_model" : "N",
-    "ephemeris_file" : "de430.dat"
-}
-
 
 def selectObservations(observations, method="combinations"):
     """
@@ -187,10 +168,10 @@ def iod(observations,
     coords_obs_all = observations[[ obs_x_col, obs_y_col, obs_z_col]].values
     times_all = observations[time_col].values
     times_all = Time(times_all, scale="utc", format="mjd")
+
+    backend_kwargs = _backendHandler(backend, "ephemeris")
     
     if backend == "THOR":
-        if backend_kwargs == None:
-            backend_kwargs = THOR_EPHEMERIS_KWARGS
         backend_kwargs["light_time"] = light_time
 
         observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
@@ -201,9 +182,6 @@ def iod(observations,
                 "PYOORB does not support turning light time correction off."
             )
             raise ValueError(err)
-        
-        if backend_kwargs == None:
-            backend_kwargs = PYOORB_EPHEMERIS_KWARGS
 
         observers = {}
         for code in observations[obs_code_col].unique():

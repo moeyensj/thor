@@ -1,31 +1,14 @@
 import numpy as np
 import pandas as pd
 
-from ...constants import Constants as c
 from ...utils import _checkTime
+from ..handler import _backendHandler
 from .universal import propagateUniversal
 from .pyoorb import propagateOrbitsPYOORB
 
 __all__ = [
     "propagateOrbits"
 ]
-
-MU = c.G * c.M_SUN
-
-THOR_PROPAGATOR_KWARGS = {
-    "mu" : MU,
-    "max_iter" : 1000, 
-    "tol" : 1e-15
-}
-
-PYOORB_PROPAGATOR_KWARGS = {
-    "orbit_type" : "cartesian", 
-    "time_scale" : "TT", 
-    "magnitude" : 20, 
-    "slope" : 0.15, 
-    "dynamical_model" : "N",
-    "ephemeris_file" : "de430.dat"
-}
 
 def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
     """
@@ -62,10 +45,10 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
     t0_tdb = t0.tdb.mjd
     t1_tdb = t1.tdb.mjd
 
-    if backend == "THOR":
-        if backend_kwargs == None:
-            backend_kwargs = THOR_PROPAGATOR_KWARGS
+    if backend_kwargs is None:
+        backend_kwargs = _backendHandler(backend, "propagate")
 
+    if backend == "THOR":
         propagated = propagateUniversal(orbits, t0_tdb, t1_tdb, **backend_kwargs)
 
         propagated = pd.DataFrame(
@@ -84,9 +67,6 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
         propagated["orbit_id"] = propagated["orbit_id"].astype(int)
 
     elif backend == "PYOORB":
-        if backend_kwargs == None:
-            backend_kwargs = PYOORB_PROPAGATOR_KWARGS
-
         # PYOORB does not support TDB, so set times to TT and add a TDB correction
         t0_tt = t0.tt.mjd + (t0.tdb.mjd - t0.tt.mjd)
         t1_tt = t1.tt.mjd + (t1.tdb.mjd - t1.tt.mjd)

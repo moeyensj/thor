@@ -1,31 +1,16 @@
 import numpy as np
 import pandas as pd
 
-from ...constants import Constants as c
 from ...utils import _checkTime
 from ...observatories import getObserverState
+from ..handler import _backendHandler
 from .pyoorb import generateEphemerisPYOORB
 from .universal import generateEphemerisUniversal
 
-MU = c.G * c.M_SUN
 
-THOR_EPHEMERIS_KWARGS = {
-    "light_time" : True, 
-    "lt_tol" : 1e-10,
-    "mu" : MU,
-    "max_iter" : 1000, 
-    "tol" : 1e-16
-}
-
-PYOORB_EPHEMERIS_KWARGS = {
-    "orbit_type" : "cartesian", 
-    "time_scale" : "UTC", 
-    "magnitude" : 20, 
-    "slope" : 0.15, 
-    "dynamical_model" : "2",
-    "ephemeris_file" : "de430.dat"
-}
-
+__all__ = [
+    "generateEphemeris"
+]
 
 def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None):
     """
@@ -97,10 +82,11 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
             "      observer's heliocentric ecliptic state. (See: `~thor.observatories.getObserverState`)" 
         )
         raise TypeError(err)
+
+    if backend_kwargs is None:
+        backend_kwargs = _backendHandler(backend, "ephemeris")
     
     if backend == "THOR":
-        if backend_kwargs == None:
-            backend_kwargs = THOR_EPHEMERIS_KWARGS
         
         ephemeris_dfs = []
         for observatory_code in observer_states["observatory_code"].unique():
@@ -160,9 +146,8 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
         ]]
 
     elif backend == "PYOORB":
-        if backend_kwargs == None:
-            backend_kwargs = PYOORB_EPHEMERIS_KWARGS
-            backend_kwargs["time_scale"] = "UTC"
+        # Pyoorb always outputs UTC observation times for ephemeris generation
+        backend_kwargs["time_scale"] = "UTC"
             
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
