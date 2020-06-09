@@ -1,19 +1,18 @@
 import os
 import time
+import signal
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
 from functools import partial
 from sklearn.cluster import DBSCAN
-from astropy import units as u
-from astropy import constants as c
+from astropy.time import Time
 
 from .config import Config
 from .cell import Cell
-from .particle import TestParticle
-from .orbits.propagate import propagateOrbits
-from .data_processing import findExposureTimes
-from .data_processing import grabLinkedDetections
+from .test_orbit import TestOrbit
+from .orbits.ephemeris import generateEphemeris
+from .orbits.iod import iod
 from .plotting import plotOrbitsFindable
 from .plotting import plotOrbitsFound
 from .plotting import plotOrbitsMissed
@@ -30,231 +29,168 @@ __all__ = ["rangeAndShift",
            "clusterVelocity",
            "_clusterVelocity",
            "clusterAndLink",
+           "_initialOrbitDetermination",
+           "initialOrbitDetermination",
            "runTHOR"]
 
-def rangeAndShift(observations,
-                  ra,
-                  dec,
-                  r,
-                  v,
-                  mjd,
-                  cellArea=10,
-                  cellShape="circle",
-                  numNights=14,
-                  mjds="auto",
-                  dMax=20.0,
-                  includeEquatorialProjection=True,
-                  observatoryCode=Config.oorbObservatoryCode,
-                  verbose=True, 
-                  columnMapping=Config.columnMapping):
+def rangeAndShift(observations, 
+                  orbit, 
+                  t0, 
+                  cell_area=10, 
+                  backend="PYOORB", 
+                  backend_kwargs=None, 
+                  verbose=True):
     """
-    Range and shift a cell.
+    Propagate the orbit to all observation times in observations. At each epoch gather a circular region of observations of size cell_area
+    centered about the location of the orbit on the sky-plane. Transform and project each of the gathered observations into
+    the frame of motion of the test orbit. 
     
     Parameters
     ----------
     observations : `~pandas.DataFrame`
-        DataFrame containing observations.
-    ra : float
-        Right Ascension of the test orbit in degrees.
-    dec : float
-        Declination of the test orbit in degrees.
-    r : float
-        Test orbit's heliocentric distance in AU.
-    v : `~numpy.ndarray` (1, 3)
-        Test orbits's velocity vector in AU per day (ecliptic).
-    mjd : float
-        Test orbit's epoch in MJD. 
-    cellArea : float, optional
+        DataFrame containing preprocessed observations.    
+            Should contain the following columns:
+                obs_id : observation IDs
+                RA_deg : Right Ascension in degrees. 
+                Dec_deg : Declination in degrees.
+                RA_sigma_deg : 1-sigma uncertainty for Right Ascension in degrees.
+                Dec_sigma_deg : 1-sigma uncertainty for Declination in degrees.
+                observatory_code : MPC observatory code
+    orbit : `~numpy.ndarray` (6)
+        Orbit to propagate. If backend is 'THOR', then these orbits must be expressed
+        as heliocentric ecliptic cartesian elements. If backend is 'PYOORB' orbits may be 
+        expressed in keplerian, cometary or cartesian elements.
+    t0 : `~astropy.time.core.Time`
+        Epoch at which orbit is defined.
+    cell_area : float, optional
         Cell's area in units of square degrees. 
         [Default = 10]
-    cellShape : {'square', 'circle'}, optional
-        Cell's shape can be square or circle. Combined with the area parameter, will set the search 
-        area when looking for observations contained within the defined cell. 
-        [Default = 'square']
-    numNights : int, optional
-        Number of nights from the first exposure to consider 
-        for ranging and shifting. 
-        [Default = 14]
-    mjds : {'auto', `~numpy.ndarray` (N)}
-        If mjds is 'auto', will propagate the particle to middle of each unique night in 
-        obervations and look for all detections within an angular search radius (defined by a 
-        maximum allowable angular speed) and extract the exposure time. Alternatively, an array
-        of exposure times may be passed. 
-    dMax : float, optional
-        Maximum angular distance (in RA and Dec) permitted when searching for exposure times
-        in degrees. 
-        [Default = 20.0]
-    includeEquatorialProjection : bool, optional
-        Include naive shifting in equatorial coordinates without properly projecting
-        to the plane of the orbit. This is useful if performance comparisons want to be made.
-        [Default = True]
-    observatoryCode : str, optional
-        Observatory from which to measure ephemerides.
-        [Default = `~thor.Config.oorbObservatoryCode`]
+    backend : {'THOR', 'PYOORB'}, optional
+        Which backend to use. 
+    backend_kwargs : dict, optional
+        Settings and additional parameters to pass to selected 
+        backend.
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
-    columnMapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
-    projected_obs : {`~pandas.DataFrame`, -1}
+    projected_observations : {`~pandas.DataFrame`, -1}
         Observations dataframe (from cell.observations) with columns containing
-        projected coordinates. If the orbit at the defined intial epoch doesn't have any
-        nearby observations returns -1.
+        projected coordinates. 
     """
     time_start = time.time()
     if verbose == True:
         print("THOR: rangeAndShift")
         print("-------------------------")
         print("Running range and shift...")
-        print("Assuming r = {} AU".format(r))
-        print("Assuming v = {} AU per day".format(v))
-        
-    # Build a cell with the test orbit at its center
-    center = [ra, dec]
-    cell = Cell(center, mjd, observations, shape=cellShape, area=cellArea)
-    cell.getObservations(columnMapping=columnMapping)
-    
-    # If the initial test orbit doesn't appear in data, we cannot proceed (TO FIX)
-    if len(cell.observations) == 0:
-        print("Initial test orbit does not have nearby observations. Cannot proceed.")
-        return -1
-        
-    x_e = cell.observations[[columnMapping["obs_x_au"], columnMapping["obs_y_au"], columnMapping["obs_z_au"]]].values[0]
-   
-    # Instantiate particle
-    particle = TestParticle(cell.center, r, v, x_e, cell.mjd)
-    
-    # Prepare transformation matrices
-    particle.prepare(verbose=verbose)
-    
-    if mjds == "auto":
-        mjds = findExposureTimes(observations, particle.x_a, v, cell.mjd, numNights=numNights, dMax=dMax, observatoryCode=observatoryCode, columnMapping=columnMapping, verbose=verbose)
-        
-    # Apply tranformations to observations
-    particle.apply(cell, columnMapping=columnMapping, verbose=verbose)
-    
-    # Add initial cell and particle to lists
-    cells = [cell]
-    particles = [particle]
-    
-    # Propagate test particle and generate ephemeris for all mjds
-    if verbose == True:
-        print("Propagating test particle...")
-    ephemeris = propagateOrbits(
-        particle.elements,
-        particle.mjd, 
-        mjds,
-        elementType="cartesian",
-        mjdScale="UTC",
-        H=10,
-        G=0.15)
-    if verbose == True:
-        print("Done.")
-        print("")
-    
-    if includeEquatorialProjection is True:
-        cell.observations["theta_x_eq_deg"] = cell.observations[columnMapping["RA_deg"]] - particle.coords_eq_ang[0]
-        cell.observations["theta_y_eq_deg"] = cell.observations[columnMapping["Dec_deg"]] - particle.coords_eq_ang[1]
-    
-    # Initialize final dataframe and add observations
-    final_df = pd.DataFrame()
-    final_df = pd.concat([cell.observations, final_df])
-    
-    if verbose == True:
-        print("Reading ephemeris and gathering observations...")
-        print("")
-    for mjd_f in mjds:
-        if verbose == True:
-            print("Building particle and cell for {}".format(mjd_f))
-        oldCell = cells[-1]
-        oldParticle = particles[-1]
-        
-        # Get propagated particle
-        propagated = ephemeris[ephemeris["mjd"] == mjd_f]
-        
-        # Get new equatorial coordinates
-        new_coords_eq_ang = propagated[["RA_deg", "Dec_deg"]].values[0]
-        
-        # Get new barycentric distance
-        new_r = propagated["r_au"].values[0]
-        
-        # Get new velocity in ecliptic cartesian coordinates
-        new_v = propagated[["HEclObj_dX/dt_au_p_day",
-                            "HEclObj_dY/dt_au_p_day",
-                            "HEclObj_dZ/dt_au_p_day"]].values[0]
-        
-        # Get new location of observer
-        new_x_e = propagated[["HEclObsy_X_au",
-                              "HEclObsy_Y_au",
-                              "HEclObsy_Z_au"]].values[0]
-        
-        # Get new mjd (same as mjd_f)
-        new_mjd = mjd_f
+        print("Assuming r = {} AU".format(orbit[:3]))
+        print("Assuming v = {} AU per day".format(orbit[3:]))
 
-        # Define new cell at new coordinates
-        newCell = Cell(new_coords_eq_ang,
-                       new_mjd,
-                       area=oldCell.area,
-                       shape=oldCell.shape,
-                       dataframe=oldCell.dataframe)
-        
-        # Get the observations in that cell
-        newCell.getObservations(columnMapping=columnMapping)
-        
-        # Define new particle at new coordinates
-        newParticle = TestParticle(new_coords_eq_ang,
-                                   new_r,
-                                   new_v,
-                                   new_x_e,
-                                   new_mjd)
-        
-        # Prepare transformation matrices
-        newParticle.prepare(verbose=verbose)
-       
-        # Apply tranformations to new observations
-        newParticle.apply(newCell, verbose=verbose, columnMapping=columnMapping)
-        
-        if includeEquatorialProjection is True:
-            newCell.observations["theta_x_eq_deg"] = newCell.observations[columnMapping["RA_deg"]] - newParticle.coords_eq_ang[0]
-            newCell.observations["theta_y_eq_deg"] = newCell.observations[columnMapping["Dec_deg"]] - newParticle.coords_eq_ang[1]
-        
-        # Add observations to final dataframe
-        final_df = pd.concat([newCell.observations, final_df])
+    # Build observers dictionary: keys are observatory codes with exposure times (as astropy.time objects)
+    # as values
+    observers = {}
+    for code in observations["observatory_code"].unique():
+        observers[code] = Time(observations[observations["observatory_code"].isin([code])]["mjd_utc"].unique(), format="mjd", scale="utc")
+
+    # Propagate test orbit to all times in observations
+    ephemeris = generateEphemeris(
+        orbit.reshape(1, -1), 
+        t0, 
+        observers, 
+        backend=backend,     
+        backend_kwargs=backend_kwargs
+    )
     
-        # Append new cell and particle to lists
-        cells.append(newCell)
-        particles.append(newParticle)
-        
-    final_df.sort_values(by=columnMapping["exp_mjd"], inplace=True)
+    observations = observations.merge(ephemeris[["mjd_utc", "observatory_code", "obs_x", "obs_y", "obs_z"]], left_on=["mjd_utc", "observatory_code"], right_on=["mjd_utc", "observatory_code"])
+    
+    projected_dfs = []
+    test_orbits = []
+    cells = []
+    
+    for code, observation_times in observers.items():
+        observatory_mask_observations = (observations["observatory_code"] == code)
+        observatory_mask_ephemeris = (ephemeris["observatory_code"] == code)
+
+        for t1 in observation_times:
+            # Select test orbit ephemeris corresponding to visit
+            ephemeris_visit = ephemeris[observatory_mask_ephemeris & (ephemeris["mjd_utc"] == t1.utc.mjd)]
+
+            # Select observations corresponding to visit
+            observations_visit = observations[observatory_mask_observations & (observations["mjd_utc"] == t1.utc.mjd)].copy()
+            
+            # Create Cell centered on the sky-plane location of the
+            # test orbit
+            cell = Cell(
+                ephemeris_visit[["RA_deg", "Dec_deg"]].values[0],
+                t1.utc.mjd,
+                area=cell_area,
+            )
+            
+            # Grab observations within cell
+            cell.getObservations(observations_visit)
+
+            if len(cell.observations) != 0:
+                
+                # Create test orbit with state of orbit at visit time
+                test_orbit = TestOrbit(
+                    ephemeris_visit[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values[0],
+                    t1
+                )
+
+                # Prepare rotation matrices 
+                test_orbit.prepare(verbose=False)
+
+                # Apply rotation matrices and transform observations into the orbit's
+                # frame of motion. 
+                test_orbit.apply(cell, verbose=False)
+                
+                # Append results to approprate lists
+                projected_dfs.append(cell.observations)
+                cells.append(cell)
+                test_orbits.append(test_orbit)
+
+            else:
+                continue
+    
+    projected_observations = pd.concat(projected_dfs)   
+    projected_observations.sort_values(by=["mjd_utc", "observatory_code"], inplace=True)
+    projected_observations.reset_index(inplace=True, drop=True)
     
     time_end = time.time()
     if verbose == True:
-        print("Done. Final DataFrame has {} observations.".format(len(final_df)))
+        print("Done. Final DataFrame has {} observations.".format(len(projected_observations)))
         print("Total time in seconds: {}".format(time_end - time_start))  
         print("-------------------------")
         print("")
         
-    return final_df
+    return projected_observations
 
-def clusterVelocity(obsIds,
+
+def _init_worker():
+    """
+    Tell multiprocessing worker to ignore signals, will only
+    listen to parent process. 
+    """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    return
+
+def clusterVelocity(obs_ids,
                     x, 
                     y, 
                     dt, 
                     vx, 
                     vy, 
                     eps=0.005, 
-                    minSamples=5):
+                    min_samples=5):
     """
     Clusters THOR projection with different velocities
     in the projection plane using `~scipy.cluster.DBSCAN`.
     
     Parameters
     ----------
-    obsIds : `~numpy.ndarray' (N)
+    obs_ids : `~numpy.ndarray' (N)
         Observation IDs.
     x : `~numpy.ndarray' (N)
         Projection space x coordinate in degrees or radians.
@@ -271,7 +207,7 @@ def clusterVelocity(obsIds,
         as in the same neighborhood. 
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 0.005]
-    minSamples : int, optional
+    min_samples : int, optional
         The number of samples (or total weight) in a neighborhood for a 
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -283,18 +219,17 @@ def clusterVelocity(obsIds,
         If clusters are found, will return a list of numpy arrays containing the 
         observation IDs for each cluster. If no clusters are found returns -1. 
     """
-    #os.nice(3)
     xx = x - vx * dt
     yy = y - vy * dt
     X = np.vstack([xx, yy]).T  
-    db = DBSCAN(eps=eps, min_samples=minSamples, n_jobs=1).fit(X)
+    db = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=1).fit(X)
     
     clusters = db.labels_[np.where(db.labels_ != -1)[0]]
     cluster_ids = []
     
     if len(clusters) != 0:
         for cluster in np.unique(clusters):
-            cluster_ids.append(obsIds[np.where(db.labels_ == cluster)[0]])
+            cluster_ids.append(obs_ids[np.where(db.labels_ == cluster)[0]])
     else:
         cluster_ids = np.NaN
     
@@ -302,37 +237,36 @@ def clusterVelocity(obsIds,
     return cluster_ids
            
 def _clusterVelocity(vx, vy,
-                     obsIds=None,
+                     obs_ids=None,
                      x=None,
                      y=None,
                      dt=None,
                      eps=None,
-                     minSamples=None):
+                     min_samples=None):
     """
     Helper function to multiprocess clustering.
     
     """
-    return clusterVelocity(obsIds,
+    return clusterVelocity(obs_ids,
                            x,
                            y,
                            dt,
                            vx,
                            vy,
                            eps=eps,
-                           minSamples=minSamples) 
+                           min_samples=min_samples) 
 
 def clusterAndLink(observations, 
-                   vxRange=[-0.1, 0.1], 
-                   vyRange=[-0.1, 0.1],
-                   vxBins=100, 
-                   vyBins=100,
-                   vxValues=None,
-                   vyValues=None,
+                   vx_range=[-0.1, 0.1], 
+                   vy_range=[-0.1, 0.1],
+                   vx_bins=100, 
+                   vy_bins=100,
+                   vx_values=None,
+                   vy_values=None,
                    threads=12, 
                    eps=0.005, 
-                   minSamples=5,
-                   verbose=True,
-                   columnMapping=Config.columnMapping):
+                   min_samples=5,
+                   verbose=True):
     """
     Cluster and link correctly projected (after ranging and shifting)
     detections.
@@ -341,29 +275,29 @@ def clusterAndLink(observations,
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing post-range and shift observations.
-    vxRange : {None, list or `~numpy.ndarray` (2)}
+    vx_range : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in x. 
-        Will not be used if vxValues are specified. 
+        Will not be used if vx_values are specified. 
         [Default = [-0.1, 0.1]]
-    vyRange : {None, list or `~numpy.ndarray` (2)}
+    vy_range : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in y. 
-        Will not be used if vyValues are specified. 
+        Will not be used if vy_values are specified. 
         [Default = [-0.1, 0.1]]
-    vxBins : int, optional
-        Length of x-velocity grid between vxRange[0] 
-        and vxRange[-1]. Will not be used if vxValues are 
+    vx_bins : int, optional
+        Length of x-velocity grid between vx_range[0] 
+        and vx_range[-1]. Will not be used if vx_values are 
         specified. 
         [Default = 100]
-    vyBins: int, optional
-        Length of y-velocity grid between vyRange[0] 
-        and vyRange[-1]. Will not be used if vyValues are 
+    vy_bins: int, optional
+        Length of y-velocity grid between vy_range[0] 
+        and vy_range[-1]. Will not be used if vy_values are 
         specified. 
         [Default = 100]
-    vxValues : {None, `~numpy.ndarray`}, optional
+    vx_values : {None, `~numpy.ndarray`}, optional
         Values of velocities in x at which to cluster
         and link. 
         [Default = None]
-    vyValues : {None, `~numpy.ndarray`}, optional
+    vy_values : {None, `~numpy.ndarray`}, optional
         Values of velocities in y at which to cluster
         and link. 
         [Default = None]
@@ -375,7 +309,7 @@ def clusterAndLink(observations,
         as in the same neighborhood. 
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 0.005]
-    minSamples : int, optional
+    min_samples : int, optional
         The number of samples (or total weight) in a neighborhood for a 
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -383,23 +317,19 @@ def clusterAndLink(observations,
     verbose : bool, optional
         Print progress statements? 
         [Default = True]
-    columnMapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
         
     Returns
     -------
-    allClusters : `~pandas.DataFrame`
+    all_clusters : `~pandas.DataFrame`
         DataFrame with the cluster ID, the number of observations, and the x and y velocity. 
-    clusterMembers : `~pandas.DataFrame`
+    cluster_members : `~pandas.DataFrame`
         DataFrame containing the cluster ID and the observation IDs of its members. 
     """ 
     # Extract useful quantities
-    obs_ids = observations[columnMapping["obs_id"]].values
+    obs_ids = observations["obs_id"].values
     theta_x = observations["theta_x_deg"].values
     theta_y = observations["theta_y_deg"].values
-    mjd = observations[columnMapping["exp_mjd"]].values
-    truth = observations[columnMapping["name"]].values
+    mjd = observations["mjd_utc"].values
 
     # Select detections in first exposure
     first = np.where(mjd == mjd.min())[0]
@@ -408,31 +338,29 @@ def clusterAndLink(observations,
     mjd0 = mjd[first][0]
     dt = mjd - mjd0
 
-    # Grab remaining detections
-    #remaining = np.where(mjd != mjd.min())[0]
-    if vxValues is None and vxRange is not None:
-        vx = np.linspace(*vxRange, num=vxBins)
-    elif vxValues is None and vxRange is None:
-        raise ValueError("Both vxValues and vxRange cannot be None.")
+    if vx_values is None and vx_range is not None:
+        vx = np.linspace(*vx_range, num=vx_bins)
+    elif vx_values is None and vx_range is None:
+        raise ValueError("Both vx_values and vx_range cannot be None.")
     else:
-        vx = vxValues
-        vxRange = [vxValues[0], vxValues[-1]]
-        vxBins = len(vx)
+        vx = vx_values
+        vx_range = [vx_values[0], vx_values[-1]]
+        vx_bins = len(vx)
      
-    if vyValues is None and vyRange is not None:
-        vy = np.linspace(*vyRange, num=vyBins)
-    elif vyValues is None and vyRange is None:
-        raise ValueError("Both vyValues and vyRange cannot be None.")
+    if vy_values is None and vy_range is not None:
+        vy = np.linspace(*vy_range, num=vy_bins)
+    elif vy_values is None and vy_range is None:
+        raise ValueError("Both vy_values and vy_range cannot be None.")
     else:
-        vy = vyValues
-        vyRange = [vyValues[0], vyValues[-1]]
-        vyBins = len(vy)
+        vy = vy_values
+        vy_range = [vy_values[0], vy_values[-1]]
+        vy_bins = len(vy)
         
-    if vxValues is None and vyValues is None:
+    if vx_values is None and vy_values is None:
         vxx, vyy = np.meshgrid(vx, vy)    
         vxx = vxx.flatten()
         vyy = vyy.flatten()
-    elif vxValues is not None and vyValues is not None:
+    elif vx_values is not None and vy_values is not None:
         vxx = vx
         vyy = vy
     else:
@@ -443,48 +371,53 @@ def clusterAndLink(observations,
         print("THOR: clusterAndLink")
         print("-------------------------")
         print("Running velocity space clustering...")
-        print("X velocity range: {}".format(vxRange))
+        print("X velocity range: {}".format(vx_range))
         
-        if vxValues is not None:
-            print("X velocity values: {}".format(vxBins))
+        if vx_values is not None:
+            print("X velocity values: {}".format(vx_bins))
         else:
-            print("X velocity bins: {}".format(vxBins))
+            print("X velocity bins: {}".format(vx_bins))
             
-        print("Y velocity range: {}".format(vyRange))
-        if vyValues is not None:
-            print("Y velocity values: {}".format(vyBins))
+        print("Y velocity range: {}".format(vy_range))
+        if vy_values is not None:
+            print("Y velocity values: {}".format(vy_bins))
         else:
-            print("Y velocity bins: {}".format(vyBins))
-        if vxValues is not None:
+            print("Y velocity bins: {}".format(vy_bins))
+        if vx_values is not None:
             print("User defined x velocity values: True")
         else: 
             print("User defined x velocity values: False")
-        if vyValues is not None:
+        if vy_values is not None:
             print("User defined y velocity values: True")
         else:
             print("User defined y velocity values: False")
             
-        if vxValues is None and vyValues is None:
-            print("Velocity grid size: {}".format(vxBins * vyBins))
+        if vx_values is None and vy_values is None:
+            print("Velocity grid size: {}".format(vx_bins * vy_bins))
         else: 
-            print("Velocity grid size: {}".format(vxBins))
+            print("Velocity grid size: {}".format(vx_bins))
         print("Max sample distance: {}".format(eps))
-        print("Minimum samples: {}".format(minSamples))
+        print("Minimum samples: {}".format(min_samples))
 
     
     possible_clusters = []
     if threads > 1:
         if verbose:
             print("Using {} threads...".format(threads))
-        p = mp.Pool(threads)
-        possible_clusters = p.starmap(partial(_clusterVelocity, 
-                                              obsIds=obs_ids,
-                                              x=theta_x,
-                                              y=theta_y,
-                                              dt=dt,
-                                              eps=eps,
-                                              minSamples=minSamples),
-                                              zip(vxx.T, vyy.T))
+        p = mp.Pool(threads, _init_worker)
+        try:
+            possible_clusters = p.starmap(partial(_clusterVelocity, 
+                                                  obs_ids=obs_ids,
+                                                  x=theta_x,
+                                                  y=theta_y,
+                                                  dt=dt,
+                                                  eps=eps,
+                                                  min_samples=min_samples),
+                                                  zip(vxx.T, vyy.T))
+        
+        except KeyboardInterrupt:
+            p.terminate()
+            
         p.close()
     else:
         possible_clusters = []
@@ -497,7 +430,7 @@ def clusterAndLink(observations,
                 vxi, 
                 vyi, 
                 eps=eps, 
-                minSamples=minSamples)
+                min_samples=min_samples)
             )
     time_end_cluster = time.time()    
     
@@ -519,7 +452,6 @@ def clusterAndLink(observations,
         # velocities yielded clusters, add names to index so we can enable the join
         cluster_velocities = pd.DataFrame({"theta_vx": vxx, "theta_vy": vyy})
         cluster_velocities.index.set_names("velocity_id", inplace=True)
-        #possible_clusters.index.set_names("velocity_id", inplace=True)
 
         # Split lists of cluster ids into one column per cluster for each different velocity
         # then stack the result
@@ -539,59 +471,207 @@ def clusterAndLink(observations,
         possible_clusters["cluster_id"] = np.arange(1, len(possible_clusters) + 1)
 
         # Make allClusters DataFrame
-        allClusters = possible_clusters.join(cluster_velocities)
-        allClusters.reset_index(drop=True, inplace=True)
-        allClusters = allClusters[["cluster_id", "theta_vx", "theta_vy"]]
+        all_clusters = possible_clusters.join(cluster_velocities)
+        all_clusters.reset_index(drop=True, inplace=True)
+        all_clusters = all_clusters[["cluster_id", "theta_vx", "theta_vy"]]
 
         # Make clusterMembers DataFrame
-        clusterMembers = possible_clusters.reset_index(drop=True).copy()
-        clusterMembers.index = clusterMembers["cluster_id"]
-        clusterMembers.drop("cluster_id", axis=1, inplace=True)
-        clusterMembers = pd.DataFrame(clusterMembers.stack())
-        clusterMembers.rename(columns={0: columnMapping["obs_id"]}, inplace=True)
-        clusterMembers.reset_index(inplace=True)
-        clusterMembers.drop("level_1", axis=1, inplace=True)
-        clusterMembers[columnMapping["obs_id"]] = clusterMembers[columnMapping["obs_id"]].astype(int)
+        cluster_members = possible_clusters.reset_index(drop=True).copy()
+        cluster_members.index = cluster_members["cluster_id"]
+        cluster_members.drop("cluster_id", axis=1, inplace=True)
+        cluster_members = pd.DataFrame(cluster_members.stack())
+        cluster_members.rename(columns={0: "obs_id"}, inplace=True)
+        cluster_members.reset_index(inplace=True)
+        cluster_members.drop("level_1", axis=1, inplace=True)        
         
     else: 
-        clusterMembers = pd.DataFrame(columns=["cluster_id", columnMapping["obs_id"]])
-        allClusters = pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy"])
+        cluster_members = pd.DataFrame(columns=["cluster_id", "obs_id"])
+        all_clusters = pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy"])
     
     time_end_restr = time.time()
    
     if verbose == True:
         print("Done. Completed in {} seconds.".format(time_end_restr - time_start_restr))
         print("")
-        print("Found {} clusters.".format(len(allClusters)))
+        print("Found {} clusters.".format(len(all_clusters)))
         print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))   
         print("-------------------------")
         print("")
         
-    return allClusters, clusterMembers
+    return all_clusters, cluster_members
+
+def _initialOrbitDetermination(
+                              obs_ids, 
+                              cluster_id, 
+                              observations=None, 
+                              observation_selection_method=None, 
+                              chi2_threshold=None,
+                              contamination_percentage=None,
+                              iterate=None, 
+                              light_time=None,
+                              backend=None,
+                              backend_kwargs=None):
+    """
+    Helper function to multiprocess clustering.
+    
+    """
+    orbit, orbit_members, outliers = iod(
+        observations[observations["obs_id"].isin(obs_ids)], 
+        observation_selection_method=observation_selection_method, 
+        chi2_threshold=chi2_threshold,
+        contamination_percentage=contamination_percentage,
+        iterate=iterate, 
+        light_time=light_time,
+        backend=backend,
+        backend_kwargs=backend_kwargs)
+    
+    orbit["cluster_id"] = [cluster_id]
+    
+    return orbit, orbit_members, outliers
+
+
+def initialOrbitDetermination(observations, 
+                              cluster_members, 
+                              observation_selection_method="combinations", 
+                              chi2_threshold=10**3,
+                              contamination_percentage=20.0,
+                              iterate=False, 
+                              light_time=True,
+                              threads=30,
+                              backend="THOR",
+                              backend_kwargs=None):
+
+    
+    grouped = cluster_members.groupby(by="cluster_id")["obs_id"].apply(list)
+    cluster_ids = list(grouped.index.values)
+    obs_ids = grouped.values.tolist()
+
+    orbit_dfs = []
+    orbit_members_dfs = []
+    outliers_list = []
+    
+    if threads > 1:
+        p = mp.Pool(threads, _init_worker)
+        try: 
+            results = p.starmap(
+                partial(
+                    _initialOrbitDetermination,
+                    observations=observations,
+                    observation_selection_method=observation_selection_method, 
+                    chi2_threshold=chi2_threshold,
+                    contamination_percentage=contamination_percentage,
+                    iterate=iterate, 
+                    light_time=light_time,
+                    backend=backend,
+                    backend_kwargs=backend_kwargs
+                ),
+                zip(
+                    obs_ids, 
+                    cluster_ids
+                )
+            )
+            
+            results = list(zip(*results))
+            orbit_dfs = results[0]
+            orbit_members_dfs = results[1]
+            outliers_list = results[2]
+        
+        except KeyboardInterrupt:
+            p.terminate()
+        
+        p.close()
+
+    else:
+        for obs_ids_i, cluster_id_i in zip(obs_ids, cluster_ids):
+
+            orbit, orbit_members, outliers = iod(
+                observations[observations["obs_id"].isin(obs_ids_i)], 
+                observation_selection_method=observation_selection_method, 
+                chi2_threshold=chi2_threshold,
+                contamination_percentage=contamination_percentage,
+                iterate=iterate, 
+                light_time=light_time,
+                backend=backend,
+                backend_kwargs=backend_kwargs)
+            
+            if len(orbit) > 0:
+                orbit["cluster_id"] = [cluster_id_i]
+                orbit_dfs.append(orbit)
+                orbit_members_dfs.append(orbit_members)
+                outliers_list.append(outliers)
+                
+            else:
+                continue
+                
+
+    if len(orbit_dfs) > 0:
+        
+        orbits = pd.concat(orbit_dfs)
+        orbits.dropna(inplace=True)
+        orbits.reset_index(inplace=True, drop=True)
+        orbits = orbits[[
+            "orbit_id", 
+            'cluster_id',
+            "epoch_mjd_utc",
+            "obj_x",
+            "obj_y",
+            "obj_z",
+            "obj_vx",
+            "obj_vy",
+            "obj_vz",
+            "arc_length",
+            "num_obs",
+            "chi2"
+        ]]
+        
+        orbit_members = pd.concat(orbit_members_dfs)
+        orbit_members.dropna(inplace=True)
+        orbit_members.reset_index(inplace=True, drop=True)
+        
+        outliers = np.concatenate(outliers_list)
+         
+    else:
+        orbits = pd.DataFrame(columns=[
+            "orbit_id", 
+            "cluster_id",
+            "epoch_mjd_utc",
+            "obj_x",
+            "obj_y",
+            "obj_z",
+            "obj_vx",
+            "obj_vy",
+            "obj_vz",
+            "arc_length",
+            "num_obs",
+            "chi2"
+        ])
+        
+        orbit_members = pd.DataFrame(columns=[
+            "orbit_id",
+            "obs_id"
+        ])
+
+        outliers = np.array([])
+    
+    return orbits, orbit_members, outliers
 
 def runTHOR(observations,
             orbits,
             knownOrbits=None,
             runDir=None,
-            cellArea=10, 
-            cellShape="circle",
-            numNights=14,
-            mjds="auto",
-            dMax=20.0,
-            includeEquatorialProjection=True,
-            vxRange=[-0.1, 0.1], 
-            vyRange=[-0.1, 0.1],
-            vxBins=100, 
-            vyBins=100,
-            vxValues=None,
-            vyValues=None,
+            cell_area=10, 
+            vx_range=[-0.1, 0.1], 
+            vy_range=[-0.1, 0.1],
+            vx_bins=100, 
+            vy_bins=100,
+            vx_values=None,
+            vy_values=None,
             threads=30, 
             eps=0.005, 
-            minSamples=5,
+            min_samples=5,
             contaminationThreshold=0.2,
-            unknownIDs=Config.unknownIDs,
-            falsePositiveIDs=Config.falsePositiveIDs,
-            observatoryCode=Config.oorbObservatoryCode,
+            unknownIDs=[],
+            falsePositiveIDs=[],
             verbose=True,
             columnMapping=Config.columnMapping):
     """
@@ -612,53 +692,32 @@ def runTHOR(observations,
         will be saved inside directory. Each orbit will have its own sub-folder, with the relevant files
         for each saved in these subfolders. 
         [Default = None]
-    cellArea : float, optional
+    cell_area : float, optional
         Cell's area in units of square degrees. 
         [Default = 10]
-    cellShape : {'square', 'circle'}, optional
-        Cell's shape can be square or circle. Combined with the area parameter, will set the search 
-        area when looking for observations contained within the defined cell. 
-        [Default = 'square']
-    numNights : int, optional
-        Number of nights from the first exposure to consider 
-        for ranging and shifting. 
-        [Default = 14]
-    mjds : {'auto', `~numpy.ndarray` (N)}
-        If mjds is 'auto', will propagate the particle to middle of each unique night in 
-        obervations and look for all detections within an angular search radius (defined by a 
-        maximum allowable angular speed) and extract the exposure time. Alternatively, an array
-        of exposure times may be passed. 
-    dMax : float, optional
-        Maximum angular distance (in RA and Dec) permitted when searching for exposure times
-        in degrees. 
-        [Default = 20.0]
-    includeEquatorialProjection : bool, optional
-        Include naive shifting in equatorial coordinates without properly projecting
-        to the plane of the orbit. This is useful if performance comparisons want to be made.
-        [Default = True]
-    vxRange : {None, list or `~numpy.ndarray` (2)}
+    vx_range : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in x. 
-        Will not be used if vxValues are specified. 
+        Will not be used if vx_values are specified. 
         [Default = [-0.1, 0.1]]
-    vyRange : {None, list or `~numpy.ndarray` (2)}
+    vy_range : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in y. 
-        Will not be used if vyValues are specified. 
+        Will not be used if vy_values are specified. 
         [Default = [-0.1, 0.1]]
-    vxBins : int, optional
-        Length of x-velocity grid between vxRange[0] 
-        and vxRange[-1]. Will not be used if vxValues are 
+    vx_bins : int, optional
+        Length of x-velocity grid between vx_range[0] 
+        and vx_range[-1]. Will not be used if vx_values are 
         specified. 
         [Default = 100]
-    vyBins: int, optional
-        Length of y-velocity grid between vyRange[0] 
-        and vyRange[-1]. Will not be used if vyValues are 
+    vy_bins: int, optional
+        Length of y-velocity grid between vy_range[0] 
+        and vy_range[-1]. Will not be used if vy_values are 
         specified. 
         [Default = 100]
-    vxValues : {None, `~numpy.ndarray`}, optional
+    vx_values : {None, `~numpy.ndarray`}, optional
         Values of velocities in x at which to cluster
         and link. 
         [Default = None]
-    vyValues : {None, `~numpy.ndarray`}, optional
+    vy_values : {None, `~numpy.ndarray`}, optional
         Values of velocities in y at which to cluster
         and link. 
         [Default = None]
@@ -670,7 +729,7 @@ def runTHOR(observations,
         as in the same neighborhood. 
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 0.005]
-    minSamples : int, optional
+    min_samples : int, optional
         The number of samples (or total weight) in a neighborhood for a 
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -725,7 +784,7 @@ def runTHOR(observations,
     # Analyze observations for entire survey
     allObjects_survey, summary_survey = analyzeObservations(
         observations,
-        minSamples=minSamples, 
+        min_samples=min_samples, 
         unknownIDs=unknownIDs,
         falsePositiveIDs=falsePositiveIDs,
         verbose=True,
@@ -803,12 +862,7 @@ def runTHOR(observations,
                    columnMapping["obj_dz/dt_au_p_day"]]].values[0], 
             orbit[columnMapping["exp_mjd"]].values[0],
             mjds=mjds, 
-            cellArea=cellArea,
-            cellShape=cellShape,
-            dMax=dMax, 
-            numNights=numNights,
-            includeEquatorialProjection=includeEquatorialProjection,
-            observatoryCode=observatoryCode,
+            cell_area=cell_area,
             verbose=False,
             columnMapping=columnMapping)
         
@@ -828,7 +882,7 @@ def runTHOR(observations,
         # Analyze propagated observations
         allObjects_projection, summary_projection = analyzeProjections(
             projected_obs[~projected_obs[columnMapping["obs_id"]].isin(linked_detections)],
-            minSamples=minSamples,
+            min_samples=min_samples,
             unknownIDs=unknownIDs,
             falsePositiveIDs=falsePositiveIDs,
             columnMapping=columnMapping)
@@ -842,7 +896,7 @@ def runTHOR(observations,
         
         # Plot projection velocities of findable known objects
         try:
-            fig, ax = plotProjectionVelocitiesFindable(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+            fig, ax = plotProjectionVelocitiesFindable(allObjects_projection, vx_range=vx_range, vy_range=vy_range)
             if runDir != None:
                 fig.savefig(os.path.join(orbitDir, "projection_findable.png"))
         except:
@@ -885,15 +939,15 @@ def runTHOR(observations,
         # Cluster and link
         allClusters_projection, clusterMembers_projection = clusterAndLink(
             projected_obs[~projected_obs[columnMapping["obs_id"]].isin(linked_detections)],
-            vxRange=vxRange, 
-            vyRange=vyRange,
-            vxBins=vxBins, 
-            vyBins=vyBins,
-            vxValues=vxValues,
-            vyValues=vyValues,
+            vx_range=vx_range, 
+            vy_range=vy_range,
+            vx_bins=vx_bins, 
+            vy_bins=vy_bins,
+            vx_values=vx_values,
+            vy_values=vy_values,
             threads=threads, 
             eps=eps, 
-            minSamples=minSamples,
+            min_samples=min_samples,
             verbose=True,
             columnMapping=columnMapping)
         
@@ -909,7 +963,7 @@ def runTHOR(observations,
             clusterMembers_projection, 
             allObjects_projection,
             summary_projection,  
-            minSamples=minSamples, 
+            min_samples=min_samples, 
             contaminationThreshold=contaminationThreshold, 
             unknownIDs=unknownIDs,
             falsePositiveIDs=falsePositiveIDs,
@@ -926,21 +980,21 @@ def runTHOR(observations,
         # Calculate linkage efficiency for known objects
         linkage_efficiency = calcLinkageEfficiency(
             allObjects_projection, 
-            vxRange=vxRange, 
-            vyRange=vyRange,
+            vx_range=vx_range, 
+            vy_range=vy_range,
             verbose=True)
         summary_projection["percent_linkage_efficiency"] = linkage_efficiency * 100
 
         # Plot projection velocities of found and missed known objects
         try:
-            fig, ax = plotProjectionVelocitiesFound(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+            fig, ax = plotProjectionVelocitiesFound(allObjects_projection, vx_range=vx_range, vy_range=vy_range)
             if runDir != None:
                 fig.savefig(os.path.join(orbitDir, "projection_found.png"))
         except:
             errFile.write("Orbit ID {:04d}: Error 6: Could not plot projection velocities found.\n".format(orbit_id))
         
         try:
-            fig, ax = plotProjectionVelocitiesMissed(allObjects_projection, vxRange=vxRange, vyRange=vyRange)
+            fig, ax = plotProjectionVelocitiesMissed(allObjects_projection, vx_range=vx_range, vy_range=vy_range)
             if runDir != None:
                 fig.savefig(os.path.join(orbitDir, "projection_missed.png"))
         except:
