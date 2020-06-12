@@ -88,7 +88,7 @@ def setupSPICE(kernels=["LSK - Latest",
                         "Earth PCK - Historical High Accuracy", 
                         "Earth PCK - Latest High Accuracy", 
                         "Planetary SPK"],
-        verbose=True):
+    verbose=True):
     """
     Loads the leapsecond, the Earth planetary constants and the planetary ephemerides kernels into SPICE. 
     

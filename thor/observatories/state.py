@@ -5,7 +5,7 @@ import spiceypy as sp
 from ..constants import Constants as c
 from ..utils import _checkTime
 from ..utils import setupSPICE
-from ..orbits.ephemeris import getMajorBodyState
+from ..orbits.ephemeris import getPerturberState
 from .codes import readMPCObsCodeFile
 
 __all__ = ["getObserverState"]
@@ -81,7 +81,7 @@ def getObserverState(observatory_codes, observation_times):
         o_vec_ITRF93 = np.dot(R_EARTH, o_hat_ITRF93)
 
         # Grab earth state vector
-        state = getMajorBodyState("earth", observation_times)
+        state = getPerturberState("earth", observation_times, origin="heliocenter")
         
         # Convert MJD epochs in UTC to ET in TDB
         epochs_utc = observation_times.utc
@@ -89,7 +89,7 @@ def getObserverState(observatory_codes, observation_times):
         
         # Grab rotaton matrices from ITRF93 to ecliptic J2000
         # The ITRF93 high accuracy Earth rotation model takes into account:
-        # Precession:  1976 IAU model due to Lieske.
+        # Precession:  1976 IAU model from Lieske.
         # Nutation:  1980 IAU model, with IERS corrections due to Herring et al.
         # True sidereal time using accurate values of TAI-UT1
         # Polar motion

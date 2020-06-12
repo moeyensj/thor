@@ -9,6 +9,8 @@ KM_TO_AU = c.KM_TO_AU
 S_TO_DAY = c.S_TO_DAY
 
 NAIF_MAPPING = {
+    "solar system barycenter" : 0,
+    "sun" : 10,
     "mercury" : 199,
     "venus" : 299,
     "earth" : 399,
@@ -19,12 +21,14 @@ NAIF_MAPPING = {
     "neptune" : 899,
 }
 
-def getMajorBodyState(body_name, times):
+__all__ = ["getPerturberState"]
+
+def getPerturberState(body_name, times, origin="heliocenter"):
     """
-    Query the JPL ephemeris files loaded in SPICE for the state vectors of the desired
-    major planet. 
+    Query the JPL ephemeris files loaded in SPICE for the state vectors of desired perturbers.
     
-    Planets available: 
+    Major bodies and dynamical centers available: 
+        'solar system barycenter', 'sun',
         'mercury', 'venus', 'earth', 
         'mars', 'jupiter', 'saturn', 
         'uranus', 'neptune'
@@ -35,6 +39,8 @@ def getMajorBodyState(body_name, times):
         Name of major body.
     times : `~astropy.time.core.Time` (N)
         Times at which to get state vectors.
+    origin : {'barycenter', 'heliocenter'}
+        Coordinate system origin location.
     
     Returns
     -------
@@ -42,6 +48,14 @@ def getMajorBodyState(body_name, times):
         Heliocentric ecliptic J2000 state vector with postion in AU 
         and velocity in AU per day.
     """
+    if origin == "barycenter":
+        center = 0 # Solar System Barycenter
+    elif origin == "heliocenter":
+        center = 10 # Heliocenter
+    else: 
+        err = ("origin should be one of 'heliocenter' or 'barycenter'")
+        raise ValueError(err)
+    
     # Make sure SPICE is ready to roll
     setupSPICE(verbose=False)
 
@@ -60,7 +74,7 @@ def getMajorBodyState(body_name, times):
             epoch, 
             'ECLIPJ2000',
             'NONE',
-            10 # Sun
+            center
         )
         states.append(state)
     states = np.vstack(states)
