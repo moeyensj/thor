@@ -10,7 +10,7 @@ from astropy.time import Time
 
 from .config import Config
 from .cell import Cell
-from .test_orbit import TestOrbit
+from .orbit import TestOrbit
 from .orbits.ephemeris import generateEphemeris
 from .orbits.iod import iod
 from .plotting import plotOrbitsFindable
