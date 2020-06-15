@@ -17,6 +17,7 @@ install:
   - conda info -a
   - conda create -q -n thor python=$TRAVIS_PYTHON_VERSION -c defaults -c conda-forge --file requirements_travis.txt
   - source activate thor
+  - python setup.py install
 
 script: 
   - py.test thor --cov=thor
