@@ -30,11 +30,6 @@ KERNELS = {
             "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_720101_070426.bpc",
             True
         ],
-        "Earth PCK - Long Term Predict Low Accuracy" : [
-            "earth_070425_370426_predict.bpc",
-            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_070425_370426_predict.bpc",
-            True,
-        ],
         "Earth FK" : [
             "earth_assoc_itrf93.tf",
             "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf",
@@ -49,7 +44,6 @@ KERNELS = {
 
 def getSPICEKernels(kernels=["LSK - Latest",  
                              "Planetary Constants", 
-                             "Earth PCK - Long Term Predict Low Accuracy",
                              "Earth PCK - Historical High Accuracy", 
                              "Earth PCK - Latest High Accuracy", 
                              "Planetary SPK"]):
@@ -83,15 +77,14 @@ def getSPICEKernels(kernels=["LSK - Latest",
     -------
     None
     """
-    for kernel, info in KERNELS.items():
+    for kernel in kernels:
         print("Checking for {} kernel...".format(kernel))
-        _downloadFile(os.path.join(os.path.dirname(__file__), "data", info[0]), info[1], update=info[2])
+        _downloadFile(os.path.join(os.path.dirname(__file__), "data", KERNELS[kernel][0]), KERNELS[kernel][1], update=KERNELS[kernel][2])
         print("")
     return
 
 def setupSPICE(kernels=["LSK - Latest",  
                         "Planetary Constants", 
-                        "Earth PCK - Long Term Predict Low Accuracy",
                         "Earth PCK - Historical High Accuracy", 
                         "Earth PCK - Latest High Accuracy", 
                         "Planetary SPK"]):
