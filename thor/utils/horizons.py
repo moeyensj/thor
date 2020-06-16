@@ -6,7 +6,7 @@ __all__ = [
     "getHorizonsEphemeris"
 ]
 
-def getHorizonsVectors(obj_id, times):
+def getHorizonsVectors(obj_id, times, location="@sun"):
     """
     Query JPL Horizons (through astroquery) for an object's
     state vectors at the given times.
@@ -17,7 +17,11 @@ def getHorizonsVectors(obj_id, times):
         Object ID / designation recognizable by HORIZONS. 
     times : `~astropy.core.time.Time`
         Astropy time object at which to gather state vectors.
-    
+    location : str, optional
+    	Location of the origin typically a NAIF code.
+    	('0' or '@ssb' for solar system barycenter, '10' or '@sun' for heliocenter)
+    	[Default = '@sun']
+    	
     Returns
     -------
     vectors : `~pandas.DataFrame`
@@ -28,7 +32,8 @@ def getHorizonsVectors(obj_id, times):
     obj = Horizons(
         id=obj_id, 
         epochs=times.tdb.mjd,
-        id_type="smallbody"
+        location=location,
+        id_type="smallbody",
     )
     vectors = obj.vectors(
         refplane="ecliptic",

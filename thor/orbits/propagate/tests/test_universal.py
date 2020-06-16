@@ -1,9 +1,10 @@
 import numpy as np
 import spiceypy as sp
 from astropy import units as u
-from astroquery.jplhorizons import Horizons
+from astropy.time import Time
 
 from ....constants import Constants as c
+from ....utils import getHorizonsVectors
 from ..universal import propagateUniversal
 
 MU = c.G * c.M_SUN
@@ -18,7 +19,7 @@ TARGETS = [
     "Eugenia",
     "C/2019 Q4" # Borisov
 ] 
-EPOCHS = [57257.0, 59000.0]
+EPOCHS = [57257.0]
 
 def test_propagateUniversal():
     """
@@ -27,11 +28,12 @@ def test_propagateUniversal():
     """
     dts = np.linspace(0.01, 500, num=1000)
     
-    for name in TARGETS: 
+    for target in TARGETS: 
         for epoch in EPOCHS:
+            times = Time(epoch + dts, scale="utc", format="mjd")
+
             # Grab vectors from Horizons at epoch
-            target = Horizons(id=name, epochs=epoch, location="@sun")
-            vectors = target.vectors().to_pandas()
+            vectors = getHorizonsVectors(target, times[:1])
             vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
             
             # Propagate vector to each new epoch (epoch + dt)
@@ -44,7 +46,7 @@ def test_propagateUniversal():
             vectors_new = propagateUniversal(
                 vectors[0:1, :], 
                 np.array([epoch]), 
-                dts + epoch,  
+                times.utc.mjd,  
                 mu=MU, 
                 max_iter=MAX_ITER, 
                 tol=TOL

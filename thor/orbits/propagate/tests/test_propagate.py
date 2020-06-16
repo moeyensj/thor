@@ -40,7 +40,7 @@ def test_propagateOrbits():
     t1 = Time(np.arange(57999, 57999+50, 0.1), scale="utc", format="mjd")
     
     vectors_list = []
-    for name in TARGETS: 
+    for target in TARGETS: 
         # Grab vectors from Horizons at epoch
         target = Horizons(id=name, epochs=EPOCHS, location="@sun")
         vectors = target.vectors().to_pandas()
