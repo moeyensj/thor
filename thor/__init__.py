@@ -8,7 +8,7 @@ from .orbits import *
 from .coordinates import *
 from .projections import *
 from .vectors import *
-from .test_orbit import *
+from .orbit import *
 from .cell import * 
 from .plotting import *
 from .main import *
