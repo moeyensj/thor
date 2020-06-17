@@ -23,7 +23,7 @@ NAIF_MAPPING = {
 
 __all__ = ["getPerturberState"]
 
-def getPerturberState(body_name, times, origin="heliocenter"):
+def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     """
     Query the JPL ephemeris files loaded in SPICE for the state vectors of desired perturbers.
     
@@ -39,8 +39,10 @@ def getPerturberState(body_name, times, origin="heliocenter"):
         Name of major body.
     times : `~astropy.time.core.Time` (N)
         Times at which to get state vectors.
+    frame : {'equatorial', 'ecliptic'}
+        Return perturber state in the equatorial or ecliptic J2000 frames. 
     origin : {'barycenter', 'heliocenter'}
-        Coordinate system origin location.
+        Return perturber state with heliocentric or barycentric origin.
     
     Returns
     -------
@@ -54,6 +56,16 @@ def getPerturberState(body_name, times, origin="heliocenter"):
         center = 10 # Heliocenter
     else: 
         err = ("origin should be one of 'heliocenter' or 'barycenter'")
+        raise ValueError(err)
+
+    if frame == "ecliptic":
+        frame_spice = "ECLIPJ2000"
+    elif frame == "equatorial":
+        frame_spice = "J2000"
+    else:
+        err = (
+            "frame should be one of {'equatorial', 'ecliptic'}"
+        )
         raise ValueError(err)
     
     # Make sure SPICE is ready to roll
@@ -72,7 +84,7 @@ def getPerturberState(body_name, times, origin="heliocenter"):
         state, lt = sp.spkez(
             NAIF_MAPPING[body_name.lower()], 
             epoch, 
-            'ECLIPJ2000',
+            frame_spice,
             'NONE',
             center
         )

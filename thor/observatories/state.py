@@ -14,9 +14,9 @@ R_EARTH = c.R_EARTH
 KM_TO_AU = c.KM_TO_AU
 OMEGA_EARTH = 2 * np.pi / 0.997269675925926 
 
-def getObserverState(observatory_codes, observation_times):
+def getObserverState(observatory_codes, observation_times, frame="ecliptic", origin="heliocenter"):
     """
-    Find the heliocentric ecliptic J2000 position vectors for different observers or observatories at 
+    Find the heliocentric or barycentric ecliptic or equatorial J2000 state vectors for different observers or observatories at 
     the desired epochs. Currently only supports ground-based observers.
     
     The Earth body-fixed frame used for calculations is the standard ITRF93, which takes into account:
@@ -31,12 +31,16 @@ def getObserverState(observatory_codes, observation_times):
         MPC observatory codes. 
     observation_times : `~astropy.time.core.Time`
         Epochs for which to find the observatory locations.
+    frame : {'equatorial', 'ecliptic'}
+        Return observer state in the equatorial or ecliptic J2000 frames. 
+    origin : {'barycenter', 'heliocenter'}
+        Return observer state with heliocentric or barycentric origin.
         
     Returns
     -------
     `~pandas.DataFrame`
-        Pandas DataFrame with a column of observatory codes, MJDs (in UTC), and the heliocentric 
-        ecliptic J2000 postion vector in three columns (obs_x, obs_y, obs_z) and heliocentric ecliptic
+        Pandas DataFrame with a column of observatory codes, MJDs (in UTC), and the J2000 
+        postion vector in three columns (obs_x, obs_y, obs_z) and J2000
         velocity in three columns (obs_vx, obs_vy, obs_vg). 
     """
     if type(observatory_codes) not in [list, np.ndarray]:
@@ -44,6 +48,16 @@ def getObserverState(observatory_codes, observation_times):
             "observatory_codes should be a list or `~numpy.ndarray`."
         )
         raise TypeError(err)
+
+    if frame == "ecliptic":
+        frame_spice = "ECLIPJ2000"
+    elif frame == "equatorial":
+        frame_spice = "J2000"
+    else:
+        err = (
+            "frame should be one of {'equatorial', 'ecliptic'}"
+        )
+        raise ValueError(err)
 
     setupSPICE(verbose=False)
 
@@ -81,7 +95,7 @@ def getObserverState(observatory_codes, observation_times):
         o_vec_ITRF93 = np.dot(R_EARTH, o_hat_ITRF93)
 
         # Grab earth state vector
-        state = getPerturberState("earth", observation_times, origin="heliocenter")
+        state = getPerturberState("earth", observation_times, frame=frame, origin=origin)
         
         # Convert MJD epochs in UTC to ET in TDB
         epochs_utc = observation_times.utc
@@ -93,7 +107,7 @@ def getObserverState(observatory_codes, observation_times):
         # Nutation:  1980 IAU model, with IERS corrections due to Herring et al.
         # True sidereal time using accurate values of TAI-UT1
         # Polar motion
-        rotation_matrices = np.array([sp.pxform('ITRF93', 'ECLIPJ2000', i) for i in epochs_et])
+        rotation_matrices = np.array([sp.pxform('ITRF93', frame_spice, i) for i in epochs_et])
         
         # Add o_vec + r_geo to get r_obs
         r_obs = np.array([rg + rm @ o_vec_ITRF93 for rg, rm in zip(state[:, :3], rotation_matrices)])
