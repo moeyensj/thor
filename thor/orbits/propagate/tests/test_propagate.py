@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 from astropy import units as u
-from astroquery.jplhorizons import Horizons
 
 from ....constants import Constants as c
+from ....utils import getHorizonsVectors
 from ..propagate import propagateOrbits
 
 MU = c.G * c.M_SUN
@@ -40,10 +40,9 @@ def test_propagateOrbits():
     t1 = Time(np.arange(57999, 57999+50, 0.1), scale="utc", format="mjd")
     
     vectors_list = []
-    for target in TARGETS: 
+    for t0_i, target in zip(t0, TARGETS): 
         # Grab vectors from Horizons at epoch
-        target = Horizons(id=name, epochs=EPOCHS, location="@sun")
-        vectors = target.vectors().to_pandas()
+        vectors = getHorizonsVectors(target, t0_i, location="@sun")
         vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
         vectors_list.append(vectors)
         

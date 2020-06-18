@@ -2,8 +2,7 @@ import numpy as np
 from astroquery.jplhorizons import Horizons
 
 from ....constants import Constants as c
-from ....coordinates import _cartesianToAngular
-from ....coordinates import _angularToCartesian
+from ....coordinates import transformCoordinates
 from ...propagate import propagateUniversal
 from ..gauss import gaussIOD
 
@@ -12,11 +11,6 @@ MU = c.G * c.M_SUN
 def test_gaussIOD():
     
     epoch = [58762.0]
-    
-    #observer = Horizons(id="Ceres", epochs=epoch, location="@sun")
-    #vectors = observer.vectors()
-    #vectors = np.array(vectors["x", "y", "z", "vx", "vy", "vz"]).view("float64")
-    #vectors_obs = vectors.reshape(1, -1)
     vectors_obs = np.array([[1., 0., 0., 0., -np.sqrt(MU), 0.]]) 
     
     # Set an initial epoch
@@ -44,22 +38,17 @@ def test_gaussIOD():
         states_target = states_target[:, 2:]
 
         # Calculate the distance from observer to target at each epoch
-        delta = states_target[:, :3] - states_observer[:, :3]
+        delta_state = states_target[:, :3] - states_observer[:, :3]
         
-        # Calculate the line of sight vectors at each t1 epoch
-        rho = np.zeros_like(delta)
-        for i, j in enumerate(delta):
-            rho[i] = j / np.linalg.norm(j)
-
-        # Using line of sight vectors, calculate the on-sky location of the target
-        # from the point of view of the observer in both ecliptic and equatorial 
-        # coordinates
-        rho_eq = np.array(c.TRANSFORM_EC2EQ @ rho.T).T
-        coords_ec = _cartesianToAngular(*rho.T)[:, :2]
-        coords_ec = np.degrees(coords_ec)
-
-        coords_eq = _cartesianToAngular(*rho_eq.T)[:, :2]
-        coords_eq = np.degrees(coords_eq)
+        # Convert topocentric to target state to spherical coordinates
+        # including velocities
+        state_spherical = transformCoordinates(
+            delta_state, 
+            "ecliptic", 
+            "equatorial", 
+            representation_in="cartesian", 
+            representation_out="spherical"
+        )
 
         # Iterate over different selections of "observations"
         for selected_obs in [[0, 5, 10], 
@@ -78,8 +67,7 @@ def test_gaussIOD():
 
             # Grab observables: on-sky location of the target
             coords_obs = states_observer[selected_obs, :3]
-            coords_ec_ang = coords_ec[selected_obs]
-            coords_eq_ang = coords_eq[selected_obs]
+            coords_eq_ang = state_spherical[selected_obs, 1:3]
             t = t1[selected_obs]
 
             print("Observations:")
