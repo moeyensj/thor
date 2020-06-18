@@ -6,7 +6,7 @@ __all__ = [
     "getHorizonsEphemeris"
 ]
 
-def getHorizonsVectors(obj_id, times, location="@sun"):
+def getHorizonsVectors(obj_id, times, location="@sun", id_type="smallbody"):
     """
     Query JPL Horizons (through astroquery) for an object's
     state vectors at the given times.
@@ -18,14 +18,17 @@ def getHorizonsVectors(obj_id, times, location="@sun"):
     times : `~astropy.core.time.Time`
         Astropy time object at which to gather state vectors.
     location : str, optional
-    	Location of the origin typically a NAIF code.
-    	('0' or '@ssb' for solar system barycenter, '10' or '@sun' for heliocenter)
-    	[Default = '@sun']
-    	
+        Location of the origin typically a NAIF code.
+        ('0' or '@ssb' for solar system barycenter, '10' or '@sun' for heliocenter)
+        [Default = '@sun']
+    id_type : {'majorbody', 'smallbody', 'designation', 
+               'name', 'asteroid_name', 'comet_name', 'id'}
+        ID type, Horizons will find closest match under any given type.
+        
     Returns
     -------
     vectors : `~pandas.DataFrame`
-        Dataframe containing the RA, DEC, r, r_rate, delta, delta_rate and light time 
+        Dataframe containing the full cartesian state, r, r_rate, delta, delta_rate and light time 
         of the object at each time. 
     """
     _checkTime(times, "times")
@@ -33,7 +36,7 @@ def getHorizonsVectors(obj_id, times, location="@sun"):
         id=obj_id, 
         epochs=times.tdb.mjd,
         location=location,
-        id_type="smallbody",
+        id_type=id_type,
     )
     vectors = obj.vectors(
         refplane="ecliptic",
@@ -41,7 +44,7 @@ def getHorizonsVectors(obj_id, times, location="@sun"):
     ).to_pandas()
     return vectors
 
-def getHorizonsEphemeris(obj_id, times, location):
+def getHorizonsEphemeris(obj_id, times, location, id_type="smallbody"):
     """
     Query JPL Horizons (through astroquery) for an object's
     ephemerides at the given times viewed from the given location.
@@ -55,6 +58,9 @@ def getHorizonsEphemeris(obj_id, times, location):
     location : str
         Location of the observer which can be an MPC observatory code (eg, 'I41', 'I11')
         or a NAIF code ('0' for solar system barycenter, '10' for heliocenter)
+    id_type : {'majorbody', 'smallbody', 'designation', 
+               'name', 'asteroid_name', 'comet_name', 'id'}
+        ID type, Horizons will find closest match under any given type.
     
     Returns
     -------
@@ -67,7 +73,7 @@ def getHorizonsEphemeris(obj_id, times, location):
         id=obj_id, 
         epochs=times.utc.mjd, 
         location=location,
-        id_type="smallbody"
+        id_type=id_type
     )
     eph = obj.ephemerides(
         # RA, DEC, r, r_rate, delta, delta_rate, lighttime
