@@ -1,5 +1,5 @@
 from ..utils import _checkTime
-from .ephemeris import getPerturberState
+from .state import getPerturberState
 
 __all__ = [
     "shiftOrbitsOrigin"

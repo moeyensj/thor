@@ -5,13 +5,12 @@ import spiceypy as sp
 from ..constants import Constants as c
 from ..utils import _checkTime
 from ..utils import setupSPICE
-from ..orbits.ephemeris import getPerturberState
+from ..orbits import getPerturberState
 from .codes import readMPCObsCodeFile
 
 __all__ = ["getObserverState"]
 
 R_EARTH = c.R_EARTH
-KM_TO_AU = c.KM_TO_AU
 OMEGA_EARTH = 2 * np.pi / 0.997269675925926 
 
 def getObserverState(observatory_codes, observation_times, frame="ecliptic", origin="heliocenter"):

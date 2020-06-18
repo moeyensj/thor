@@ -14,14 +14,14 @@ MU = c.G * c.M_SUN
 
 @jit(["f8(f8[::1], f8, f8, i8, f8)",
       "f8(f8[:], f8, f8, i8, f8)"], nopython=True)
-def calcChi(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
+def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate universal anomaly chi using Newton-Raphson. 
     
     Parameters
     ----------
     orbit : `~numpy.ndarray` (6)
-        Orbital state vector (X_0) with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
+        Orbital state vector (X_0) with position in units of AU and velocity in units of AU per day.
     dt : float
         Time from epoch to which calculate chi in units of decimal days.
     mu : float, optional
@@ -71,17 +71,17 @@ def calcChi(orbit, dt, mu=MU, max_iter=10000, tol=1e-14):
         if iterations >= max_iter:
             break
         
-    return chi
+    return chi 
 
 @jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True)
-def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=10000, tol=1e-14):
+def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     Propagate orbits using the universal anomaly formalism. 
     
     Parameters
     ----------
     orbits : `~numpy.ndarray` (N, 6)
-        Orbital state vectors (X_0) with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
+        Orbital state vectors (X_0) with position in units of AU and velocity in units of AU per day. 
     t0 : `~numpy.ndarray` (N)
         Epoch in MJD at which orbits are defined.
     t1 : `~numpy.ndarray` (M)
@@ -100,7 +100,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=10000, tol=1e-14):
     Returns
     -------
     orbits : `~numpy.ndarray` (N*M, 8)
-        Orbits propagated to each MJD with position in units of AU and velocity in units of AU per day. [J2000 ECLIPTIC]
+        Orbits propagated to each MJD with position in units of AU and velocity in units of AU per day. 
         The first two columns are the orbit ID (a zero-based integer value assigned to each unique input orbit)
         and the MJD of each propagated state.
     """
