@@ -7,8 +7,87 @@ from .cell import Cell
 from .orbits.propagate import propagateOrbits
 
 __all__ = [
+    "preprocessObservations",
     "findAverageOrbits",
 ]
+
+def preprocessObservations(observations, column_mapping, mjd_scale="utc", attribution=False):
+    """
+    Create two seperate data frames: one with all observation data needed to run THOR stripped of
+    object IDs and the other with known object IDs and attempts to attribute unknown observations to
+    the latest catalog of known objects from the MPC.
+    
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        DataFrame containing at minimum a column of observation IDs, exposure times in MJD (with scale
+        set by mjd_scale), RA in degrees, Dec in degrees, 1-sigma error in RA in degrees, 1-sigma error in 
+        Dec in degrees and the observatory code. 
+    column_mapping : dict
+        Dictionary containing internal column names as keys mapped to column names in the data frame as values.
+        Should include the following:
+        {# Internal : # External
+            "obs_id" :                    # Observation IDs 
+            "mjd" :                       # MJDs (set scale with mjd_scale)
+            "RA_deg" :                    # RA in degrees (topocentric J2000)
+            "Dec_deg" :                   # Dec in degrees (topocentric J2000)
+            "RA_sigma_deg" :              # 1-sigma error in RA in degrees 
+            "Dec_sigma_deg" :             # 1-sigma error in Dec in degrees 
+            "observatory_code" :          # MPC observatory code
+            "obj_id" :                    # Object ID (designation) or NaN if unknown
+        }
+    mjd_scale : str, optional
+        Time scale of the input MJD exposure times ("utc", "tdb", etc...)
+    attribution : bool, optional
+        Place holder boolean to trigger attribution
+    
+    Returns
+    -------
+    preprocessed_observations : `~pandas.DataFrame`
+        DataFrame with observations in the format required by THOR.
+    preprocessed_attributions : `~pandas.DataFrame`
+        DataFrame containing truths.
+    """
+    obs_columns = [
+        column_mapping["obs_id"],
+        column_mapping["mjd"],
+        column_mapping["RA_deg"],
+        column_mapping["Dec_deg"],
+        column_mapping["RA_sigma_deg"],
+        column_mapping["Dec_sigma_deg"],
+        column_mapping["observatory_code"],
+    ]
+    attrib_columns = [
+        column_mapping["obs_id"],
+        column_mapping["obj_id"]
+    ]
+    column_mapping_inv = {v : k for k, v in column_mapping.items()}
+    
+    for col in obs_columns:
+        if col not in observations.columns:
+            err = (
+                "{} not found in observations.".format(col)
+            )
+            raise ValueError(err)
+            
+    preprocessed_observations = observations[obs_columns].copy()
+    preprocessed_observations.rename(columns=column_mapping_inv, inplace=True)
+    preprocessed_observations.reset_index(inplace=True, drop=True)
+    preprocessed_observations["obs_id"] = preprocessed_observations["obs_id"].astype(str)
+
+    if mjd_scale != "utc":
+        observation_times = Time(preprocessed_observations[column_mapping["mjd_utc"]].values, format="mjd", scale=mjd_scale)
+        preprocessed_observations["mjd_utc"] = observation_times.utc.mjd
+    preprocessed_observations.rename(columns={"mjd":"mjd_utc"}, inplace=True)
+        
+    preprocessed_attributions = observations[attrib_columns].copy()
+    preprocessed_attributions.rename(columns=column_mapping_inv, inplace=True)
+    preprocessed_attributions.reset_index(inplace=True, drop=True)
+    
+    preprocessed_attributions["obj_id"] = preprocessed_attributions["obj_id"].astype(str)
+    preprocessed_attributions["obs_id"] = preprocessed_attributions["obs_id"].astype(str)
+
+    return preprocessed_observations, preprocessed_attributions
 
 def findAverageOrbits(observations,
                       orbits,
