@@ -1,54 +1,82 @@
+import pytest
 import numpy as np
-from astropy.time import Time
 from astropy import units as u
+from astropy.time import Time
 
-from ...orbits.ephemeris import getMajorBodyState
+from ...utils import getHorizonsVectors
 from ..state import getObserverState
 
-def test_getObserverState_geocenter():
-    # Set some observation times
-    observation_times = Time(np.arange(50000, 59000, 1), scale="tdb", format="mjd")
-    
-    # Get state of geocentric 'observer'
-    observer_states = getObserverState(["500"], observation_times)
-    r_observer = observer_states[["obs_x", "obs_y", "obs_z"]].values
-    
-    # Get state of geocenter at the same time
-    geocenter_state = getMajorBodyState("earth", observation_times)
-    r_geo = geocenter_state[:, :3]
-    
-    # Assert that a geocentric observer is at the exact same location of the geocenter
-    np.testing.assert_equal(r_observer, r_geo)
+OBSERVATORIES = ["I11", "I41", "005", "F51", "500", "568", "W84", "012", "I40", "286"]
 
-    # Assert that a geocentric observer has the same velocity as the Earth
-    v_observer = observer_states[["obs_vx", "obs_vy", "obs_vz"]].values
-    v_geo = geocenter_state[:, 3:]
-    np.testing.assert_equal(v_observer, v_geo)
-    return
+# Set some observation times
+TIMES = Time(np.arange(54000, 54030, 1), scale="tdb", format="mjd")
 
-def test_getObserverState_observatories():
-    R_EARTH_EQUATORIAL = 6378.1363 
-    R_EARTH_POLAR = 6356.7523 
-    
-    observatories = ["I11", "I41", "005", "F51"]
-    
-    # Set some observation times
-    observation_times = Time(np.arange(50000, 59000, 1), scale="tdb", format="mjd")
-    
-    for observatory in observatories:
+def test_getObserverStateAgainstHorizons_heliocentric_ecliptic():
+
+    for observatory in OBSERVATORIES:
         # Get state of observer
-        observer_states = getObserverState([observatory], observation_times)
-        r_observer = observer_states[["obs_x", "obs_y", "obs_z"]].values
+        observer_states = getObserverState([observatory], TIMES, frame="ecliptic", origin="heliocenter")
+        observer_states = observer_states[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
 
-        # Get state of geocenter at the same time
-        geocenter_state = getMajorBodyState("earth", observation_times)
-        r_geo = geocenter_state[:, :3]
+        horizons_states = getHorizonsVectors("sun", TIMES, location=observatory, id_type="majorbody")
+        horizons_states = -horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
 
-        # Test that the observatory is somewhere between the equatorial radius (+ height of mount everest) and polar radius 
-        # of the earth from the geocenter, we could probably increase the accuracy of this test
-        # but the ground truth varies with observatory.
-        diff = np.linalg.norm(r_observer - r_geo, axis=1) * u.au.to(u.km)
-        assert np.all((diff >= R_EARTH_POLAR) & (diff <= R_EARTH_EQUATORIAL + 8.848))
-   
-    return
-    
+        # Calculate difference in observer position in meters for each epoch
+        r_diff = np.linalg.norm(horizons_states[:, :3] - observer_states[:, :3], axis=1) * u.AU.to(u.m)    
+
+        print("Mean difference in heliocentric position vector for observatory {}: {:.3f} m".format(observatory, np.mean(r_diff)))
+
+        # Assert that the heliocentric position is to within 10 meters
+        np.testing.assert_allclose(r_diff, np.zeros(len(r_diff)), atol=10., rtol=0.0)
+
+        # Calculate difference in observer velocity in mm/s for each epoch
+        v_diff = np.linalg.norm(horizons_states[:, 3:] - observer_states[:, 3:], axis=1) * (u.AU / u.d).to(u.mm / u.s)    
+
+        print("Mean difference in heliocentric velocity vector for observatory {}: {:.3f} mm/s".format(observatory, np.mean(v_diff)))
+
+        # Assert that the heliocentric position is to within 1 mm/s
+        np.testing.assert_allclose(v_diff, np.zeros(len(v_diff)), atol=1, rtol=0.0)
+
+        return
+        
+def test_getObserverStateAgainstHorizons_barycentric_ecliptic():
+
+    for observatory in OBSERVATORIES:
+        # Get state of observer
+        observer_states = getObserverState([observatory], TIMES, frame="ecliptic", origin="barycenter")
+        observer_states = observer_states[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
+
+        horizons_states = getHorizonsVectors("ssb", TIMES, location=observatory, id_type="majorbody")
+        horizons_states = -horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
+
+        # Calculate difference in observer position in meters for each epoch
+        r_diff = np.linalg.norm(horizons_states[:, :3] - observer_states[:, :3], axis=1) * u.AU.to(u.m)    
+
+        print("Mean difference in barycentric position vector for observatory {}: {:.3f} m".format(observatory, np.mean(r_diff)))
+
+        # Assert that the barycentric position is to within 10 meters
+        np.testing.assert_allclose(r_diff, np.zeros(len(r_diff)), atol=10., rtol=0.0)
+
+        # Calculate difference in observer velocity in mm/s for each epoch
+        v_diff = np.linalg.norm(horizons_states[:, 3:] - observer_states[:, 3:], axis=1) * (u.AU / u.d).to(u.mm / u.s)    
+
+        print("Mean difference in barycentric velocity vector for observatory {}: {:.3f} mm/s".format(observatory, np.mean(v_diff)))
+
+        # Assert that the barycentric position is to within 1 mm/s
+        np.testing.assert_allclose(v_diff, np.zeros(len(v_diff)), atol=1, rtol=0.0)
+
+        return
+
+def test_getObserverState_raises():
+
+    with pytest.raises(ValueError):
+        # Raise error for incorrect frame 
+        observer_states = getObserverState(["500"], TIMES, frame="eccliptic")
+
+    with pytest.raises(ValueError):
+        # Raise error for incorrect origin
+        observer_states = getObserverState(["500"], TIMES, origin="heeliocenter")
+
+    with pytest.raises(TypeError):
+        # Raise error for non-astropy time
+        observer_states = getObserverState(["500"], TIMES.tdb.mjd)

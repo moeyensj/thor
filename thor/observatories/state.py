@@ -96,9 +96,9 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         # Grab earth state vector
         state = getPerturberState("earth", observation_times, frame=frame, origin=origin)
         
-        # Convert MJD epochs in UTC to ET in TDB
-        epochs_utc = observation_times.utc
-        epochs_et = np.array([sp.str2et("JD {:.16f} UTC".format(i)) for i in epochs_utc.jd])
+        # Convert MJD epochs in TDB to ET in TDB
+        epochs_utc = observation_times.tdb
+        epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_utc.jd])
         
         # Grab rotaton matrices from ITRF93 to ecliptic J2000
         # The ITRF93 high accuracy Earth rotation model takes into account:
@@ -112,7 +112,7 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         r_obs = np.array([rg + rm @ o_vec_ITRF93 for rg, rm in zip(state[:, :3], rotation_matrices)])
 
         # Calculate velocity
-        v_obs = np.array([vg + rm @ (- OMEGA_EARTH * R_EARTH * cos_phi * np.cross(o_hat_ITRF93, np.array([0, 0, 1]))) for vg, rm in zip(state[:, 3:], rotation_matrices)])
+        v_obs = np.array([vg + rm @ (- OMEGA_EARTH * R_EARTH * np.cross(o_hat_ITRF93, np.array([0, 0, 1]))) for vg, rm in zip(state[:, 3:], rotation_matrices)])
 
         # Create table of mjds and positions
         table = np.empty((len(observation_times), 7))
