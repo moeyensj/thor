@@ -6,7 +6,7 @@ __all__ = [
     "getHorizonsEphemeris"
 ]
 
-def getHorizonsVectors(obj_id, times, location="@sun", id_type="smallbody"):
+def getHorizonsVectors(obj_id, times, location="@sun", id_type="smallbody", aberrations="geometric"):
     """
     Query JPL Horizons (through astroquery) for an object's
     state vectors at the given times.
@@ -24,6 +24,8 @@ def getHorizonsVectors(obj_id, times, location="@sun", id_type="smallbody"):
     id_type : {'majorbody', 'smallbody', 'designation', 
                'name', 'asteroid_name', 'comet_name', 'id'}
         ID type, Horizons will find closest match under any given type.
+    aberrations : {'geometric', 'astrometric', 'apparent'}
+        Adjust state for one of three different aberrations. 
         
     Returns
     -------
@@ -40,7 +42,7 @@ def getHorizonsVectors(obj_id, times, location="@sun", id_type="smallbody"):
     )
     vectors = obj.vectors(
         refplane="ecliptic",
-        aberrations="geometric",
+        aberrations=aberrations,
     ).to_pandas()
     return vectors
 
@@ -77,7 +79,7 @@ def getHorizonsEphemeris(obj_id, times, location, id_type="smallbody"):
     )
     eph = obj.ephemerides(
         # RA, DEC, r, r_rate, delta, delta_rate, lighttime
-        quantities="1, 19, 20, 21",
+        quantities="1, 2, 19, 20, 21",
         extra_precision=True
     ).to_pandas()
     return eph

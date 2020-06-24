@@ -72,8 +72,7 @@ def test_getObserverState_raises():
     with pytest.raises(ValueError):
         # Raise error for incorrect frame 
         observer_states = getObserverState(["500"], TIMES, frame="eccliptic")
-
-    with pytest.raises(ValueError):
+        
         # Raise error for incorrect origin
         observer_states = getObserverState(["500"], TIMES, origin="heeliocenter")
 
