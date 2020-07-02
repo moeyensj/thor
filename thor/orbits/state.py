@@ -10,15 +10,20 @@ S_P_DAY = c.S_P_DAY
 
 NAIF_MAPPING = {
     "solar system barycenter" : 0,
+    "mercury barycenter" : 1,
+    "venus barycenter" : 2,
+    "earth barycenter" : 3,
+    "mars barycenter" : 4,
+    "jupiter barycenter" : 5,
+    "saturn barycenter" : 6,
+    "uranus barycenter" : 7,
+    "neptune barycenter" : 8,
+    "pluto barycenter" : 9,
     "sun" : 10,
     "mercury" : 199,
     "venus" : 299,
     "earth" : 399,
-    "mars" : 499,
-    "jupiter" : 599,
-    "saturn" : 699,
-    "uranus" : 799,
-    "neptune" : 899,
+    "moon" : 301
 }
 
 __all__ = [
