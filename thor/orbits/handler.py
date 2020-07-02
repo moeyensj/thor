@@ -9,7 +9,8 @@ MU = c.G * c.M_SUN
 THOR_PROPAGATOR_KWARGS = {
     "mu" : MU,
     "max_iter" : 1000, 
-    "tol" : 1e-15
+    "tol" : 1e-15,
+    "origin" : "heliocenter"
 }
 
 PYOORB_PROPAGATOR_KWARGS = {

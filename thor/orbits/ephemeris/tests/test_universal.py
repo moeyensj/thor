@@ -41,7 +41,7 @@ def test_addPlanetaryAberration():
         observer_states = np.zeros((len(TIMES), 3), dtype=float)
         
         # Add planetary aberration to the state vector
-        orbit_emit, t0_emit, lt = addPlanetaryAberration(
+        orbit_emit, lt = addPlanetaryAberration(
             orbits, 
             TIMES.utc.value,                   
             observer_states,

@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
+from astropy.time import Time
 
 from ...utils import _checkTime
+from ..state import shiftOrbitsOrigin
 from ..handler import _backendHandler
 from .universal import propagateUniversal
 from .pyoorb import propagateOrbitsPYOORB
@@ -21,7 +23,7 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
     orbits : `~numpy.ndarray` (N, 6)
         Orbits to propagate. If backend is 'THOR', then these orbits must be expressed
         as heliocentric ecliptic cartesian elements. If backend is 'PYOORB' orbits may be 
-        expressed in keplerian, cometary or cartesian elements.
+        expressed in heliocentric keplerian, cometary or cartesian elements.
     t0 : `~astropy.time.core.Time` (N)
         Epoch at which orbits are defined.
     t1 : `~astropy.time.core.Time` (M)
@@ -35,7 +37,7 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
     Returns
     -------
     propagated_orbits : `~pandas.DataFrame` (N x M, 8)
-        A DataFrame containing the propagated orbits.
+        A DataFrame containing the heliocentric propagated orbits.
     """
     # Check that both t0 and t1 are astropy.time objects
     _checkTime(t0, "t0")
@@ -49,7 +51,32 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
         backend_kwargs = _backendHandler(backend, "propagate")
 
     if backend == "THOR":
-        propagated = propagateUniversal(orbits, t0_tdb, t1_tdb, **backend_kwargs)
+        origin = backend_kwargs.pop("origin")
+
+        if origin == "barycenter":
+            # Shift orbits to barycenter
+            orbits_ = shiftOrbitsOrigin(orbits, t0, 
+                origin_in="heliocenter",
+                origin_out="barycenter")
+
+        elif origin == "heliocenter":
+            orbits_ = orbits
+            
+        else:
+            err = (
+                "origin should be one of {'heliocenter', 'barycenter'}"
+            )
+            raise ValueError(err)
+
+        propagated = propagateUniversal(orbits_, t0_tdb, t1_tdb, **backend_kwargs)
+
+        if origin == "barycenter":
+            t1_tdb_stacked = Time(propagated[:, 1], scale="tdb", format="mjd")
+            propagated[:, 2:] = shiftOrbitsOrigin(propagated[:, 2:], t1_tdb_stacked, 
+                origin_in="barycenter",
+                origin_out="heliocenter")
+
+        backend_kwargs["origin"] = origin
 
         propagated = pd.DataFrame(
             propagated,

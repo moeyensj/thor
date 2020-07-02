@@ -8,10 +8,6 @@ from ....utils import getHorizonsVectors
 from ..universal import propagateUniversal
 
 MU = c.G * c.M_SUN
-CM = (1.0 * u.cm).to(u.AU).value
-MM_P_SEC = (1.0 * u.mm / u.s).to(u.AU / u.d).value
-MAX_ITER = 100
-TOL = 1e-15
 
 TARGETS = [
     "Amor",
@@ -26,7 +22,7 @@ def test_propagateUniversal():
     Using a selection of 4 asteroids, this function queries Horizons for an initial state vector at one epoch, then propagates
     that state to 1000 different times and compares each propagation to the SPICE 2-body propagator. 
     """
-    dts = np.linspace(0.01, 500, num=1000)
+    dts = -np.linspace(0.01, 500, num=1000)
     
     for target in TARGETS: 
         for epoch in EPOCHS:
@@ -48,8 +44,8 @@ def test_propagateUniversal():
                 np.array([epoch]), 
                 times.utc.mjd,  
                 mu=MU, 
-                max_iter=MAX_ITER, 
-                tol=TOL
+                max_iter=1000, 
+                tol=1e-15
             )
                
             orbit_id = vectors_new[:, 0]
@@ -57,12 +53,13 @@ def test_propagateUniversal():
             
             # Make sure the first column is a bunch of 0s since only one orbit was passed
             np.testing.assert_allclose(orbit_id, np.zeros(len(dts)))
+
             # Make sure the second column has all the new epochs
             np.testing.assert_allclose(new_epochs, dts + epoch)
             
-            r_diff = np.linalg.norm(vectors_new[:, 2:5] - spice_elements[:, :3], axis=1)
-            v_diff = np.linalg.norm(vectors_new[:, 5:] - spice_elements[:, 3:], axis=1)
+            r_diff = np.linalg.norm(vectors_new[:, 2:5] - spice_elements[:, :3], axis=1)  * u.AU.to(u.cm)
+            v_diff = np.linalg.norm(vectors_new[:, 5:] - spice_elements[:, 3:], axis=1) * (u.AU / u.d).to(u.mm / u.s)
 
-            # Test position to within a meter and velocity to within a mm/s
-            np.testing.assert_allclose(r_diff, np.zeros(len(dts)), atol=10.*CM, rtol=0)
-            np.testing.assert_allclose(v_diff, np.zeros(len(dts)), atol=MM_P_SEC, rtol=0)
+            # Test position to within a 10 cm and velocity to within a mm/s
+            np.testing.assert_allclose(r_diff, np.zeros(len(dts)), atol=10, rtol=0)
+            np.testing.assert_allclose(v_diff, np.zeros(len(dts)), atol=1, rtol=0)

@@ -8,8 +8,6 @@ from ....utils import getHorizonsVectors
 from ..propagate import propagateOrbits
 
 MU = c.G * c.M_SUN
-CM = (1.0 * u.cm).to(u.AU).value
-MM_P_SEC = (1.0 * u.mm / u.s).to(u.AU / u.d).value
 
 TARGETS = [
     "Amor",
@@ -17,45 +15,51 @@ TARGETS = [
     "Eugenia",
     "C/2019 Q4" # Borisov
 ] 
-EPOCHS = [57257.0] 
+
+T0 = Time([57257.0], scale="tdb", format="mjd")
+T1 = Time(np.arange(57257.0, 57257.0 + 30, 1), scale="tdb", format="mjd")
+
 THOR_PROPAGATOR_KWARGS = {
     "mu" : MU,
     "max_iter" : 1000, 
-    "tol" : 1e-15
+    "tol" : 1e-15,
+    "origin" : "heliocenter",
 }
+
 PYOORB_PROPAGATOR_KWARGS = {
     "orbit_type" : "cartesian", 
-    "time_scale" : "TT", 
+    "time_scale" : "UTC", 
     "magnitude" : 20, 
     "slope" : 0.15, 
     "dynamical_model" : "2",
     "ephemeris_file" : "de430.dat"
 }
 
-def test_propagateOrbits():
-    # This test makes sure that the universal propagator used by THOR and the 2-body propagator
-    # implemented by PYOORB return the same results
-    # It is a little shocking that this works as well as it does...
-    t0 = Time([epoch for target in TARGETS for epoch in EPOCHS], scale="tdb", format="mjd")
-    t1 = Time(np.arange(57999, 57999+50, 0.1), scale="utc", format="mjd")
-    
-    vectors_list = []
-    for t0_i, target in zip(t0, TARGETS): 
-        # Grab vectors from Horizons at epoch
-        vectors = getHorizonsVectors(target, t0_i, location="@sun")
-        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
-        vectors_list.append(vectors)
+
+def test_propagateOrbitsAgainstHorizons():
+
+    for target in TARGETS:
+        # Query Horizons for heliocentric geometric states at each T1
+        horizons_states = getHorizonsVectors(target, T1, location="@sun", aberrations="geometric")
+        horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
+
+        # Propagate the state at T0 to all T1 using THOR 2-body
+        thor_states = propagateOrbits(horizons_states[:1], T0, T1, backend="THOR", backend_kwargs=THOR_PROPAGATOR_KWARGS)
+        thor_states = thor_states[["x", "y", "z", "vx", "vy", "vz"]].values
+
+        # Calculate the difference between THOR's heliocentric position and Horizons in mm
+        r_thor_diff = np.linalg.norm(thor_states[:,:3] - horizons_states[:,:3], axis=1) * u.AU.to(u.mm)    
+
+        # Propagate the state at T0 to all T1 using PYOORB 2-body
+        pyoorb_states = propagateOrbits(horizons_states[:1, :], T0, T1, backend="PYOORB", backend_kwargs=PYOORB_PROPAGATOR_KWARGS)
+        pyoorb_states = pyoorb_states[["x", "y", "z", "vx", "vy", "vz"]].values
+
+        # Calculate the difference between PYOORB's heliocentric position and Horizons in mm
+        r_pyoorb_diff = np.linalg.norm(pyoorb_states[:,:3] - horizons_states[:,:3], axis=1) * u.AU.to(u.mm)   
+
+        # Assert that PYOORB-Horizons differences and THOR-Horizons differences agree to within 1 mm (both set to 2-body)
+        np.testing.assert_allclose(np.abs(r_thor_diff - r_pyoorb_diff), np.zeros(len(r_thor_diff)), atol=1, rtol=0)
         
-    orbits = np.vstack(vectors_list)
-
-    propagated_thor = propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=THOR_PROPAGATOR_KWARGS)
-    propagated_pyoorb = propagateOrbits(orbits, t0, t1, backend="PYOORB", backend_kwargs=PYOORB_PROPAGATOR_KWARGS)
-
-    r_diff = np.linalg.norm(propagated_thor[["x", "y", "z"]].values - propagated_pyoorb[["x", "y", "z"]].values, axis=1)
-    np.testing.assert_allclose(r_diff, np.zeros(len(r_diff)), atol=CM, rtol=0.0)
-
-    v_diff = np.linalg.norm(propagated_thor[["vx", "vy", "vz"]].values - propagated_pyoorb[["vx", "vy", "vz"]].values, axis=1)
-    np.testing.assert_allclose(v_diff, np.zeros(len(v_diff)), atol=MM_P_SEC, rtol=0.0)
-
-    np.testing.assert_equal(propagated_thor["epoch_mjd_tdb"].values, propagated_pyoorb["epoch_mjd_tdb"].values)
-    return
+        # Test that the T1 agrees completely with Horizons since T0 = T1[0]
+        np.testing.assert_equal(r_thor_diff[0], 0.0)
+        np.testing.assert_equal(r_pyoorb_diff[0], 0.0)
