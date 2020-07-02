@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
 from numba import jit
+from astropy.time import Time
 
 from ...constants import Constants as c
 from ...coordinates import transformCoordinates
+from ..state import getPerturberState
 from ..propagate import propagateUniversal
 
 __all__ = [
@@ -14,7 +16,7 @@ __all__ = [
 MU = c.G * c.M_SUN
 C = c.C
 
-@jit(["Tuple((f8[:,:], f8[:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True)
+@jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True)
 def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
     """
     When generating ephemeris, orbits need to be backwards propagated to the time
@@ -38,7 +40,6 @@ def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max
     tol : float, optional
         Numerical tolerance to which to compute universal anomaly during propagation using the Newtown-Raphson 
         method.     
-
     Returns
     -------
     corrected_orbits : `~numpy.ndarray` (N, 6)
@@ -49,7 +50,6 @@ def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max
         Light time correction (t0 - corrected_t0).
     """
     corrected_orbits = np.zeros((len(orbits), 6))
-    corrected_t0 = np.zeros(len(orbits))
     lts = np.zeros(len(orbits))
     num_orbits = len(orbits)
     for i in range(num_orbits):
@@ -81,10 +81,9 @@ def addPlanetaryAberration(orbits, t0, observer_states, lt_tol=1e-10, mu=MU, max
             lt_i = lt
             
         corrected_orbits[i, :] = orbit[0, 2:]
-        corrected_t0[i] = orbit[0, 1]
         lts[i] = lt
         
-    return corrected_orbits, corrected_t0, lts
+    return corrected_orbits, lts
 
 def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_times_utc, light_time=True, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
     """
@@ -168,7 +167,7 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
     """
     # Propagate orbits to observer states
     propagated_orbits = propagateUniversal(orbits, t0_utc, observation_times_utc, mu=mu, max_iter=max_iter, tol=tol)
-    
+
     # Stack observation times and observer states (so we can add/subtract arrays later instead of looping)
     observation_times_utc_stacked = np.hstack([observation_times_utc for i in range(len(orbits))])
     observer_states_stacked_ = np.vstack([observer_states for i in range(len(orbits))])
@@ -185,22 +184,32 @@ def generateEphemerisUniversal(orbits, t0_utc, observer_states, observation_time
         )
         raise ValueError(err)
 
+    # Solar motion between observation times and reflected/emitted time
+    solar_motion = np.zeros_like(observation_times_utc_stacked)
+
     # Add light time correction 
     lt = np.zeros(len(propagated_orbits))
     if light_time is True:
-        propagated_orbits_lt, t0_lt, lt = addPlanetaryAberration(
+        propagated_orbits_lt, lt = addPlanetaryAberration(
             propagated_orbits[:, 2:], 
             observation_times_utc_stacked, 
             observer_states_stacked[:, :3], 
             lt_tol=lt_tol,  
-            mu=mu, 
-            max_iter=max_iter, 
-            tol=tol
+            mu=mu,
+            max_iter=max_iter,
+            tol=tol,
         )
         propagated_orbits[:, 2:] = propagated_orbits_lt
+
+        # Calculate state vector of the sun at the emission/reflection and observation
+        # times 
+        observation_times = Time(observation_times_utc_stacked, scale="utc", format="mjd")
+        bary_to_helio = getPerturberState("sun", observation_times, origin="barycenter", frame="ecliptic")
+        bary_to_helio_lt = getPerturberState("sun", observation_times - lt, origin="barycenter", frame="ecliptic")
+        solar_motion = bary_to_helio_lt - bary_to_helio
     
     # Calculate topocentric to target state
-    delta_state = propagated_orbits[:, 2:] - observer_states_stacked
+    delta_state = propagated_orbits[:, 2:] - observer_states_stacked + solar_motion
 
     # Convert topocentric to target state to spherical coordinates
     # including velocities
