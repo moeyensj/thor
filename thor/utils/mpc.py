@@ -1,10 +1,12 @@
 import numpy as np
+import pandas as pd
 from astropy.time import Time
 
 __all__ = [
     "_unpackMPCDate",
     "_lookupMPC",
-    "convertMPCPackedDates"
+    "convertMPCPackedDates",
+    "readMPCORBFile"
 ]
 
 
@@ -64,3 +66,160 @@ def convertMPCPackedDates(pf_tt):
     
     epoch = Time(isot_tt, format="isot", scale="tt")
     return epoch.tt.mjd
+
+def readMPCORBFile(file,
+                   con=None):
+    """
+    Read MPCORB.DAT file into a pandas DataFrame.
+
+    For more details about the MPCORB file:
+    https://www.minorplanetcenter.net/iau/MPCORB.html
+    
+    Parameters
+    ----------
+    file : str
+        Path to MPCORB.dat
+    con : `~sqlite3.Connection`, optional
+        If a database connection is passed, will save
+        DataFrame into database as mpcOrbitCat table.
+        
+    Returns
+    -------
+    `~pandas.DataFrame` or None
+        If database connection is not passed, will
+        return DataFrame of the MPC Orbit Catalog file.
+    """
+    columns = ["designation",
+               "H",
+               "G", 
+               "epoch_pf_TT",
+               "meanAnom_deg",
+               "argPeri_deg",
+               "ascNode_deg",
+               "i_deg",
+               "e", 
+               "n_deg_p_day",
+               "a_au",
+               "U",
+               "ref",
+               "numObs",
+               "numOppos",
+               "obsArc",
+               "rmsResid_arcsec",
+               "coarsePerturbers",
+               "precisePerturbers",
+               "compName", 
+               "flags",
+               "readableDesignation",
+               "lastObsInOrbitSolution"]
+
+    # See: https://www.minorplanetcenter.net/iau/info/MPOrbitFormat.html
+    column_spec = [(0, 7),
+                   (8, 13),
+                   (14, 19),
+                   (20, 25),
+                   (26, 35),
+                   (37, 46),
+                   (48, 57),
+                   (59, 68),
+                   (70, 79),
+                   (80, 91),
+                   (92, 103),
+                   (105, 106),
+                   (107, 116),
+                   (117, 122),
+                   (123, 126),
+                   (127, 136),
+                   (137, 141),
+                   (142, 145),
+                   (146, 149),
+                   (150, 160),
+                   (161, 165),
+                   (166, 194),
+                   (194, 202)]
+
+    dtypes = {"H" : np.float64,
+              "G" : np.float64,
+              "epoch_pf_TT" : str,
+              "meanAnom_deg" : np.float64,
+              "argPeri_deg" : np.float64,
+              "ascNode_deg" : np.float64,
+              "i_deg" : np.float64,
+              "e" : np.float64,
+              "n_deg_p_day" : np.float64,
+              "a_au" : np.float64,
+              "U" : str,
+              "ref" : str,
+              "numObs" : np.int64,
+              "numOppos" : np.int64,
+              "obsArc" : str,
+              "rmsResid_arcsec" : np.float64,
+              "coarsePerturbers" : str,
+              "precisePerturbers" : str,
+              "compName" : str,
+              "lastObsInOrbitSolution" : str}
+    
+    converters = {"designation": lambda x: str(x),
+                  "readableDesignation" : lambda x: str(x),
+                  "flags" : lambda x: str(x)}
+    
+    mpcorb = pd.read_fwf(file,
+                         skiprows=43,
+                         colspecs=column_spec,
+                         header=None,
+                         index_col=False, 
+                         names=columns,
+                         dtypes=dtypes,
+                         converters=converters)
+    
+    # Drop population line breaks
+    mpcorb.dropna(inplace=True)
+    mpcorb.reset_index(inplace=True, drop=True)
+    
+    # Convert packed form dates into something interpretable
+    mjd_tt = convertMPCPackedDates(mpcorb["epoch_pf_TT"].values)
+    mpcorb["mjd_tt"] = mjd_tt
+    
+    # Convert dtypes (misread due to NaN values)
+    mpcorb["numObs"] = mpcorb["numObs"].astype(int)
+    mpcorb["numOppos"] = mpcorb["numOppos"].astype(int)
+    mpcorb["lastObsInOrbitSolution"] = mpcorb["lastObsInOrbitSolution"].astype(int).astype(str)
+    
+    # Organize columns
+    mpcorb = mpcorb[[
+        "designation", 
+        "H", 
+        "G",
+        "epoch_pf_TT", 
+        "mjd_tt",
+        "a_au",
+        "e",
+        "i_deg",
+        "ascNode_deg",
+        "argPeri_deg",
+        "meanAnom_deg", 
+        "n_deg_p_day",
+        "U", 
+        "ref",
+        "numObs",
+        "numOppos",
+        "obsArc",
+        "rmsResid_arcsec",
+        "coarsePerturbers",
+        "precisePerturbers",
+        "compName", 
+        "flags",
+        "readableDesignation",
+        "lastObsInOrbitSolution", 
+    ]]
+    
+    if con is not None:
+        print("Reading MPCORB file to database...")
+        mpcorb.to_sql("mpcOrbitCat", con, index=False, if_exists="append")
+        print("Creating index on object names...")
+        con.execute("CREATE INDEX designation_mpcorb ON mpcOrbitCat (designation)")
+        con.commit()
+        print("Done.")
+        print("")
+    else:
+        return mpcorb
