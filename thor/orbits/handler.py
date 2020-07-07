@@ -25,6 +25,7 @@ PYOORB_PROPAGATOR_KWARGS = {
 THOR_EPHEMERIS_KWARGS = {
     "light_time" : True, 
     "lt_tol" : 1e-10,
+    "stellar_aberration" : False,
     "mu" : MU,
     "max_iter" : 1000, 
     "tol" : 1e-16

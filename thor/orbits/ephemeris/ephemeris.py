@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from astropy.time import Time
 
 from ...utils import _checkTime
 from ...observatories import getObserverState
@@ -92,10 +93,7 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
         for observatory_code in observer_states["observatory_code"].unique():
             
             observer_selected = observer_states[observer_states["observatory_code"].isin([observatory_code])]
-            
-            # All ephemeris in THOR are done in UTC
-            t0_utc = t0.utc.mjd
-            observation_times_utc = observer_selected["mjd_utc"].values
+            observation_times = Time(observer_selected["mjd_utc"].values, format="mjd", scale="utc")
             
             # Grab observer state vectors
             cols = ["obs_x", "obs_y", "obs_z"]
@@ -108,9 +106,9 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
             # Generate ephemeris for each orbit 
             ephemeris = generateEphemerisUniversal(
                 orbits, 
-                t0_utc, 
+                t0, 
                 observer_selected, 
-                observation_times_utc, 
+                observation_times, 
                 **backend_kwargs)
             
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
