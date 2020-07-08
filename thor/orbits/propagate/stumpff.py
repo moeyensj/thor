@@ -42,7 +42,7 @@ def calcStumpff(psi):
         
     Returns
     -------
-    s0, s1, s2, s3, s4, s5 : 6 x float
+    c0, c1, c2, c3, c4, c5 : 6 x float
         First six Stumpff functions.
     """
     if psi > 0.0:
