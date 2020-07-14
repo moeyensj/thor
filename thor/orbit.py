@@ -135,6 +135,10 @@ class TestOrbit:
             print("Performing gnomonic projection...")
         gnomonic = cartesianToGnomonic(coords_cart_rotated)
         
+
+        cell.observations["obj_x"] = x_a[:, 0]
+        cell.observations["obj_y"] = x_a[:, 1]
+        cell.observations["obj_z"] = x_a[:, 2]
         cell.observations["theta_x_deg"] = np.degrees(gnomonic[:, 0])
         cell.observations["theta_y_deg"] = np.degrees(gnomonic[:, 1])
 
