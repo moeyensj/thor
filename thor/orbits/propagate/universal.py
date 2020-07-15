@@ -1,8 +1,15 @@
+import warnings
 import numpy as np
 from numba import jit
+from numba.core.errors import NumbaPerformanceWarning
 
 from ...constants import Constants as c
 from .stumpff import calcStumpff
+
+# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
+# involves slicing numpy arrays along their second dimension which is unsupported 
+# in numba's nopython mode. Lets ignore the warning so we don't scare users.  
+warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = [
     "calcChi",
@@ -12,8 +19,7 @@ __all__ = [
 MU = c.G * c.M_SUN
 
 
-@jit(["f8(f8[::1], f8, f8, i8, f8)",
-      "f8(f8[:], f8, f8, i8, f8)"], nopython=True)
+@jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True)
 def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate universal anomaly chi using Newton-Raphson. 
