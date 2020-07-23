@@ -288,9 +288,9 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1
         raise valueError("Please ensure orbits have 6 quantities!")
         
     if type_in == "cartesian" and type_out == "keplerian":
-        return _convertCartesianToKeplerian(orbits, mu=MU)[:, [0, 2, 3, 4, 5, 6]]
+        return _convertCartesianToKeplerian(orbits, mu=mu)[:, [0, 2, 3, 4, 5, 6]]
     elif type_in == "keplerian" and type_out == "cartesian":
-        return _convertKeplerianToCartesian(orbits, mu=MU, tol=tol, max_iter=max_iter)
+        return _convertKeplerianToCartesian(orbits, mu=mu, tol=tol, max_iter=max_iter)
     else:
         raise ValueError("Conversion from {} to {} not supported!".format(type_in, type_out))
     return 
