@@ -4,6 +4,8 @@ from astropy import units as u
 from astropy.time import Time
 
 from ...utils import getHorizonsVectors
+from ...utils import getSPICEKernels
+from ...utils import getMPCObsCodeFile
 from ..state import getObserverState
 
 OBSERVATORIES = ["I11", "I41", "005", "F51", "500", "568", "W84", "012", "I40", "286"]
@@ -12,6 +14,9 @@ OBSERVATORIES = ["I11", "I41", "005", "F51", "500", "568", "W84", "012", "I40", 
 TIMES = Time(np.arange(54000, 54030, 1), scale="tdb", format="mjd")
 
 def test_getObserverStateAgainstHorizons_heliocentric_ecliptic():
+    
+    getSPICEKernels()
+    getMPCObsCodeFile()
 
     for observatory in OBSERVATORIES:
         # Get state of observer
@@ -40,6 +45,9 @@ def test_getObserverStateAgainstHorizons_heliocentric_ecliptic():
         return
         
 def test_getObserverStateAgainstHorizons_barycentric_ecliptic():
+    
+    getSPICEKernels()
+    getMPCObsCodeFile()
 
     for observatory in OBSERVATORIES:
         # Get state of observer

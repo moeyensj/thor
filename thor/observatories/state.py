@@ -5,8 +5,8 @@ import spiceypy as sp
 from ..constants import Constants as c
 from ..utils import _checkTime
 from ..utils import setupSPICE
+from ..utils import readMPCObsCodeFile
 from ..orbits import getPerturberState
-from .codes import readMPCObsCodeFile
 
 __all__ = ["getObserverState"]
 
