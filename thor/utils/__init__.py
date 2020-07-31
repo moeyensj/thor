@@ -1,4 +1,3 @@
-from .tests import *
 from .io import *
 from .spice import *
 from .pyoorb import *

@@ -5,7 +5,7 @@ from astropy.time import Time
 
 from ...utils import getHorizonsVectors
 from ...utils import getSPICEKernels
-from ...utils import getMPCObsCodeFile
+from ...utils import getMPCObservatoryCodes
 from ..state import getObserverState
 
 OBSERVATORIES = ["I11", "I41", "005", "F51", "500", "568", "W84", "012", "I40", "286"]
@@ -16,7 +16,7 @@ TIMES = Time(np.arange(54000, 54030, 1), scale="tdb", format="mjd")
 def test_getObserverStateAgainstHorizons_heliocentric_ecliptic():
     
     getSPICEKernels()
-    getMPCObsCodeFile()
+    getMPCObservatoryCodes()
 
     for observatory in OBSERVATORIES:
         # Get state of observer
@@ -47,7 +47,7 @@ def test_getObserverStateAgainstHorizons_heliocentric_ecliptic():
 def test_getObserverStateAgainstHorizons_barycentric_ecliptic():
     
     getSPICEKernels()
-    getMPCObsCodeFile()
+    getMPCObservatoryCodes()
 
     for observatory in OBSERVATORIES:
         # Get state of observer

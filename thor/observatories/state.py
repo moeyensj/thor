@@ -5,7 +5,7 @@ import spiceypy as sp
 from ..constants import Constants as c
 from ..utils import _checkTime
 from ..utils import setupSPICE
-from ..utils import readMPCObsCodeFile
+from ..utils import readMPCObservatoryCodes
 from ..orbits import getPerturberState
 
 __all__ = ["getObserverState"]
@@ -63,7 +63,7 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
     # Check that times is an astropy time object
     _checkTime(observation_times, "observation_times")
 
-    observatories = readMPCObsCodeFile()
+    observatories = readMPCObservatoryCodes()
     positions = {}
     
     for code in observatory_codes:

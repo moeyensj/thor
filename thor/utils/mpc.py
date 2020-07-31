@@ -12,10 +12,14 @@ __all__ = [
     "convertMPCPackedDates",
     "packMPCDesignation",
     "unpackMPCDesignation",
-    "getMPCObsCodeFile",
-    "readMPCObsCodeFile",
-    "getMPCORBFile",
-    "readMPCORBFile"
+    "getMPCObservatoryCodes",
+    "readMPCObservatoryCodes",
+    "getMPCDesignationFiles",
+    "readMPCDesignationFiles",
+    "getMPCOrbitCatalog",
+    "readMPCOrbitCatalog",
+    "getMPCCometCatalog",
+    "readMPCCometCatalog"
 ]
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -286,7 +290,7 @@ def unpackMPCDesignation(designation_pf):
     
     return designation
 
-def getMPCObsCodeFile():
+def getMPCObservatoryCodes():
     """
     Downloads the JSON-formatted MPC observatory codes file. Checks if a newer version of the file exists online, if so, 
     replaces the previously downloaded file if available. 
@@ -304,13 +308,13 @@ def getMPCObsCodeFile():
     _downloadFile(directory, url)
     return
 
-def readMPCObsCodeFile(obsCodeFile=None):
+def readMPCObservatoryCodes(observatoryCodes=None):
     """
     Reads the JSON-formatted MPC observatory codes file. 
     
     Parameters
     ----------
-    obsCodeFile : str, optional
+    observatoryCodes : str, optional
         Path to file
         
     Returns
@@ -320,13 +324,13 @@ def readMPCObsCodeFile(obsCodeFile=None):
         
     See Also
     --------
-    `~thor.utils.mpc.getMPCObsCodeFile` : Downloads the MPC observatory code file.
+    `~thor.utils.mpc.getMPCObservatoryCodes` : Downloads the MPC observatory codes file.
     """
-    if obsCodeFile is None:
+    if observatoryCodes is None:
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
-        obsCodeFile = log["obscodes_extended.json.gz"]["location"]
+        observatoryCodes = log["obscodes_extended.json.gz"]["location"]
         
-    observatories = pd.read_json(obsCodeFile).T
+    observatories = pd.read_json(observatoryCodes).T
     observatories.rename(columns={
         "Longitude" : "longitude_deg",
         "Name" : "name"},
@@ -335,7 +339,70 @@ def readMPCObsCodeFile(obsCodeFile=None):
     observatories.index.name = 'code'
     return observatories
 
-def getMPCORBFile():
+def getMPCDesignationFiles():
+    """
+    Downloads the JSON-formatted MPC designation files (both the unpacked and packed versions). 
+    Checks if a newer version of the files exist online, if so, 
+    replaces the previously downloaded files if available. 
+    
+    Parameters
+    ----------
+    None
+    
+    Returns
+    -------
+    None
+    """
+    directory = os.path.join(os.path.dirname(__file__), "..", "data")
+    _downloadFile(directory, "https://minorplanetcenter.net/Extended_Files/mpc_ids.json.gz")
+    _downloadFile(directory,"https://minorplanetcenter.net/Extended_Files/mpc_ids_packed.json.gz")
+    return
+
+def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=None):
+    """
+    Reads the JSON-formatted MPC designation files (both the unpacked and packed forms). 
+    
+    Parameters
+    ----------
+    mpcDesignationsFile : str, optional
+        Path to file
+    mpcPackedDesignationsFile : str, optional
+        Path to file
+    
+    Returns
+    -------
+    designations : `~pandas.DataFrame`
+        DataFrame of MPC designations
+    designations_pf : `~pandas.DataFrame`
+        DataFrame of MPC packed form designations
+    
+    See Also
+    --------
+    `~thor.utils.mpc.getMPCDesignationFiles` : Downloads the JSON-formatted MPC designation files.
+    """
+    if mpcDesignationsFile is None:
+        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        mpcDesignationsFile = log["mpc_ids.json.gz"]["location"]
+        
+    if mpcPackedDesignationsFile is None:
+        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        mpcPackedDesignationsFile = log["mpc_ids_packed.json.gz"]["location"]
+        
+    designations = pd.read_json(mpcDesignationsFile, orient='index')
+    designations = pd.DataFrame(designations.stack(), columns=["other_designations"])
+    designations.reset_index(level=1, inplace=True, drop=True)
+    designations.index.name = "designation"
+    designations.reset_index(inplace=True)
+    
+    designations_pf = pd.read_json(mpcPackedDesignationsFile, orient='index')
+    designations_pf = pd.DataFrame(designations_pf.stack(), columns=["other_designations_pf"])
+    designations_pf.reset_index(level=1, inplace=True, drop=True)
+    designations_pf.index.name = "designation_pf"
+    designations_pf.reset_index(inplace=True)
+
+    return designations, designations_pf
+
+def getMPCOrbitCatalog():
     """
     Downloads the JSON-formatted extended MPC orbit catalog. Checks if a newer version of the file exists online, if so, 
     replaces the previously downloaded file if available. 
@@ -353,13 +420,13 @@ def getMPCORBFile():
     _downloadFile(directory, url)
     return
 
-def readMPCORBFile(mpcOrbFile=None):
+def readMPCOrbitCatalog(mpcOrbitCatalog=None):
     """
     Reads the JSON-formatted extended MPC orbit catalog. 
     
     Parameters
     ----------
-    mpcOrbFile : str, optional
+    mpcOrbitCatalog : str, optional
         Path to file
     
     Returns
@@ -369,30 +436,13 @@ def readMPCORBFile(mpcOrbFile=None):
     
     See Also
     --------
-    `~thor.utils.mpc.getMPCORBFile` : Downloads the extended MPC orbit catalog.
+    `~thor.utils.mpc.getMPCOrbitCatalog` : Downloads the extended MPC orbit catalog.
     """
-    if mpcOrbFile is None:
+    if mpcOrbitCatalog is None:
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
-        mpcOrbFile = log["mpcorb_extended.json.gz"]["location"]
+        mpcOrbitCatalog = log["mpcorb_extended.json.gz"]["location"]
+    mpcorb = pd.read_json(mpcOrbitCatalog)
     
-    mpcorb = pd.read_json(mpcOrbFile)
-    
-    # Add MJDs from JDs
-    mpcorb["mjd_tt"] = Time(mpcorb["Epoch"].values, format="jd", scale="tt").tt.mjd
-    
-    # Re-arange columns
-    columns = ['Number', 'Name', 'Principal_desig', 'Other_desigs', 
-               'Epoch', 'mjd_tt', 'a', 'e', 'i', 'Node', 'Peri', 'M', 'n', 
-               'H', 'G',
-               'Tp', 'Orbital_period',
-               'Perihelion_dist', 'Aphelion_dist', 'Semilatus_rectum',
-               'Synodic_period', 'Orbit_type', 
-               'Num_obs', 'Last_obs', 'rms', 'U', 'Arc_years', 'Arc_length', 'Num_opps',  'Perturbers', 'Perturbers_2', 
-               'Hex_flags', 'NEO_flag', 'One_km_NEO_flag',
-               'PHA_flag', 'Critical_list_numbered_object_flag',
-               'One_opposition_object_flag', 'Ref', 'Computer']
-    mpcorb = mpcorb[columns]
-
     # Rename columns, include units where possible
     mpcorb.rename(columns={
         "Number" : "number",
@@ -409,7 +459,7 @@ def readMPCORBFile(mpcOrbFile=None):
         "n" : "mean_motion_deg_p_day",
         "H" : "H_mag",
         "G" : "G",
-        "Tp" : "tPeri_jd",
+        "Tp" : "tPeri_jd_tt",
         "Orbital_period" : "period_yr",
         "Perihelion_dist" : "perihelion_dist_au",
         "Aphelion_dist" : "aphelion_dist_au",
@@ -434,5 +484,186 @@ def readMPCORBFile(mpcOrbFile=None):
         "Ref" : "reference",
         "Computer" : "computer"
     }, inplace=True)
+    
+    # Add MJDs from JDs
+    mpcorb["mjd_tt"] = Time(mpcorb["jd_tt"].values, format="jd", scale="tt").tt.mjd
+    mpcorb["tPeri_mjd_tt"] = Time(mpcorb["tPeri_jd_tt"].values, format="jd", scale="tt").tt.mjd
+    
+    # Drop redundant columns
+    mpcorb.drop(columns=["jd_tt", "tPeri_jd_tt"], inplace=True)
+    
+    # Create a designation column, if an asteroid is numbered use that as a designation if not use the provisional designation
+    mpcorb.loc[~mpcorb["number"].isna(), "designation"] = mpcorb[~mpcorb["number"].isna()]["number"].str.replace('[()]', '', regex=True).values
+    mpcorb.loc[mpcorb["designation"].isna(), "designation"] = mpcorb[mpcorb["designation"].isna()]["provisional_designation"].values
+    
+    # Arrange columns
+    columns = [
+        "designation",
+        "number",
+        "name",
+        "provisional_designation",
+        "other_provisional_designations",
+        "mjd_tt",
+        "a_au",
+        "e",
+        "i_deg",
+        "ascNode_deg",
+        "argPeri_deg",
+        "meanAnom_deg",
+        "mean_motion_deg_p_day",
+        "H_mag",
+        "G",
+        "uncertainty_param",
+        "tPeri_mjd_tt",
+        "p_au",
+        "period_yr",
+        "perihelion_dist_au",
+        "aphelion_dist_au",
+        "synodic_period_yr",
+        "num_obs",
+        "last_obs",
+        "rms_arcsec",
+        "num_oppos",
+        "arc_yr",
+        "arc_days",
+        "orbit_type",
+        "neo_flag",
+        "1km_neo_flag",
+        "pha_flag",
+        "1_oppo_flag",
+        "critical_list_flag",
+        "hex_flags",
+        "perturbers1",
+        "perturbers2",
+        "reference",
+        "computer",
+    ]
+    mpcorb = mpcorb[columns]
 
     return mpcorb
+
+def getMPCCometCatalog():
+    """
+    Downloads the JSON-formatted MPC comet orbit catalog. Checks if a newer version of the file exists online, if so, 
+    replaces the previously downloaded file if available. 
+    
+    Parameters
+    ----------
+    None
+    
+    Returns
+    -------
+    None
+    """
+    directory = os.path.join(os.path.dirname(__file__), "..", "data")
+    url = "https://www.minorplanetcenter.net/Extended_Files/cometels.json.gz" 
+    _downloadFile(directory, url)
+    return
+
+def readMPCCometCatalog(mpcCometCatalog=None):
+    """
+    Reads the JSON-formatted MPC comet catalog. 
+    
+    Parameters
+    ----------
+    mpcCometCatalog : str, optional
+        Path to file
+    
+    Returns
+    -------
+    mpcorb_comets : `~pandas.DataFrame`
+        DataFrame of MPC comet orbits.
+    
+    See Also
+    --------
+    `~thor.utils.mpc.getMPCCometCatalog` : Downloads the MPC comet catalog.
+    """
+    if mpcCometCatalog is None:
+        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        mpcCometCatalog = log["cometels.json.gz"]["location"]
+    mpcorb_comets = pd.read_json(mpcCometCatalog)
+
+    mpcorb_comets.rename(columns={
+         "Orbit_type" : "orbit_type",
+         "Provisional_packed_desig" : "provisional_designation_pf",
+         "Year_of_perihelion" : "tPeri_yr",
+         "Month_of_perihelion" : "tPeri_month",
+         "Day_of_perihelion" : "tPeri_day",
+         "Perihelion_dist" : "q_au",
+         "e": "e",
+         "Peri" : "argPeri_deg",
+         "Node" : "ascNode_deg",
+         "i" : "i_deg",
+         "Epoch_year" : "epoch_yr",
+         "Epoch_month" : "epoch_month",
+         "Epoch_day" : "epoch_day",
+         "H" : "H_mag",
+         "G" : "G",
+         "Designation_and_name" : "designation_name",
+         "Ref" : "reference", 
+         "Comet_num" : "comet_number"
+        }, 
+        inplace=True
+    )
+
+    # Update time of perihelion passage to be an MJD
+    yr = mpcorb_comets["tPeri_yr"].values
+    month = mpcorb_comets["tPeri_month"].values
+    day = mpcorb_comets["tPeri_day"].values
+    yr_month = ["{}-{:02d}-01T00:00:00".format(y, m) for y, m in zip(yr, month)]
+    t_peri = Time(yr_month, format="isot", scale="tt")
+    t_peri += day
+    mpcorb_comets["tPeri_mjd_tt"] = t_peri.tt.mjd
+
+    # Update orbit epoch to be an MJD
+    mask = (~mpcorb_comets["epoch_yr"].isna())
+    yr = mpcorb_comets[mask]["epoch_yr"].values.astype(int)
+    month = mpcorb_comets[mask]["epoch_month"].values.astype(int)
+    day = mpcorb_comets[mask]["epoch_day"].values
+    yr_month = ["{:d}-{:02d}-01T00:00:00".format(y, m) for y, m in zip(yr, month)]
+    epoch = Time(yr_month, format="isot", scale="tt")
+    epoch += day
+    mpcorb_comets.loc[mask, "mjd_tt"] = epoch.tt.mjd
+
+    # Remove redundant columns
+    mpcorb_comets.drop(columns=[
+        "epoch_yr",
+        "epoch_month",
+        "epoch_day",
+        "tPeri_yr",
+        "tPeri_month",
+        "tPeri_day"
+        ],
+        inplace=True
+    )
+    
+    # Convert comet number to strings
+    mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "comet_number"] = mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["comet_number"].apply(lambda x: str(int(x))).values
+    
+    # Split designation_name into designation
+    mpcorb_comets["designation"] = mpcorb_comets["designation_name"].str.split(" [()]", expand=True)[0].values
+    
+    # Remove name from numbered comets
+    mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "designation"] = mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["designation_name"].str.split("/", expand=True)[0].values
+    
+    # Arrange columns
+    columns = [
+        "designation",
+        "designation_name",
+        "comet_number",
+        "provisional_designation_pf",
+        "mjd_tt",
+        "q_au",
+        "e",
+        "i_deg",
+        "ascNode_deg",
+        "argPeri_deg",
+        "tPeri_mjd_tt",
+        "H_mag",
+        "G",
+        "orbit_type",
+        "reference"
+    ]
+    mpcorb_comets = mpcorb_comets[columns]
+    
+    return mpcorb_comets

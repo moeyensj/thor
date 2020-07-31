@@ -112,6 +112,7 @@ def _downloadFile(to_dir, url, log_file=None):
     # also grab the absolute path
     file_name = os.path.basename(urllib.parse.urlparse(url).path)
     file_path = os.path.join(os.path.abspath(to_dir), file_name)
+    print("Checking {}.".format(file_name))
     
     # Check if the file is compressed with gzip
     compressed = False
@@ -152,7 +153,7 @@ def _downloadFile(to_dir, url, log_file=None):
             download = True
     
     if download:
-        print("Downloading {} from {}...".format(file_name, url))
+        print("Downloading from {}...".format(url))
 
         response = urllib.request.urlopen(url)  
         f = io.BytesIO(response.read())
@@ -184,6 +185,8 @@ def _downloadFile(to_dir, url, log_file=None):
     
     else:
         print("No download needed.")
+        
+    print()
     
     return
 
