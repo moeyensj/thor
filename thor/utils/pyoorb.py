@@ -173,7 +173,7 @@ def _configureEpochsPYOORB(epochs, time_scale):
     ----------
     epochs : `~numpy.ndarray` (N)
         Epoch in MJD to convert. 
-    time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
+    time_scale : {'UTC', 'UT1', 'TT', 'TAI'} 
         Time scale of the MJD epochs.
         
     Returns
