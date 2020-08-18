@@ -76,7 +76,7 @@ def _configureOrbitsPYOORB(orbits, t0, orbit_type="cartesian",  time_scale="TT",
             i : inclination in degrees
             Omega : longitude of the ascending node in degrees
             omega : argument of periapsis in degrees
-            T0 : time of perihelion passage in degrees
+            T0 : time of perihelion passage in MJD
     time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
         Time scale of the MJD epochs.
     magnitude : float or `~numpy.ndarray` (N), optional
@@ -96,10 +96,11 @@ def _configureOrbitsPYOORB(orbits, t0, orbit_type="cartesian",  time_scale="TT",
             H/M1 : absolute magnitude
             G/K1 : photometric slope parameter
     """
-    if orbits.shape == (6,):
+    orbits_ = orbits.copy()
+    if orbits_.shape == (6,):
         num_orbits = 1
     else:
-        num_orbits = orbits.shape[0]
+        num_orbits = orbits_.shape[0]
 
     if orbit_type == "cartesian":
         orbit_type = [1 for i in range(num_orbits)]
@@ -107,8 +108,10 @@ def _configureOrbitsPYOORB(orbits, t0, orbit_type="cartesian",  time_scale="TT",
         orbit_type = [2 for i in range(num_orbits)]
         H = M1
         G = K1
+        orbits_[:, 1:5] = np.radians(orbits_[:, 1:5])
     elif orbit_type == "keplerian":
         orbit_type = [3 for i in range(num_orbits)]
+        orbits_[:, 1:] = np.radians(orbits_[:, 1:])
     else:
         raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
 
@@ -136,7 +139,7 @@ def _configureOrbitsPYOORB(orbits, t0, orbit_type="cartesian",  time_scale="TT",
         orbits_pyoorb = np.array(
             np.array([
                 ids, 
-                *list(orbits.T), 
+                *list(orbits_.T), 
                  orbit_type, 
                  t0, 
                  time_scale, 
@@ -150,7 +153,7 @@ def _configureOrbitsPYOORB(orbits, t0, orbit_type="cartesian",  time_scale="TT",
         orbits_pyoorb = np.array(
             [[
                 ids[0], 
-                *list(orbits.T), 
+                *list(orbits_.T), 
                 orbit_type[0], 
                 t0[0], 
                 time_scale[0], 
