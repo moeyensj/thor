@@ -354,8 +354,8 @@ def getMPCDesignationFiles():
     None
     """
     directory = os.path.join(os.path.dirname(__file__), "..", "data")
-    _downloadFile(directory, "https://minorplanetcenter.net/Extended_Files/mpc_ids.json.gz")
-    _downloadFile(directory,"https://minorplanetcenter.net/Extended_Files/mpc_ids_packed.json.gz")
+    _downloadFile(directory, "https://www.minorplanetcenter.net/Extended_Files/mpc_ids.json.gz")
+    _downloadFile(directory,"https://www.minorplanetcenter.net/Extended_Files/mpc_ids_packed.json.gz")
     return
 
 def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=None):
@@ -416,7 +416,7 @@ def getMPCOrbitCatalog():
     None
     """
     directory = os.path.join(os.path.dirname(__file__), "..", "data")
-    url = "https://minorplanetcenter.net/Extended_Files/mpcorb_extended.json.gz" 
+    url = "https://www.minorplanetcenter.net/Extended_Files/mpcorb_extended.json.gz" 
     _downloadFile(directory, url)
     return
 
