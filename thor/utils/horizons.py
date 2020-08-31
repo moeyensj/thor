@@ -42,7 +42,6 @@ def getHorizonsVectors(obj_id, times, location="@sun", id_type="smallbody", aber
         id_type=id_type,
     )
     vectors = obj.vectors(
-        refsystem="J2000",
         refplane="ecliptic",
         aberrations=aberrations,
     ).to_pandas()
