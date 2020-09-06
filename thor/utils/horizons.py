@@ -171,7 +171,6 @@ def getHorizonsEphemeris(obj_ids,
 
 def getHorizonsObserverState(observatory_codes, 
                              observation_times, 
-                             frame="ecliptic", 
                              origin="heliocenter",
                              aberrations="geometric"):
     """
@@ -184,8 +183,6 @@ def getHorizonsObserverState(observatory_codes,
         MPC observatory codes. 
     observation_times : `~astropy.time.core.Time`
         Epochs for which to find the observatory locations.
-    frame : {'equatorial', 'ecliptic'}
-        Return observer state in the equatorial or ecliptic J2000 frames. 
     origin : {'barycenter', 'heliocenter'}
         Return observer state with heliocentric or barycentric origin.
     aberrations : {'geometric', 'astrometric', 'apparent'}
@@ -199,20 +196,10 @@ def getHorizonsObserverState(observatory_codes,
     """
     _checkTime(observation_times, "observation_times")
     
-    if frame == "ecliptic":
-        frame_horizons = frame
-    elif frame == "equatorial":
-        frame_horizons = frame
-    else:
-        err = (
-            "frame should be one of {'equatorial', 'ecliptic'}"
-        )
-        raise ValueError(err)
-        
     if origin == "heliocenter":
         origin_horizons = "sun"
     elif origin == "barycenter":
-        origin_horizons = "@ssb"
+        origin_horizons = "ssb"
     else:
         err = (
             "origin should be one of {'heliocenter', 'barycenter'}"
@@ -228,7 +215,7 @@ def getHorizonsObserverState(observatory_codes,
             id_type="majorbody",
         )
         vectors = obj.vectors(
-            refplane=frame_horizons,
+            refplane="ecliptic",
             aberrations=aberrations,
         ).to_pandas()
        
