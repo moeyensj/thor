@@ -217,5 +217,13 @@ def generateEphemerisUniversal(orbits, t0, observer_states, observation_times, l
         ]
     )
     ephemeris["orbit_id"] = ephemeris["orbit_id"].astype(int)
+    ephemeris.sort_values(
+        by=["orbit_id", "mjd_utc"],
+        inplace=True
+    )
+    ephemeris.reset_index(
+        inplace=True,
+        drop=True
+    )
     return ephemeris
     

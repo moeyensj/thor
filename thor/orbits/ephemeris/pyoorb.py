@@ -1,4 +1,6 @@
 import os
+import pprint
+import warnings
 import numpy as np
 import pandas as pd
 import pyoorb as oo
@@ -92,6 +94,17 @@ def generateEphemerisPYOORB(
       in_date_ephems=epochs_pyoorb,
       in_dynmodel=dynamical_model
     )
+
+    if err == 1:
+        warnings.warn("PYOORB has returned an error!", UserWarning)
+        with np.printoptions(precision=30, threshold=len(orbits)):
+            with open("err.log", "w") as f:
+                print("Orbits:", file=f)
+                pprint.pprint(orbits, width=140, stream=f)
+                print("T0 [MJD TT]:", file=f)
+                pprint.pprint(t0.tt.mjd, width=140, stream=f)
+                print("T1 [MJD TT]:", file=f)
+                pprint.pprint(t1.tt.mjd, width=140, stream=f)
     
     columns = [
         "mjd_utc",
@@ -137,4 +150,12 @@ def generateEphemerisPYOORB(
     ids = np.arange(0, len(orbits))
     ephemeris["orbit_id"] = [i for i in ids for j in t1]
     ephemeris = ephemeris[["orbit_id"] + columns]
+    ephemeris.sort_values(
+        by=["orbit_id", "mjd_utc"],
+        inplace=True
+    )
+    ephemeris.reset_index(
+        inplace=True,
+        drop=True
+    )
     return ephemeris

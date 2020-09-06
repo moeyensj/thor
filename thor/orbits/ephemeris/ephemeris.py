@@ -192,6 +192,14 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
             "backend should be one of 'THOR' or 'PYOORB'"
         )
         raise ValueError(err)
-    
+
+    ephemeris.sort_values(
+        by=["orbit_id", "observatory_code", "mjd_utc"],
+        inplace=True
+    )
+    ephemeris.reset_index(
+        inplace=True,
+        drop=True
+    )
     return ephemeris
 
