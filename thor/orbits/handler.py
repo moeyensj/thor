@@ -18,7 +18,7 @@ PYOORB_PROPAGATOR_KWARGS = {
     "time_scale" : "TT", 
     "magnitude" : 20, 
     "slope" : 0.15, 
-    "dynamical_model" : "2",
+    "dynamical_model" : "N",
     "ephemeris_file" : "de430.dat"
 }
 
@@ -36,7 +36,7 @@ PYOORB_EPHEMERIS_KWARGS = {
     "time_scale" : "UTC", 
     "magnitude" : 20, 
     "slope" : 0.15, 
-    "dynamical_model" : "2",
+    "dynamical_model" : "N",
     "ephemeris_file" : "de430.dat"
 }
 
