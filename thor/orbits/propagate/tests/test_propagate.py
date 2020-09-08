@@ -1,10 +1,10 @@
 import numpy as np
-import pandas as pd
 from astropy.time import Time
 from astropy import units as u
 
 from ....constants import Constants as c
 from ....utils import getHorizonsVectors
+from ....utils import testOrbits
 from ..propagate import propagateOrbits
 
 MU = c.G * c.M_SUN
@@ -15,17 +15,26 @@ TARGETS = [
     "Eugenia",
     "C/2019 Q4" # Borisov
 ] 
+EPOCH = 57257.0
+DT = np.linspace(0, 30, num=30)
+T0 = Time(
+    [EPOCH for i in range(len(TARGETS))], 
+    format="mjd",
+    scale="tdb", 
+)
+T1 = Time(
+    EPOCH + DT, 
+    format="mjd",
+    scale="tdb"
+)
 
-T0 = Time([57257.0], scale="tdb", format="mjd")
-T1 = Time(np.arange(57257.0, 57257.0 + 30, 1), scale="tdb", format="mjd")
-
+# Propagator Configurations
 THOR_PROPAGATOR_KWARGS = {
     "mu" : MU,
     "max_iter" : 1000, 
     "tol" : 1e-15,
     "origin" : "heliocenter",
 }
-
 PYOORB_PROPAGATOR_KWARGS = {
     "orbit_type" : "cartesian", 
     "time_scale" : "UTC", 
@@ -36,30 +45,48 @@ PYOORB_PROPAGATOR_KWARGS = {
 }
 
 
-def test_propagateOrbitsAgainstHorizons():
+def test_propagateOrbits():
+    """
+    Query Horizons (via astroquery) for initial state vectors of each target at T0, then propagate
+    those states to all T1 using THOR's 2-body propagator and OORB's 2-body propagator(via pyoorb).
+    Compare the resulting states and test how well they agree.
+    """
+    # Query Horizons for heliocentric geometric states at each T1
+    orbit_cartesian_horizons = getHorizonsVectors(
+        TARGETS, 
+        T0[:1],
+        location="@sun",
+        aberrations="geometric"
+    )
+    orbit_cartesian_horizons = orbit_cartesian_horizons[["x", "y", "z", "vx", "vy", "vz"]].values
 
-    for target in TARGETS:
-        # Query Horizons for heliocentric geometric states at each T1
-        horizons_states = getHorizonsVectors(target, T1, location="@sun", aberrations="geometric")
-        horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
+    # Propagate the state at T0 to all T1 using THOR 2-body
+    states_thor = propagateOrbits(
+        orbit_cartesian_horizons, 
+        T0, 
+        T1, 
+        backend="THOR", 
+        backend_kwargs=THOR_PROPAGATOR_KWARGS
+    )
+    states_thor = states_thor[["x", "y", "z", "vx", "vy", "vz"]].values
 
-        # Propagate the state at T0 to all T1 using THOR 2-body
-        thor_states = propagateOrbits(horizons_states[:1], T0, T1, backend="THOR", backend_kwargs=THOR_PROPAGATOR_KWARGS)
-        thor_states = thor_states[["x", "y", "z", "vx", "vy", "vz"]].values
+    # Propagate the state at T0 to all T1 using PYOORB 2-body
+    states_pyoorb = propagateOrbits(
+        orbit_cartesian_horizons, 
+        T0, 
+        T1, 
+        backend="PYOORB", 
+        backend_kwargs=PYOORB_PROPAGATOR_KWARGS
+    )
+    states_pyoorb = states_pyoorb[["x", "y", "z", "vx", "vy", "vz"]].values
 
-        # Calculate the difference between THOR's heliocentric position and Horizons in mm
-        r_thor_diff = np.linalg.norm(thor_states[:,:3] - horizons_states[:,:3], axis=1) * u.AU.to(u.mm)    
-
-        # Propagate the state at T0 to all T1 using PYOORB 2-body
-        pyoorb_states = propagateOrbits(horizons_states[:1, :], T0, T1, backend="PYOORB", backend_kwargs=PYOORB_PROPAGATOR_KWARGS)
-        pyoorb_states = pyoorb_states[["x", "y", "z", "vx", "vy", "vz"]].values
-
-        # Calculate the difference between PYOORB's heliocentric position and Horizons in mm
-        r_pyoorb_diff = np.linalg.norm(pyoorb_states[:,:3] - horizons_states[:,:3], axis=1) * u.AU.to(u.mm)   
-
-        # Assert that PYOORB-Horizons differences and THOR-Horizons differences agree to within 1 mm (both set to 2-body)
-        np.testing.assert_allclose(np.abs(r_thor_diff - r_pyoorb_diff), np.zeros(len(r_thor_diff)), atol=1, rtol=0)
-        
-        # Test that the T1 agrees completely with Horizons since T0 = T1[0]
-        np.testing.assert_equal(r_thor_diff[0], 0.0)
-        np.testing.assert_equal(r_pyoorb_diff[0], 0.0)
+    # Test that the propagated states agree to within the tolerances below
+    testOrbits(
+       states_thor, 
+       states_pyoorb,
+       orbit_type="cartesian", 
+       position_tol=1*u.mm, 
+       velocity_tol=(1*u.mm/u.s), 
+       magnitude=True
+    )
+    return
