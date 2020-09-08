@@ -234,7 +234,7 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
     
     return np.array(elements_cart)
 
-def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1e-15):
+def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=1e-15):
     """
     Convert orbital elements from type_in to type_out. 
     
@@ -277,7 +277,7 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1
     """
     # Check that type_in is not type_out
     if type_in == type_out:
-        raise valueError("type_in cannot be equal to type_out.")
+        raise ValueError("type_in cannot be equal to type_out.")
     
     # If a single orbit was passed, reshape the array
     if orbits.shape == (6, ):
@@ -285,7 +285,7 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1
     
     # If there are not enough or too many elements, raise error
     if orbits.shape[1] != 6:
-        raise valueError("Please ensure orbits have 6 quantities!")
+        raise ValueError("Please ensure orbits have 6 quantities!")
         
     if type_in == "cartesian" and type_out == "keplerian":
         return _convertCartesianToKeplerian(orbits, mu=mu)[:, [0, 2, 3, 4, 5, 6]]
