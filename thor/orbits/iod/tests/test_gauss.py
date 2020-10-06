@@ -1,126 +1,127 @@
 import numpy as np
-from astroquery.jplhorizons import Horizons
+from astropy.time import Time
+from astropy import units as u
 
 from ....constants import Constants as c
-from ....coordinates import transformCoordinates
-from ...propagate import propagateUniversal
+from ....utils import testOrbits
+from ....utils import getHorizonsObserverState
+from ....utils import getHorizonsVectors
+from ...ephemeris import generateEphemeris
 from ..gauss import gaussIOD
 
-MU = c.G * c.M_SUN
+TARGETS = [
+    "Amor",
+    "Eros", 
+    "Eugenia",
+] 
+EPOCH = 57257.0
+DT = np.arange(0, 14)
+T0 = Time(
+    [EPOCH for i in range(len(TARGETS))],
+    format="mjd",
+    scale="tdb", 
+)
+T1 = Time(
+    EPOCH + DT, 
+    format="mjd",
+    scale="tdb"
+)
+OBSERVATORIES = ["I11", "I41", "500"]
 
-def test_gaussIOD():
+def selectBestIOD(iod_orbits, true_orbit):
+    """
+    Helper function that selects the best preliminary orbit
+    by selecting the orbit closes in position to the 
+    true orbit. 
     
-    epoch = [58762.0]
-    vectors_obs = np.array([[1., 0., 0., 0., -np.sqrt(MU), 0.]]) 
+    This is intended to only used for testing.
     
-    # Set an initial epoch
-    t0 = np.array(epoch, dtype=float)
-
-    # Set propagation epochs: 10 years at 1 day intervals
-    t1 = epoch[0] + np.arange(1, 365*10, 1, dtype=float)
-    
-    # Propagate the observer to each epoch and grab its state
-    states_observer = propagateUniversal(vectors_obs, t0, t1, mu=MU, max_iter=1000, tol=1e-15)
-    states_observer = states_observer[:, 2:]
-    
-    # Run IOD on the following targets
-    targets = ["Ceres", "Eros", "1719", "Amor"]
-    
-    for name in targets:
+    Parameters
+    ----------
+    iod_orbits : `~numpy.ndarray` (N, 6)
+        Cartesian preliminary orbits from IOD functions.
+    true_orbit : `~numpy.ndarray` (1, 6)
+        True cartesian orbit.
         
-        # Grab target's state at t0 from Horizons
-        target = Horizons(id=name, epochs=epoch, location="@sun")
-        vectors_target = target.vectors().to_pandas()
-        vectors_target = vectors_target[["x", "y", "z", "vx", "vy", "vz"]].values
-        
-        # Propagate target to each t1 epoch from the initial state
-        states_target = propagateUniversal(vectors_target, t0, t1, mu=MU, max_iter=1000, tol=1e-15)
-        states_target = states_target[:, 2:]
+    Returns
+    -------
+    best_iod_orbit : `~numpy.ndarray` (1, 6)
+        The orbit closest in position to the true orbit. 
+    """
+    delta_state = iod_orbits - true_orbit
+    delta_position = np.linalg.norm(delta_state[:, :3], axis=1)
+    nearest_iod = np.argmin(delta_position)
+    
+    return iod_orbits[nearest_iod:nearest_iod+1]
 
-        # Calculate the distance from observer to target at each epoch
-        delta_state = states_target[:, :3] - states_observer[:, :3]
-        
-        # Convert topocentric to target state to spherical coordinates
-        # including velocities
-        state_spherical = transformCoordinates(
-            delta_state, 
-            "ecliptic", 
-            "equatorial", 
-            representation_in="cartesian", 
-            representation_out="spherical"
-        )
+def test_gaussIOD_withIterator():
 
-        # Iterate over different selections of "observations"
-        for selected_obs in [[0, 5, 10], 
-                             [100, 120, 140],
-                             [22, 23, 24],
-                             [1000, 1005, 1010],
-                             [3600, 3620, 3630],
-                             [1999, 2009, 2034]]:
+    for target in TARGETS:
+        for observatory in OBSERVATORIES:
 
-            print("Target Name: {}".format(name))
-            print("Observations Indices: \n\t{}".format(selected_obs))
+            observers = {observatory : T1}
+            selected_obs = [0, 6, -1]
 
-            # Grab truth position and velocity vectors 
-            truth_r = states_target[selected_obs, :3]
-            truth_v = states_target[selected_obs, 3:]
+            # Query Horizons for observatory's state vectors at each T1
+            horizons_observer_states = getHorizonsObserverState(
+                [observatory], 
+                T1, 
+                origin="heliocenter", 
+                aberrations="geometric"
+            )
+            observer_states = horizons_observer_states[["x", "y", "z", "vx", "vy", "vz"]].values
 
-            # Grab observables: on-sky location of the target
-            coords_obs = states_observer[selected_obs, :3]
-            coords_eq_ang = state_spherical[selected_obs, 1:3]
-            t = t1[selected_obs]
+            # Query Horizons for target's state vectors at each T1
+            horizons_states = getHorizonsVectors(
+                [target],
+                T1,
+                location="@sun",
+                aberrations="geometric",
+            )
+            horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
 
-            print("Observations:")
-            for i, observation in enumerate(coords_eq_ang):
-                print("\tt [MJD]: {}, RA [Deg]: {}, Dec [Deg]: {}, obs_x [AU]: {}, obs_y [AU]: {}, obs_z [AU]: {}".format(t[i], *observation, *coords_obs[i]))
+            # Generate ephemeris using the 2-body integration
+            THOR_EPHEMERIS_KWARGS = {
+                "light_time" : False, 
+                "lt_tol" : 1e-10,
+                "stellar_aberration" : False,
+                "mu" : c.G * c.M_SUN,
+                "max_iter" : 1000, 
+                "tol" : 1e-16
+            }
+            ephemeris = generateEphemeris(
+                horizons_states[selected_obs[1]:selected_obs[1]+1], 
+                T1[selected_obs[1]:selected_obs[1]+1], 
+                observers,
+                backend="THOR",
+                backend_kwargs=THOR_EPHEMERIS_KWARGS
+            )
+            coords = ephemeris[["RA_deg", "Dec_deg"]].values
+            states = ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values
 
-            state_truth = np.concatenate([np.array([t[1]]), states_target[selected_obs[1]]])
-            print("Actual State [MJD, AU, AU/d]:\n\t{}".format(state_truth))
+            # Run IOD
+            iod_epochs, iod_orbits = gaussIOD(
+                coords[selected_obs, :], 
+                T1.utc.mjd[selected_obs], 
+                observer_states[selected_obs, :3], 
+                velocity_method="gibbs",
+                light_time=False,
+                max_iter=100,
+                iterate=True
+            )
 
-            # Using observables, run IOD without iteration
-            orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=False, mu=MU, max_iter=100, tol=1e-15, light_time=False)
+            # Select the best IOD orbit
+            best_iod_orbit = selectBestIOD(
+                iod_orbits, 
+                states[selected_obs[1]:selected_obs[1] + 1]
+            )
 
-            print("Predicted States (without iteration) [MJD, AU, AU/d]:")
-            for orbit in orbits:
-                print("\t{}".format(orbit))
-            
-            # Using observables, run IOD
-            orbits = gaussIOD(coords_eq_ang, t, coords_obs, velocity_method="gibbs", iterate=True, mu=MU, max_iter=100, tol=1e-15, light_time=False)
-
-            print("Predicted States (with iteration) [MJD, AU, AU/d]:")
-            for orbit in orbits:
-                print("\t{}".format(orbit))
-            
-            # IOD returns up to 3 solutions, iterate over each one and find the one with the closest
-            # prediction in position, if the position is within 100 meters and the velocity is within 
-            # 10 cm/s we are happy
-            closest_r = 1e10
-            closest_v = 1e10
-
-            for i, orbit in enumerate(orbits):            
-                r2 = orbit[1:4]
-                v2 = orbit[4:]
-                r2_mag = np.linalg.norm(r2)
-                v2_mag = np.linalg.norm(v2)
-
-                r2_truth = truth_r[1,:]
-                v2_truth = truth_v[1,:]
-                r2_truth_mag = np.linalg.norm(r2_truth)
-                v2_truth_mag = np.linalg.norm(v2_truth)
-
-                r_diff = np.abs(r2_mag - r2_truth_mag) / r2_truth_mag
-                v_diff = np.abs(v2_mag - v2_truth_mag) / v2_truth_mag
-                
-                if closest_r > np.abs(r_diff):
-                    closest_r = r_diff
-                    closest_v = v_diff
-
-            print("(Actual - Predicted) / Actual:")
-            for orbit in orbits:
-                print("\t{}".format((states_target[selected_obs[1]] - orbit[1:]) / states_target[selected_obs[1]]))
-            print("")
-                
-            # Test position to within 100 meters and velocity to within 10 cm/s
-            np.testing.assert_allclose(closest_r, 0.0, atol=6.68459e-10, rtol=6.68459e-10)
-            np.testing.assert_allclose(closest_v, 0.0, atol=5.77548e-8, rtol=5.77548e-8)        
-                
+            # Test that the resulting orbit is within the tolerances of the 
+            # true state below
+            testOrbits(
+                best_iod_orbit,
+                states[selected_obs[1]:selected_obs[1] + 1],
+                position_tol=(100*u.m),
+                velocity_tol=(1*u.mm/u.s)
+            )
+    return

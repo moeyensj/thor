@@ -160,6 +160,9 @@ def gaussIOD(coords,
         
     Returns
     -------
+    epochs : `~numpy.ndarry` (<3)
+        Epochs in units of decimal days at which preliminary orbits are
+        defined. 
     orbits : `~numpy.ndarray` ((<3, 6) or (0))
         Up to three preliminary orbits (as cartesian state vectors).
     """
@@ -221,6 +224,7 @@ def gaussIOD(coords,
         return np.array([])
     
     orbits = []
+    epochs = []
     for r2_mag in r2_mags:
         lambda1, lambda3 = _calcLambdas(r2_mag, t31, t32, t21)
         rho1, rho2, rho3 = _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V)
@@ -257,10 +261,10 @@ def gaussIOD(coords,
                     tol=tol
                 )
         
-        if light_time == True:
-            rho2_mag = np.linalg.norm(orbit[:3] - q2)
-            lt = rho2_mag / C
-            epoch -= lt
+        #if light_time == True:
+        #    rho2_mag = np.linalg.norm(orbit[:3] - q2)
+        #    lt = rho2_mag / C
+        #    epoch -= lt
         
         if np.linalg.norm(orbit[3:]) >= C:
             print("Velocity is greater than speed of light!")
@@ -268,8 +272,12 @@ def gaussIOD(coords,
         if (np.linalg.norm(orbit[:3]) > 300.) and (np.linalg.norm(orbit[3:]) > 25.):
             continue
             
-        orbits.append(np.hstack([epoch, orbit]))
+        orbits.append(orbit)
+        epochs.append(epoch)
 
     orbits = np.array(orbits)
     orbits = orbits[~np.isnan(orbits).any(axis=1)]
-    return orbits
+
+    epochs = np.array(epochs)
+    epochs = epochs[~np.isnan(orbits).any(axis=1)]
+    return epochs, orbits

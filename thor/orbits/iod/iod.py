@@ -3,10 +3,8 @@ import sys
 import time
 import numpy as np
 import pandas as pd
-import multiprocessing as mp
 from astropy.time import Time
 from itertools import combinations
-from functools import partial
 
 from ...config import Config
 from ..handler import _backendHandler
