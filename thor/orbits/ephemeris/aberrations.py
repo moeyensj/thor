@@ -35,7 +35,7 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
     t0 : `~numpy.ndarray` (N)
         Epoch at which orbits are defined.
     observer_positions : `numpy.ndarray` (N, 3)
-        Location of the observer in barycentric cartesian elements at the time of observeration.
+        Location of the observer in barycentric cartesian elements at the time of observation.
     lt_tol : float, optional
         Calculate aberration to within this value in time (units of days.)
     mu : float, optional

@@ -20,7 +20,16 @@ MU = c.G * c.M_SUN
 C = c.C
 
 
-def generateEphemerisUniversal(orbits, t0, observer_states, observation_times, light_time=True, lt_tol=1e-10, stellar_aberration=False, mu=MU, max_iter=1000, tol=1e-15):
+def generateEphemerisUniversal(orbits, 
+                               t0, 
+                               observer_states, 
+                               observation_times, 
+                               light_time=True, 
+                               lt_tol=1e-10, 
+                               stellar_aberration=False, 
+                               mu=MU, 
+                               max_iter=1000, 
+                               tol=1e-15):
     """
     Generate ephemeris for orbits relative to the location of the observer. 
     
@@ -32,7 +41,7 @@ def generateEphemerisUniversal(orbits, t0, observer_states, observation_times, l
         Epoch at which orbits are defined.
     observer_states : `~numpy.ndarray` (M, 6) or (M, 3)
         State of the observer (optionally, including velocities) at the time of observations.
-    observation_times : `~astropy.time.core.Time` (N) (M)
+    observation_times : `~astropy.time.core.Time` (M)
         Observation times at which the observer state vectors are true.
     light_time : bool, optional
         Correct orbits for light travel time. 
@@ -107,7 +116,14 @@ def generateEphemerisUniversal(orbits, t0, observer_states, observation_times, l
     _checkTime(observation_times, "observation_times")
 
     # Propagate orbits to observer states 
-    propagated_orbits_helio = propagateUniversal(orbits, t0.utc.mjd, observation_times.utc.mjd, mu=mu, max_iter=max_iter, tol=tol)
+    propagated_orbits_helio = propagateUniversal(
+        orbits, 
+        t0.utc.mjd, 
+        observation_times.utc.mjd, 
+        mu=mu, 
+        max_iter=max_iter, 
+        tol=tol
+    )
 
     # Stack observation times and observer states (so we can add/subtract arrays later instead of looping)
     observation_times_stacked = Time(np.hstack([observation_times for i in range(len(orbits))]))
