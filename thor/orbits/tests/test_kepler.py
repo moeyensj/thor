@@ -2,23 +2,22 @@ import numpy as np
 import warnings
 from astropy.time import Time
 from astropy import units as u
-from astroquery.jplhorizons import Horizons
 
 from ...constants import Constants as c
+from ...utils import testOrbits
+from ...utils import getHorizonsVectors
+from ...utils import getHorizonsElements
 from ..kepler import convertOrbitalElements
 from ..kepler import _convertCartesianToKeplerian
 from ..kepler import _convertKeplerianToCartesian
 
-MU = c.G * c.M_SUN
-TOL = 1e-15
-MAX_ITER = 100
 
-EPOCHS = Time(
+T0 = Time(
     ["{}-02-02T00:00:00.000".format(i) for i in range(1993, 2050)], 
     format="isot", 
     scale="tdb"
 )
-ISO_EPOCHS = Time(
+T0_ISO = Time(
     ["{}-02-02T00:00:00.000".format(i) for i in range(2017, 2022)], 
     format="isot", 
     scale="tdb"
@@ -27,130 +26,139 @@ TARGETS = [
     "Amor",
     "Eros", 
     "Eugenia",
+    "Duende",
     "Ceres",
 ] 
-ISO_TARGETS = [
+TARGETS_ISO = [
     "1I/2017 U1", # Oumuamua  
     "C/2019 Q4" # Borisov
 ]
         
 
-def test_convertOrbitalElements():
-    for name in TARGETS:
-        target = Horizons(id=name, epochs=EPOCHS.mjd)
-        
-        vectors = target.vectors().to_pandas()
-        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
-        
-        elements = target.elements().to_pandas()
-        elements = elements[["a", "e", "incl", "Omega", "w", "M", "nu"]].values
-        
-        np.testing.assert_allclose(
-            elements[:, :6], 
-            convertOrbitalElements(
-                vectors, 
-                "cartesian", 
-                "keplerian", 
-                max_iter=MAX_ITER, 
-                tol=TOL,
-            )
-        )
-        
-        np.testing.assert_allclose(
-            vectors, 
-            convertOrbitalElements(
-                elements[:, :6], 
-                "keplerian", 
-                "cartesian",
-                max_iter=MAX_ITER, 
-                tol=TOL,
-            )
-        )
-    return
+def test_convertOrbitalElements_elliptical():
+    """
+    Query Horizons (via astroquery) for cartesian and keplerian states for each elliptical orbit target at each T0. 
+    Using THOR convert the cartesian states to keplerian states, and convert the keplerian states
+    to cartesian states. Then compare how well the converted states agree to the ones pulled from 
+    Horizons.
+    """
+    # Query Horizons for cartesian states of each target at each T0
+    orbits_cartesian_horizons = getHorizonsVectors(
+        TARGETS, 
+        T0,
+        location="@sun",
+        aberrations="geometric"
+    )
+    orbits_cartesian_horizons = orbits_cartesian_horizons[["x", "y", "z", "vx", "vy", "vz"]].values
 
-def test_convertCartesianToKeplerian_elliptical():
-    for name in TARGETS:
-        target = Horizons(id=name, epochs=EPOCHS.mjd)
-        vectors = target.vectors().to_pandas()
-        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
-        
-        elements = target.elements().to_pandas()
-        elements = elements[["a", "q", "e", "incl", "Omega", "w", "M", "nu"]].values
-        
-        for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(
-                _convertCartesianToKeplerian(
-                    v.reshape(1, -1), 
-                    mu=MU,
-                ), 
-                e.reshape(1, -1)
-            )
-    return
-
-def test_convertCartesianToKeplerian_parabolic():
-    warnings.warn("Need to implement and test parabolic conversions!!!")
-    return
+    # Query Horizons for keplerian states of each target at each T0
+    orbits_keplerian_horizons = getHorizonsElements(
+        TARGETS, 
+        T0,
+        location="@sun",
+    )
+    orbits_keplerian_horizons = orbits_keplerian_horizons[["a", "e", "incl", "Omega", "w", "M"]].values
     
-def test_convertCartesianToKeplerian_hyperbolic():
-    for name in ISO_TARGETS:
-        target = Horizons(id=name, epochs=ISO_EPOCHS.mjd)
-        vectors = target.vectors().to_pandas()
-        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
-        
-        elements = target.elements().to_pandas()
-        elements = elements[["a", "q", "e", "incl", "Omega", "w", "M", "nu"]].values
-        
-        for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(
-                _convertCartesianToKeplerian(
-                    v.reshape(1, -1),
-                    mu=MU,
-                ), 
-                e.reshape(1, -1)
-            )     
-    return
-        
-def test_convertKeplerianToCartesian_elliptical():
-    for name in TARGETS:
-        target = Horizons(id=name, epochs=EPOCHS.mjd)
-        vectors = target.vectors().to_pandas()
-        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values   
-       
-        elements = target.elements().to_pandas()
-        elements = elements[["a", "e", "incl", "Omega", "w", "M", "nu"]].values
-       
-        for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(
-                _convertKeplerianToCartesian(
-                    e.reshape(1, -1), 
-                    mu=MU, 
-                    max_iter=MAX_ITER,
-                    tol=TOL,
-                ), 
-                v.reshape(1, -1)
-            )
-    return
-            
-def test_convertKeplerianToCartesian_parabolic():
-    warnings.warn("Need to implement and test parabolic conversions!!!")
+    # Convert the keplerian states to cartesian states using THOR
+    orbits_cartesian_converted = convertOrbitalElements(
+        orbits_keplerian_horizons, 
+        "keplerian", 
+        "cartesian",
+    )
 
-def test_convertKeplerianToCartesian_hyperbolic():
-    for name in ISO_TARGETS:
-        target = Horizons(id=name, epochs=ISO_EPOCHS.mjd)
-        vectors = target.vectors().to_pandas()
-        vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values 
-       
-        elements = target.elements().to_pandas()
-        elements = elements[["a", "e", "incl", "Omega", "w", "M", "nu"]].values
-       
-        for v, e in zip(vectors, elements):
-            np.testing.assert_allclose(
-                _convertKeplerianToCartesian(
-                    e.reshape(1, -1), 
-                    mu=MU,
-                    max_iter=MAX_ITER, 
-                    tol=TOL,
-                ), 
-                v.reshape(1, -1)
-            )
+    # Convert the cartesian states to keplerian states using THOR
+    orbits_keplerian_converted = convertOrbitalElements(
+        orbits_cartesian_horizons, 
+        "cartesian",
+        "keplerian", 
+    )
+
+    # Conversion of cartesian orbits to keplerian orbits
+    # is within this tolerance of Horizons
+    testOrbits(
+        orbits_keplerian_converted,
+        orbits_keplerian_horizons,
+        orbit_type="keplerian",
+        position_tol=(1*u.mm),
+        angle_tol=(1*u.microarcsecond),
+        unitless_tol=(1e-10*u.dimensionless_unscaled)
+    )
+
+    # Conversion of keplerian orbits to cartesian orbits
+    # is within this tolerance of Horizons
+    testOrbits(
+        orbits_cartesian_converted,
+        orbits_cartesian_horizons,
+        orbit_type="cartesian",
+        position_tol=(2*u.mm),
+        velocity_tol=(1*u.mm/u.s),
+        magnitude=True
+    )
+
     return
+
+def test_convertOrbitalElements_parabolilic():
+    warnings.warn("Need to implement and test parabolic conversions!!!")
+    return
+
+def test_convertOrbitalElements_hyperbolic():
+    """
+    Query Horizons (via astroquery) for cartesian and keplerian states for each hyperbolic orbit target at each T0. 
+    Using THOR convert the cartesian states to keplerian states, and convert the keplerian states
+    to cartesian states. Then compare how well the converted states agree to the ones pulled from 
+    Horizons.
+    """
+    # Query Horizons for cartesian states of each target at each T0
+    orbits_cartesian_horizons = getHorizonsVectors(
+        TARGETS_ISO, 
+        T0_ISO,
+        location="@sun",
+        aberrations="geometric"
+    )
+    orbits_cartesian_horizons = orbits_cartesian_horizons[["x", "y", "z", "vx", "vy", "vz"]].values
+
+    # Query Horizons for keplerian states of each target at each T0
+    orbits_keplerian_horizons = getHorizonsElements(
+        TARGETS_ISO, 
+        T0_ISO,
+        location="@sun",
+    )
+    orbits_keplerian_horizons = orbits_keplerian_horizons[["a", "e", "incl", "Omega", "w", "M"]].values
+    
+    # Convert the keplerian states to cartesian states using THOR
+    orbits_cartesian_converted = convertOrbitalElements(
+        orbits_keplerian_horizons, 
+        "keplerian", 
+        "cartesian",
+    )
+
+    # Convert the cartesian states to keplerian states using THOR
+    orbits_keplerian_converted = convertOrbitalElements(
+        orbits_cartesian_horizons, 
+        "cartesian",
+        "keplerian", 
+    )
+
+    # Conversion of cartesian orbits to keplerian orbits
+    # is within this tolerance of Horizons
+    testOrbits(
+        orbits_keplerian_converted,
+        orbits_keplerian_horizons,
+        orbit_type="keplerian",
+        position_tol=(1*u.mm),
+        angle_tol=(1*u.microarcsecond),
+        unitless_tol=(1e-10*u.dimensionless_unscaled)
+    )
+
+    # Conversion of keplerian orbits to cartesian orbits
+    # is within this tolerance of Horizons
+    testOrbits(
+        orbits_cartesian_converted,
+        orbits_cartesian_horizons,
+        orbit_type="cartesian",
+        position_tol=(5*u.cm),
+        velocity_tol=(1*u.mm/u.s),
+        magnitude=True
+    )
+    return
+

@@ -36,6 +36,10 @@ Once pre-requisites have been installed using either one of the tree options abo
 
 ```python setup.py install```
 
+Or, if you are actively planning to develop or contribute to THOR, then:
+
+```python setup.py develop```
+
 You should now be able to start Python and import THOR. 
 ```
 ┌─(thor_py36)[~]

@@ -1,3 +1,6 @@
 [build-system]
 requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+python_functions = "test_*"

@@ -1,13 +1,13 @@
 import numpy as np
-import spiceypy as sp
-from astroquery.jplhorizons import Horizons
+from astropy.time import Time
+from astropy import units as u
 
 from ....constants import Constants as c
-from ..universal import propagateUniversal
+from ....utils import getHorizonsVectors
+from ....utils import testOrbits
+from ..propagate import propagateOrbits
 
 MU = c.G * c.M_SUN
-MAX_ITER = 100
-TOL = 1e-15
 
 TARGETS = [
     "Amor",
@@ -15,59 +15,78 @@ TARGETS = [
     "Eugenia",
     "C/2019 Q4" # Borisov
 ] 
-EPOCHS = [57257.0, 59000.0]
+EPOCH = 57257.0
+DT = np.linspace(0, 30, num=30)
+T0 = Time(
+    [EPOCH for i in range(len(TARGETS))], 
+    format="mjd",
+    scale="tdb", 
+)
+T1 = Time(
+    EPOCH + DT, 
+    format="mjd",
+    scale="tdb"
+)
 
-def test_propagateUniversal():
+# Propagator Configurations
+THOR_PROPAGATOR_KWARGS = {
+    "mu" : MU,
+    "max_iter" : 1000, 
+    "tol" : 1e-15,
+    "origin" : "heliocenter",
+}
+PYOORB_PROPAGATOR_KWARGS = {
+    "orbit_type" : "cartesian", 
+    "time_scale" : "UTC", 
+    "magnitude" : 20, 
+    "slope" : 0.15, 
+    "dynamical_model" : "2",
+    "ephemeris_file" : "de430.dat"
+}
+
+
+def test_propagateOrbits():
     """
-    Using a selection of 4 asteroids, this function queries Horizons for an initial state vector at one epoch, then propagates
-    that state to 1000 different times and compares each propagation to the SPICE 2-body propagator. 
+    Query Horizons (via astroquery) for initial state vectors of each target at T0, then propagate
+    those states to all T1 using THOR's 2-body propagator and OORB's 2-body propagator(via pyoorb).
+    Compare the resulting states and test how well they agree.
     """
-    dts = np.linspace(0.01, 500, num=1000)
-    
-    for name in TARGETS: 
-        for epoch in EPOCHS:
-            # Grab vectors from Horizons at epoch
-            target = Horizons(id=name, epochs=epoch, location="@sun")
-            vectors = target.vectors().to_pandas()
-            vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
-            
-            # Propagate vector to each new epoch (epoch + dt)
-            spice_elements = []
-            for dt in dts:
-                spice_elements.append(sp.prop2b(MU, list(vectors[0, :]), dt))
-            spice_elements = np.array(spice_elements)
-            
-            # Repeat but now using THOR's universal propagator
-            vectors_new = propagateUniversal(
-                vectors[0:1, :], 
-                np.array([epoch]), 
-                dts + epoch,  
-                mu=MU, 
-                max_iter=MAX_ITER, 
-                tol=TOL
-            )
-               
-            orbit_id = vectors_new[:, 0]
-            new_epochs = vectors_new[:, 1]
-            
-            # Make sure the first column is a bunch of 0s since only one orbit was passed
-            np.testing.assert_allclose(orbit_id, np.zeros(len(dts)))
-            # Make sure the second column has all the new epochs
-            np.testing.assert_allclose(new_epochs, dts + epoch)
-            
-            # Extract position and velocity components and compare them
-            r = vectors_new[:, 2:5]
-            v = vectors_new[:, 5:]
-            
-            r_mag = np.sqrt(np.sum(r**2, axis=1))
-            v_mag = np.sqrt(np.sum(v**2, axis=1))
-            
-            r_spice_mag = np.sqrt(np.sum(spice_elements[:, :3]**2, axis=1))
-            v_spice_mag = np.sqrt(np.sum(spice_elements[:, 3:]**2, axis=1))
+    # Query Horizons for heliocentric geometric states at each T1
+    orbit_cartesian_horizons = getHorizonsVectors(
+        TARGETS, 
+        T0[:1],
+        location="@sun",
+        aberrations="geometric"
+    )
+    orbit_cartesian_horizons = orbit_cartesian_horizons[["x", "y", "z", "vx", "vy", "vz"]].values
 
-            r_diff = (r_mag - r_spice_mag) / r_spice_mag
-            v_diff = (v_mag - v_spice_mag) / v_spice_mag
+    # Propagate the state at T0 to all T1 using THOR 2-body
+    states_thor = propagateOrbits(
+        orbit_cartesian_horizons, 
+        T0, 
+        T1, 
+        backend="THOR", 
+        backend_kwargs=THOR_PROPAGATOR_KWARGS
+    )
+    states_thor = states_thor[["x", "y", "z", "vx", "vy", "vz"]].values
 
-            # Test position to within a meter and velocity to within a mm/s
-            np.testing.assert_allclose(r_diff, np.zeros(len(dts)), atol=1e-12, rtol=1e-12)
-            np.testing.assert_allclose(v_diff, np.zeros(len(dts)), atol=1e-10, rtol=1e-10)
+    # Propagate the state at T0 to all T1 using PYOORB 2-body
+    states_pyoorb = propagateOrbits(
+        orbit_cartesian_horizons, 
+        T0, 
+        T1, 
+        backend="PYOORB", 
+        backend_kwargs=PYOORB_PROPAGATOR_KWARGS
+    )
+    states_pyoorb = states_pyoorb[["x", "y", "z", "vx", "vy", "vz"]].values
+
+    # Test that the propagated states agree to within the tolerances below
+    testOrbits(
+       states_thor, 
+       states_pyoorb,
+       orbit_type="cartesian", 
+       position_tol=1*u.mm, 
+       velocity_tol=(1*u.mm/u.s), 
+       magnitude=True
+    )
+    return

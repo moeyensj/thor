@@ -1,8 +1,9 @@
 import os
+import pprint
+import warnings
 import numpy as np
 import pandas as pd
 import pyoorb as oo
-from astropy.time import Time
 
 from ...config import Config
 from ...utils import setupPYOORB
@@ -10,21 +11,22 @@ from ...utils import _configureOrbitsPYOORB
 from ...utils import _configureEpochsPYOORB
 
 __all__ = [
-    "propagateOrbitsPYOORB"
+    "generateEphemerisPYOORB"
 ]
 
-def propagateOrbitsPYOORB(
-        orbits, 
-        t0, 
-        t1, 
-        orbit_type="cartesian", 
-        time_scale="TT", 
-        magnitude=20, 
-        slope=0.15, 
-        dynamical_model="N",
-        ephemeris_file="de430.dat"):
+def generateEphemerisPYOORB(
+    orbits,
+    t0,
+    t1,
+    orbit_type="cartesian", 
+    time_scale="TT", 
+    magnitude=20, 
+    slope=0.15, 
+    observatory_code="I11",
+    dynamical_model="N",
+    ephemeris_file="de430.dat"):
     """
-    Propagate orbits using PYOORB.
+    Generate ephemeris using PYOORB.
     
     Parameters
     ----------
@@ -63,15 +65,12 @@ def propagateOrbitsPYOORB(
         Absolute H-magnitude or M1 magnitude. 
     slope : float or `~numpy.ndarray` (N), optional
         Photometric slope parameter G or K1.
+    observatory_code : str, optional
+        Observatory code for which to generate topocentric ephemeris.
     dynamical_model : {'N', '2'}, optional
         Propagate using N or 2-body dynamics.
     ephemeris_file : str, optional
         Which JPL ephemeris file to use with PYOORB.
-        
-    Returns
-    -------
-    propagated : `~pandas.DataFrame`
-        Orbits at new epochs.
     """
     setupPYOORB(ephemeris_file=ephemeris_file, verbose=False)
     
@@ -88,62 +87,75 @@ def propagateOrbitsPYOORB(
     # Convert epochs into PYOORB format
     epochs_pyoorb = _configureEpochsPYOORB(t1, time_scale)
     
-    # Propagate orbits to each epoch and append to list 
-    # of new states
-    states = []
-    for epoch in epochs_pyoorb:
-        new_state, err = oo.pyoorb.oorb_propagation(
-            in_orbits=orbits_pyoorb,
-            in_epoch=epoch,
-            in_dynmodel=dynamical_model
-        )
-        states.append(new_state)
+    # Generate ephemeris
+    ephemeris, err = oo.pyoorb.oorb_ephemeris_full(
+      in_orbits=orbits_pyoorb,
+      in_obscode=observatory_code,
+      in_date_ephems=epochs_pyoorb,
+      in_dynmodel=dynamical_model
+    )
+
+    if err == 1:
+        warnings.warn("PYOORB has returned an error!", UserWarning)
+        with np.printoptions(precision=30, threshold=len(orbits)):
+            with open("err.log", "w") as f:
+                print("Orbits:", file=f)
+                pprint.pprint(orbits, width=140, stream=f)
+                print("T0 [MJD TT]:", file=f)
+                pprint.pprint(t0.tt.mjd, width=140, stream=f)
+                print("T1 [MJD TT]:", file=f)
+                pprint.pprint(t1.tt.mjd, width=140, stream=f)
     
-    # Convert list of new states into a pandas data frame
-    if orbit_type == "cartesian":
-        elements = ["x", "y", "z", "vx", "vy", "vz"]
-    elif orbit_type == "keplerian":
-        elements = ["a", "e", "i", "Omega", "omega", "M0"]
-    elif orbit_type == "cometary":
-        elements = ["q", "e", "i", "Omega", "omega", "T0"]
-    else:
-        raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
-    
-    # Create pandas data frame 
     columns = [
-        "orbit_id",
-        *elements,
-        "orbit_type",
-        "epoch_mjd",
-        "time_scale",
-        "H/M1",
-        "G/K1"
+        "mjd_utc",
+        "RA_deg",
+        "Dec_deg",
+        "vRAcosDec",
+        "vDec",
+        "PhaseAngle_deg",
+        "SolarElon_deg",
+        "r_au",
+        "delta_au",
+        "VMag",
+        "PosAngle_deg",
+        "TLon_deg",
+        "TLat_deg",
+        "TOCLon_deg",
+        "TOCLat_deg",
+        "HLon_deg",
+        "HLat_deg",
+        "HOCLon_deg",
+        "HOCLat_deg",
+        "Alt_deg",
+        "SolarAlt_deg",
+        "LunarAlt_deg",
+        "LunarPhase",
+        "LunarElon_deg",
+        "obj_x",
+        "obj_y",
+        "obj_z",
+        "obj_vx",
+        "obj_vy",
+        "obj_vz",
+        "obs_x",
+        "obs_y",
+        "obs_z",
+        "TrueAnom"
     ]
-    propagated = pd.DataFrame(
-        np.concatenate(states),
+
+    ephemeris = pd.DataFrame(
+        np.vstack(ephemeris), 
         columns=columns
     )
-    propagated["orbit_id"] = propagated["orbit_id"].astype(int)
-
-    # Convert output epochs to TDB
-    epochs = Time(propagated["epoch_mjd"].values, format="mjd", scale=time_scale.lower())
-    propagated["epoch_mjd_tdb"] = epochs.tdb.value
-
-    # Drop PYOORB specific columns (may want to consider this option later on.)
-    propagated.drop(
-        columns=[
-            "epoch_mjd",
-            "orbit_type", 
-            "time_scale",
-            "H/M1",
-            "G/K1"
-        ],
+    ids = np.arange(0, len(orbits))
+    ephemeris["orbit_id"] = [i for i in ids for j in t1]
+    ephemeris = ephemeris[["orbit_id"] + columns]
+    ephemeris.sort_values(
+        by=["orbit_id", "mjd_utc"],
         inplace=True
     )
-
-    # Re-order columns and sort
-    propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
-    propagated.sort_values(by=["orbit_id", "epoch_mjd_tdb"], inplace=True)
-    propagated.reset_index(inplace=True, drop=True)
-    return propagated
-    
+    ephemeris.reset_index(
+        inplace=True,
+        drop=True
+    )
+    return ephemeris

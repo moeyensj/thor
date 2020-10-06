@@ -1,13 +1,15 @@
 import numpy as np
-from astropy import units as u
-from astropy.constants import codata2014 as c
-
-AU_TO_KM = 6.684587122268446e-09
 
 class Constants:
+
+    # km to au
+    KM_P_AU = 149597870.700
+
+    # seconds to days
+    S_P_DAY = 86400.0
     
-    # Speed of light: AU per day (173.14463267424034)
-    C = c.c.to(u.au / u.d).value 
+    # Speed of light: AU per day (173.14463267424034) (299792.458 km/s -- DE431/DE430)
+    C = 299792.458 / KM_P_AU * S_P_DAY
     
     # Gravitational constant:  AU**3 / M_sun / d**2 (0.295912208285591100E-3 -- DE431/DE430)
     G = 0.295912208285591100E-3
@@ -15,14 +17,11 @@ class Constants:
     # Solar Mass: M_sun (1.0)
     M_SUN = 1.0
     
-    # Earth Mass: M_sun (3.0034893488507934e-06)
-    M_EARTH = u.M_earth.to(u.M_sun)
-    
-    # Earth Equatorial Radius: km (6378.1363 -- DE431/DE430)
-    R_EARTH = (6378.1363 * u.km).to(u.AU)
+    # Earth Equatorial Radius: km (6378.1363 km -- DE431/DE430)
+    R_EARTH = 6378.1363 / KM_P_AU
 
-    # Mean Obliquity at J2000: radians (0.40909280422232897)
-    OBLIQUITY = (84381.448 * u.arcsecond).to(u.radian).value
+    # Mean Obliquity at J2000: radians (84381.448 arcseconds -- DE431/DE430)
+    OBLIQUITY = 84381.448 * np.pi / (180.0 * 3600.0)
 
     # Transformation matrix from Equatorial J2000 to Ecliptic J2000
     TRANSFORM_EQ2EC = np.array([

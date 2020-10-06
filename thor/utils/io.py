@@ -1,56 +1,231 @@
-import os
 import io
+import os
+import yaml
+import gzip
 import shutil
 import urllib
-import filecmp
+import requests
+import datetime
+import dateutil
+
+from astropy.time import Time
 
 __all__ = [
-    "_downloadFile"
+    "_readFileLog",
+    "_writeFileLog",
+    "_checkUpdate",
+    "_downloadFile",
+    "_removeDownloadedFiles"
 ]
 
 
-def _downloadFile(file_name, url, update=False):
+def _readFileLog(log_file=None):
     """
-    Downloads a file from the url and saves it to file_name. If update is True, will check if the currently downloaded version
-    is the latest version. 
+    Read THOR file log. The file log tracks all supplemental data
+    files that different components of THOR may need. Examples 
+    include SPICE kernels, the MPC observatory code file, the 
+    MPC orbit catalog etc...
     
     Parameters
     ----------
-    file_name : str
-        Path to file.
-    url : str
-        Location of file online.
-    
+    log_file : str, optional
+        Path to log file
+        
+    Returns
+    -------
+    None
     """
-    # The file doesn't exist yet so try to download it 
-    if os.path.isfile(file_name) is not True:
-        response = urllib.request.urlopen(url)  
-        print("File not found. Attempting download...")
-        
-        f = io.BytesIO(response.read())
-        with open(file_name, 'wb') as outfile:
-            outfile.write(f.read())
-        print("Done.")
+    if log_file is None:
+        log_file = os.path.join(os.path.dirname(__file__), "..", "data/log.yaml")
+    with open(log_file) as file:
+        log = yaml.load(file, Loader=yaml.FullLoader)
+    return log
+
+def _writeFileLog(log, log_file=None):
+    """
+    Write THOR file log. The file log tracks all supplemental data
+    files that different components of THOR may need. Examples 
+    include SPICE kernels, the MPC observatory code file, the 
+    MPC orbit catalog etc...
     
-    # The file does exist, if update is true download it again
+    Parameters
+    ----------
+    log : dict
+        Dictionary with file names as keys and dictionaries of properties 
+        as values.
+    log_file : str, optional
+        Path to log file
+        
+    Returns
+    -------
+    None
+    """
+    if log_file is None:
+        log_file = os.path.join(os.path.dirname(__file__), "..", "data/log.yaml")
+    with open(log_file, "w") as f:
+        yaml.dump(log, f)
+    return
+
+def _checkUpdate(url):
+    """
+    Query url for "Last-modified" argument in header. If "Last-modified" argument 
+    exists in the header this function will return the time, if it does 
+    not it will return None.
+    
+    Parameters
+    ----------
+    url : str
+        URL to query for last modification.
+        
+    Returns
+    -------
+    {None, `~astropy.core.time.Time`}
+       
+    """
+    response = requests.head(url)
+    last_modified = response.headers.get('Last-Modified')
+    if last_modified:
+        last_modified = Time(dateutil.parser.parse(last_modified))
+    return last_modified
+
+def _downloadFile(to_dir, url, log_file=None):
+    """
+    Download file at given url to the passed directory. 
+    
+    Parameters
+    ----------
+    to_dir : str
+        Path to directory where file should be downloaded to. 
+    url : str
+        URL of file.
+    log_file : str, optional
+        Path to THOR file log. The file log tracks all supplemental data
+        files that different components of THOR may need. Examples 
+        include SPICE kernels, the MPC observatory code file, the 
+        MPC orbit catalog etc...
+
+    Returns
+    -------
+    None
+    """
+    # Extract the file name (remove path) and 
+    # also grab the absolute path
+    file_name = os.path.basename(urllib.parse.urlparse(url).path)
+    file_path = os.path.join(os.path.abspath(to_dir), file_name)
+    print("Checking {}.".format(file_name))
+    
+    # Check if the file is compressed with gzip
+    compressed = False
+    if os.path.splitext(file_name)[1] == ".gz":
+        compressed = True
+    
+    # Read file log
+    if log_file is None:
+        log_file = os.path.join(os.path.dirname(__file__), "..", "data/log.yaml")
+    log = _readFileLog(log_file)
+    
+    # Has file been logged previously
+    logged = False
+    if file_name in log.keys():
+        logged = True
     else:
-        print("File has already been downloaded.")
-        if update:
-            print("Checking if updated file exists...")
-            file_name_new = os.path.join(os.path.dirname(file_name), ".{}".format(os.path.basename(file_name)))
-            file_name_old = os.path.join(os.path.dirname(file_name), "{}_old".format(os.path.basename(file_name)))
-            response = urllib.request.urlopen(url)  
+        log[file_name] = {}
+
+    download = False
+    file_exists = os.path.isfile(file_path)
+    if not file_exists:
+        print("File has not been downloaded previously.")
+        download = True
         
-            f_new = io.BytesIO(response.read())
-            with open(file_name_new, 'wb') as outfile:
-                outfile.write(f_new.read())
+        # Reset the log if the file needs to be downloaded 
+        # but the file was previously logged
+        if logged:
+            log[file_name] = {}
         
-            # Check if newly downloaded file is different compared to the previously downloaded one
-            # If so, replace the old version with the newer one and save the old version (in case the new one 
-            # is broken)
-            if not filecmp.cmp(file_name, file_name_new):
-                print("File outdated! Replacing with latest version.")
-                os.rename(file_name, file_name_old)
-                os.rename(file_name_new, file_name)
-            else:
-                print("Latest version of the file already acquired.")
+    else:
+        # Check when the file was last modified online
+        last_modified = _checkUpdate(url)
+        print("Last modified online: {}".format(last_modified.utc.isot))
+    
+        last_downloaded = Time(log[file_name]["downloaded"], format="isot", scale="utc")
+        print("Last downloaded: {}".format(last_downloaded.utc.isot))
+        if last_downloaded < last_modified:
+            download = True
+    
+    if download:
+        print("Downloading from {}...".format(url))
+
+        response = urllib.request.urlopen(url)  
+        f = io.BytesIO(response.read())
+        with open(file_path, 'wb') as f_out:
+            f_out.write(f.read())
+           
+        print("Download complete.")
+        
+        # If the file is compressed with gzip, decompress it 
+        # and update the file path to reflect the change 
+        if compressed:
+            print("Downloaded file is gzipped. Decompressing...")
+            log[file_name]["compressed_location"] = file_path
+            uncompressed_file_path = os.path.splitext(file_path)[0]
+            with gzip.open(file_path, 'r') as f_in:
+                with open(uncompressed_file_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            file_path = uncompressed_file_path
+            print("Decompression complete.")
+        
+        # Update log and save to file
+        log[file_name]["url"] = url
+        log[file_name]["location"] = file_path
+        downloaded = Time(datetime.datetime.now(datetime.timezone.utc), scale="utc")
+        log[file_name]["downloaded"] = downloaded.utc.isot
+        
+        _writeFileLog(log, log_file)
+        print("Log updated.")
+    
+    else:
+        print("No download needed.")
+        
+    print()
+    
+    return
+
+def _removeDownloadedFiles(file_names=None):
+    """
+    Remove downloaded files. 
+    
+    Parameters
+    ----------
+    file_names : list, optional
+        Names of files to remove (should be keys listed
+        in the THOR file log). Default behaviour is to remove
+        all downloaded supplemental data files.
+
+    Returns
+    -------
+    None
+    """
+    log_file = os.path.join(os.path.dirname(__file__), "..", "data/log.yaml")
+    log = _readFileLog(log_file=log_file)
+    if file_names is None:
+        file_names = list(log.keys())
+        
+    if len(log) == 0:
+        print("No files to remove.")
+    else:
+    
+        for file in file_names:
+
+            print("Removing {} ({}).".format(file, log[file]["location"]))
+            os.remove(log[file]["location"])
+            if "compressed_location" in log[file].keys():
+                print("Removing compressed {} ({}).".format(file, log[file]["compressed_location"]))
+                os.remove(log[file]["compressed_location"])
+
+            del log[file]
+
+        _writeFileLog(log, log_file=log_file)
+        print("Log updated.")
+    return
+    
+    

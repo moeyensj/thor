@@ -51,6 +51,9 @@ class Config:
         
         # Dec in degrees
         "Dec_deg" : "Dec_deg",
+
+        # Observatory code
+        "observatory_code" : "code", 
         
         # Observer's x coordinate in AU
         "obs_x_au" : "HEclObsy_X_au",
@@ -102,71 +105,3 @@ class Config:
         # Eccentricity
         "e" : "e",
     }
-    
-    observationColumns = [
-        "obs_id",
-        "exp_mjd",
-        "visit_id",
-        "field_id",
-        "field_RA_deg",
-        "field_Dec_deg",
-        "night",
-        "RA_deg",
-        "Dec_deg", 
-        "obs_x_au", 
-        "obs_y_au", 
-        "obs_z_au", 
-        "mag",
-    ]
-    
-    truthColumns = [
-        "name", 
-        "Delta_au",
-        "r_au",
-        "obj_x_au", 
-        "obj_y_au", 
-        "obj_z_au",
-        "obj_dx/dt_au_p_day",
-        "obj_dy/dt_au_p_day",
-        "obj_dz/dt_au_p_day",
-    ]
-    
-    # Convenience arrays
-    x_e = [
-        columnMapping["obs_x_au"], 
-        columnMapping["obs_y_au"], 
-        columnMapping["obs_z_au"]
-    ]
-    
-    x_a = [
-        columnMapping["obj_x_au"], 
-        columnMapping["obj_y_au"], 
-        columnMapping["obj_z_au"]
-    ]
-    
-    v = [
-        columnMapping["obj_dx/dt_au_p_day"], 
-        columnMapping["obj_dy/dt_au_p_day"], 
-        columnMapping["obj_dz/dt_au_p_day"]
-    ]
-    
-    radec = [
-        columnMapping["RA_deg"],
-        columnMapping["Dec_deg"]
-    ]
-    
-    thetaxy = [
-        "theta_x_deg",
-        "theta_y_deg"
-    ]
-    
-    unknownIDs = [np.NaN]
-    
-    falsePositiveIDs = ["NS"]
-    
-    # MUST BE SET ACCORDINGLY
-    ### TODO: have code search for oorb directory
-    ###       use a pre-defined configuration file for oorb
-    oorbDirectory = "/Users/joachim/repos/cloned/oorb/" 
-    oorbObservatoryCode = "I11"
-    oorbConfigFile ="/Users/joachim/repos/thor/thor/data/oorb.conf"

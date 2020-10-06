@@ -2,6 +2,7 @@ import os
 import spiceypy as sp
 
 from .io import _downloadFile
+from .io import _readFileLog
 
 __all__ = [
     "getSPICEKernels",
@@ -9,41 +10,40 @@ __all__ = [
 ]
 
 KERNELS = {
-        # Internal Name : [File, URL, Update]
+        # Internal Name : [File, URL]
         "LSK - Latest" : [
             "latest_leapseconds.tls", 
-            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/latest_leapseconds.tls",
-            True
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/latest_leapseconds.tls"
         ],
         "Planetary Constants" : [
             "pck00010.tpc",
-            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc",
-            True
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc"
         ],
         "Earth PCK - Latest High Accuracy" : [
             "earth_latest_high_prec.bpc",
-            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_latest_high_prec.bpc",
-            True
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_latest_high_prec.bpc"
         ],
         "Earth PCK - Historical High Accuracy" : [
             "earth_720101_070426.bpc",
-            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_720101_070426.bpc",
-            True
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_720101_070426.bpc"
+        ],
+        "Earth PCK - Long Term Predict Low Accuracy" : [
+            "earth_200101_990628_predict.bpc",
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_200101_990628_predict.bpc"
         ],
         "Earth FK" : [
             "earth_assoc_itrf93.tf",
-            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf",
-            True
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf"
         ],
         "Planetary SPK" : [
             "de430.bsp", 
-            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de430.bsp", 
-            False
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de430.bsp" 
         ]
     }
 
 def getSPICEKernels(kernels=["LSK - Latest",  
                              "Planetary Constants", 
+                             "Earth PCK - Long Term Predict Low Accuracy",
                              "Earth PCK - Historical High Accuracy", 
                              "Earth PCK - Latest High Accuracy", 
                              "Planetary SPK"]):
@@ -79,15 +79,17 @@ def getSPICEKernels(kernels=["LSK - Latest",
     """
     for kernel in kernels:
         print("Checking for {} kernel...".format(kernel))
-        _downloadFile(os.path.join(os.path.dirname(__file__), "data", KERNELS[kernel][0]), KERNELS[kernel][1], update=KERNELS[kernel][2])
+        _downloadFile(os.path.join(os.path.dirname(__file__), "..", "data"), KERNELS[kernel][1])
         print("")
     return
 
 def setupSPICE(kernels=["LSK - Latest",  
                         "Planetary Constants", 
+                        "Earth PCK - Long Term Predict Low Accuracy",
                         "Earth PCK - Historical High Accuracy", 
                         "Earth PCK - Latest High Accuracy", 
-                        "Planetary SPK"]):
+                        "Planetary SPK"],
+    verbose=True):
     """
     Loads the leapsecond, the Earth planetary constants and the planetary ephemerides kernels into SPICE. 
     
@@ -101,17 +103,27 @@ def setupSPICE(kernels=["LSK - Latest",
             "Earth PCK - Historical High Accuracy"
             "Earth PCK - Long Term Predict Low Accuracy"
             "Planetary SPK"
+    verbose : bool, optional
+        Print progress statements.
     
     Returns
     -------
     None
     """
     if "THOR_SPICE" in os.environ.keys() and os.environ["THOR_SPICE"] == "True":
-        print("SPICE is already enabled.")
+        if verbose:
+            print("SPICE is already enabled.")
     else:
-        print("Enabling SPICE...")
+        if verbose:
+            print("Enabling SPICE...")
+        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data/log.yaml"))
         for kernel in kernels:
-            sp.furnsh(os.path.join(os.path.dirname(__file__), "data", KERNELS[kernel][0]))
+            file_name = KERNELS[kernel][0]
+            if file_name not in log.keys():
+                err = ("{} not found. Please run thor.utils.getSPICEKernels to download SPICE kernels.")
+                raise FileNotFoundError(err.format(file_name))
+            sp.furnsh(log[file_name]["location"])
         os.environ["THOR_SPICE"] = "True"
-        print("Done.")
+        if verbose:
+            print("Done.")
     return

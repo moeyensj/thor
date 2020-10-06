@@ -8,3 +8,9 @@ dist
 .coverage
 .cache/
 .pytest_cache/
+*.json
+*.gz
+*.bsp
+*.bpc
+*.tls
+*.tpc

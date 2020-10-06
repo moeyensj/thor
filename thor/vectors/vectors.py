@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.linalg import norm
-from ..coordinates import _angularToCartesian
+from ..coordinates import _convertSphericalToCartesian
 
 __all__ = ["calcNae",
            "calcDelta",
@@ -30,7 +30,7 @@ def calcNae(coords_ec_ang):
     Parameters
     ----------
     coords_ec_ang : `~numpy.ndarray` (N, 2)
-        Ecliptic longitude and latitude in radians.
+        Ecliptic longitude and latitude in degrees.
 
     Returns
     -------
@@ -38,7 +38,13 @@ def calcNae(coords_ec_ang):
         Cartesian unit vector in direction of provided
         angular coordinates.
     """
-    return _angularToCartesian(coords_ec_ang[:, 0], coords_ec_ang[:, 1], 1)
+    
+    rho = np.ones(len(coords_ec_ang))
+    lon = np.radians(coords_ec_ang[:, 0])
+    lat = np.radians(coords_ec_ang[:, 1])
+    velocities = np.zeros(len(rho))
+    x, y, z, vx, vy, vz = _convertSphericalToCartesian(rho, lon, lat, velocities, velocities, velocities)
+    return np.array([x, y, z]).T
 
 
 def calcDelta(r, x_e, n_ae):
@@ -48,7 +54,7 @@ def calcDelta(r, x_e, n_ae):
     Parameters
     ----------
     r : float
-        Heliocentric distance in arbitrary units.
+        Heliocentric/barycentric distance in arbitrary units.
     x_e : `~numpy.ndarray` (3)
         Topocentric position vector in same units as r.
     n_ae : `~numpy.ndarray` (3)
@@ -60,8 +66,7 @@ def calcDelta(r, x_e, n_ae):
     delta : float
         Distance from topocenter to asteroid in units of r.
     """
-    return - np.dot(n_ae, x_e) + np.sqrt(norm(np.dot(n_ae, x_e))
-                                         ** 2 + r**2 - norm(x_e)**2)
+    return - np.dot(n_ae, x_e) + np.sqrt(np.dot(n_ae, x_e)**2 + r**2 - norm(x_e)**2)
 
 
 def calcXae(delta, n_ae):
@@ -86,7 +91,7 @@ def calcXae(delta, n_ae):
 
 def calcXa(x_ae, x_e):
     """
-    Calculate the barycentric asteroid position vector.
+    Calculate the asteroid position vector.
 
     Parameters
     ----------
@@ -98,7 +103,7 @@ def calcXa(x_ae, x_e):
     Returns
     -------
     x_a : `~numpy.ndarray` (3)
-        Barycentric asteroid position vector in units of x_ae.
+        Asteroid position vector in units of x_ae.
     """
     return x_ae + x_e
 
@@ -109,7 +114,7 @@ def calcNhat(x_a):
     Parameters
     ----------
     x_a : `~numpy.ndarray` (3)
-        Barycentric asteroid position vector in arbitrary units.
+        Asteroid position vector in arbitrary units.
         
     Returns
     -------
@@ -117,7 +122,7 @@ def calcNhat(x_a):
         Unit vector normal to plane of orbit.
     
     """
-    # Make n a unit vectorn_hat = n / norm(n)
+    # Make n_a unit vector
     n_a = x_a / norm(x_a)
     # Find the normal to the plane of the orbit n
     n = np.cross(n_a, np.cross(z_axis, n_a))
@@ -128,13 +133,13 @@ def calcNhat(x_a):
 
 def calcR1(x_a, n_hat):
     """
-    Calculate the rotation matrix that would rotate the barycentric
+    Calculate the rotation matrix that would rotate the 
     position vector x_ae to the x-y plane.
 
     Parameters
     ----------
     x_a : `~numpy.ndarray` (3)
-        Barycentric asteroid position vector in arbitrary units.
+        Asteroid position vector in arbitrary units.
     n_hat : `~numpy.ndarray` (3)
         Unit vector normal to plane of orbit.
 
@@ -175,6 +180,6 @@ def calcR2(x_a_xy):
     # Assuming the vector x_a_xy has been normalized, and is in the xy plane.
     ca = x_a_xy[0]
     sa = x_a_xy[1]
-    return np.matrix([[ca, sa, 0],
+    return np.array([[ca, sa, 0],
                       [-sa, ca, 0],
                       [0, 0, 1]])

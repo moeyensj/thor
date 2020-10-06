@@ -1,7 +1,14 @@
+import warnings
 import numpy as np
 from numba import jit
+from numba.core.errors import NumbaPerformanceWarning
 
 from ..constants import Constants as c
+
+# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
+# involves slicing numpy arrays along their second dimension which is unsupported 
+# in numba's nopython mode. Lets ignore the warning so we don't scare users.  
+warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = ["_convertCartesianToKeplerian",
            "_convertKeplerianToCartesian",
@@ -15,14 +22,12 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
     Convert cartesian orbital elements to Keplerian orbital elements.
     
     Keplerian orbital elements are returned in an array with the following elements:
-        a: semi-major axis in AU
-        q: pericenter distance in AU
-        e: eccentricity 
-        i: inclination in degrees
-        ascNode: right ascension of the ascending node in degrees
-        argPeri : argument of perihelion/perigee/pericenter in degrees
-        meanAnom : mean anomaly in degrees
-        trueAnom_deg : true anomaly in degrees
+        a : semi-major axis [AU]
+        e : eccentricity [degrees]
+        i : inclination [degrees]
+        Omega : longitude of the ascending node [degrees]
+        omega : argument of periapsis [degrees]
+        M0 : mean anomaly [degrees]
     
     Parameters
     ----------
@@ -104,12 +109,12 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
     Convert Keplerian orbital elements to cartesian orbital elements.
     
     Keplerian orbital elements should have following elements:
-        a: semi-major axis in AU
-        e: eccentricity 
-        i: inclination in degrees
-        ascNode: right ascension of the ascending node in degrees
-        argPeri : argument of perihelion/perigee/pericenter in degrees
-        meanAnom : mean anomaly in degrees
+        a : semi-major axis [AU]
+        e : eccentricity [degrees]
+        i : inclination [degrees]
+        Omega : longitude of the ascending node [degrees]
+        omega : argument of periapsis [degrees]
+        M0 : mean anomaly [degrees]
     
     Parameters
     ----------
@@ -229,7 +234,7 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
     
     return np.array(elements_cart)
 
-def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1e-15):
+def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=1e-15):
     """
     Convert orbital elements from type_in to type_out. 
     
@@ -237,20 +242,20 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1
     ----------
     orbits : `~numpy.ndarray` (6) or (N, 6)
         Array or orbits. 
-        If cartesian [J2000 Heliocentric Ecliptic]:
-            x: x-position in AU
-            y: y-position in AU 
-            z: z-position in AU 
-            vx: x-velocity in AU per day
-            vy: y-velocity in AU per day
-            vz: z-velocity in AU per day
-        If keplerian:
-            a: semi-major axis in AU
-            e: eccentricity 
-            i: inclination in degrees
-            ascNode: right ascension of the ascending node in degrees
-            argPeri : argument of perihelion/perigee/pericenter in degrees
-            meanAnom : mean anomaly in degrees
+        If 'cartesian':
+            x : x-position [AU]
+            y : y-position [AU]
+            z : z-position [AU]
+            vx : x-velocity [AU per day]
+            vy : y-velocity [AU per day]
+            vz : z-velocity [AU per day]
+        If 'keplerian':
+            a : semi-major axis [AU]
+            e : eccentricity [degrees]
+            i : inclination [degrees]
+            Omega : longitude of the ascending node [degrees]
+            omega : argument of periapsis [degrees]
+            M0 : mean anomaly [degrees]
     type_in : str
         Type of orbital elements to convert from (keplerian or cartesian).
     type_out : str
@@ -272,7 +277,7 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1
     """
     # Check that type_in is not type_out
     if type_in == type_out:
-        raise valueError("type_in cannot be equal to type_out.")
+        raise ValueError("type_in cannot be equal to type_out.")
     
     # If a single orbit was passed, reshape the array
     if orbits.shape == (6, ):
@@ -280,12 +285,12 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=100, tol=1
     
     # If there are not enough or too many elements, raise error
     if orbits.shape[1] != 6:
-        raise valueError("Please ensure orbits have 6 quantities!")
+        raise ValueError("Please ensure orbits have 6 quantities!")
         
     if type_in == "cartesian" and type_out == "keplerian":
-        return _convertCartesianToKeplerian(orbits, mu=MU)[:, [0, 2, 3, 4, 5, 6]]
+        return _convertCartesianToKeplerian(orbits, mu=mu)[:, [0, 2, 3, 4, 5, 6]]
     elif type_in == "keplerian" and type_out == "cartesian":
-        return _convertKeplerianToCartesian(orbits, mu=MU, tol=tol, max_iter=max_iter)
+        return _convertKeplerianToCartesian(orbits, mu=mu, tol=tol, max_iter=max_iter)
     else:
         raise ValueError("Conversion from {} to {} not supported!".format(type_in, type_out))
     return 
