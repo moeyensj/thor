@@ -159,7 +159,7 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             # Universal anomaly here is defined in such a way that it satisfies the following
             # differential equation:
             #   d\chi / dt = \sqrt{mu} / r
-            chi = calcChi(orbit_iter, dt, mu=mu, max_iter=100, tol=tol)
+            chi = calcChi(orbit_iter, dt, mu=mu, max_iter=1000, tol=tol)
             chi2 = chi**2
 
             # Calculate the values of the Stumpff functions
@@ -178,7 +178,7 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             g_dot = 1 - chi2 / r_new_mag * c2
 
             v_new = f_dot * r + g_dot * v
-            
+
             # Calculate M matrix and use it to calculate the state transition matrix
             M = _calcM(r_mag, r_new_mag, f, g, f_dot, g_dot, c0, c1, c2, c3, c4, c5, alpha, chi, mu=mu)
             STM = _calcStateTransitionMatrix(M, r, v, f, g, f_dot, g_dot, r_new, v_new)
@@ -198,7 +198,8 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             r1 - q1 - rho1_mag * rho1_hat, 
             r - q2 - rho2_mag * rho2_hat, 
             r3 - q3 - rho3_mag * rho3_hat))
-        if np.linalg.norm(phi) > phi_mag_prev:
+        phi_mag_iter = np.linalg.norm(phi)
+        if phi_mag_iter < 1e-15:
             break
         
         dphi = np.zeros((9, 9), dtype=float)
@@ -210,13 +211,16 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
         dphi[3:6, 3:6] = np.zeros((3, 3)) # dr2/dv2
         dphi[6:9, 3:6] = STM3[0:3, 3:6]   # dr3/dv2
 
-        dphi[0:3,6] = -v1 / C - rho1_hat
-
-        dphi[0:3,7] = v1 / C
-        dphi[3:6,7] = -rho2_hat
-        dphi[6:9,7] = v3 / C
-
-        dphi[6:9,8] = -v3 / C - rho3_hat
+        if light_time is True:
+            dphi[0:3,6] = -v1 / C - rho1_hat
+            dphi[0:3,7] = v1 / C
+            dphi[3:6,7] = -rho2_hat
+            dphi[6:9,7] = v3 / C
+            dphi[6:9,8] = -v3 / C - rho3_hat
+        else:
+            dphi[0:3,6] = -rho1_hat
+            dphi[3:6,7] = -rho2_hat
+            dphi[6:9,8] = -rho3_hat
 
         delta = np.linalg.solve(dphi, phi)
         orbit_iter -= delta[0:6]
@@ -230,7 +234,7 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
                 
         i += 1
         orbit_iter_prev = orbit_iter
-        phi_mag_prev = np.linalg.norm(phi)
+        phi_mag_prev = phi_mag_iter
         if i >= max_iter:
             break
     
