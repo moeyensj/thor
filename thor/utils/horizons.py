@@ -155,6 +155,7 @@ def getHorizonsEphemeris(obj_ids,
             ).to_pandas()
             ephemeris["orbit_id"] = [orbit_id for i in range(len(ephemeris))]
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
+            ephemeris["mjd_utc"] = observation_times.utc.mjd
 
             dfs.append(ephemeris)
 
