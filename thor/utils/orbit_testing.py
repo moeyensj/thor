@@ -63,7 +63,6 @@ def _evaluateDifference(actual,
     if magnitude:
         diff = np.linalg.norm(diff, axis=1)
         diff = diff[:, np.newaxis]
-        diff *= tol.unit
 
     tol_ = np.empty_like(diff)
     tol_.fill(tol)
