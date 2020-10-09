@@ -94,7 +94,7 @@ def findAverageOrbits(observations,
                       d_values=None,
                       element_type="keplerian",
                       verbose=True,
-                      column_mapping=Config.columnMapping):
+                      column_mapping=Config.COLUMN_MAPPING):
     """
     Find the object with observations that represents 
     the most average in terms of cartesian velocity and the
@@ -122,7 +122,7 @@ def findAverageOrbits(observations,
         [Default = True]
     column_mapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`] 
+        [Default = `~thor.Config.COLUMN_MAPPING`] 
     
     Returns
     -------

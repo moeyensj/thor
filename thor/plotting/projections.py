@@ -12,7 +12,7 @@ def plotProjections(dataframe,
                     colorByObject=False, 
                     usePlotly=True, 
                     returnFig=False, 
-                    columnMapping=Config.columnMapping):
+                    columnMapping=Config.COLUMN_MAPPING):
     """
     Plot projected observations in 2D. 
     
@@ -28,7 +28,7 @@ def plotProjections(dataframe,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
    
     Returns
     -------
@@ -109,7 +109,7 @@ def plotProjections(dataframe,
 
 def plotProjections3D(dataframe, 
                   colorByObject=False, 
-                  columnMapping=Config.columnMapping):
+                  columnMapping=Config.COLUMN_MAPPING):
     """
     Plot projected observations in 3D. 
     
@@ -122,7 +122,7 @@ def plotProjections3D(dataframe,
         [Default = False]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
    
     Returns
     -------

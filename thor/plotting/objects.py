@@ -10,7 +10,7 @@ __all__ = ["plotCell"]
 def plotCell(cell,
              coordinateSystem="equatorialAngular",
              scatterKwargs={"s":0.05},
-             columnMapping=Config.columnMapping):
+             columnMapping=Config.COLUMN_MAPPING):
     """
     Plot cell. Needs cell's observations to be loaded.
     
@@ -26,7 +26,7 @@ def plotCell(cell,
         [Default = {'s': 0.05}]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
         
     Returns
     -------

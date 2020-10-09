@@ -22,7 +22,7 @@ class Config:
     None
     """
 
-    columnMapping = {        
+    COLUMN_MAPPING = {        
         ### Observation Parameters
         
         # Observation ID

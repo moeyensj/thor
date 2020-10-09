@@ -257,7 +257,7 @@ def plotProjectionVelocitiesMissed(allObjects,
 def plotOrbitsFindable(allObjects, 
                        orbits, 
                        testOrbits=None,
-                       columnMapping=Config.columnMapping):
+                       columnMapping=Config.COLUMN_MAPPING):
     """
     Plots orbits that should be findable in semi-major axis, inclination 
     and eccentrity space.
@@ -274,7 +274,7 @@ def plotOrbitsFindable(allObjects,
         [Default = None]
     columnMapping : dict, optional
         Column name mapping of orbits DataFrame to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
     
     Returns
     -------
@@ -311,7 +311,7 @@ def plotOrbitsFindable(allObjects,
 def plotOrbitsFound(allObjects, 
                     orbits, 
                     testOrbits=None,
-                    columnMapping=Config.columnMapping):
+                    columnMapping=Config.COLUMN_MAPPING):
     """
     Plots orbits that have been found in semi-major axis, inclination 
     and eccentrity space.
@@ -328,7 +328,7 @@ def plotOrbitsFound(allObjects,
         [Default = None]
     columnMapping : dict, optional
         Column name mapping of orbits DataFrame to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
     
     Returns
     -------
@@ -364,7 +364,7 @@ def plotOrbitsFound(allObjects,
 def plotOrbitsMissed(allObjects, 
                      orbits, 
                      testOrbits=None, 
-                     columnMapping=Config.columnMapping):
+                     columnMapping=Config.COLUMN_MAPPING):
     """
     Plots orbits that have been missed (but were findable) in semi-major axis, inclination 
     and eccentrity space.
@@ -381,7 +381,7 @@ def plotOrbitsMissed(allObjects,
         [Default = None]
     columnMapping : dict, optional
         Column name mapping of orbits DataFrame to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
     
     Returns
     -------
