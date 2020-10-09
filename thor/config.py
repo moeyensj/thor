@@ -21,6 +21,16 @@ class Config:
     -------
     None
     """
+    ADES_METADATA = {
+        "observatory_code" : "I11",
+        "observatory_name" : "Vera C. Rubin Observatory",
+        "telescope_aperture" : "8.4",
+        "telescope_design" : "Reflector",
+        "telescope_detector" : "CCD",
+        "submitter" : "D. iRAC",
+        "observers" : ["D. iRAC"],
+        "measurers" : ["D. iRAC"],
+    }
 
     COLUMN_MAPPING = {        
         ### Observation Parameters
