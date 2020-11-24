@@ -9,19 +9,19 @@ __all__ = [
     "writeToADES"
 ]
 
-
-
-def writeADESHeader(observatory_code, 
-                    submitter, 
-                    telescope_design,
-                    telescope_aperture,
-                    telescope_detector,
-                    observers,
-                    measurers,
-                    observatory_name=None,
-                    submitter_institution=None,
-                    telescope_name=None,
-                    comment=None):
+def writeADESHeader(
+        observatory_code, 
+        submitter, 
+        telescope_design,
+        telescope_aperture,
+        telescope_detector,
+        observers,
+        measurers,
+        observatory_name=None,
+        submitter_institution=None,
+        telescope_name=None,
+        comment=None
+    ):
     """
     Write the ADES PSV headers.
 
@@ -110,17 +110,20 @@ def writeADESHeader(observatory_code,
     header = [i + "\n" for i in header]
     return header
 
-def writeToADES(observations, 
-                file_out,
-                mjd_scale="utc",
-                observatory_code=Config.ADES_METADATA["observatory_code"],
-                submitter=Config.ADES_METADATA["submitter"], 
-                telescope_design=Config.ADES_METADATA["telescope_design"],
-                telescope_aperture=Config.ADES_METADATA["telescope_aperture"],
-                telescope_detector=Config.ADES_METADATA["telescope_detector"],
-                observers=Config.ADES_METADATA["observers"],
-                measurers=Config.ADES_METADATA["measurers"],
-                comment=None):
+def writeToADES(
+        observations, 
+        file_out,
+        mjd_scale="utc",
+        seconds_precision=9,
+        observatory_code=Config.ADES_METADATA["observatory_code"],
+        submitter=Config.ADES_METADATA["submitter"], 
+        telescope_design=Config.ADES_METADATA["telescope_design"],
+        telescope_aperture=Config.ADES_METADATA["telescope_aperture"],
+        telescope_detector=Config.ADES_METADATA["telescope_detector"],
+        observers=Config.ADES_METADATA["observers"],
+        measurers=Config.ADES_METADATA["measurers"],
+        comment=None
+    ):
     """
     Save observations to a MPC-submittable ADES psv file. 
 
@@ -132,6 +135,11 @@ def writeToADES(observations,
         Path and name to save out 
     mjd_scale : str, optional
         Time scale of MJD observation times 
+    seconds_precision : int, optional
+        Number of decimal places of precision on the measurement 
+        of seconds for the observation times. The ADES format can handle higher
+        than ms precision if the observations warrant such accuracy. 0.1 ms precision
+        would be expressed as 4 while ms precision would be expressed as 3. 
     observatory_code : str, optional
         MPC-assigned observatory code
     submitter : str, optional
@@ -187,9 +195,10 @@ def writeToADES(observations,
         raise ValueError(err)
     
     observation_times = Time(
-        observations["mjd_utc"].values,
+        observations["mjd"].values,
         format="mjd",
-        scale=mjd_scale
+        scale=mjd_scale,
+        precision=seconds_precision
     )
     ades["obsTime"] = np.array([i + "Z" for i in observation_times.utc.isot])
     ades["ra"] = observations["ra"].values 
@@ -219,7 +228,18 @@ def writeToADES(observations,
         f.write("".join(header))
         f.write(col_header)
         
-    ades = ades.replace(np.nan, " ", regex=True)
+    ades = ades.replace(
+        np.nan, 
+        " ", 
+        regex=True
+    )
         
-    ades.to_csv(file_out, sep="|", header=False, index=False, mode="a", float_format='%.15f')
+    ades.to_csv(
+        file_out, 
+        sep="|", 
+        header=False, 
+        index=False, 
+        mode="a", 
+        float_format='%.16f'
+    )
     return 
