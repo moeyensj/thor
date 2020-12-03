@@ -196,6 +196,7 @@ def iod(observations,
 
     chi2_sol = 1e10
     orbit_sol = None
+    epoch_sol = None
     obs_ids_sol = None
     remaining_ids = None
     arc_length = None
@@ -249,7 +250,7 @@ def iod(observations,
         times = times_all[mask]
 
         # Run IOD 
-        orbits_iod = gaussIOD(
+        epoch_iod, orbits_iod  = gaussIOD(
             coords, 
             times.utc.mjd, 
             coords_obs, 
@@ -264,8 +265,8 @@ def iod(observations,
         
         # Propagate initial orbit to all observation times
         ephemeris = generateEphemeris(
-            orbits_iod[:, 1:], 
-            Time(orbits_iod[:, 0], scale="utc", format="mjd"),
+            orbits_iod, 
+            Time(epoch_iod, scale="utc", format="mjd"),
             observers,
             backend=backend, 
             backend_kwargs=backend_kwargs
@@ -299,11 +300,12 @@ def iod(observations,
 
             # If the total chi2 is less than the threshold accept the orbit
             elif chi2_total <= chi2_threshold:
-                orbit_sol = orbits_iod[i:i+1, :]
+                orbit_sol = orbits_iod[i:i+1]
+                epoch_sol = epoch_iod[i:i+1]
                 obs_ids_sol = ids
                 chi2_sol = chi2_total    
                 remaining_ids = obs_ids_all
-                arc_length = times_all.max() - times_all.min()
+                arc_length = times_all.utc.mjd.max() - times_all.utc.mjd.min()
                 converged = True
 
             # Let's now test to see if we can remove some outliers, we 
@@ -326,7 +328,8 @@ def iod(observations,
                     # If the updated chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
                     if chi2_new <= chi2_threshold:
-                        orbit_sol = orbits_iod[i:i+1, :]
+                        orbit_sol = orbits_iod[i:i+1]
+                        epoch_sol = epoch_iod[i:i+1]
                         obs_ids_sol = ids
                         chi2_sol = chi2_new
                         outliers = obs_id_outlier
@@ -344,7 +347,7 @@ def iod(observations,
 
     if converged:
         orbit = pd.DataFrame(
-            orbit_sol,
+            np.hstack([epoch_sol.reshape(1, -1), orbit_sol]),
             columns=[
                 "epoch_mjd_utc", 
                 "obj_x", 
@@ -367,6 +370,5 @@ def iod(observations,
                 "obs_id",
             ]
         )
-    
     return orbit, orbit_members, outliers
    

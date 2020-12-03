@@ -91,7 +91,11 @@ def rangeAndShift(observations,
         backend_kwargs=backend_kwargs
     )
     
-    observations = observations.merge(ephemeris[["mjd_utc", "observatory_code", "obs_x", "obs_y", "obs_z"]], left_on=["mjd_utc", "observatory_code"], right_on=["mjd_utc", "observatory_code"])
+    observations = observations.merge(
+        ephemeris[["mjd_utc", "observatory_code", "obs_x", "obs_y", "obs_z"]], 
+        left_on=["mjd_utc", "observatory_code"], 
+        right_on=["mjd_utc", "observatory_code"]
+    )
     
     projected_dfs = []
     test_orbits = []
@@ -142,9 +146,18 @@ def rangeAndShift(observations,
             else:
                 continue
     
-    projected_observations = pd.concat(projected_dfs)   
-    projected_observations.sort_values(by=["mjd_utc", "observatory_code"], inplace=True)
-    projected_observations.reset_index(inplace=True, drop=True)
+    if len(projected_dfs) > 0:
+        projected_observations = pd.concat(projected_dfs)   
+        projected_observations.sort_values(by=["mjd_utc", "observatory_code"], inplace=True)
+        projected_observations.reset_index(inplace=True, drop=True)
+    else:
+        projected_observations = pd.DataFrame(
+            columns=[
+                'obs_id', 'mjd_utc', 'RA_deg', 'Dec_deg', 'RA_sigma_deg',
+                'Dec_sigma_deg', 'observatory_code', 'obs_x', 'obs_y', 'obs_z', 'obj_x',
+                'obj_y', 'obj_z', 'theta_x_deg', 'theta_y_deg'
+            ]
+        )
     
     time_end = time.time()
     if verbose == True:
@@ -438,7 +451,7 @@ def clusterAndLink(observations,
     if len(possible_clusters) != 0:
         # Make DataFrame with cluster velocities so we can figure out which 
         # velocities yielded clusters, add names to index so we can enable the join
-        cluster_velocities = pd.DataFrame({"theta_vx": vxx, "theta_vy": vyy})
+        cluster_velocities = pd.DataFrame({"vtheta_x": vxx, "vtheta_y": vyy})
         cluster_velocities.index.set_names("velocity_id", inplace=True)
 
         # Split lists of cluster ids into one column per cluster for each different velocity
@@ -461,7 +474,7 @@ def clusterAndLink(observations,
         # Make allClusters DataFrame
         all_clusters = possible_clusters.join(cluster_velocities)
         all_clusters.reset_index(drop=True, inplace=True)
-        all_clusters = all_clusters[["cluster_id", "theta_vx", "theta_vy"]]
+        all_clusters = all_clusters[["cluster_id", "vtheta_x", "vtheta_y"]]
 
         # Make clusterMembers DataFrame
         cluster_members = possible_clusters.reset_index(drop=True).copy()
@@ -474,7 +487,7 @@ def clusterAndLink(observations,
         
     else: 
         cluster_members = pd.DataFrame(columns=["cluster_id", "obs_id"])
-        all_clusters = pd.DataFrame(columns=["cluster_id", "theta_vx", "theta_vy"])
+        all_clusters = pd.DataFrame(columns=["cluster_id", "vtheta_x", "vtheta_y"])
     
     time_end_restr = time.time()
    
@@ -529,97 +542,14 @@ def initialOrbitDetermination(observations,
                               backend="THOR",
                               backend_kwargs=None):
 
-    
-    grouped = cluster_members.groupby(by="cluster_id")["obs_id"].apply(list)
-    cluster_ids = list(grouped.index.values)
-    obs_ids = grouped.values.tolist()
+    processable = True
+    if len(cluster_members) == 0:
+        processable = False
 
-    orbit_dfs = []
-    orbit_members_dfs = []
-    outliers_list = []
-    
-    if threads > 1:
-        p = mp.Pool(threads, _init_worker)
-        try: 
-            results = p.starmap(
-                partial(
-                    _initialOrbitDetermination,
-                    observations=observations,
-                    observation_selection_method=observation_selection_method, 
-                    chi2_threshold=chi2_threshold,
-                    contamination_percentage=contamination_percentage,
-                    iterate=iterate, 
-                    light_time=light_time,
-                    backend=backend,
-                    backend_kwargs=backend_kwargs
-                ),
-                zip(
-                    obs_ids, 
-                    cluster_ids
-                )
-            )
-            
-            results = list(zip(*results))
-            orbit_dfs = results[0]
-            orbit_members_dfs = results[1]
-            outliers_list = results[2]
-        
-        except KeyboardInterrupt:
-            p.terminate()
-        
-        p.close()
+    if len(observations) == 0:
+        processable = False
 
-    else:
-        for obs_ids_i, cluster_id_i in zip(obs_ids, cluster_ids):
-
-            orbit, orbit_members, outliers = iod(
-                observations[observations["obs_id"].isin(obs_ids_i)], 
-                observation_selection_method=observation_selection_method, 
-                chi2_threshold=chi2_threshold,
-                contamination_percentage=contamination_percentage,
-                iterate=iterate, 
-                light_time=light_time,
-                backend=backend,
-                backend_kwargs=backend_kwargs)
-            
-            if len(orbit) > 0:
-                orbit["cluster_id"] = [cluster_id_i]
-                orbit_dfs.append(orbit)
-                orbit_members_dfs.append(orbit_members)
-                outliers_list.append(outliers)
-                
-            else:
-                continue
-                
-
-    if len(orbit_dfs) > 0:
-        
-        orbits = pd.concat(orbit_dfs)
-        orbits.dropna(inplace=True)
-        orbits.reset_index(inplace=True, drop=True)
-        orbits = orbits[[
-            "orbit_id", 
-            'cluster_id',
-            "epoch_mjd_utc",
-            "obj_x",
-            "obj_y",
-            "obj_z",
-            "obj_vx",
-            "obj_vy",
-            "obj_vz",
-            "arc_length",
-            "num_obs",
-            "chi2"
-        ]]
-        
-        orbit_members = pd.concat(orbit_members_dfs)
-        orbit_members.dropna(inplace=True)
-        orbit_members.reset_index(inplace=True, drop=True)
-        
-        outliers = np.concatenate(outliers_list)
-         
-    else:
-        orbits = pd.DataFrame(columns=[
+    orbits = pd.DataFrame(columns=[
             "orbit_id", 
             "cluster_id",
             "epoch_mjd_utc",
@@ -634,11 +564,101 @@ def initialOrbitDetermination(observations,
             "chi2"
         ])
         
-        orbit_members = pd.DataFrame(columns=[
-            "orbit_id",
-            "obs_id"
-        ])
+    orbit_members = pd.DataFrame(columns=[
+        "orbit_id",
+        "obs_id"
+    ])
 
-        outliers = np.array([])
+    outliers = np.array([])
+
+    if processable:
+        grouped = cluster_members.groupby(by="cluster_id")["obs_id"].apply(list)
+        cluster_ids = list(grouped.index.values)
+        obs_ids = grouped.values.tolist()
+
+        orbit_dfs = []
+        orbit_members_dfs = []
+        outliers_list = []
+        
+        if threads > 1:
+            p = mp.Pool(threads, _init_worker)
+            try: 
+                results = p.starmap(
+                    partial(
+                        _initialOrbitDetermination,
+                        observations=observations,
+                        observation_selection_method=observation_selection_method, 
+                        chi2_threshold=chi2_threshold,
+                        contamination_percentage=contamination_percentage,
+                        iterate=iterate, 
+                        light_time=light_time,
+                        backend=backend,
+                        backend_kwargs=backend_kwargs
+                    ),
+                    zip(
+                        obs_ids, 
+                        cluster_ids
+                    )
+                )
+                
+                results = list(zip(*results))
+                orbit_dfs = results[0]
+                orbit_members_dfs = results[1]
+                outliers_list = results[2]
+            
+            except KeyboardInterrupt:
+                p.terminate()
+            
+            p.close()
+
+        else:
+            for obs_ids_i, cluster_id_i in zip(obs_ids, cluster_ids):
+
+                orbit, orbit_members, outliers = iod(
+                    observations[observations["obs_id"].isin(obs_ids_i)], 
+                    observation_selection_method=observation_selection_method, 
+                    chi2_threshold=chi2_threshold,
+                    contamination_percentage=contamination_percentage,
+                    iterate=iterate, 
+                    light_time=light_time,
+                    backend=backend,
+                    backend_kwargs=backend_kwargs)
+                
+                if len(orbit) > 0:
+                    orbit["cluster_id"] = [cluster_id_i]
+                    orbit_dfs.append(orbit)
+                    orbit_members_dfs.append(orbit_members)
+                    outliers_list.append(outliers)
+                    
+                else:
+                    continue
+                
+
+        if len(orbit_dfs) > 0:
+            
+            orbits = pd.concat(orbit_dfs)
+            orbits.dropna(inplace=True)
+            orbits.reset_index(inplace=True, drop=True)
+            orbits = orbits[[
+                "orbit_id", 
+                'cluster_id',
+                "epoch_mjd_utc",
+                "obj_x",
+                "obj_y",
+                "obj_z",
+                "obj_vx",
+                "obj_vy",
+                "obj_vz",
+                "arc_length",
+                "num_obs",
+                "chi2"
+            ]]
+            
+            orbit_members = pd.concat(orbit_members_dfs)
+            orbit_members.dropna(inplace=True)
+            orbit_members.reset_index(inplace=True, drop=True)
+            
+            outliers = np.concatenate(outliers_list)
+             
     
     return orbits, orbit_members, outliers
