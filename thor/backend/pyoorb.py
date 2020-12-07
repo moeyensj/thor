@@ -334,8 +334,18 @@ class PYOORB(Backend):
 
         # Re-order columns and sort
         propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
-        propagated.sort_values(by=["orbit_id", "epoch_mjd_tdb"], inplace=True)
-        propagated.reset_index(inplace=True, drop=True)
+        propagated.sort_values(
+            by=["orbit_id", "epoch_mjd_tdb"], 
+            inplace=True
+        )
+        propagated.reset_index(
+            inplace=True, 
+            drop=True
+        )
+
+        if orbits.ids is not None:
+            propagated["orbit_id"] = orbits.ids[propagated["orbit_id"].values]
+
         return propagated
 
     def generateEphemeris(self, orbits, observers):
@@ -475,7 +485,7 @@ class PYOORB(Backend):
             ephemeris = ephemeris[["orbit_id", "observatory_code"] + columns]
             
             ephemeris_dfs.append(ephemeris)
-            
+
         ephemeris.sort_values(
             by=["orbit_id", "mjd_utc"],
             inplace=True
@@ -484,4 +494,8 @@ class PYOORB(Backend):
             inplace=True,
             drop=True
         )
+
+        if orbits.ids is not None:
+            ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
+
         return ephemeris

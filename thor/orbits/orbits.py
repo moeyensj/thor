@@ -1,3 +1,4 @@
+import numpy as np
 from ..utils import _checkTime
 
 __all__ = ["Orbits"]
@@ -41,22 +42,22 @@ class Orbits:
         self.orbit_type = "cartesian"
 
         # If object IDs have been passed make sure each orbit has one
-        if ids:
+        if ids is not None:
             assert len(ids) == self.num_orbits
-        self.ids = ids
+        self.ids = np.asarray(ids)
 
         # If H magnitudes have been passed make sure each orbit has one
-        if H:
+        if H is not None:
             assert len(H) == self.num_orbits
-        self.H = H
+        self.H = np.asarray(H)
         
         # If the slope parameter G has been passed make sure each orbit has one
-        if G: 
+        if G is not None: 
             assert len(G) == self.num_orbits
-        self.G = G
+        self.G = np.asarray(G)
 
         # If covariances matrixes have been passed make sure each orbit has one
-        if covariances:
+        if covariances is not None:
             assert len(covariances) == self.num_orbits
         self.covariances = covariances
 
