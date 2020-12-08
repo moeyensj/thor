@@ -17,14 +17,18 @@ class PYOORB(Backend):
     
     def __init__(self, **kwargs):
         
-        allowed_kwargs = [
-            "dynamical_model",
-            "ephemeris_file"
-        ]
-        
+        # Make sure only the correct kwargs
+        # are passed to the constructor
+        allowed_kwargs = PYOORB_CONFIG.keys()
         for k in kwargs:
             if k not in allowed_kwargs:
                 raise ValueError()
+        
+        # If an allowed kwarg is missing, add the 
+        # default 
+        for k in allowed_kwargs:
+            if k not in kwargs:
+                kwargs[k] = PYOORB_CONFIG[k]
         
         super(PYOORB, self).__init__(**kwargs)
         
@@ -397,6 +401,9 @@ class PYOORB(Backend):
         ephemeris_file : str, optional
             Which JPL ephemeris file to use with PYOORB.
         """
+        if not self.is_setup:
+            self.setup()
+            
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configureOrbits(
             orbits.cartesian, 

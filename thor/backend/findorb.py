@@ -9,21 +9,26 @@ from astropy.time import Time
 from .backend import Backend
 
 FINDORB_CONFIG = {
-    "remove_files" : "N",
+    "config_file" : os.path.join(os.path.dirname(__file__), "data", "environ.dat"),
+    "remove_files" : True,
 }
-FINDORB_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "data", "environ.dat")
 
 class FINDORB(Backend):
     
     def __init__(self, **kwargs):
         
-        allowed_kwargs = [
-            "remove_files", 
-        ]
-        
+        # Make sure only the correct kwargs
+        # are passed to the constructor
+        allowed_kwargs = FINDORB_CONFIG.keys()
         for k in kwargs:
             if k not in allowed_kwargs:
                 raise ValueError()
+        
+        # If an allowed kwarg is missing, add the 
+        # default 
+        for k in allowed_kwargs:
+            if k not in kwargs:
+                kwargs[k] = FINDORB_CONFIG[k]
         
         super(FINDORB, self).__init__(**kwargs)
 
@@ -93,7 +98,7 @@ class FINDORB(Backend):
                 "-e",
                 vectors_txt,
                 "-D",
-                FINDORB_CONFIG_FILE, 
+                self.config_file, 
                 "EPHEM_STEP_SIZE=ttimes_prop.in"
 
             ]
@@ -133,13 +138,16 @@ class FINDORB(Backend):
 
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
-
+            
+            # Write the observation times to a file
             self._writeTimes(
                 "times_eph.in",
                 observation_times.utc,
                 "utc"
             )
 
+            # Certain observatories are dealt with differently, so appropriately
+            # define the columns
             if (observatory_code == "500"):
                 columns = [
                     "jd_utc", "RA_deg", "Dec_deg", "delta_au", "r_au",
@@ -156,12 +164,14 @@ class FINDORB(Backend):
                     "lon", "lat", "altitude_km"
                 ] 
 
-
+            # For each orbit calculate their ephemerides
             for i in range(orbits.num_orbits):
-
+                
+                # Set directory variables
                 out_dir = "ephemeris{:08d}_{}".format(i, observatory_code)
                 ephemeris_txt = "{}/ephemeris.txt".format(out_dir)
-                print(FINDORB_CONFIG_FILE)
+
+                # Call fo and generate ephemerides
                 call = [
                     "fo", 
                     "-o", 
@@ -178,11 +188,12 @@ class FINDORB(Backend):
                     "-e",
                     ephemeris_txt,
                     "-D",
-                    FINDORB_CONFIG_FILE,
+                    self.config_file,
                     "EPHEM_STEP_SIZE=ttimes_eph.in",   
                 ]
                 subprocess.call(call)
-
+                
+                # Read the resulting ephemeris file
                 ephemeris = pd.read_csv(
                     ephemeris_txt,
                     header=0,
@@ -202,11 +213,20 @@ class FINDORB(Backend):
                 os.remove("times_eph.in")
 
 
+        # Combine ephemeris data frames and sort by orbit ID,
+        # observatory code and observation time, then reset the
+        # index
         ephemeris = pd.concat(ephemeris_dfs)
         ephemeris.sort_values(
             by=["orbit_id", "observatory_code", "jd_utc"],
             inplace=True
         )
+        ephemeris.reset_index(
+            inplace=True,
+            drop=True
+        )
+
+        # Extract observation times and convert them to MJDs
         times = Time(
             ephemeris["jd_utc"].values,
             format="jd",
@@ -217,14 +237,12 @@ class FINDORB(Backend):
             columns=["jd_utc"],
             inplace=True
         )
-        ephemeris.reset_index(
-            inplace=True,
-            drop=True
-        )
 
+        # Sort the columns into a more user friendly order
         cols = ['orbit_id', 'observatory_code', 'mjd_utc'] + [col for col in ephemeris.columns if col not in ['orbit_id', 'observatory_code', 'mjd_utc']]
         ephemeris = ephemeris[cols]
 
+        # If orbits have their IDs defined replace the orbit IDs
         if orbits.ids is not None:
             ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
 
