@@ -36,4 +36,9 @@ class Backend:
             "This backend does not have orbit determination implemented."
         )
         raise NotImplementedError(err)
-    
+
+    def getObserverState(self, observers, origin="heliocenter"):
+        err = (
+            "This backend does not have observer state calculations implemented."
+        )
+        raise NotImplementedError(err)

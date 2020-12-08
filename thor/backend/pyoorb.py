@@ -5,6 +5,7 @@ import pyoorb as oo
 import pandas as pd
 from astropy.time import Time
 
+from ..utils import _checkTime
 from .backend import Backend
 
 PYOORB_CONFIG = {
@@ -396,8 +397,6 @@ class PYOORB(Backend):
         ephemeris_file : str, optional
             Which JPL ephemeris file to use with PYOORB.
         """
-        _checkTime(t0, "t0")
-
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configureOrbits(
             orbits.cartesian, 
@@ -463,24 +462,14 @@ class PYOORB(Backend):
 
             if err == 1:
                 warnings.warn("PYOORB has returned an error!", UserWarning)
-                with np.printoptions(precision=30, threshold=len(orbits)):
-                    with open("err.log", "w") as f:
-                        print("Orbits:", file=f)
-                        pprint.pprint(orbits, width=140, stream=f)
-                        print("T0 [MJD TT]:", file=f)
-                        pprint.pprint(t0.tt.mjd, width=140, stream=f)
-                        print("T1 [MJD TT]:", file=f)
-                        pprint.pprint(t1.tt.mjd, width=140, stream=f)
-
-        
 
             ephemeris = pd.DataFrame(
                 np.vstack(ephemeris), 
                 columns=columns
             )
             
-            ids = np.arange(0, len(orbits))
-            ephemeris["orbit_id"] = [i for i in ids for j in t1]
+            ids = np.arange(0, orbits.num_orbits)
+            ephemeris["orbit_id"] = [i for i in ids for j in observation_times.utc.mjd]
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
             ephemeris = ephemeris[["orbit_id", "observatory_code"] + columns]
             

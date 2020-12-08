@@ -1,0 +1,370 @@
+   Comments and blank lines may be added freely.  (Anything beginning
+   with a space is a comment.)  If a line is uncommented,  it's probably
+   controlled via the user interface.
+
+   The default version of this file is stored in 'environ.def'.  Once
+   you've run Find_Orb or 'fo' (Find_Orb's non-interactive sibling),  new
+   settings are written to 'environ.dat'.  If you decide at some point that
+   you'd like to reset to factory defaults,  just delete 'environ.dat'.
+
+   Windows Find_Orb ignores the following 'CONSOLE_OPTS' line.  For the
+   console flavor of Find_Orb,  this line gives the default MPC code for
+   ephems, which items are shown on-screen, residual display format, and
+   whether all,  some,  or only one MPC code(s) are displayed.
+CONSOLE_OPTS=500 15 3 1
+
+   The 'settings' give the comet magnitude type used (defaults to 'N', or
+   'nuclear');  the format used for orbital elements;  the precision used
+   in orbital elements (defaults to five places for angular elements);  a
+   zero,  for a no-longer-used quantity;  the maximum residual filtered,
+   in arcseconds (defaults to 2);  and the Gaussian "noise" added,  in
+   sigmas,  when running Monte Carlo orbits.
+SETTINGS=N,4,5,0,2.000000,1.000000
+
+   Ephemeris options are enumerated at
+   https://www.projectpluto.com/fo_usage.htm#eph_opts . This line just
+   specifies which options are currently set for ephemerides.  Defaults are
+   10 (round time to nearest ephemeris step) and 16 (show uncertainties).
+EPHEM_OPTIONS=3,4,5,6,8,9,17
+
+DEFAULTS=N4
+EPHEM_START=+0
+
+   By default,  ephems start 'now' (above line),  and run for twenty
+   one-hour steps (next two lines.)
+
+EPHEM_STEPS=10
+EPHEM_STEP_SIZE=1
+REFERENCE=Find_Orb
+
+   'filtering' gives the assumed probability that an observation is a blunder
+   (defaults to 2%);  the over-observing time span (defaults to one day);  the
+   "ceiling" on over-observing (defaults to five observations);  and a number
+   which is 1 if "filtering" uses blunder management,  or 0 if we are doing
+   traditional rejection based on an observation having residuals greater
+   than N sigmas,  with N specified in 'settings' (see above).  By default,
+   blunder management is used (see the Find_Orb Web page for a description of
+   blunder management and over-observing parameters).
+FILTERING=2.000 1.000000 5 1
+
+   Observations sent via e-mail frequently end up with spaces added
+   or removed.  Find_Orb will (usually) parse such observations anyway.
+   Remove or comment out the following line,  and Find_Orb will switch
+   to being "strict" about lines being exactly 80 characters long,  etc.
+FIX_OBSERVATIONS=1
+
+   By default,  ephemerides can cover the range -1000 to +3000.  If you want
+   to go beyond that,  alter the following line.
+TIME_RANGE=-1000,3000
+
+   MPC has requested that NEOCP data not be redistributed.  So in
+   pseudo-MPECs,  NEOCP observations are "redacted" (blacked out and the
+   data replaced with garbage).  The following observers have kindly given
+   permission for their NEOCP observations to be redistributed in
+   "unredacted" form.  (Contact me if you're willing to be added to this
+   list.)  An asterisk indicates that observations of geocentric objects
+   should remain redacted.
+GREENLIT=033 291 568 691 703 718 970 C95 G58 G96 H01 H41 H43 H45 I41 I52 I93
+GREENLIT2=J69 J95 K80 T05 T08 V03 V06 V11 Y00 Z37 Z48 Z80
+
+   We default to assuming that no object will have an observed arc greater
+   than 200 years,  and that if it _is_ longer than that,  it's a mistake.
+   This is a pretty good assumption,  though some comets and four asteroids
+   do have longer observed arcs than this,  possibly requiring you to
+   adjust the following line.
+MAX_OBSERVATION_SPAN=200
+
+   For radar stations,  power (in watts), temp in K, gain, altitude limit
+   in degrees,  and an arbitrary "radar constant" are needed.  So far,  the
+   only radar stations for which I have those data are (251) Arecibo and
+   (253) Goldstone.  [Correction:  at least most of these data are provided
+   in Table 1 of https://arxiv.org/pdf/1604.01080v1.pdf.  And Table 2 provides
+   'relative sensitivities',  based on DSS-14 Goldstone (253) = 1, including
+   for bistatic modes.  One could,  and I probably eventually will,  copy the
+   (253) line for use with other stations;  compute ephemerides that way;
+   replace the power,  temperature,  etc. values with the ones that actually
+   apply for that telescope;  then scale up/down the "radar constant" to get
+   SNRs that are the appropriate multiple of (253) Goldstone.]
+      2020 May 22: corrected Arecibo parameters based on
+   http://www.naic.edu/~pradar/detect.php . As that page explains,  Hurricane
+   Maria downgraded the power level to 350 kW (was 900) and the gain to 7
+   (was 10).  Hope I'll be able to bump those values back up someday soon...
+RADAR_251=350000,24,7,70.5,1.5e-11
+RADAR_253=430000,17,.94,20,1e-11
+   The Parkes radio telescope in Australia lacks an official MPC code.  But it
+   has an unofficial MPC code in 'rovers.txt' (q.v.).
+RADAR_d43=430000,17,.94,20,7e-14
+
+   'Settings2' gives five parameters.  The first is 1 if observation weighting
+   is used and 0 if it is not.  Next,  the 'faint limit' on ephemerides (by
+   default,  ephemerides are not listed if the object is fainter than mag 22).
+   The third value defaults to zero;  if it's non-zero,  the positional sigmas
+   for observations are shown in the (normally blank) columns 57-65 of MPC
+   reports.  The fourth number indicates a central object for orbital
+   elements,  if one isn't allowing automatic selection of elements.  By default,
+   the central object is 3,  i.e.,  the earth.
+      The final number is 1 if FCCT14 astrometric debiasing is applied,  and 0
+   if it is not. FCCT14 removes (most of) the star catalog position/proper
+   motion biases,  using tables from Farnocchia,  Chesley,  Chamberlin,
+   Tholen, _Icarus_ 245 (2015) 94-111,
+   http://adsabs.harvard.edu/abs/2015Icar..245...94F  .  See
+   https://www.projectpluto.com/bias.htm for more information.
+SETTINGS2=1 22.00 0 3 0
+
+   Note the comments in the above paragraph about FCCT14 debiasing.  By
+   default,  Find_Orb looks for the 'bias.dat' file to be in the same
+   directory as Find_Orb itself.  However,  you can set the file name
+   with the following line.
+FCCT14_FILE=
+
+   Most JPL filenames can be automatically detected via the list in
+   'jpl_eph.txt'.  But if it's in a different folder or an odd name,  you
+   can add the path to one of the following,  depending on whether you're
+   on Windows or Linux.  (LINUX_JPL_FILENAME is also used for OS/X and *BSD.)
+LINUX_JPL_FILENAME=
+JPL_FILENAME=
+
+   When Find_Orb loads up a short arc,  it uses "statistical ranging"
+   (SR),  and defaults to trying 100 possible orbits at a mix of
+   distances and radial velocities to characterize the possible orbits
+   for the object.  You can raise or lower that number here.
+MAX_SR_ORBITS=100
+
+   By default,  if asteroid perturbers are turned on,  Pallas is included
+   if it is within 10 AU of our target object.  This 'asteroid threshhold'
+   is scaled by the square root of the perturbing asteroid's mass;  for
+   example,  an asteroid with a quarter the mass of Pallas would only
+   be included if it were within 5 AU.  This helps to assure that the tiny
+   contributions of most of the 300 asteroids do not have to be computed.
+   If you think you have a case where they _do_ matter,  increase the
+   following setting.  If you think you're unnecessarily including asteroid
+   perturbations that cannot possibly matter,  decrease it.
+ASTEROID_THRESH=10
+
+   By default,  we consider all 300 asteroids listed in BC-405.  You can
+   get a good speed-up by cutting this down,  at the risk of maybe ignoring
+   some tiny rock that just happens to pull your target around more than
+   you expected.  (See the next option,  too.)
+BC405_ASTEROIDS=300
+
+   By default,  Find_Orb uses a bit of logic to determine which asteroids
+   are close enough to have detectable perturbations.  (If it just added
+   in perturbations from all 300 all the time,  it would slow to a crawl.)
+   You can set the ASTEROID_PERT_LIST line to list a set of asteroids to
+   be used at all times,  to the exclusion of others.  This can help in
+   replicating the results of other programs;  if an integrator always
+   uses Ceres,  Pallas,  and Vesta (a common choice),  you would set
+   ASTEROID_PERT_LIST=1,2,4.  To replicate JPL's "Big-16" scheme,  you
+   would use ASTEROID_PERT_LIST=1,2,4,10,3,6,7,15,16,29,52,65,87,88,511,704
+   (the order doesn't matter.)
+ASTEROID_PERT_LIST=1,2,4,10,3,6,7,15,16,29,52,65,87,88,511,704
+
+   By default,  geoocentric elements are referred to the J2000 _equator_.
+   Everything else (heliocentric and other non-earth-centric) is referred
+   to the J2000 _ecliptic_.  Set the following to be 1 to force all
+   elements to be J2000 ecliptic (including geocentric ones),  or 2 to
+   force all elements to be J2000 equatorial.  Set it to be 3 to force
+   all elements to be body-centric.  Note that for geocentric elements,
+   this will result in elements that are slightly different from those you'd
+   get by default,  due to precession and nutation since 2000;  the angles
+   should be passably close to those seen in TLEs.
+ELEMENTS_FRAME=1
+
+   Find_Orb will apply geopotential terms (spherical harmonics) for objects
+   close to the earth.  It has a bit of logic to determine how many should
+   be computed,  as a function of distance (only J2 for most cases,  but
+   many terms as one gets close to the earth).  The following GEO_TERMS
+   quantity can be raised to include more terms,  or lowered to get better
+   speed for artsats.  However,  through experimentation,  I've found that
+   setting it to the default value of 6 gets good results;  increasing it
+   doesn't change orbits much,  lowering it causes them to start showing
+   errors.
+GEO_TERMS=6
+
+   Find_Orb can use either the method of Encke (do a two-body solution relative
+   to the 'best fitting' body,  integrating perturbations to that orbit).  By
+   default,  it instead uses the method of Cowell (the 'direct' method,  in
+   which you just integrate the accelerations from all bodies).  I'm still
+   experimenting with both methods.  But you will probably be best off leaving
+   this value at zero,  meaning Cowell is used.
+ENCKE=1
+
+   By default,  the DRAG_SHUTOFF=1 tells Find_Orb not to include the effects
+   of atmospheric drag.  Set it to zero if you want objects entering the
+   earth's atmosphere to be affected by drag.
+DRAG_SHUTOFF=1
+
+   By default,  Find_Orb will look for an orbit covering,  at most,  20
+   years (7300 days) of observations.  This is simply for speed reasons,
+   and you can toggle additional observations once the object is loaded
+   and extend the orbit.   You can adjust the initial parameter here.
+AUTO_ARC_LEN=7300
+
+   VECTOR_OPTS gives three values controlling state vector and Cartesian
+   coordinate ephemerides.  The first value can be zero (the default) for
+   equatorial J2000 vectors,  or one for ecliptic J2000.  (I may add
+   mean and/or apparent coordinates at some point,  and perhaps body
+   plane coordinates.)  The second value is a multiplier for length.
+   Lengths default to being in AU,  with this multiplier being 1.
+   Set it to 149597870.7 (the number of kilometers in one AU) to switch
+   to kilometers,  or to 23454.7800299146773197201 to switch the distance
+   unit to Earth radii (this assumes the equatorial radius of 6378.140 km.)
+   The final value gives the time unit:  1=days (default),  24=hours,
+   1440=minutes, 86400=seconds.  For example,  VECTOR_OPTS=1,149597870.7,86400
+   would get you ecliptic J2000 vectors in kilometers and km/s.
+VECTOR_OPTS=1,1,1
+
+   Comet non-gravitational forces in the "standard" Marsden-Sekanina model
+   are assumed to be due to sublimating ice.  As described at page 3 of
+
+   http://www.lpi.usra.edu/books/CometsII/7009.pdf
+
+   'Cometary Orbit Determination and Nongravitational Forces',  D. K. Yeomans,
+   P. W. Chodas, G. Sitarski, S. Szutowicz, M. Krolikowska, "Comets II",
+   this leads to a force whose magnitude is given by a function g(r),  with
+   parameters r0, m, n,  and k.  The following line gives those constants for
+   non-gravs driven by sublimating water ice.  Sekanina and Kracht have
+   proposed different r0, m, n, and k for other sublimation processes.  If
+   you want to do that,  change the line below.  (Note that 'alpha' isn't
+   given;  it's a normalization quantity to ensure g(1) = 1.  Find_Orb
+   will compute it for you.)
+
+COMET_CONSTANTS=2.808,2.15,5.093,4.6142
+
+   Initial orbit determination (IOD) usually takes a couple of seconds.
+   For longer arcs,  it might take five or ten seconds.  If it takes more
+   than IOD_TIMEOUT seconds (defaults to 20),  we stop looking for a better
+   initial orbit and take whatever our best orbit thus far is.  (Such cases
+   usually come about because the observations are inconsistent and there
+   isn't really a meaningful orbit that fits them.)
+IOD_TIMEOUT=20
+
+   Find_Orb defaults to looking for the BC405 ephemeris file (orbital elements
+   at 40-day intervals for 300 asteroids used in the BC405 theory;  see
+   https://www.projectpluto.com/ast_pert.htm for details) in its configuration
+   directory,  then the local directory.  But using the following line,  you
+   can move the 'asteroid_ephemeris.txt' file to a different directory,  and/or
+   rename it.
+# BC405_FILENAME=/home/phred/big/asteroid_ephemeris.txt
+
+   I had a request (https://groups.yahoo.com/neo/groups/find_orb/conversations/messages/35)
+   for an option to output planetary state vectors at the epoch of the orbital
+   elements to 'elements.txt'.  If you want to do that,  set PLANET_STATES=1.
+   By default,  it's blank and planet states are not written out.
+PLANET_STATES=
+
+   When looking for precoveries,  one may want to list only images that
+   haven't been measured yet,  or only those that have been measured.  (Note
+   that the only way Find_Orb knows which images have been measured is by
+   looking at the astrometry.  That is to say,  if the astrometry you've used
+   to compute the orbit came from an image,  Find_Orb will notice that fact.
+   Otherwise,  it'll assume that the image in question hasn't been measured.)
+   A value of 1 means "show only measured images";  2="show only unmeasured";
+   0 or blank means "show all images".
+FIELD_INCLUSION=0
+
+   Set the following COMBINE_ALL parameter to any non-blank value,  and all
+   observations in a file will be loaded as if they were of a single object.
+   This can be convenient when you're checking a linkage,  for example;  you
+   can compute an orbit based on all the observations without having to
+   change the designations to all be the same.
+COMBINE_ALL=
+
+   In computing impact points on the earth,  we're really mostly interested
+   in the point where the object 'collides' with the upper atmosphere and
+   is slowed down/explodes.  Rob Matson tells me that for a 2-3 meter object,
+   it should become visible at about 90 km and drop below 3 km/s by the time
+   it gets down to 20-25 km.  That's a bit of a range;  let's go with 50 km.
+   (The collision altitude is actually specified in meters,  though.)
+COLLISION_ALTITUDE=50000
+
+   Current available language settings are e (English), f (French), i
+   (Italian), d (German), r (Russian), s (Spanish).  More could be added,
+   and the current not-very-complete translations improved;  please let
+   me know if you're interested.
+LANGUAGE=e
+
+   By default,  ephems show RAs to 0.001 seconds and decs to 0.01 arcseconds.
+   The following values cause ephemerides to show RAs to three places in
+   seconds,  decs to two places in arcseconds.  Format numbers 101 to 116
+   will get you get decimal degrees with one to sixteen places.  Format
+   numbers -1 to -9 will get you hours/minutes (for RA) or degrees/arcmin
+   (for dec) with zero to eight places after the decimal.  Note that the
+   higher-precision values will be almost meaningless noise.
+RA_DEC_FORMAT=116,116
+
+   By default,  Find_Orb does a decent job of figuring out which objects
+   should be included as perturbers.  But if you want to insist that all
+   computations include certain objects,  you can use the line below to
+   do so.  It's a hexadecimal number that is the sum of 2=Mercury,  4=Venus,
+   8=Earth, ... 100 = Neptune, 200=Pluto, 400=the Moon.  The sun is always
+   included.  So 7fe,  for example,  would be (nine) planets plus the moon.
+   408 would add just the earth and moon.  Note that if Find_Orb detects
+   that an orbit would pass close to,  say,  Neptune,  then it will be
+   turned on automatically.
+PERTURBERS=1007fe
+
+   In console Find_Orb,  one can have every (say) fifth observation
+   underlined by setting the following value to 5.  This can make the
+   observation section a little easier to read.  Not everybody agrees
+   with me on this,  though,  so the default is for it to be unset.
+UNDERLINE_OBS=
+
+   By default,  JSON files 'elements.json',  'elem_short.json',
+   'ephemeri.json',  and 'combined.json' will be made in the configuration
+   directory (same directory as this file.)  But that default behavior can
+   be overridden with the following lines.  See
+   https://www.projectpluto.com/fo_usage.htm#json_files for details on how
+   these work.  Note that different lines are used for Windows(R) than for
+   Linux,  OS/X,  and *BSD.
+JSON_EPHEM_NAME=
+JSON_ELEMENTS_NAME=
+JSON_SHORT_ELEMENTS=
+JSON_COMBINED_NAME=
+WIN_JSON_EPHEM_NAME=
+WIN_JSON_ELEMENTS_NAME=
+WIN_JSON_SHORT_ELEMENTS=
+WIN_JSON_COMBINED_NAME=
+
+   By default,  ecliptic elements are shown in the J2000 frame.  You
+   can set,  for example,  'ELEMENT_EPOCH=B1950 ecliptic' or
+   'ELEMENT_EPOCH=B1767.0 ecliptic' to get those frames.  Set
+   'ELEMENT_EPOCH=ecliptic of date' date to get elements in the epoch
+   of date.
+ELEMENT_EPOCH=J2000 ecliptic
+
+   Find_Orb can use an Earth Orientation Parameters (EOP) file such
+   ftp://ftp.iers.org/products/eop/rapid/standard/finals.all , with
+   the filename specified with the EOP_FILE parameter.  Correcting for
+   small variations in the earth's orientation (spin and spin axis)
+   can lead to differences at the millisecond level for close-in
+   objects.  By default,  Find_Orb will look for 'finals.all'.
+EOP_FILE=finals.all
+
+   By default,  magnitudes in ephemerides are shown to tenths.  Set
+   the following to MAG_DIGITS=2 to get hundredths (almost always
+   a meaningless level of precision,  but some people do get good
+   photometry...)
+MAG_DIGITS=2S
+
+   By default,  sigmas and covariance matrix values in 'covar.txt'
+   are shown to an abbreviated precision.  It normally makes no sense
+   to say that you have determined,  for example,  the semimajor axis
+   to +/- 0.3141592653 AU;  0.31 AU would suffice,  and many would
+   argue for 0.3.  In some cases,  though,  you may want/need more
+   digits.  Increment FULL_SIGMAS,  and you get an extra digit of
+   precision in both sigmas and in (most) 'covar.txt' values.
+FULL_SIGMAS=16
+
+   In computing SNRs in ephemerides,  Find_Orb defaults to assuming
+   30-second exposures.  That can be modified below.
+EXPTIME=30
+
+   In computing exposure durations in ephemerides,  Find_Orb defaults
+   to assuming a target SNR=4.  That can be modified below.
+SNR=4
+
+   Diameters for asteroids are estimated based on an assumed albedo
+   of 10%.  Your assumed (or measured) albedo may be different,  in
+   which case you should modify the following.
+OPTICAL_ALBEDO=0.10
