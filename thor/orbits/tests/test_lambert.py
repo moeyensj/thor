@@ -3,9 +3,9 @@ from astropy.time import Time
 from astropy import units as u
 
 from ....constants import Constants as c
-from ....utils import testOrbits
-from ....utils import getHorizonsVectors
-from ...propagate import propagateOrbits
+from ...utils import getHorizonsVectors
+from ...testing import testOrbits
+from ..propagate import propagateOrbits
 from ..lambert import calcLambert
 
 MU = c.G * c.M_SUN

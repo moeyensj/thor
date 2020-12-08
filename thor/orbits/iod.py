@@ -6,9 +6,9 @@ import pandas as pd
 from astropy.time import Time
 from itertools import combinations
 
-from ...config import Config
-from ..handler import _backendHandler
-from ..ephemeris import generateEphemeris
+from ..config import Config
+from .handler import _backendHandler
+from .ephemeris import generateEphemeris
 from .gauss import gaussIOD
 
 __all__ = [

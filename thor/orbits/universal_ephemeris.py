@@ -1,24 +1,28 @@
+import warnings
 import numpy as np
-import pandas as pd
 from numba import jit
-from astropy.time import Time
+from numba.core.errors import NumbaPerformanceWarning
 
-from ...constants import Constants as c
-from ...utils import _checkTime
-from ...coordinates import transformCoordinates
-from ..state import getPerturberState
-from ..state import shiftOrbitsOrigin
-from ..propagate import propagateUniversal
+from ..constants import Constants as c
+from ..coordinates import transformCoordinates
+from ..utils import _checkTime
+from .stumpff import calcStumpff
+from .state import getPerturberState
+from .state import shiftOrbitsOrigin
+from .universal_propagate import propagateUniversal
 from .aberrations import addLightTime
 from .aberrations import addStellarAberration
+
+# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
+# involves slicing numpy arrays along their second dimension which is unsupported 
+# in numba's nopython mode. Lets ignore the warning so we don't scare users.  
+warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = [
     "generateEphemerisUniversal"
 ]
 
 MU = c.G * c.M_SUN
-C = c.C
-
 
 def generateEphemerisUniversal(orbits, 
                                t0, 

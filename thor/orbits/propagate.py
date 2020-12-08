@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from ...utils import _checkTime
-from ..state import shiftOrbitsOrigin
-from ..handler import _backendHandler
-from .universal import propagateUniversal
-from .pyoorb import propagateOrbitsPYOORB
+from ..utils import _checkTime
+from ..backend import PYOORB
+from .state import shiftOrbitsOrigin
+from .handler import _backendHandler
+from .universal_propagate import propagateUniversal
 
 __all__ = [
     "propagateOrbits"
@@ -94,17 +94,20 @@ def propagateOrbits(orbits, t0, t1, backend="THOR", backend_kwargs=None):
         propagated["orbit_id"] = propagated["orbit_id"].astype(int)
 
     elif backend == "PYOORB":
-        # PYOORB does not support TDB, so set times to TT and add a TDB correction
-        t0_tt = t0.tt.mjd + (t0.tdb.mjd - t0.tt.mjd)
-        t1_tt = t1.tt.mjd + (t1.tdb.mjd - t1.tt.mjd)
-        backend_kwargs["time_scale"] = "TT"
         
-        propagated = propagateOrbitsPYOORB(orbits, t0_tt, t1_tt, **backend_kwargs) 
-
-        # Convert return epoch back to TDB
-        propagated.rename(columns={"epoch_mjd" : "epoch_mjd_tdb"}, inplace=True)
-        epoch_mjd_tdb = [t1_tdb for i in range(len(orbits))]
-        propagated["epoch_mjd_tdb"] = np.concatenate(epoch_mjd_tdb)
+        PYOORB_CONFIG = {
+            "orbit_type" : "cartesian", 
+            "magnitude" : 20, 
+            "slope" : 0.15, 
+            "dynamical_model" : "N",
+            "ephemeris_file" : "de430.dat"
+        }
+        backend = PYOORB(**PYOORB_CONFIG)
+        propagated = backend.propagateOrbits(
+            orbits,
+            t0,
+            t1
+        )
 
     else:
         err = (

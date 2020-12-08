@@ -1,8 +1,8 @@
 import numpy as np
 
-from ...constants import Constants as c
-from ..propagate import calcStumpff
-from ..propagate import calcChi
+from ..constants import Constants as c
+from .stumpff import calcStumpff
+from .universal_propagate import calcChi
 
 __all__ = [
     "_calcM",

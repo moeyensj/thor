@@ -1,8 +1,8 @@
 import numpy as np
 from numba import jit
 
-from ...constants import Constants as c
-from ..propagate import calcStumpff
+from ..constants import Constants as c
+from .stumpff import calcStumpff
 
 MU = c.G * c.M_SUN
 

@@ -1,6 +1,6 @@
 import numpy as np
 
-from ...constants import Constants as c
+from ..constants import Constants as c
 
 __all__ = ["calcGibbs"]
 

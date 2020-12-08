@@ -2,11 +2,11 @@ import numpy as np
 from astropy.time import Time
 from astropy import units as u
 
-from ....constants import Constants as c
-from ....utils import testOrbits
-from ....utils import getHorizonsObserverState
-from ....utils import getHorizonsVectors
-from ...ephemeris import generateEphemeris
+from ...constants import Constants as c
+from ...utils import getHorizonsObserverState
+from ...utils import getHorizonsVectors
+from ...testing import testOrbits
+from ..ephemeris import generateEphemeris
 from ..gauss import gaussIOD
 
 TARGETS = [

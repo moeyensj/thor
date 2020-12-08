@@ -3,9 +3,9 @@ import spiceypy as sp
 from astropy.time import Time
 from astropy import units as u
 
-from ....constants import Constants as c
-from ....utils import getHorizonsVectors
-from ....utils import testOrbits
+from ...constants import Constants as c
+from ...utils import getHorizonsVectors
+from ...testing import testOrbits
 from ..universal import propagateUniversal
 
 MU = c.G * c.M_SUN

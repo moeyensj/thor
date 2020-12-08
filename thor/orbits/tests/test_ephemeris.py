@@ -2,10 +2,10 @@ import numpy as np
 from astropy.time import Time
 from astropy import units as u
 
-from ....utils import _checkTime
-from ....utils import testEphemeris
-from ....utils import getHorizonsVectors
-from ....utils import getHorizonsEphemeris
+from ...utils import _checkTime
+from ...utils import getHorizonsVectors
+from ...utils import getHorizonsEphemeris
+from ...testing import testEphemeris
 from ..ephemeris import generateEphemeris
 
 TARGETS = [

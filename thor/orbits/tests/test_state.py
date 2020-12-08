@@ -3,7 +3,7 @@ import numpy as np
 from astropy import units as u
 from astropy.time import Time
 
-from ...utils import testOrbits
+from ...testing import testOrbits
 from ...utils import getHorizonsVectors
 from ..state import shiftOrbitsOrigin
 

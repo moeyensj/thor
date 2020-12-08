@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from ...utils import _checkTime
-from ...observatories import getObserverState
-from ..handler import _backendHandler
-from .pyoorb import generateEphemerisPYOORB
-from .universal import generateEphemerisUniversal
+from ..utils import _checkTime
+from ..backend import PYOORB
+from ..observatories import getObserverState
+from .handler import _backendHandler
+from .universal_ephemeris import generateEphemerisUniversal
 
 
 __all__ = [
@@ -144,48 +144,20 @@ def generateEphemeris(orbits, t0, observers, backend="THOR", backend_kwargs=None
         ]]
 
     elif backend == "PYOORB":
-        # Pyoorb always outputs UTC observation times for ephemeris generation
-        backend_kwargs["time_scale"] = "UTC"
-            
-        ephemeris_dfs = []
-        for observatory_code, observation_times in observers.items():
-            backend_kwargs["observatory_code"] = observatory_code
 
-            # Generate ephemeris using PYOORB
-            ephemeris = generateEphemerisPYOORB(
-                orbits, 
-                t0.utc.mjd, 
-                observation_times.utc.mjd, 
-                **backend_kwargs)
-
-            # Add observatory_code to data frame
-            ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
-            ephemeris_dfs.append(ephemeris)
-
-        # Concatenate data frames, reset index and then keep only the columns
-        # we care about 
-        ephemeris = pd.concat(ephemeris_dfs)
-        ephemeris.reset_index(inplace=True, drop=True)
-        ephemeris = ephemeris[[
-            'orbit_id', 
-            'observatory_code',
-            'mjd_utc', 
-            'RA_deg', 
-            'Dec_deg', 
-            'vRAcosDec',
-            'vDec', 
-            'r_au', 
-            'delta_au', 
-            'obj_x',
-            'obj_y', 
-            'obj_z', 
-            'obj_vx', 
-            'obj_vy', 
-            'obj_vz', 
-            'obs_x', 
-            'obs_y',
-            'obs_z'
-        ]]
+        PYOORB_CONFIG = {
+            "orbit_type" : "cartesian", 
+            "magnitude" : 20, 
+            "slope" : 0.15, 
+            "dynamical_model" : "N",
+            "ephemeris_file" : "de430.dat"
+        }
+        backend = PYOORB(**PYOORB_CONFIG)
+        ephemeris = backend.generateEphemeris(
+            orbits,
+            t0,
+            observers
+        )
 
     else: 
         err = (

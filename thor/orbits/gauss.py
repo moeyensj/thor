@@ -2,10 +2,10 @@ import numpy as np
 from numpy import roots
 from numba import jit
 
-from ...constants import Constants as c
-from ...coordinates import transformCoordinates
-from ..propagate import calcStumpff
-from ..propagate import calcChi
+from ..constants import Constants as c
+from ..coordinates import transformCoordinates
+from .stumpff import calcStumpff
+from .universal_propagate import calcChi
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
 from .iterators import iterateStateTransition
