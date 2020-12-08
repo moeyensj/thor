@@ -1,5 +1,3 @@
-from .orbit_testing import *
-from .ephemeris_testing import *
 from .io import *
 from .spice import *
 from .astropy import *
