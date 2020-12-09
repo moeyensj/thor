@@ -1,4 +1,5 @@
 import os
+import time
 import shutil
 import warnings
 import subprocess 
@@ -59,7 +60,7 @@ class FINDORB(Backend):
             )
         return 
 
-    def propagateOrbits(self, orbits, t1):
+    def _propagateOrbits(self, orbits, t1):
         """
         Propagate orbits, represented as cartesian state vectors, define at t0
         to times t1. 
@@ -68,22 +69,26 @@ class FINDORB(Backend):
 
 
         """
-
+        times_in_file = "times_prop_{}.in".format(os.getpid())
         self._writeTimes(
-            "times_prop.in",
+            times_in_file,
             t1.tt,
             "tt"
         )
 
         dfs = []
+        out_dirs = []
         for i in range(orbits.num_orbits):
-
-            out_dir = "vectors{:08d}".format(i)
+            
+            orbit_id = orbits.ids[i]
+            out_dir = "vectors{}".format(orbit_id)
             vectors_txt = "{}/vectors.txt".format(out_dir)
+            out_dirs.append(out_dir)
+
             call = [
                 "fo", 
                 "-o", 
-                "o{:08d}".format(i), 
+                "o{}".format(orbit_id), 
                 "-v",  
                 "{},{}".format(
                     orbits.epochs[i].tt.jd,
@@ -99,11 +104,17 @@ class FINDORB(Backend):
                 vectors_txt,
                 "-D",
                 self.config_file, 
-                "EPHEM_STEP_SIZE=ttimes_prop.in"
+                "EPHEM_STEP_SIZE=t{}".format(times_in_file)
 
             ]
             subprocess.call(call)
-
+            
+            wait = 0
+            while not os.path.exists(vectors_txt):
+                time.sleep(0.1)
+                wait += 1
+                if wait == 10:
+                    break
 
             # Read results of propagation                
             df = pd.read_csv(
@@ -114,9 +125,6 @@ class FINDORB(Backend):
             )
             df["orbit_id"] = [i for _ in range(len(df))]
 
-            if self.remove_files:
-                shutil.rmtree(out_dir)
-
             dfs.append(df)
 
         propagated = pd.concat(dfs)
@@ -124,24 +132,32 @@ class FINDORB(Backend):
             inplace=True,
             drop=True
         )
-        propagated = propagated[["orbit_id", "jd_tt", "x", "y", "z", "vx", "vy", "vz"]]
+        propagated["epoch_mjd_tdb"] = Time(
+            propagated["jd_tt"].values,
+            scale="tt",
+            format="jd"
+        ).tdb.mjd
+        propagated = propagated[["orbit_id", "epoch_mjd_tdb", "x", "y", "z", "vx", "vy", "vz"]]
 
         if self.remove_files:
-            os.remove("times_prop.in")
+            os.remove(times_in_file)
+            for out_dir in out_dirs:
+                shutil.rmtree(out_dir)
 
         if orbits.ids is not None:
             propagated["orbit_id"] = orbits.ids[propagated["orbit_id"].values]
 
         return propagated
 
-    def generateEphemeris(self, orbits, observers):
+    def _generateEphemeris(self, orbits, observers):
 
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
             
             # Write the observation times to a file
+            times_in_file = "times_eph_{}.in".format(os.getpid())
             self._writeTimes(
-                "times_eph.in",
+                times_in_file,
                 observation_times.utc,
                 "utc"
             )
@@ -164,18 +180,21 @@ class FINDORB(Backend):
                     "lon", "lat", "altitude_km"
                 ] 
 
+            out_dirs = []
             # For each orbit calculate their ephemerides
             for i in range(orbits.num_orbits):
                 
                 # Set directory variables
-                out_dir = "ephemeris{:08d}_{}".format(i, observatory_code)
+                orbit_id = orbits.ids[i]
+                out_dir = "ephemeris{}_{}".format(orbit_id, observatory_code)
                 ephemeris_txt = "{}/ephemeris.txt".format(out_dir)
+                out_dirs.append(out_dir)
 
                 # Call fo and generate ephemerides
                 call = [
                     "fo", 
                     "-o", 
-                    "o{:08d}".format(i), 
+                    "o{}".format(orbit_id), 
                     "-v",  
                     "{},{},H=20.0".format(
                         orbits.epochs[i].tt.jd,
@@ -189,9 +208,16 @@ class FINDORB(Backend):
                     ephemeris_txt,
                     "-D",
                     self.config_file,
-                    "EPHEM_STEP_SIZE=ttimes_eph.in",   
+                    "EPHEM_STEP_SIZE=t{}".format(times_in_file),   
                 ]
                 subprocess.call(call)
+
+                wait = 0
+                while not os.path.exists(ephemeris_txt):
+                    time.sleep(0.1)
+                    wait += 1
+                    if wait == 10:
+                        break
                 
                 # Read the resulting ephemeris file
                 ephemeris = pd.read_csv(
@@ -205,13 +231,10 @@ class FINDORB(Backend):
                 ephemeris["observatory_code"] = [observatory_code for _ in range(len(ephemeris))]
                 ephemeris_dfs.append(ephemeris)
 
-                if self.remove_files:
-                    shutil.rmtree(out_dir)
-                    os.remove("eph_json.txt")
-
             if self.remove_files:
-                os.remove("times_eph.in")
-
+                os.remove(times_in_file)
+                for out_dir in out_dirs:
+                    shutil.rmtree(out_dir)
 
         # Combine ephemeris data frames and sort by orbit ID,
         # observatory code and observation time, then reset the

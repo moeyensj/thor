@@ -213,7 +213,7 @@ class PYOORB(Backend):
         epochs_pyoorb = np.array(list(np.vstack([epochs, time_scale]).T), dtype=np.double, order='F')
         return epochs_pyoorb
     
-    def propagateOrbits(self, orbits, t1):
+    def _propagateOrbits(self, orbits, t1):
         """
         Propagate orbits using PYOORB.
 
@@ -353,7 +353,7 @@ class PYOORB(Backend):
 
         return propagated
 
-    def generateEphemeris(self, orbits, observers):
+    def _generateEphemeris(self, orbits, observers):
         """
         Generate ephemeris using PYOORB.
 
