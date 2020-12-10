@@ -21,6 +21,9 @@ class Config:
     -------
     None
     """
+    USE_RAY = True
+    NUM_THREADS = 40
+
     ADES_METADATA = {
         "observatory_code" : "I11",
         "observatory_name" : "Vera C. Rubin Observatory",
@@ -31,7 +34,6 @@ class Config:
         "observers" : ["D. iRAC"],
         "measurers" : ["D. iRAC"],
     }
-
     COLUMN_MAPPING = {        
         ### Observation Parameters
         
