@@ -78,6 +78,23 @@ class Orbits:
         )
         return rep.format(self.num_orbits, self.orbit_type)
 
+    def __len__(self):
+        return self.orbits.shape[0]
+
+    def __getitem__(self, i):
+        args = []
+        for arg in ["cartesian", "epochs"]:
+            args.append(self.__dict__[arg][i])
+        
+        kwargs = {}
+        for kwarg in ["orbit_type", "ids", "H", "G", "covariances"]:
+            if type(self.__dict__[kwarg]) == np.ndarray:
+                kwargs[kwarg] = self.__dict__[kwarg][i]
+            else:
+                kwargs[kwarg] = self.__dict__[kwarg]
+
+        return Orbits(*args, **kwargs)
+
     def split(self, chunk_size):
         objs = []
         for chunk in range(0, self.num_orbits, chunk_size):
