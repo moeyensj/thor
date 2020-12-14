@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import shutil
 import tempfile
 import warnings
@@ -8,6 +9,7 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
+from ..utils import writeToADES
 from .backend import Backend
 
 FINDORB_CONFIG = {
@@ -272,7 +274,7 @@ class FINDORB(Backend):
                         shell=False, 
                         env=env, 
                         check=False, 
-                        capture_output=True
+                        capture_output=False
                     )
                     
                     if (os.path.exists(ephemeris_txt)):
@@ -327,61 +329,131 @@ class FINDORB(Backend):
 
         return ephemeris
 
+    def _orbitDetermination(self, observations):
 
-def orbitDetermination(observations):
-    
-    ids = []
-    epochs = []
-    orbits = []
-    covariances = []
-    
-    for obj_id in observations["obj_id"].unique():
-        
-        mask = observations["obj_id"].isin([obj_id])
-        writeToADES(
-            observations[mask], 
-            "observations.psv", 
-            mjd_scale="utc"
+        ids = []
+        epochs = []
+        orbits = []
+        covariances = []
+
+        _observations = observations.copy()
+        _observations.rename(
+            columns={
+                "RA_deg" : "ra",
+                "Dec_deg" : "dec",
+                "RA_sigma_deg" : "rmsRA",
+                "Dec_sigma_deg" : "rmsDec",
+                "mag_sigma" : "rmsMag",
+                "filter" : "band",
+                "observatory_code" : "stn"
+            }, 
+            inplace=True
         )
-        
-        out_dir = "od_{}".format(obj_id)
-        call = [
-            "fo", 
-            "observations.psv", 
-            "-O", 
-            out_dir,
-            "-D",
-            "environ.dat",
-        ]
-        subprocess.call(call)
+        _observations["rmsRA"] = _observations["rmsRA"] * np.cos(np.radians(_observations["dec"].values)) / 3600
+        _observations["rmsDec"] = _observations["rmsDec"] / 3600
 
-        with open(os.path.join(out_dir, "covar.json")) as f:
-            covar_data = json.load(f)
-            covariance_matrix = np.array(covar_data["covar"])
-            state = np.array(covar_data["state_vect"])
-            epoch = covar_data["epoch"]
+        id_present = False
+        if "permID" in _observations.columns.values:
+            id_present = True
+        if "provID" in _observations.columns.values:
+            id_present = True
+        if "trkSub" in _observations.columns.values:
+            id_present = True
+        if not id_present:
+            _observations["trkSub"] = _observations["obj_id"]
+        
+        if "mag" not in _observations.columns:
+            _observations.loc[:, "mag"] = 20.0
+        if "band" not in _observations.columns:
+            _observations.loc[:, "band"] = "V"
+        if "mode" not in _observations.columns:
+            _observations.loc[:, "mode"] = "CCD"
+        if "astCat" not in _observations.columns:
+            _observations.loc[:, "astCat"] = "None"
 
-        ids.append(obj_id)
-        epochs.append(epoch)
-        orbits.append(state)
-        covariances.append(covariance_matrix)
+        with tempfile.TemporaryDirectory() as temp_dir:
+
+            # Set this environment's home directory to the temporary directory
+            # to prevent bugs with multiple processes writing to the ~/.find_orb/
+            # directory
+            env = self._setWorkEnv(temp_dir)
+
+            for obj_id in _observations["obj_id"].unique():
+
+                observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(obj_id))
+                out_dir = os.path.join(temp_dir, "od_{}".format(obj_id))
+
+                mask = _observations["obj_id"].isin([obj_id])
+                writeToADES(
+                    _observations[mask], 
+                    observations_file, 
+                    mjd_scale="utc"
+                )
+
+                call = [
+                    "fo", 
+                    observations_file, 
+                    "-O", 
+                    out_dir,
+                    "-D",
+                    self.config_file,
+                ]
+                ret = subprocess.run(
+                        call, 
+                        shell=False, 
+                        env=env, 
+                        check=False, 
+                        capture_output=True
+                )
+                
+                covar_json = os.path.join(out_dir, "covar.json")
+                if (os.path.exists(covar_json)):
+                    with open(os.path.join(out_dir, "covar.json")) as f:
+                        covar_data = json.load(f)
+                        epoch = covar_data["epoch"]
+                        state = np.array(covar_data["state_vect"])
+                        covariance_matrix = np.array(covar_data["covar"])
+                else:
+                    epoch = 0.0
+                    state = np.zeros(6, dtype=float)
+                    covariance_matrix = np.zeros((6, 6), dtype=float)
+
+                ids.append(obj_id)
+                epochs.append(epoch)
+                orbits.append(state)
+                covariances.append(covariance_matrix)
+
+        orbits = np.vstack(orbits)
+
+        od = pd.DataFrame({
+            "obj_id" : ids,
+            "jd_tt" : epochs,
+            "x" : orbits[:, 0],
+            "y" : orbits[:, 1],
+            "z" : orbits[:, 2],
+            "vx" : orbits[:, 3],
+            "vy" : orbits[:, 4],
+            "vz" : orbits[:, 5],
+            "covariance" : covariances
+        })
         
-        if remove_files:
-            shutil.rmtree(out_dir)
-            os.remove("observations.psv")
+        od["mjd_tdb"] = Time(
+            od["jd_tt"].values,
+            format="jd",
+            scale="tt"
+        ).tdb.mjd
         
-    orbits = np.vstack(orbits)
-    
-    od = pd.DataFrame({
-        "obj_id" : ids,
-        "jd_tt" : epochs,
-        "x" : orbits[:, 0],
-        "y" : orbits[:, 1],
-        "z" : orbits[:, 2],
-        "vx" : orbits[:, 3],
-        "vy" : orbits[:, 4],
-        "vz" : orbits[:, 5],
-        "covariance" : covariances
-    })
-    return od
+        od = od[[
+            "obj_id", 
+            "mjd_tdb", 
+            "x", 
+            "y", 
+            "z", 
+            "vx", 
+            "vy", 
+            "vz", 
+            "covariance"
+        ]]
+        
+        return od
 

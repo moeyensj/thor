@@ -30,10 +30,15 @@ def ephemeris_worker(orbits, observers, backend):
     ephemeris = backend._generateEphemeris(orbits, observers)
     return ephemeris
 
+def orbitdetermination_worker(observations, backend):
+    orbits = backend._orbitDetermination(observations)
+    return orbits
+
 if USE_RAY:
     import ray
     propagation_worker = ray.remote(propagation_worker)
     ephemeris_worker = ray.remote(ephemeris_worker)
+    orbitdetermination_worker = ray.remote(orbitdetermination_worker)
 
 class Backend:
     
@@ -200,11 +205,65 @@ class Backend:
         )
         return ephemeris
         
-    def _orbitDeterminaton(self):
+    def _orbitDetermination(self):
         err = (
             "This backend does not have orbit determination implemented."
         )
         raise NotImplementedError(err)
+
+    def orbitDetermination(self, observations, threads=NUM_THREADS, chunk_size=10, **kwargs):
+        """
+        Run orbit determination on the input observations. These observations
+        must at least contain the following columns:
+        
+        obj_id : Object ID
+        mjd_utc : Observation time in MJD UTC.
+        RA_deg : Topocentric Right Ascension in decimal degrees. 
+        Dec_deg : Topocentric Declination in decimal degrees. 
+        sigma_RA_deg : 1-sigma uncertainty in RA.
+        sigma_Dec_deg : 1-sigma uncertainty in Dec.
+        observatory_code : MPC observatory code.
+
+
+        """
+        unique_objs = observations["obj_id"].unique()
+        observations_split = [observations[observations["obj_id"].isin(unique_objs[i:i+chunk_size])].copy() for i in range(0, len(unique_objs), chunk_size)]
+        backend_duplicated = [copy.deepcopy(self) for i in range(len(observations_split))]
+
+        if USE_RAY:
+            shutdown = False
+            if not ray.is_initialized():
+                ray.init(num_cpus=threads)
+                shutdown = True
+        
+            od = []
+            for o,  b in zip(observations_split, backend_duplicated):
+                od.append(orbitdetermination_worker.remote(o, b))
+            od_orbits_dfs = ray.get(od)
+
+            if shutdown:
+                ray.shutdown()
+        else:
+            p = mp.Pool(
+                processes=threads,
+                initializer=init_worker,
+            ) 
+            
+            od_orbits_dfs = p.starmap(
+                orbitdetermination_worker, 
+                zip(
+                    observations_split,
+                    backend_duplicated,
+                ) 
+            )
+            p.close()  
+
+        od_orbits = pd.concat(od_orbits_dfs)
+        od_orbits.reset_index(
+            drop=True,
+            inplace=True
+        )
+        return od_orbits
 
     def _getObserverState(self, observers, origin="heliocenter"):
         err = (
