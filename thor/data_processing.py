@@ -1,4 +1,5 @@
 import time
+import warnings
 import numpy as np
 import pandas as pd
 
@@ -11,7 +12,13 @@ __all__ = [
     "findAverageOrbits",
 ]
 
-def preprocessObservations(observations, column_mapping, mjd_scale="utc", attribution=False):
+def preprocessObservations(
+        observations, 
+        column_mapping, 
+        astrometric_errors=None, 
+        mjd_scale="utc", 
+        attribution=False
+    ):
     """
     Create two seperate data frames: one with all observation data needed to run THOR stripped of
     object IDs and the other with known object IDs and attempts to attribute unknown observations to
@@ -27,15 +34,44 @@ def preprocessObservations(observations, column_mapping, mjd_scale="utc", attrib
         Dictionary containing internal column names as keys mapped to column names in the data frame as values.
         Should include the following:
         {# Internal : # External
-            "obs_id" :                    # Observation IDs 
-            "mjd" :                       # MJDs (set scale with mjd_scale)
-            "RA_deg" :                    # RA in degrees (topocentric J2000)
-            "Dec_deg" :                   # Dec in degrees (topocentric J2000)
-            "RA_sigma_deg" :              # 1-sigma error in RA in degrees 
-            "Dec_sigma_deg" :             # 1-sigma error in Dec in degrees 
-            "observatory_code" :          # MPC observatory code
-            "obj_id" :                    # Object ID (designation) or NaN if unknown
+            "obs_id" : column name or None,                  
+            "mjd" : column name,                      
+            "RA_deg" : column name,                       
+            "Dec_deg" : column name,                      
+            "RA_sigma_deg" : column name or None,                
+            "Dec_sigma_deg" : column name or None,               
+            "observatory_code" : column name,             
+            "obj_id" : column name or None,                           
         }
+        Description of columns and their assumed values:
+            'obs_id' : column name or None 
+                Observation IDs as type string. If None, THOR will assign
+                an observation ID to each observation.
+            'mjd' : column name
+                Observation time in MJD, the input time scale can be set with the
+                'time_scale' parameter. Time scale will be converted if not in UTC.
+            'RA_deg' : column name       
+                Topocentric J2000 Right Ascension in degrees.
+            'Dec_deg' : column name       
+                Topocentric J2000 Declination in degrees.
+            'RA_sigma_deg' : column name or None      
+                 1-sigma astrometric uncertainty in RA in degrees.
+                 If certain or all observations are missing astrometric errors, use
+                 the 'astrometric_errors' parameter to configure defaults for all observatories
+                 or for each observatory individually. If None, THOR will use the 'astrometric_error'
+                 parameter to assign errors. 
+            'Dec_sigma_deg' : column name or None       
+                 1-sigma astrometric uncertainty in Dec in degrees.
+                 If certain or all observations are missing astrometric errors, use
+                 the 'astrometric_errors' parameter to configure defaults for all observatories
+                 or for each observatory individually. If None, THOR will use the 'astrometric_error'
+                 parameter to assign errors. 
+            'observatory_code' : column_name
+                The MPC observatory code from which each observation was made. THOR currently
+                only supports ground-based observatories. 
+            'obj_id' : column_name or None
+                If known, the designation in unpacked or packed form. If unknown, object ID should be 
+                set to 'NaN'. If None, THOR will assume no observations have been associated. 
     mjd_scale : str, optional
         Time scale of the input MJD exposure times ("utc", "tdb", etc...)
     attribution : bool, optional
@@ -47,47 +83,205 @@ def preprocessObservations(observations, column_mapping, mjd_scale="utc", attrib
         DataFrame with observations in the format required by THOR.
     preprocessed_attributions : `~pandas.DataFrame`
         DataFrame containing truths.
-    """
-    obs_columns = [
-        column_mapping["obs_id"],
-        column_mapping["mjd"],
-        column_mapping["RA_deg"],
-        column_mapping["Dec_deg"],
-        column_mapping["RA_sigma_deg"],
-        column_mapping["Dec_sigma_deg"],
-        column_mapping["observatory_code"],
-    ]
-    attrib_columns = [
-        column_mapping["obs_id"],
-        column_mapping["obj_id"]
-    ]
-    column_mapping_inv = {v : k for k, v in column_mapping.items()}
+        
+    Raises
+    ------
+    ValueError
+        If the astrometric_errors parameter is not of type list or dictionary,
+        or if the errors are not correctly defined. 
     
-    for col in obs_columns:
-        if col not in observations.columns:
+    Warns
+    -----
+    UserWarning:
+        If the observation ID, object_ID, or astrometric error columns are not 
+        present in the column_mapping dictionary.
+    """
+    # Required columns THOR needs 
+    cols = [
+        "obs_id",
+        "mjd",
+        "RA_deg",
+        "Dec_deg",
+        "RA_sigma_deg",
+        "Dec_sigma_deg",
+        "observatory_code",
+        "obj_id"
+    ]
+
+    # Check if observation IDs need to be assigned
+    assign_obs_ids = False
+    if column_mapping["obs_id"] == None:
+        warning = (
+            "No observation ID column defined in the column_mapping dictionary.\n" 
+            "Assigning observation IDs...\n"
+        )
+        warnings.warn(
+            warning,
+            UserWarning
+        )
+        assign_obs_ids = True
+        cols.remove("obs_id")
+
+    # Check if object IDs need to be assigned
+    assign_obj_ids = False
+    if column_mapping["obj_id"] == None:
+        warning = (
+            "No object ID column defined in the column_mapping dictionary.\n" 
+            "Assuming no observations have been associated with a known object...\n"
+        )
+        warnings.warn(
+            warning,
+            UserWarning
+        )
+        assign_obj_ids = True
+        cols.remove("obj_id")
+
+    # Check if astrometric errors need to be added
+    use_astrometric_errors = False
+    if (column_mapping["RA_sigma_deg"] == None) and (column_mapping["Dec_sigma_deg"] == None):
+        warning = (
+            "No astrometric error columns defined in the column_mapping dictionary.\n" 
+            "Using 'astrometric_errors' parameter to assign errors...\n"
+        )
+        warnings.warn(
+            warning,
+            UserWarning
+        )
+        use_astrometric_errors = True
+        cols.remove("RA_sigma_deg")
+        cols.remove("Dec_sigma_deg")
+    
+
+    # Create a copy of the relevant columns in observations
+    obs_cols = [column_mapping[c] for c in cols]
+    preprocessed_observations = observations[obs_cols].copy()
+
+    # Rename preprocessed observation columns to those expected by THOR
+    # (involves inverting the column_mapping dictionary and removing any potential
+    # None values passed by the user)
+    column_mapping_inv = {v : k for k, v in column_mapping.items()}
+    if None in column_mapping_inv.keys():
+        column_mapping_inv.pop(None)
+    preprocessed_observations.rename(
+        columns=column_mapping_inv,
+        inplace=True)
+
+    if use_astrometric_errors:
+        if type(astrometric_errors) == list:
+            if len(astrometric_errors) != 2:
+                err = (
+                    "astrometric_errors list is not of length 2."
+                )
+            else:
+                preprocess_observations.loc[:, "RA_sigma_deg"] = astrometric_errors[0]
+                preprocess_observations.loc[:, "Dec_sigma_deg"] = astrometric_errors[1]
+
+        elif type(astrometric_errors) == dict:
+            for code, errors in astrometric_errors.items():
+                if len(errors) != 2:
+                    err = (
+                        "Astrometric errors for observatory {} should be a list of length 2 with\n"
+                        "the 1-sigma astrometric uncertainty in RA as the first element and the\n"
+                        "1-sigma astrometric uncertainty in Dec as the second element."
+                    )
+                    raise ValueError(err.format(code))
+                else:
+                    observatory_mask = preprocessed_observations["observatory_code"].isin([code])
+                    preprocessed_observations.loc[observatory_mask, "RA_sigma_deg"] = errors[0]
+                    preprocessed_observations.loc[observatory_mask, "Dec_sigma_deg"] = errors[1]
+
+        else: 
             err = (
-                "{} not found in observations.".format(col)
+                "'astrometric_errors' should be one of {None, list, dict}.\n"
+                "If None, then the given observations must have the ra_sigma_deg\n"
+                "  and dec_sigma_deg columns.\n"
+                "If a dictionary, then each observatory code present observations in\n"
+                "  the observations must have a corresponding key with a list of length 2\n"
+                "  as their values. The first element in the list is assumed to be the 1-sigma\n"
+                "  astrometric error in RA, while the second is assumed to be the same but in Dec.\n"
+                "If a list, then the first element in the list is assumed to be the 1-sigma\n"
+                "  astrometric error in RA, while the second is assumed to be the same but in Dec.\n"
+                "  Each observation will be given these errors regardless of if one is present or not.\n"
             )
             raise ValueError(err)
-            
-    preprocessed_observations = observations[obs_columns].copy()
-    preprocessed_observations.rename(columns=column_mapping_inv, inplace=True)
-    preprocessed_observations.reset_index(inplace=True, drop=True)
-    preprocessed_observations["obs_id"] = preprocessed_observations["obs_id"].astype(str)
 
+    # Make sure all observations have astrometric errors
+    missing_codes = preprocessed_observations[(
+        (preprocessed_observations["RA_sigma_deg"].isna())
+        | (preprocessed_observations["Dec_sigma_deg"].isna())
+    )]["observatory_code"].unique()
+
+    if len(missing_codes) > 0:
+        err = ( 
+            "Missing astrometric errors for observations from:\n"
+            "  {}\n"
+        )
+        raise ValueError(err.format(", ".join(missing_codes)))
+
+    # Make sure all observations are given in UTC, if not convert to UTC
     if mjd_scale != "utc":
-        observation_times = Time(preprocessed_observations[column_mapping["mjd_utc"]].values, format="mjd", scale=mjd_scale)
-        preprocessed_observations["mjd_utc"] = observation_times.utc.mjd
-    preprocessed_observations.rename(columns={"mjd":"mjd_utc"}, inplace=True)
-        
-    preprocessed_attributions = observations[attrib_columns].copy()
-    preprocessed_attributions.rename(columns=column_mapping_inv, inplace=True)
-    preprocessed_attributions.reset_index(inplace=True, drop=True)
-    
-    preprocessed_attributions["obj_id"] = preprocessed_attributions["obj_id"].astype(str)
-    preprocessed_attributions["obs_id"] = preprocessed_attributions["obs_id"].astype(str)
+        mjds = Time(
+            preprocessed_observations["mjd"].values,
+            format="mjd",
+            scale=mjd_scale
+        )
+        preprocessed_observations["mjd"] = mjds.utc.mjd
 
-    return preprocessed_observations, preprocessed_attributions
+    # Add _utc to mjd column name
+    preprocessed_observations.rename(
+        columns={
+            "mjd" : "mjd_utc"
+        },
+        inplace=True
+    )
+
+    # Make sure that the observations are sorted by observation time
+    preprocessed_observations.sort_values(
+        by=["mjd_utc"],
+        inplace=True
+    )
+
+    # Reset index after sort
+    preprocessed_observations.reset_index(
+        inplace=True,
+        drop=True
+    )
+
+    # Assign obervation IDs if needed
+    if assign_obs_ids:
+        preprocessed_observations.loc[:, "obs_id"] = ["obs{:09d}".format(i) for i in range(len(preprocessed_observations))]
+    else:
+        if type(preprocessed_observations["obs_id"]) != object:
+            warn = ("Observation IDs should be of type string, converting...")
+            warnings.warn(warn)
+            preprocessed_observations["obs_id"] = preprocessed_observations["obs_id"].astype(str)
+
+    # Assign object IDs if needed
+    if assign_obj_ids:
+        preprocessed_observations.loc[:, "obj_id"] = ["None" for i in range(len(preprocessed_observations))]
+    #else:
+    #    if type(preprocessed_observations["obj_id"]) != object:
+    #        warn = ("Object IDs should be of type string, converting...")
+    #        warnings.warn(warn)
+    #        preprocessed_observations["obj_id"] = preprocessed_observations["obj_id"].astype(str)
+
+    # Split observations into two dataframes (make THOR run only on completely blind observations)
+    preprocessed_associations = preprocessed_observations[[
+        "obs_id", 
+        "obj_id"
+    ]].copy()
+    preprocessed_observations = preprocessed_observations[[
+        "obs_id", 
+        "mjd_utc", 
+        "RA_deg", 
+        "Dec_deg",
+        "RA_sigma_deg",
+        "Dec_sigma_deg",
+        "observatory_code",
+    ]]
+    
+    return preprocessed_observations, preprocessed_associations
+
 
 def findAverageOrbits(observations,
                       orbits,
