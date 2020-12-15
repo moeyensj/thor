@@ -1,5 +1,7 @@
 import numpy as np
 from ..utils import _checkTime
+from ..utils import getHorizonsVectors
+from .kepler import convertOrbitalElements
 
 __all__ = ["Orbits"]
 
@@ -99,8 +101,9 @@ class Orbits:
         objs = []
         for chunk in range(0, self.num_orbits, chunk_size):
             args = []
-            for arg in ["cartesian", "epochs"]:
-                args.append(self.__dict__[arg][chunk:chunk + chunk_size].copy())
+            for arg in ["cartesian", "keplerian", "epochs"]:
+                if arg in self.__dict__.keys():
+                    args.append(self.__dict__[arg][chunk:chunk + chunk_size].copy())
             
             kwargs = {}
             for kwarg in ["orbit_type", "ids", "H", "G", "covariances"]:
@@ -112,3 +115,47 @@ class Orbits:
             objs.append(Orbits(*args, **kwargs))
         
         return objs
+
+    @staticmethod
+    def fromHorizons(obj_ids, t0):
+        """
+        Query Horizons for state vectors for each object ID at time t0. 
+        This is a convenience function and should not be used to query for state 
+        vectors for many objects.
+
+        Parameters
+        ----------
+        obj_ids : `~numpy.ndarray` (N)
+            Object IDs / designations recognizable by HORIZONS. 
+        times : `~astropy.core.time.Time` (1)
+            Astropy time object at which to gather state vectors.
+
+        Return
+        ------
+        `~thor.orbits.orbits.Orbits`
+            THOR Orbits class
+        """
+
+        if len(t0) != 1:
+            err = (
+                "t0 should be a single time."
+            )
+            raise ValueError(err)
+
+        horizons_vectors = getHorizonsVectors(
+            obj_ids, 
+            t0, 
+            location="@sun", 
+            id_type="smallbody", 
+            aberrations="geometric"
+        )
+
+        orbits = Orbits(
+            horizons_vectors[["x", "y", "z", "vx", "vy", "vz"]].values,
+            t0 + np.zeros(len(obj_ids)),
+            orbit_type="cartesian",
+            ids=horizons_vectors["targetname"].values,
+            H=horizons_vectors["H"].values,
+            G=horizons_vectors["G"].values,
+        )
+        return orbits
