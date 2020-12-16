@@ -2,33 +2,32 @@ import plotly
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from ..config import Config
 from .helpers import _setAxes
 
-__all__ = ["plotProjections",
-           "plotProjections3D"]
+__all__ = [
+    "plotProjections",
+    "plotProjections3D"
+]
 
-def plotProjections(dataframe, 
-                    colorByObject=False, 
-                    usePlotly=True, 
-                    returnFig=False, 
-                    columnMapping=Config.COLUMN_MAPPING):
+def plotProjections(
+        projected_observations, 
+        colorByObject=False, 
+        usePlotly=True, 
+        returnFig=False, 
+    ):
     """
     Plot projected observations in 2D. 
     
     Parameters
     ----------
-    dataframe : `~pandas.DataFrame`
-        DataFrame containing relevant quantities to be plotted.
+    projected_observations :  `~pandas.DataFrame`
+        DataFrame containing projected observations (theta_x, theta_y).
     colorByObject : bool, optional
         Color each unique object separately. 
         [Default = False]
     usePlotly : bool, optional
         Use plotly instead of matplotlib?
         [Default = True]
-    columnMapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.COLUMN_MAPPING`]
    
     Returns
     -------
@@ -41,19 +40,19 @@ def plotProjections(dataframe,
     if usePlotly is True:
         data = []
         if colorByObject is True:
-            for name in dataframe[columnMapping["name"]].unique():
-                obj = dataframe[dataframe[columnMapping["name"]] == name]
-                if name == "NS":
+            for name in projected_observations["obj_id"].unique():
+                obj = projected_observations[projected_observations["obj_id"] == name]
+                if name == "None":
                     trace = plotly.graph_objs.Scatter(
-                        x=obj["theta_x_deg"],
-                        y=obj["theta_y_deg"],
-                        name=name,
+                        x=obj["theta_x_deg"].values,
+                        y=obj["theta_y_deg"].values,
+                        name="Unknown",
                         mode="markers",
                         marker=dict(size=2))
                 else:
                     trace = plotly.graph_objs.Scatter(
-                        x=obj["theta_x_deg"],
-                        y=obj["theta_y_deg"],
+                        x=obj["theta_x_deg"].values,
+                        y=obj["theta_y_deg"].values,
                         name=name,
                         mode="lines+markers",
                         marker=dict(size=2,
@@ -61,10 +60,10 @@ def plotProjections(dataframe,
                 data.append(trace)
         else:
             trace = plotly.graph_objs.Scatter(
-                x=dataframe["theta_x_deg"],
-                y=dataframe["theta_y_deg"],
+                x=projected_observations["theta_x_deg"].values,
+                y=projected_observations["theta_y_deg"].values,
                 mode="markers",
-                text=dataframe[columnMapping["name"]],
+                text=projected_observations["obj_id"].values,
                 marker=dict(size=2)
             )
             data.append(trace)
@@ -81,7 +80,9 @@ def plotProjections(dataframe,
                 yaxis=dict(
                     title="Theta Y [deg]",
                 ),
-                aspectratio = dict(x=1, y=1)))
+                aspectratio = dict(x=1, y=1)
+            )
+        )
         
         fig = plotly.graph_objs.Figure(data=data, layout=layout)
         plotly.offline.iplot(fig)
@@ -89,7 +90,7 @@ def plotProjections(dataframe,
     else:
         fig, ax = plt.subplots(1, 1, dpi=600)
         if colorByObject is True:
-            a, b = np.unique(dataframe[columnMapping["name"]].values, return_inverse=True)
+            a, b = np.unique(projected_observations["obj_id"].values, return_inverse=True)
             hex_map = np.array(sns.color_palette("Accent", len(a)).as_hex())
             c = hex_map[b]
             ax.text(-0.018, 0.016, "Num Objects: {}".format(len(a)), fontsize=8)
@@ -106,23 +107,20 @@ def plotProjections(dataframe,
         return fig, ax
         
 
-
-def plotProjections3D(dataframe, 
-                  colorByObject=False, 
-                  columnMapping=Config.COLUMN_MAPPING):
+def plotProjections3D(
+        projected_observations, 
+        colorByObject=False, 
+    ):
     """
     Plot projected observations in 3D. 
     
     Parameters
     ----------
-    dataframe : `~pandas.DataFrame`
-        DataFrame containing relevant quantities to be plotted.
+    projected_observations :  `~pandas.DataFrame`
+        DataFrame containing projected observations (theta_x, theta_y).
     colorByObject : bool, optional
         Color each unique object separately. 
         [Default = False]
-    columnMapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.COLUMN_MAPPING`]
    
     Returns
     -------
@@ -132,23 +130,23 @@ def plotProjections3D(dataframe,
     """
     data = []
     if colorByObject is True:
-        for name in dataframe[columnMapping["name"]].unique():
-            obj = dataframe[dataframe[columnMapping["name"]] == name]
+        for name in projected_observations["obj_id"].unique():
+            obj = projected_observations[projected_observations["obj_id"] == name]
 
-            if name == "NS":
+            if name == "None":
                  trace = plotly.graph_objs.Scatter3d(
-                    x=obj["theta_x_deg"],
-                    y=obj["theta_y_deg"],
-                    z=obj[columnMapping["exp_mjd"]] - dataframe[columnMapping["exp_mjd"]].min(),
-                    name=name,
+                    x=obj["theta_x_deg"].values,
+                    y=obj["theta_y_deg"].values,
+                    z=obj["mjd_utc"].values - projected_observations["mjd_utc"].min(),
+                    name="Unknown",
                     mode="markers",
                     marker=dict(size=2)
                 )
             else:
                 trace = plotly.graph_objs.Scatter3d(
-                    x=obj["theta_x_deg"],
-                    y=obj["theta_y_deg"],
-                    z=obj[columnMapping["exp_mjd"]] - dataframe[columnMapping["exp_mjd"]].min(),
+                    x=obj["theta_x_deg"].values,
+                    y=obj["theta_y_deg"].values,
+                    z=obj["mjd_utc"].values - projected_observations["mjd_utc"].min(),
                     name=name,
                     mode="lines+markers",
                     marker=dict(size=2,
@@ -157,9 +155,9 @@ def plotProjections3D(dataframe,
             data.append(trace)
     else:
         trace = plotly.graph_objs.Scatter3d(
-            x=dataframe["theta_x_deg"],
-            y=dataframe["theta_y_deg"],
-            z=dataframe[columnMapping["exp_mjd"]] - dataframe[columnMapping["exp_mjd"]].min(),
+            x=projected_observations["theta_x_deg"].values,
+            y=projected_observations["theta_y_deg"].values,
+            z=projected_observations["mjd_utc"].values - projected_observations["mjd_utc"].min(),
             mode="markers",
             marker=dict(size=2)
             )
@@ -180,7 +178,9 @@ def plotProjections3D(dataframe,
             zaxis=dict(
                 title="Days [MJD]",
             ),
-            aspectratio = dict(x=1, y=1, z=1)))
+            aspectratio = dict(x=1, y=1, z=1)
+        )
+    )
 
     fig = plotly.graph_objs.Figure(data=data, layout=layout)
     plotly.offline.iplot(fig)
