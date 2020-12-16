@@ -173,8 +173,8 @@ def preprocessObservations(
                     "astrometric_errors list is not of length 2."
                 )
             else:
-                preprocess_observations.loc[:, "RA_sigma_deg"] = astrometric_errors[0]
-                preprocess_observations.loc[:, "Dec_sigma_deg"] = astrometric_errors[1]
+                preprocessed_observations.loc[:, "RA_sigma_deg"] = astrometric_errors[0]
+                preprocessed_observations.loc[:, "Dec_sigma_deg"] = astrometric_errors[1]
 
         elif type(astrometric_errors) == dict:
             for code, errors in astrometric_errors.items():
@@ -258,12 +258,13 @@ def preprocessObservations(
 
     # Assign object IDs if needed
     if assign_obj_ids:
-        preprocessed_observations.loc[:, "obj_id"] = ["None" for i in range(len(preprocessed_observations))]
-    #else:
-    #    if type(preprocessed_observations["obj_id"]) != object:
-    #        warn = ("Object IDs should be of type string, converting...")
-    #        warnings.warn(warn)
-    #        preprocessed_observations["obj_id"] = preprocessed_observations["obj_id"].astype(str)
+        preprocessed_observations.loc[:, "obj_id"] = "None" 
+    else:
+        if type(preprocessed_observations["obj_id"]) != object:
+            warn = ("Object IDs should be of type string, converting...")
+            warnings.warn(warn)
+            preprocessed_observations.loc[preprocessed_observations["obj_id"].isna(), "obj_id"] = "None"
+            preprocessed_observations["obj_id"] = preprocessed_observations["obj_id"].astype(str)
 
     # Split observations into two dataframes (make THOR run only on completely blind observations)
     preprocessed_associations = preprocessed_observations[[
