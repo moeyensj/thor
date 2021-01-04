@@ -9,12 +9,15 @@ from ..config import Config
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
 
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
 
-__all__ = ["Backend"]
+__all__ = [
+    "_init_worker",
+    "Backend"
+]
 
-def init_worker():
+def _init_worker():
     """
     Tell multiprocessing worker to ignore signals, will only
     listen to parent process. 
@@ -106,7 +109,7 @@ class Backend:
         else:
             p = mp.Pool(
                 processes=threads,
-                initializer=init_worker,
+                initializer=_init_worker,
             ) 
             
             propagated_dfs = p.starmap(
@@ -185,7 +188,7 @@ class Backend:
         else:
             p = mp.Pool(
                 processes=threads,
-                initializer=init_worker,
+                initializer=_init_worker,
             ) 
             
             ephemeris_dfs = p.starmap(
@@ -246,7 +249,7 @@ class Backend:
         else:
             p = mp.Pool(
                 processes=threads,
-                initializer=init_worker,
+                initializer=_init_worker,
             ) 
             
             od_orbits_dfs = p.starmap(
