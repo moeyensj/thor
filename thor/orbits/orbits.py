@@ -1,10 +1,14 @@
 import numpy as np
+import pandas as pd
+from astropy.time import Time
 from ..utils import _checkTime
 from ..utils import getHorizonsVectors
 from .kepler import convertOrbitalElements
 
-__all__ = ["Orbits"]
+CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
+KEPLERIAN_COLS = ["a", "e", "i", "raan", "argperi", "M"]
 
+__all__ = ["Orbits"]
 
 class Orbits:
 
@@ -159,3 +163,97 @@ class Orbits:
             G=horizons_vectors["G"].values,
         )
         return orbits
+
+    @staticmethod
+    def fromdf(dataframe, orbit_type="cartesian"):
+        """
+        Read orbits from a dataframe. Required columns are 
+        the epoch at which the orbits are defined ('mjd_tdb') and the 6 dimensional state. 
+        If the states are cartesian then the expected columns are ('x', 'y', 'z', 'vx', 'vy', 'vz'), 
+        if the states are keplerian then the expected columns are ("a", "e", "i", "raan", "argperi", "M").
+
+        Parameters
+        ----------
+        dataframe : `~pandas.DataFrame`
+            Dataframe containing either cartesian or Keplerian orbits. 
+        orbit_type : str, optional
+            The 
+
+
+        Returns
+        -------
+        `~thor.orbits.orbits.Orbits`
+            THOR Orbit class with the orbits read from the input dataframe.
+        """
+        # Extract the epochs from the given dataframe
+        epochs = Time(
+            dataframe["mjd_tdb"].values,
+            format="mjd",
+            scale="tdb"
+        )
+
+        # Assert orbit type is one of two types otherwise
+        # raise a value error
+        if orbit_type == "cartesian":
+            states = dataframe[CARTESIAN_COLS].values
+        
+        elif orbit_type == "keplerian":
+            states = dataframe[KEPLERIAN_COLS].values
+
+        else:
+            err = (
+                "orbit_type has to be one of {'cartesian', 'keplerian'}."
+            )
+            raise ValueError(err)
+
+        args = (states, epochs)
+        kwargs = {
+            "orbit_type" : orbit_type
+        }
+
+        if "orbit_id" in dataframe.columns:
+            kwargs["ids"] = dataframe["orbit_id"].values
+
+        if "covariance" in dataframe.columns:
+            kwargs["covariances"] = dataframe["covariance"].values
+
+        for c in ["H", "G"]:
+            if c in dataframe.columns:
+                kwargs[c] = dataframe[c].values
+
+        return Orbits(*args, **kwargs)
+    
+    def todf(self):
+        """
+        Convert orbits into a pandas dataframe.
+
+        Returns
+        -------
+        dataframe : `~pandas.DataFrame`
+            Dataframe containing orbits, epochs and IDs. If H, G, and covariances are defined then 
+            those are also added to the dataframe.
+        """
+        data = {
+            "orbit_id" : self.ids,
+            "mjd_tdb" : self.epochs.tdb.mjd
+        }
+
+        if self.orbit_type == "cartesian":
+            for i in range(6):
+                data[CARTESIAN_COLS[i]] = self.cartesian[:, i]
+        elif self.orbit_type == "keplerian":
+            for i in range(6):
+                data[KEPLERIAN_COLS[i]] = self.keplerian[:, i]
+        else:
+            pass
+        
+        if self.H is not None:
+            data["H"] = self.H
+
+        if self.G is not None:
+            data["G"] = self.G
+
+        if self.covariances is not None:
+            data["covariances"] = self.covariances
+
+        return pd.DataFrame(data)
