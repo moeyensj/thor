@@ -85,7 +85,7 @@ class Orbits:
         return rep.format(self.num_orbits, self.orbit_type)
 
     def __len__(self):
-        return self.orbits.shape[0]
+        return self.num_orbits
 
     def __getitem__(self, i):
         args = []
