@@ -21,7 +21,7 @@ class Config:
     -------
     None
     """
-    USE_RAY = True
+    USE_RAY = False
     NUM_THREADS = 40
 
     ADES_METADATA = {
