@@ -1,5 +1,7 @@
 import warnings
 import numpy as np
+import pandas as pd
+from astropy.time import Time
 from numba import jit
 from numba.core.errors import NumbaPerformanceWarning
 
@@ -24,16 +26,18 @@ __all__ = [
 
 MU = c.G * c.M_SUN
 
-def generateEphemerisUniversal(orbits, 
-                               t0, 
-                               observer_states, 
-                               observation_times, 
-                               light_time=True, 
-                               lt_tol=1e-10, 
-                               stellar_aberration=False, 
-                               mu=MU, 
-                               max_iter=1000, 
-                               tol=1e-15):
+def generateEphemerisUniversal(
+        orbits, 
+        t0,
+        observer_states, 
+        observation_times, 
+        light_time=True, 
+        lt_tol=1e-10, 
+        stellar_aberration=False, 
+        mu=MU, 
+        max_iter=1000, 
+        tol=1e-15
+    ):
     """
     Generate ephemeris for orbits relative to the location of the observer. 
     
@@ -122,15 +126,19 @@ def generateEphemerisUniversal(orbits,
     # Propagate orbits to observer states 
     propagated_orbits_helio = propagateUniversal(
         orbits, 
-        t0.utc.mjd, 
-        observation_times.utc.mjd, 
+        t0.tdb.mjd, 
+        observation_times.tdb.mjd, 
         mu=mu, 
         max_iter=max_iter, 
         tol=tol
     )
 
     # Stack observation times and observer states (so we can add/subtract arrays later instead of looping)
-    observation_times_stacked = Time(np.hstack([observation_times for i in range(len(orbits))]))
+    observation_times_stacked = Time(
+        np.hstack([observation_times.utc.mjd for i in range(len(orbits))]),
+        scale="utc",
+        format="mjd"
+    )
     observer_states_stacked_ = np.vstack([observer_states for i in range(len(orbits))])
     
     # Check observer_states to see if velocities have been passed
