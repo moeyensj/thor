@@ -2,13 +2,9 @@ import numpy as np
 from astropy.time import Time
 from astropy import units as u
 
-from ...constants import Constants as c
-from ...utils import getHorizonsVectors
 from ...testing import testOrbits
 from ..orbits import Orbits
 from ..propagate import propagateOrbits
-
-MU = c.G * c.M_SUN
 
 TARGETS = [
     "Amor",
