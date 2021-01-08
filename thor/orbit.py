@@ -141,6 +141,12 @@ class TestOrbit:
         cell.observations["obj_z"] = x_a[:, 2]
         cell.observations["theta_x_deg"] = np.degrees(gnomonic[:, 0])
         cell.observations["theta_y_deg"] = np.degrees(gnomonic[:, 1])
+        cell.observations["test_obj_x"] = self.elements[0]
+        cell.observations["test_obj_y"] = self.elements[1]
+        cell.observations["test_obj_z"] = self.elements[2]
+        cell.observations["test_obj_vx"] = self.elements[3]
+        cell.observations["test_obj_vy"] = self.elements[4]
+        cell.observations["test_obj_vz"] = self.elements[5]
 
         if verbose is True:
             print("Done.")
