@@ -1,5 +1,6 @@
 import pandas as pd
 
+from ..config import Config
 from ..backend import PYOORB
 from ..backend import FINDORB
 from ..backend import MJOLNIR
@@ -8,7 +9,14 @@ __all__ = [
     "generateEphemeris"
 ]
 
-def generateEphemeris(orbits, observers, backend="MJOLNIR", backend_kwargs={}):
+def generateEphemeris(
+        orbits, 
+        observers, 
+        backend="MJOLNIR",
+        backend_kwargs={},
+        threads=Config.NUM_THREADS, 
+        chunk_size=1
+    ):
     """
     Generate ephemeris for the orbits and the given observatories. 
     
@@ -52,7 +60,9 @@ def generateEphemeris(orbits, observers, backend="MJOLNIR", backend_kwargs={}):
 
     ephemeris = backend.generateEphemeris(
         orbits,
-        observers
+        observers,
+        threads=threads,
+        chunk_size=chunk_size
     )
 
     ephemeris.sort_values(

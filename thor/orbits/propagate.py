@@ -1,5 +1,6 @@
 import pandas as pd
 
+from ..config import Config
 from ..utils import _checkTime
 from ..backend import PYOORB
 from ..backend import FINDORB
@@ -9,7 +10,14 @@ __all__ = [
     "propagateOrbits"
 ]
 
-def propagateOrbits(orbits, t1, backend="MJOLNIR", backend_kwargs={}):
+def propagateOrbits(
+        orbits,
+        t1, 
+        backend="MJOLNIR", 
+        backend_kwargs={},
+        threads=Config.NUM_THREADS, 
+        chunk_size=1
+    ):
     """
     Propagate orbits using desired backend. 
 
@@ -54,6 +62,8 @@ def propagateOrbits(orbits, t1, backend="MJOLNIR", backend_kwargs={}):
 
     propagated = backend.propagateOrbits(
         orbits,
-        t1
+        t1,
+        threads=threads,
+        chunk_size=chunk_size
     )
     return propagated

@@ -5,6 +5,7 @@ from astropy import units as u
 from ...constants import Constants as c
 from ...utils import getHorizonsVectors
 from ...testing import testOrbits
+from ..orbits import Orbits
 from ..propagate import propagateOrbits
 
 MU = c.G * c.M_SUN
@@ -18,7 +19,7 @@ TARGETS = [
 EPOCH = 57257.0
 DT = np.linspace(0, 30, num=30)
 T0 = Time(
-    [EPOCH for i in range(len(TARGETS))], 
+    [EPOCH], 
     format="mjd",
     scale="tdb", 
 )
@@ -28,22 +29,6 @@ T1 = Time(
     scale="tdb"
 )
 
-# Propagator Configurations
-THOR_PROPAGATOR_KWARGS = {
-    "mu" : MU,
-    "max_iter" : 1000, 
-    "tol" : 1e-15,
-    "origin" : "heliocenter",
-}
-PYOORB_PROPAGATOR_KWARGS = {
-    "orbit_type" : "cartesian", 
-    "time_scale" : "UTC", 
-    "magnitude" : 20, 
-    "slope" : 0.15, 
-    "dynamical_model" : "2",
-    "ephemeris_file" : "de430.dat"
-}
-
 
 def test_propagateOrbits():
     """
@@ -51,38 +36,37 @@ def test_propagateOrbits():
     those states to all T1 using THOR's 2-body propagator and OORB's 2-body propagator(via pyoorb).
     Compare the resulting states and test how well they agree.
     """
-    # Query Horizons for heliocentric geometric states at each T1
-    orbit_cartesian_horizons = getHorizonsVectors(
+    # Query Horizons for heliocentric geometric states at each T0
+    orbits = Orbits.fromHorizons(
         TARGETS, 
-        T0[:1],
-        location="@sun",
-        aberrations="geometric"
+        T0
     )
-    orbit_cartesian_horizons = orbit_cartesian_horizons[["x", "y", "z", "vx", "vy", "vz"]].values
 
-    # Propagate the state at T0 to all T1 using THOR 2-body
-    states_thor = propagateOrbits(
-        orbit_cartesian_horizons, 
-        T0, 
+    # Propagate the state at T0 to all T1 using MJOLNIR 2-body
+    states_mjolnir = propagateOrbits(
+        orbits, 
         T1, 
-        backend="THOR", 
-        backend_kwargs=THOR_PROPAGATOR_KWARGS
+        backend="MJOLNIR", 
+        backend_kwargs={},
+        threads=1,
+        chunk_size=1
     )
-    states_thor = states_thor[["x", "y", "z", "vx", "vy", "vz"]].values
+    states_mjolnir = states_mjolnir[["x", "y", "z", "vx", "vy", "vz"]].values
 
     # Propagate the state at T0 to all T1 using PYOORB 2-body
     states_pyoorb = propagateOrbits(
-        orbit_cartesian_horizons, 
-        T0, 
+        orbits, 
         T1, 
         backend="PYOORB", 
-        backend_kwargs=PYOORB_PROPAGATOR_KWARGS
+        backend_kwargs={"dynamical_model" : "2"},
+        threads=1,
+        chunk_size=1
     )
     states_pyoorb = states_pyoorb[["x", "y", "z", "vx", "vy", "vz"]].values
 
     # Test that the propagated states agree to within the tolerances below
     testOrbits(
-       states_thor, 
+       states_mjolnir, 
        states_pyoorb,
        orbit_type="cartesian", 
        position_tol=1*u.mm, 
