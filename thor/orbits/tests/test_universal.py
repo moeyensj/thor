@@ -6,7 +6,7 @@ from astropy import units as u
 from ...constants import Constants as c
 from ...utils import getHorizonsVectors
 from ...testing import testOrbits
-from ..universal import propagateUniversal
+from ..universal_propagate import propagateUniversal
 
 MU = c.G * c.M_SUN
 

@@ -2,9 +2,9 @@ import numpy as np
 from astropy.time import Time
 from astropy import units as u
 
-from ....constants import Constants as c
-from ...utils import getHorizonsVectors
+from ...constants import Constants as c
 from ...testing import testOrbits
+from ..orbits import Orbits
 from ..propagate import propagateOrbits
 from ..lambert import calcLambert
 
@@ -17,7 +17,7 @@ TARGETS = [
 EPOCH = 57257.0
 DT = np.arange(0, 14)
 T0 = Time(
-    [EPOCH for i in range(len(TARGETS))],
+    [EPOCH],
     format="mjd",
     scale="tdb", 
 )
@@ -33,20 +33,17 @@ def test_calcLambert():
 
     for target in TARGETS:
         # Query Horizons for heliocentric geometric states at each T1
-        horizons_states = getHorizonsVectors(
-            [target], 
-            T1, 
-            location="@sun", 
-            aberrations="geometric"
-            )
-        horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
+        # Query Horizons for heliocentric geometric states at each T0
+        orbits = Orbits.fromHorizons(
+            TARGETS, 
+            T0
+        )
 
         # Propagate the state at T0 to all T1 using THOR 2-body
         thor_states = propagateOrbits(
-            horizons_states[:1], 
-            T0, 
+            orbits,
             T1, 
-            backend="THOR",
+            backend="MJOLNIR",
         )
         thor_states = thor_states[["x", "y", "z", "vx", "vy", "vz"]].values
         
