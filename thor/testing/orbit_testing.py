@@ -18,11 +18,13 @@ def __statsToErrorMessage(stats, message):
     message += "\n"
     return message
 
-def _evaluateDifference(actual, 
-                        desired, 
-                        unit, 
-                        tol, 
-                        magnitude=False):
+def _evaluateDifference(
+        actual, 
+        desired, 
+        unit, 
+        tol, 
+        magnitude=False
+    ):
     """
     Calculate the absolute difference between actual and desired
     and return it in the same units of the given tolerance with
@@ -71,8 +73,8 @@ def _evaluateDifference(actual,
         "Mean" : np.mean(diff, axis=0),
         "Median" : np.median(diff, axis=0),
         "Std" : np.std(diff, axis=0),
-        "Min" : np.min(diff),
-        "Max" : np.max(diff),
+        "Min" : np.min(diff, axis=0),
+        "Max" : np.max(diff, axis=0),
         "Argmin" : np.argmin(diff, axis=0),
         "Argmax" : np.argmax(diff, axis=0)
     }
@@ -86,11 +88,14 @@ def _evaluateDifference(actual,
         error = True
     return diff, stats, error
 
-def testCartesianOrbits(orbits_actual, 
-                        orbits_desired,
-                        position_tol=1*u.m, 
-                        velocity_tol=(1*u.mm/u.s),
-                        magnitude=True):
+def testCartesianOrbits(
+        orbits_actual, 
+        orbits_desired,
+        position_tol=1*u.m, 
+        velocity_tol=(1*u.mm/u.s),
+        magnitude=True,
+        raise_error=True
+    ):
     """
     Tests that the two sets of cartesian orbits are within the desired absolute tolerances
     of each other. The absolute difference is calculated as |actual - desired|. 
@@ -129,67 +134,76 @@ def testCartesianOrbits(orbits_actual,
     """
     any_error = False
     error_message = "\n"
+    differences = {}
+    statistics = {}
     
     # Test positions
+    if magnitude:
+        names = ["r"]
+    else:
+        names = ["x", "y", "z"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, :3], 
         orbits_desired[:, :3], 
         u.AU, 
         position_tol, 
-        magnitude=magnitude)
+        magnitude=magnitude
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        if magnitude:
-            names = "r"
-        else:
-            names = "x, y, z"
-        
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, position_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), position_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
         
     # Test velocities
+    if magnitude:
+        names = ["v"]
+    else:
+        names = ["vx", "vy", "vz"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, 3:], 
         orbits_desired[:, 3:], 
         (u.AU / u.d), 
         velocity_tol, 
-        magnitude=magnitude)
+        magnitude=magnitude
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        if magnitude:
-            names = "v"
-        else:
-            names = "vx, vy, vz"
-   
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, velocity_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), velocity_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
         
-    if any_error:
+    if any_error and raise_error:
         raise AssertionError(error_message)
         
-    return
+    return differences, statistics, error
 
-def testKeplerianOrbits(orbits_actual, 
-                        orbits_desired,
-                        position_tol=1*u.m, 
-                        unitless_tol=1e-10*u.dimensionless_unscaled,
-                        angle_tol=1e-10*u.degree):
+def testKeplerianOrbits(
+        orbits_actual, 
+        orbits_desired,
+        position_tol=1*u.m, 
+        unitless_tol=1e-10*u.dimensionless_unscaled,
+        angle_tol=1e-10*u.degree,
+        raise_error=True
+    ):
     """
     Tests that the two sets of keplerian orbits are within the desired absolute tolerances
     of each other. The absolute difference is calculated as |actual - desired|. 
@@ -224,81 +238,95 @@ def testKeplerianOrbits(orbits_actual,
     """
     any_error = False
     error_message = "\n"
+    differences = {}
+    statistics = {}
     
     # Test positions
+    names = ["a"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, :1], 
         orbits_desired[:, :1], 
         u.AU, 
         position_tol, 
-        magnitude=False)
+        magnitude=False
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        names = "a"
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, position_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), position_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
         
     # Test unitless (eccentricity)
+    names = ["e"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, 1:2], 
         orbits_desired[:, 1:2], 
         u.dimensionless_unscaled, 
         unitless_tol, 
-        magnitude=False)
+        magnitude=False
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        names = "e"
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, unitless_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), unitless_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
    
-    # Test angles
+    # Test angles   
+    names = ["i", "ascNode", "argPeri", "meanAnom"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, 2:], 
         orbits_desired[:, 2:], 
         u.degree, 
         angle_tol, 
-        magnitude=False)
+        magnitude=False
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        names = "i, ascNode, argPeri, meanAnom"
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, angle_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), angle_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
         
-    if any_error:
+    if any_error and raise_error:
         raise AssertionError(error_message)
         
-    return
+    return diff, stats, error
 
-def testCometaryOrbits(orbits_actual, 
-                       orbits_desired,
-                       position_tol=1*u.m, 
-                       unitless_tol=1e-10*u.dimensionless_unscaled,
-                       angle_tol=1e-10*u.degree,
-                       time_tol=1e-6*u.s):
+def testCometaryOrbits(
+        orbits_actual, 
+        orbits_desired,
+        position_tol=1*u.m, 
+        unitless_tol=1e-10*u.dimensionless_unscaled,
+        angle_tol=1e-10*u.degree,
+        time_tol=1e-6*u.s,
+        raise_error=True
+    ):
     """
     Tests that the two sets of cometary orbits are within the desired absolute tolerances
     of each other. The absolute difference is calculated as |actual - desired|. 
@@ -339,65 +367,76 @@ def testCometaryOrbits(orbits_actual,
     """
     any_error = False
     error_message = "\n"
+    differences = {}
+    statistics = {}
     
     # Test positions
+    names = ["q"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, :1], 
         orbits_desired[:, :1], 
         u.AU, 
         position_tol, 
-        magnitude=False)
+        magnitude=False
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        names = "q"
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, position_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), position_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
         
     # Test unitless (eccentricity)
+    names = ["e"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, 1:2], 
         orbits_desired[:, 1:2], 
         u.dimensionless_unscaled, 
         unitless_tol, 
-        magnitude=False)
+        magnitude=False
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        names = "e"
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, unitless_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), unitless_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
    
-    # Test angles
+    # Test angles 
+    names = ["i", "ascNode", "argPeri"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, 2:5], 
         orbits_desired[:, 2:5], 
         u.degree, 
         angle_tol, 
-        magnitude=False)
+        magnitude=False
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        names = "i, ascNode, argPeri"
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, angle_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), angle_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
@@ -405,40 +444,46 @@ def testCometaryOrbits(orbits_actual,
         
     
     # Test time (time of perihelion passage)
+    names = ["tPeri"]
     diff, stats, error = _evaluateDifference(
         orbits_actual[:, 5:], 
         orbits_desired[:, 5:], 
         u.d, 
         time_tol, 
-        magnitude=False)
+        magnitude=False
+    )
+    for i, n in enumerate(names):
+        differences[n] = diff[:, i]
+        statistics[n] = {k : v[i] for k, v in stats.items()}
     
     # If any of the differences between desired and actual are 
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        
-        names = "tPeri"
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, time_tol)
+        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(", ".join(names), time_tol)
         error_message = __statsToErrorMessage(
             stats, 
             error_message
         )
     
-    if any_error:
+    if any_error and raise_error:
         raise AssertionError(error_message)
         
-    return
+    return diff, stats, error
 
-def testOrbits(orbits_actual,
-               orbits_desired,
-               orbit_type="cartesian",
-               position_tol=1*u.m, 
-               velocity_tol=(1*u.m / u.s),
-               unitless_tol=1e-10*u.dimensionless_unscaled,
-               angle_tol=1e-10*u.degree,
-               time_tol=1e-6*u.s,
-               magnitude=True):
+def testOrbits(
+        orbits_actual,
+        orbits_desired,
+        orbit_type="cartesian",
+        position_tol=1*u.m, 
+        velocity_tol=(1*u.m / u.s),
+        unitless_tol=1e-10*u.dimensionless_unscaled,
+        angle_tol=1e-10*u.degree,
+        time_tol=1e-6*u.s,
+        magnitude=True,
+        raise_error=False
+    ):
     """
     Tests that the two sets of orbits are within the desired absolute tolerances
     of each other. The absolute difference is calculated as |actual - desired|. 
@@ -489,38 +534,41 @@ def testOrbits(orbits_actual,
     """
     if orbit_type == "cartesian":
 
-        testCartesianOrbits(
+        diff, stats, error = testCartesianOrbits(
             orbits_actual, 
             orbits_desired,
             position_tol=position_tol, 
             velocity_tol=velocity_tol,
             magnitude=magnitude,
+            raise_error=raise_error
         )
         
     elif orbit_type == "keplerian":
 
-        testKeplerianOrbits(
+        diff, stats, error = testKeplerianOrbits(
             orbits_actual, 
             orbits_desired,
             position_tol=position_tol, 
             unitless_tol=unitless_tol,
             angle_tol=angle_tol,
+            raise_error=raise_error
         )
        
     elif orbit_type == "cometary":
         
-        testCometaryOrbits(
+        diff, stats, error = testCometaryOrbits(
             orbits_actual, 
             orbits_desired,
             position_tol=position_tol, 
             unitless_tol=unitless_tol,
             angle_tol=angle_tol,
-            time_tol=time_tol
+            time_tol=time_tol,
+            raise_error=raise_error
         )
         
     else:
         err = "orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}"
         raise ValueError(err)
 
-    return
+    return diff, stats, error
     
