@@ -16,7 +16,6 @@ PYOORB_CONFIG = {
 class PYOORB(Backend):
     
     def __init__(self, **kwargs):
-        
         # Make sure only the correct kwargs
         # are passed to the constructor
         allowed_kwargs = PYOORB_CONFIG.keys()
@@ -30,7 +29,7 @@ class PYOORB(Backend):
             if k not in kwargs:
                 kwargs[k] = PYOORB_CONFIG[k]
         
-        super(PYOORB, self).__init__(**kwargs)
+        super(PYOORB, self).__init__(name="OpenOrb", **kwargs)
         
         return
     
@@ -137,15 +136,15 @@ class PYOORB(Backend):
         else:
             raise ValueError("time_scale should be one of {'UTC', 'UT1', 'TT', 'TAI'}")
 
-        if slope:
-            if type(slope) != np.ndarray:
-                slope = [slope for i in range(num_orbits)]
+        if slope is not None:
+            if not isinstance(slope, np.ndarray):
+                slope = np.array([slope for i in range(num_orbits)])
         else: 
             slope = [0.15 for i in range(num_orbits)]
         
-        if magnitude:
-            if type(magnitude) != np.ndarray:
-                magnitude = [magnitude for i in range(num_orbits)]
+        if magnitude is not None:
+            if not isinstance(magnitude, np.ndarray):
+                magnitude = np.array([magnitude for i in range(num_orbits)])
         else:
             magnitude = [20.0 for i in range(num_orbits)]
 
@@ -482,8 +481,9 @@ class PYOORB(Backend):
             
             ephemeris_dfs.append(ephemeris)
 
+        ephemeris = pd.concat(ephemeris_dfs)
         ephemeris.sort_values(
-            by=["orbit_id", "mjd_utc"],
+            by=["orbit_id", "observatory_code", "mjd_utc"],
             inplace=True
         )
         ephemeris.reset_index(
