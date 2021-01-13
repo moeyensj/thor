@@ -45,8 +45,9 @@ if USE_RAY:
 
 class Backend:
     
-    def __init__(self, **kwargs):
+    def __init__(self, name="Backend", **kwargs):
         self.__dict__.update(kwargs)
+        self.name = name
         self.is_setup = False
         return  
     
@@ -89,44 +90,51 @@ class Backend:
                 x, y, z, vx, vy, vz : Orbit as cartesian state vector with units 
                 of au and au per day. 
         """
-        orbits_split = orbits.split(chunk_size)
-        t1_duplicated = [copy.deepcopy(t1) for i in range(len(orbits_split))]
-        backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
+        if threads > 1:
+            orbits_split = orbits.split(chunk_size)
+            t1_duplicated = [copy.deepcopy(t1) for i in range(len(orbits_split))]
+            backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
-        if USE_RAY:
-            shutdown = False
-            if not ray.is_initialized():
-                ray.init(num_cpus=threads)
-                shutdown = True
-        
-            p = []
-            for o, t, b in zip(orbits_split, t1_duplicated, backend_duplicated):
-                p.append(propagation_worker.remote(o, t, b))
-            propagated_dfs = ray.get(p)
-
-            if shutdown:
-                ray.shutdown()
-        else:
-            p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
-            ) 
+            if USE_RAY:
+                shutdown = False
+                if not ray.is_initialized():
+                    ray.init(num_cpus=threads)
+                    shutdown = True
             
-            propagated_dfs = p.starmap(
-                propagation_worker, 
-                zip(
-                    orbits_split,
-                    t1_duplicated,
-                    backend_duplicated,
-                ) 
-            )
-            p.close()  
+                p = []
+                for o, t, b in zip(orbits_split, t1_duplicated, backend_duplicated):
+                    p.append(propagation_worker.remote(o, t, b))
+                propagated_dfs = ray.get(p)
 
-        propagated = pd.concat(propagated_dfs)
-        propagated.reset_index(
-            drop=True,
-            inplace=True
-        )
+                if shutdown:
+                    ray.shutdown()
+            else:
+                p = mp.Pool(
+                    processes=threads,
+                    initializer=_init_worker,
+                ) 
+                
+                propagated_dfs = p.starmap(
+                    propagation_worker, 
+                    zip(
+                        orbits_split,
+                        t1_duplicated,
+                        backend_duplicated,
+                    ) 
+                )
+                p.close()  
+
+            propagated = pd.concat(propagated_dfs)
+            propagated.reset_index(
+                drop=True,
+                inplace=True
+            )
+        else:
+            propagated = self._propagateOrbits(
+                orbits,
+                t1
+            )
+            
         return propagated
     
     def _generateEphemeris(self, orbits, observers):
@@ -168,46 +176,65 @@ class Backend:
                 RA : Right Ascension in decimal degrees.
                 Dec : Declination in decimal degrees.
         """
-        orbits_split = orbits.split(chunk_size)
-        observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
-        backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
+        if threads > 1:
+            orbits_split = orbits.split(chunk_size)
+            observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
+            backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
-        if USE_RAY:
-            shutdown = False
-            if not ray.is_initialized():
-                ray.init(num_cpus=threads)
-                shutdown = True
-        
-            p = []
-            for o, t, b in zip(orbits_split, observers_duplicated, backend_duplicated):
-                p.append(ephemeris_worker.remote(o, t, b))
-            ephemeris_dfs = ray.get(p)
-
-            if shutdown:
-                ray.shutdown()
-        else:
-            p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
-            ) 
+            if USE_RAY:
+                shutdown = False
+                if not ray.is_initialized():
+                    ray.init(num_cpus=threads)
+                    shutdown = True
             
-            ephemeris_dfs = p.starmap(
-                ephemeris_worker, 
-                zip(
-                    orbits_split,
-                    observers_duplicated,
-                    backend_duplicated,
-                ) 
-            )
-            p.close()  
+                p = []
+                for o, t, b in zip(orbits_split, observers_duplicated, backend_duplicated):
+                    p.append(ephemeris_worker.remote(o, t, b))
+                ephemeris_dfs = ray.get(p)
 
-        ephemeris = pd.concat(ephemeris_dfs)
-        ephemeris.reset_index(
-            drop=True,
-            inplace=True
-        )
+                if shutdown:
+                    ray.shutdown()
+            else:
+                p = mp.Pool(
+                    processes=threads,
+                    initializer=_init_worker,
+                ) 
+                
+                ephemeris_dfs = p.starmap(
+                    ephemeris_worker, 
+                    zip(
+                        orbits_split,
+                        observers_duplicated,
+                        backend_duplicated,
+                    ) 
+                )
+                p.close()  
+
+            ephemeris = pd.concat(ephemeris_dfs)
+            ephemeris.reset_index(
+                drop=True,
+                inplace=True
+            )
+        else:
+            ephemeris = self._generateEphemeris(
+                orbits,
+                observers
+            )
+
         return ephemeris
+
+    def _initialOrbitDetermination(self, observations, linkage_members, threads=NUM_THREADS, chunk_size=10, **kwargs):
+        """
+        Given observations and 
+
+        THIS FUNCTION SHOULD BE DEFINED BY THE USER.
         
+        """
+        err = (
+            "This backend does not have initial orbit propagation implemented."
+        )
+        raise NotImplementedError(err)
+
     def _orbitDetermination(self):
         err = (
             "This backend does not have orbit determination implemented."
@@ -266,7 +293,7 @@ class Backend:
             drop=True,
             inplace=True
         )
-        return od_orbits
+        return od_orbits, residuals
 
     def _getObserverState(self, observers, origin="heliocenter"):
         err = (
