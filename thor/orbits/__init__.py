@@ -11,4 +11,5 @@ from .gauss import *
 from .gibbs import *
 from .herrick_gibbs import *
 from .lambert import *
+from .residuals import *
 from .iod import *
