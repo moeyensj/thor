@@ -14,6 +14,7 @@ def generateEphemeris(
         observers, 
         backend="MJOLNIR",
         backend_kwargs={},
+        test_orbit=None,
         threads=Config.NUM_THREADS, 
         chunk_size=1
     ):
@@ -61,10 +62,10 @@ def generateEphemeris(
     ephemeris = backend.generateEphemeris(
         orbits,
         observers,
+        test_orbit=test_orbit,
         threads=threads,
         chunk_size=chunk_size
     )
-
     ephemeris.sort_values(
         by=["orbit_id", "observatory_code", "mjd_utc"],
         inplace=True

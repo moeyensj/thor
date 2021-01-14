@@ -5,6 +5,7 @@ import pandas as pd
 import multiprocessing as mp
 
 from ..config import Config
+from ..orbit import TestOrbit
 
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
@@ -37,11 +38,34 @@ def orbitdetermination_worker(observations, backend):
     orbits = backend._orbitDetermination(observations)
     return orbits
 
+def projectephemeris_worker(ephemeris, test_orbit_ephemeris):
+    
+    assert len(ephemeris["mjd_utc"].unique()) == 1
+    assert len(test_orbit_ephemeris["mjd_utc"].unique()) == 1
+    assert ephemeris["mjd_utc"].unique()[0] == test_orbit_ephemeris["mjd_utc"].unique()[0]
+    observation_time = ephemeris["mjd_utc"].unique()[0]
+    
+    # Create test orbit with state of orbit at visit time
+    test_orbit = TestOrbit(
+        test_orbit_ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values[0],
+        observation_time
+    )
+
+    # Prepare rotation matrices 
+    test_orbit.prepare(verbose=False)
+
+    # Apply rotation matrices and transform observations into the orbit's
+    # frame of motion. 
+    test_orbit.applyToEphemeris(ephemeris, verbose=False)
+    
+    return ephemeris
+
 if USE_RAY:
     import ray
     propagation_worker = ray.remote(propagation_worker)
     ephemeris_worker = ray.remote(ephemeris_worker)
     orbitdetermination_worker = ray.remote(orbitdetermination_worker)
+    projectephemeris_worker = ray.remote(projectephemeris_worker)
 
 class Backend:
     
@@ -150,7 +174,7 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def generateEphemeris(self, orbits, observers, threads=NUM_THREADS, chunk_size=100):
+    def generateEphemeris(self, orbits, observers, test_orbit=None, threads=NUM_THREADS, chunk_size=100):
         """
         Generate ephemerides for each orbit in orbits as observed by each observer
         in observers.
@@ -161,6 +185,8 @@ class Backend:
             Orbits for which to generate ephemerides.
         observers : dict or `~pandas.DataFrame`
             A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values. 
+        test_orbit : `~thor.orbits.orbits.Orbits`
+            Test orbit to use to generate projected coordinates.
         threads : int, optional
             Number of processes to launch.
         chunk_size : int, optional
@@ -176,6 +202,7 @@ class Backend:
                 RA : Right Ascension in decimal degrees.
                 Dec : Declination in decimal degrees.
         """
+        shutdown = False
         if threads > 1:
             orbits_split = orbits.split(chunk_size)
             observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
@@ -192,8 +219,6 @@ class Backend:
                     p.append(ephemeris_worker.remote(o, t, b))
                 ephemeris_dfs = ray.get(p)
 
-                if shutdown:
-                    ray.shutdown()
             else:
                 p = mp.Pool(
                     processes=threads,
@@ -220,6 +245,57 @@ class Backend:
                 orbits,
                 observers
             )
+
+        if test_orbit is not None:
+
+            test_orbit_ephemeris = self._generateEphemeris(
+                test_orbit,
+                observers
+            )
+            ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
+            ephemeris_split = [ephemeris_grouped.get_group(g).copy() for g in ephemeris_grouped.groups]
+
+            test_orbit_ephemeris_grouped = test_orbit_ephemeris.groupby(by=["observatory_code", "mjd_utc"])
+            test_orbit_ephemeris_split = [test_orbit_ephemeris_grouped.get_group(g) for g in test_orbit_ephemeris_grouped.groups]
+
+            if threads > 1:
+
+                if USE_RAY:
+                
+                    p = []
+                    for e, te in zip(ephemeris_split, test_orbit_ephemeris_split):
+                        p.append(projectephemeris_worker.remote(e, te))
+                    ephemeris_dfs = ray.get(p)
+
+                else:
+                    p = mp.Pool(
+                        processes=threads,
+                        initializer=_init_worker,
+                    ) 
+                    
+                    ephemeris_dfs = p.starmap(
+                        projectephemeris_worker, 
+                        zip(
+                            ephemeris_split,
+                            test_orbit_ephemeris_split
+                        ) 
+                    )
+                    p.close()  
+               
+            else:
+                ephemeris_dfs = []
+                for e, te in zip(ephemeris_split, test_orbit_ephemeris_split):
+                    ephemeris_df = projectephemeris_worker(e, te)
+                    ephemeris_dfs.append(ephemeris_df)
+            
+            ephemeris = pd.concat(ephemeris_dfs)
+            ephemeris.reset_index(
+                drop=True,
+                inplace=True
+            )
+
+        if shutdown:
+            ray.shutdown()
 
         return ephemeris
 
