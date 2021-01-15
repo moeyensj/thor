@@ -135,3 +135,87 @@ def attribution_worker(
         attributions = pd.DataFrame(columns=columns)
     
     return attributions
+
+
+USE_RAY = False
+if USE_RAY:
+    import ray
+    attribution_worker = ray.remote(attribution_worker)
+
+def attributeObservations(
+        orbits, 
+        observations, 
+        eps=5/3600, 
+        include_probabilistic=True, 
+        orbits_chunk_size=100,
+        observations_chunk_size=100000,
+        threads=60,
+        backend="PYOORB", 
+        backend_kwargs={} 
+    ):
+    orbits_split = orbits.split(orbits_chunk_size)
+    observations_split = []
+    for chunk in range(0, len(observations), observations_chunk_size):
+        observations_split.append(observations.iloc[chunk:chunk + observations_chunk_size].copy())
+    
+    if threads > 1:
+        
+        if USE_RAY:
+            
+            pass
+            
+            
+        else:
+
+            p = mp.Pool(
+                processes=threads,
+                initializer=_init_worker,
+            ) 
+            attributions_dfs = []
+            for obs_i in observations_split:
+
+                obs = [obs_i.copy() for i in range(len(orbits_split))]
+
+                attributions_dfs_i = p.starmap(
+                    partial(
+                        attribution_worker, 
+                        eps=eps, 
+                        include_probabilistic=include_probabilistic, 
+                        backend=backend, 
+                        backend_kwargs=backend_kwargs
+                    ),
+                    zip(
+                        orbits_split, 
+                        obs, 
+                    ) 
+                )
+                attributions_dfs += attributions_dfs_i
+
+            p.close()  
+            
+    else:
+        attribution_dfs = []
+        for obs_i in observations_split:
+            for orbit_i in orbits_split:
+                attribution_df_i = attribution_worker(
+                    orbit_i,
+                    obs_i,
+                    eps=eps, 
+                    include_probabilistic=include_probabilistic, 
+                    backend=backend, 
+                    backend_kwargs=backend_kwargs
+                )
+                attribution_dfs.append(attribution_df_i)
+                
+        
+    attributions = pd.concat(attributions_dfs)
+    attributions.sort_values(
+        by=["orbit_id", "obs_id", "distance"],
+        inplace=True
+    )
+    attributions.reset_index(
+        inplace=True,
+        drop=True
+    )
+   
+    return attributions
