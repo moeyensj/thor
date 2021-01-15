@@ -12,4 +12,5 @@ from .gibbs import *
 from .herrick_gibbs import *
 from .lambert import *
 from .residuals import *
+from .attribution import *
 from .iod import *
