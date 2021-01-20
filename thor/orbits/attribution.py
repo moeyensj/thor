@@ -5,12 +5,16 @@ from astropy.time import Time
 from functools import partial
 from sklearn.neighbors import BallTree
 
-from .backend import _init_worker
+from ..config import Config
+from ..backend import _init_worker
 from .ephemeris import generateEphemeris
 from .residuals import calcResiduals
 
+USE_RAY = Config.USE_RAY
+NUM_THREADS = Config.NUM_THREADS
+
 __all__ = [
-    "attributeOrbits"
+    "attributeObservations"
 ]
 
 def attribution_worker(
@@ -64,23 +68,25 @@ def attribution_worker(
         obs_ids = observations_visit[["obs_id"]].values
         orbit_ids = ephemeris_visit[["orbit_id"]].values
         coords = observations_visit[["RA_deg", "Dec_deg"]].values
+        coords_latlon = observations_visit[["Dec_deg"]].values
         coords_predicted = ephemeris_visit[["RA_deg", "Dec_deg"]].values
         coords_sigma = observations_visit[["RA_sigma_deg", "Dec_sigma_deg"]].values
         
-        coords_rad = np.radians(coords)
-        coords_predicted_rad = np.radians(coords_predicted)
+        # Haversine metric requires latitude first then longitude...
+        coords_latlon = np.radians(observations_visit[["Dec_deg", "RA_deg"]].values)
+        coords_predicted_latlon = np.radians(ephemeris_visit[["Dec_deg", "RA_deg"]].values)
         
-        num_obs = len(coords_predicted_rad)
+        num_obs = len(coords_predicted)
         k = np.minimum(3, num_obs)
 
         # Build BallTree with a haversine metric on predicted ephemeris
         tree = BallTree(
-            coords_predicted_rad, 
+            coords_predicted_latlon, 
             metric="haversine"
         )
         # Query tree using observed RA, Dec
         d, i = tree.query(
-            coords_rad, 
+            coords_latlon, 
             k=k, 
             return_distance=True,
             dualtree=True,
@@ -136,8 +142,6 @@ def attribution_worker(
     
     return attributions
 
-
-USE_RAY = False
 if USE_RAY:
     import ray
     attribution_worker = ray.remote(attribution_worker)
@@ -149,7 +153,7 @@ def attributeObservations(
         include_probabilistic=True, 
         orbits_chunk_size=100,
         observations_chunk_size=100000,
-        threads=60,
+        threads=Config.NUM_THREADS,
         backend="PYOORB", 
         backend_kwargs={} 
     ):
