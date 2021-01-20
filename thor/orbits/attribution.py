@@ -153,7 +153,7 @@ def attributeObservations(
         include_probabilistic=True, 
         orbits_chunk_size=100,
         observations_chunk_size=100000,
-        threads=Config.NUM_THREADS,
+        threads=NUM_THREADS,
         backend="PYOORB", 
         backend_kwargs={} 
     ):
@@ -166,21 +166,42 @@ def attributeObservations(
         
         if USE_RAY:
             
-            pass
-            
-            
+            shutdown = False
+            if not ray.is_initialized():
+                ray.init(num_cpus=threads)
+                shutdown = True
+
+            p = []
+            for obs_i in observations_split:
+                for orbit_i in orbits_split:
+                    p.append(
+                        attribution_worker.remote(
+                            orbit_i,
+                            obs_i,
+                            eps=eps, 
+                            include_probabilistic=include_probabilistic, 
+                            backend=backend, 
+                            backend_kwargs=backend_kwargs
+                        )
+                    )
+                    
+            attribution_dfs = ray.get(p)
+
+            if shutdown:
+                ray.shutdown()
+        
         else:
 
             p = mp.Pool(
                 processes=threads,
                 initializer=_init_worker,
             ) 
-            attributions_dfs = []
+            attribution_dfs = []
             for obs_i in observations_split:
 
                 obs = [obs_i.copy() for i in range(len(orbits_split))]
 
-                attributions_dfs_i = p.starmap(
+                attribution_dfs_i = p.starmap(
                     partial(
                         attribution_worker, 
                         eps=eps, 
@@ -193,7 +214,7 @@ def attributeObservations(
                         obs, 
                     ) 
                 )
-                attributions_dfs += attributions_dfs_i
+                attribution_dfs += attribution_dfs_i
 
             p.close()  
             
@@ -212,7 +233,7 @@ def attributeObservations(
                 attribution_dfs.append(attribution_df_i)
                 
         
-    attributions = pd.concat(attributions_dfs)
+    attributions = pd.concat(attribution_dfs)
     attributions.sort_values(
         by=["orbit_id", "obs_id", "distance"],
         inplace=True
