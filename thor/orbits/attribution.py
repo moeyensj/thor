@@ -171,8 +171,9 @@ def attributeObservations(
                 ray.init(num_cpus=threads)
                 shutdown = True
 
-            p = []
+            attribution_dfs = []
             for obs_i in observations_split:
+                p = []
                 for orbit_i in orbits_split:
                     p.append(
                         attribution_worker.remote(
@@ -185,7 +186,8 @@ def attributeObservations(
                         )
                     )
                     
-            attribution_dfs = ray.get(p)
+                attribution_dfs_i = ray.get(p)
+                attribution_dfs += attribution_dfs_i
 
             if shutdown:
                 ray.shutdown()
