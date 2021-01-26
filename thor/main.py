@@ -1,6 +1,5 @@
 import os
 import time
-import signal
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -11,23 +10,81 @@ from astropy.time import Time
 from .config import Config
 from .cell import Cell
 from .orbit import TestOrbit
-from .orbits.ephemeris import generateEphemeris
-from .orbits.iod import iod
+from .orbits import generateEphemeris
+from .orbits import iod
+from .backend import _init_worker
 
-__all__ = ["rangeAndShift",
-           "clusterVelocity",
-           "_clusterVelocity",
-           "clusterAndLink",
-           "_initialOrbitDetermination",
-           "initialOrbitDetermination"]
+USE_RAY = Config.USE_RAY
+NUM_THREADS = Config.NUM_THREADS
 
-def rangeAndShift(observations, 
-                  orbit, 
-                  t0, 
-                  cell_area=10, 
-                  backend="PYOORB", 
-                  backend_kwargs=None, 
-                  verbose=True):
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+
+__all__ = [
+    "rangeAndShift_worker",
+    "rangeAndShift",
+    "clusterVelocity",
+    "_clusterVelocity",
+    "clusterAndLink",
+]
+
+USE_RAY = False
+
+def rangeAndShift_worker(observations, ephemeris, cell_area=10):
+    
+    assert len(observations["mjd_utc"].unique()) == 1
+    assert len(ephemeris["mjd_utc"].unique()) == 1
+    assert observations["mjd_utc"].unique()[0] == ephemeris["mjd_utc"].unique()[0]
+    observation_time = observations["mjd_utc"].unique()[0]
+    
+    # Create Cell centered on the sky-plane location of the
+    # test orbit
+    cell = Cell(
+        ephemeris[["RA_deg", "Dec_deg"]].values[0],
+        observation_time,
+        area=cell_area,
+    )
+
+    # Grab observations within cell
+    cell.getObservations(observations)
+
+    if len(cell.observations) != 0:
+
+        # Create test orbit with state of orbit at visit time
+        test_orbit = TestOrbit(
+            ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values[0],
+            observation_time
+        )
+
+        # Prepare rotation matrices 
+        test_orbit.prepare(verbose=False)
+
+        # Apply rotation matrices and transform observations into the orbit's
+        # frame of motion. 
+        test_orbit.applyToObservations(cell.observations, verbose=False)
+        
+        projected_observations = cell.observations
+        
+    else:
+        
+        projected_observations = pd.DataFrame()
+        
+    return projected_observations
+
+if USE_RAY:
+    import ray
+    rangeAndShift_worker = ray.remote(rangeAndShift_worker)
+
+
+def rangeAndShift(
+        observations, 
+        orbit, 
+        cell_area=10, 
+        backend="PYOORB", 
+        backend_kwargs=None, 
+        threads=1,
+        verbose=True
+    ):
     """
     Propagate the orbit to all observation times in observations. At each epoch gather a circular region of observations of size cell_area
     centered about the location of the orbit on the sky-plane. Transform and project each of the gathered observations into
@@ -48,8 +105,6 @@ def rangeAndShift(observations,
         Orbit to propagate. If backend is 'THOR', then these orbits must be expressed
         as heliocentric ecliptic cartesian elements. If backend is 'PYOORB' orbits may be 
         expressed in keplerian, cometary or cartesian elements.
-    t0 : `~astropy.time.core.Time`
-        Epoch at which orbit is defined.
     cell_area : float, optional
         Cell's area in units of square degrees. 
         [Default = 10]
@@ -73,79 +128,114 @@ def rangeAndShift(observations,
         print("THOR: rangeAndShift")
         print("-------------------------")
         print("Running range and shift...")
-        print("Assuming r = {} AU".format(orbit[:3]))
-        print("Assuming v = {} AU per day".format(orbit[3:]))
+        print("Assuming r = {} AU".format(orbit.cartesian[0, :3]))
+        print("Assuming v = {} AU per day".format(orbit.cartesian[0, 3:]))
 
     # Build observers dictionary: keys are observatory codes with exposure times (as astropy.time objects)
     # as values
     observers = {}
     for code in observations["observatory_code"].unique():
-        observers[code] = Time(observations[observations["observatory_code"].isin([code])]["mjd_utc"].unique(), format="mjd", scale="utc")
+        observers[code] = Time(
+            observations[observations["observatory_code"].isin([code])]["mjd_utc"].unique(), 
+            format="mjd", 
+            scale="utc"
+        )
 
     # Propagate test orbit to all times in observations
     ephemeris = generateEphemeris(
-        orbit.reshape(1, -1), 
-        t0, 
+        orbit, 
         observers, 
         backend=backend,     
         backend_kwargs=backend_kwargs
     )
-    
+    if backend == "FINDORB":
+        
+        observer_states = []
+        for observatory_code, observation_times in observers.items():
+            observer_states.append(
+                getObserverState(
+                    [observatory_code], 
+                    observation_times,
+                    frame='ecliptic',
+                    origin='heliocenter',
+                )
+            )
+        
+        observer_states = pd.concat(observer_states)
+        observer_states.reset_index(
+            inplace=True,
+            drop=True
+        )
+        ephemeris = ephemeris.join(observer_states[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]])
+        
+    velocity_cols = []
+    if backend != "PYOORB":
+        velocity_cols = ["obs_vx", "obs_vy", "obs_vz"]
+                
     observations = observations.merge(
-        ephemeris[["mjd_utc", "observatory_code", "obs_x", "obs_y", "obs_z"]], 
+        ephemeris[["mjd_utc", "observatory_code", "obs_x", "obs_y", "obs_z"] + velocity_cols], 
         left_on=["mjd_utc", "observatory_code"], 
         right_on=["mjd_utc", "observatory_code"]
     )
     
-    projected_dfs = []
-    test_orbits = []
-    cells = []
+    # Split the observations into a single dataframe per unique observatory code and observation time
+    # Basically split the observations into groups of unique exposures
+    observations_grouped = observations.groupby(by=["observatory_code", "mjd_utc"])
+    observations_split = [observations_grouped.get_group(g) for g in observations_grouped.groups]
     
-    for code, observation_times in observers.items():
-        observatory_mask_observations = (observations["observatory_code"] == code)
-        observatory_mask_ephemeris = (ephemeris["observatory_code"] == code)
+    # Do the same for the test orbit's ephemerides
+    ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
+    ephemeris_split = [ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups]
+        
+    if threads > 1:
 
-        for t1 in observation_times:
-            # Select test orbit ephemeris corresponding to visit
-            ephemeris_visit = ephemeris[observatory_mask_ephemeris & (ephemeris["mjd_utc"] == t1.utc.mjd)]
+        if USE_RAY:
+            shutdown = False
+            if not ray.is_initialized():
+                ray.init(num_cpus=threads)
+                shutdown = True
 
-            # Select observations corresponding to visit
-            observations_visit = observations[observatory_mask_observations & (observations["mjd_utc"] == t1.utc.mjd)].copy()
-            
-            # Create Cell centered on the sky-plane location of the
-            # test orbit
-            cell = Cell(
-                ephemeris_visit[["RA_deg", "Dec_deg"]].values[0],
-                t1.utc.mjd,
-                area=cell_area,
-            )
-            
-            # Grab observations within cell
-            cell.getObservations(observations_visit)
-
-            if len(cell.observations) != 0:
-                
-                # Create test orbit with state of orbit at visit time
-                test_orbit = TestOrbit(
-                    ephemeris_visit[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values[0],
-                    t1
+            p = []
+            for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
+                p.append(
+                    rangeAndShift_worker.remote(
+                        observations_i,
+                        ephemeris_i, 
+                        cell_area=cell_area
+                    )
                 )
+            projected_dfs = ray.get(p)
 
-                # Prepare rotation matrices 
-                test_orbit.prepare(verbose=False)
+            if shutdown:
+                ray.shutdown()
+        else:
+            p = mp.Pool(
+                processes=threads,
+                initializer=_init_worker,
+            ) 
 
-                # Apply rotation matrices and transform observations into the orbit's
-                # frame of motion. 
-                test_orbit.apply(cell, verbose=False)
-                
-                # Append results to approprate lists
-                projected_dfs.append(cell.observations)
-                cells.append(cell)
-                test_orbits.append(test_orbit)
+            projected_dfs = p.starmap(
+                partial(
+                    rangeAndShift_worker, 
+                    cell_area=cell_area
+                ),
+                zip(
+                    observations_split, 
+                    ephemeris_split, 
+                ) 
+            )
+            p.close()  
 
-            else:
-                continue
-    
+    else:
+        projected_dfs = []
+        for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
+            projected_df = rangeAndShift_worker(
+                observations_i,
+                ephemeris_i,  
+                cell_area=cell_area
+            )
+            projected_dfs.append(projected_df)
+
     if len(projected_dfs) > 0:
         projected_observations = pd.concat(projected_dfs)   
         projected_observations.sort_values(by=["mjd_utc", "observatory_code"], inplace=True)
@@ -167,15 +257,6 @@ def rangeAndShift(observations,
         print("")
         
     return projected_observations
-
-
-def _init_worker():
-    """
-    Tell multiprocessing worker to ignore signals, will only
-    listen to parent process. 
-    """
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    return
 
 def clusterVelocity(obs_ids,
                     x, 
@@ -500,165 +581,3 @@ def clusterAndLink(observations,
         print("")
         
     return all_clusters, cluster_members
-
-def _initialOrbitDetermination(
-                              obs_ids, 
-                              cluster_id, 
-                              observations=None, 
-                              observation_selection_method=None, 
-                              chi2_threshold=None,
-                              contamination_percentage=None,
-                              iterate=None, 
-                              light_time=None,
-                              backend=None,
-                              backend_kwargs=None):
-    """
-    Helper function to multiprocess clustering.
-    
-    """
-    orbit, orbit_members, outliers = iod(
-        observations[observations["obs_id"].isin(obs_ids)], 
-        observation_selection_method=observation_selection_method, 
-        chi2_threshold=chi2_threshold,
-        contamination_percentage=contamination_percentage,
-        iterate=iterate, 
-        light_time=light_time,
-        backend=backend,
-        backend_kwargs=backend_kwargs)
-    
-    orbit["cluster_id"] = [cluster_id]
-    
-    return orbit, orbit_members, outliers
-
-
-def initialOrbitDetermination(observations, 
-                              cluster_members, 
-                              observation_selection_method="combinations", 
-                              chi2_threshold=10**3,
-                              contamination_percentage=20.0,
-                              iterate=False, 
-                              light_time=True,
-                              threads=30,
-                              backend="THOR",
-                              backend_kwargs=None):
-
-    processable = True
-    if len(cluster_members) == 0:
-        processable = False
-
-    if len(observations) == 0:
-        processable = False
-
-    orbits = pd.DataFrame(columns=[
-            "orbit_id", 
-            "cluster_id",
-            "epoch_mjd_utc",
-            "obj_x",
-            "obj_y",
-            "obj_z",
-            "obj_vx",
-            "obj_vy",
-            "obj_vz",
-            "arc_length",
-            "num_obs",
-            "chi2"
-        ])
-        
-    orbit_members = pd.DataFrame(columns=[
-        "orbit_id",
-        "obs_id"
-    ])
-
-    outliers = np.array([])
-
-    if processable:
-        grouped = cluster_members.groupby(by="cluster_id")["obs_id"].apply(list)
-        cluster_ids = list(grouped.index.values)
-        obs_ids = grouped.values.tolist()
-
-        orbit_dfs = []
-        orbit_members_dfs = []
-        outliers_list = []
-        
-        if threads > 1:
-            p = mp.Pool(threads, _init_worker)
-            try: 
-                results = p.starmap(
-                    partial(
-                        _initialOrbitDetermination,
-                        observations=observations,
-                        observation_selection_method=observation_selection_method, 
-                        chi2_threshold=chi2_threshold,
-                        contamination_percentage=contamination_percentage,
-                        iterate=iterate, 
-                        light_time=light_time,
-                        backend=backend,
-                        backend_kwargs=backend_kwargs
-                    ),
-                    zip(
-                        obs_ids, 
-                        cluster_ids
-                    )
-                )
-                
-                results = list(zip(*results))
-                orbit_dfs = results[0]
-                orbit_members_dfs = results[1]
-                outliers_list = results[2]
-            
-            except KeyboardInterrupt:
-                p.terminate()
-            
-            p.close()
-
-        else:
-            for obs_ids_i, cluster_id_i in zip(obs_ids, cluster_ids):
-
-                orbit, orbit_members, outliers = iod(
-                    observations[observations["obs_id"].isin(obs_ids_i)], 
-                    observation_selection_method=observation_selection_method, 
-                    chi2_threshold=chi2_threshold,
-                    contamination_percentage=contamination_percentage,
-                    iterate=iterate, 
-                    light_time=light_time,
-                    backend=backend,
-                    backend_kwargs=backend_kwargs)
-                
-                if len(orbit) > 0:
-                    orbit["cluster_id"] = [cluster_id_i]
-                    orbit_dfs.append(orbit)
-                    orbit_members_dfs.append(orbit_members)
-                    outliers_list.append(outliers)
-                    
-                else:
-                    continue
-                
-
-        if len(orbit_dfs) > 0:
-            
-            orbits = pd.concat(orbit_dfs)
-            orbits.dropna(inplace=True)
-            orbits.reset_index(inplace=True, drop=True)
-            orbits = orbits[[
-                "orbit_id", 
-                'cluster_id',
-                "epoch_mjd_utc",
-                "obj_x",
-                "obj_y",
-                "obj_z",
-                "obj_vx",
-                "obj_vy",
-                "obj_vz",
-                "arc_length",
-                "num_obs",
-                "chi2"
-            ]]
-            
-            orbit_members = pd.concat(orbit_members_dfs)
-            orbit_members.dropna(inplace=True)
-            orbit_members.reset_index(inplace=True, drop=True)
-            
-            outliers = np.concatenate(outliers_list)
-             
-    
-    return orbits, orbit_members, outliers
