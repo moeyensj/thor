@@ -1,19 +1,30 @@
 import os
 import sys
 import time
+import uuid
 import numpy as np
 import pandas as pd
+import multiprocessing as mp
 from astropy.time import Time
 from itertools import combinations
+from functools import partial
 
 from ..config import Config
-from .handler import _backendHandler
-from .ephemeris import generateEphemeris
+from ..backend import _init_worker
+from ..backend import MJOLNIR
+from ..backend import PYOORB
 from .gauss import gaussIOD
+from .residuals import calcResiduals
+from .ephemeris import generateEphemeris
+
+USE_RAY = Config.USE_RAY
+NUM_THREADS = Config.NUM_THREADS
 
 __all__ = [
     "selectObservations",
-    "iod"
+    "iod",
+    "iod_worker",
+    "initialOrbitDetermination"
 ]
 
 def selectObservations(observations, method="combinations"):
@@ -96,14 +107,48 @@ def selectObservations(observations, method="combinations"):
     
     return obs_ids[selected_index]
 
-def iod(observations,
+def iod_worker(
+        observations,
         observation_selection_method="combinations",
         chi2_threshold=10**3,
-        contamination_percentage=20.0,
-        iterate=True, 
+        min_obs=6,
+        contamination_percentage=0.0,
+        iterate=False, 
         light_time=True,
-        backend="THOR",
-        backend_kwargs=None):
+        backend="PYOORB",
+        backend_kwargs={}
+    ):
+    
+    iod_orbit, iod_orbit_members = iod(
+        observations,
+        observation_selection_method=observation_selection_method,
+        chi2_threshold=chi2_threshold,
+        min_obs=min_obs,
+        contamination_percentage=contamination_percentage,
+        iterate=iterate, 
+        light_time=light_time,
+        backend=backend,
+        backend_kwargs=backend_kwargs
+    )
+    iod_orbit.insert(1, "cluster_id", observations["cluster_id"].unique()[0])
+    
+    return iod_orbit, iod_orbit_members
+
+if USE_RAY:
+    import ray
+    iod_worker = ray.remote(iod_worker)
+
+def iod(
+        observations,
+        observation_selection_method="combinations",
+        chi2_threshold=200,
+        min_obs=6,
+        contamination_percentage=0.0,
+        iterate=False, 
+        light_time=True,
+        backend="PYOORB",
+        backend_kwargs={}
+    ):
     """
     Run initial orbit determination on a set of observations believed to belong to a single
     object. 
@@ -125,7 +170,7 @@ def iod(observations,
         Iterate the preliminary orbit solution using the state transition iterator. 
     light_time : bool, optional
         Correct preliminary orbit for light travel time.
-    backend : {'THOR', 'PYOORB'}, optional
+    backend : {'MJOLNIR', 'PYOORB'}, optional
         Which backend to use for ephemeris generation.
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected 
@@ -139,8 +184,6 @@ def iod(observations,
         of the remaining observations and the value of chi2 for the solution.
     orbit_members : `~pandas.DataFrame` (3)
         Data frame with two columns: orbit_id and observation IDs.
-    outliers : `~numpy.ndarray`, None
-        Observation IDs of potential outlier detections.
     """
     # Extract column names
     obs_id_col = "obs_id"
@@ -158,21 +201,24 @@ def iod(observations,
     # and the location of the observer at each time
     obs_ids_all = observations[obs_id_col].values
     coords_all = observations[[ra_col, dec_col]].values
-    ra = observations[ra_col].values
-    dec = observations[dec_col].values
-    sigma_ra = observations[ra_err_col].values
-    sigma_dec = observations[dec_err_col].values
-
-    coords_obs_all = observations[[ obs_x_col, obs_y_col, obs_z_col]].values
+    sigmas_all = observations[[ra_err_col, dec_err_col]].values
+    coords_obs_all = observations[[obs_x_col, obs_y_col, obs_z_col]].values
     times_all = observations[time_col].values
     times_all = Time(times_all, scale="utc", format="mjd")
-
-    backend_kwargs = _backendHandler(backend, "ephemeris")
     
-    if backend == "THOR":
-        backend_kwargs["light_time"] = light_time
+    observers = {}
+    for code in observations[obs_code_col].unique():
+        observers[code] = Time(
+            observations[observations[obs_code_col] == code][time_col].values,
+            scale="utc",
+            format="mjd"
+        )
 
-        observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
+    if backend == "MJOLNIR":
+        backend_kwargs["light_time"] = light_time
+        
+        backend = MJOLNIR(**backend_kwargs)
+        #observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
         
     elif backend == "PYOORB":
         if light_time == False:
@@ -180,63 +226,38 @@ def iod(observations,
                 "PYOORB does not support turning light time correction off."
             )
             raise ValueError(err)
-
-        observers = {}
-        for code in observations[obs_code_col].unique():
-            observers[code] = Time(
-                observations[observations[obs_code_col] == code][time_col].values,
-                scale="utc",
-                format="mjd"
-            )
+            
+        backend = PYOORB(**backend_kwargs)
     else:
         err = (
-            "backend should be one of 'THOR' or 'PYOORB'"
+            "backend should be one of 'MJOLNIR' or 'PYOORB'"
         )
         raise ValueError(err)
 
     chi2_sol = 1e10
     orbit_sol = None
-    epoch_sol = None
     obs_ids_sol = None
     remaining_ids = None
     arc_length = None
     outliers = np.array([])
     converged = False
     num_obs = len(observations)
+    chi2_threshold = num_obs * chi2_threshold
     num_outliers = int(num_obs * contamination_percentage / 100.)
+    num_outliers = np.minimum(num_obs - min_obs, num_outliers)
     
-    orbit = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "epoch_mjd_utc",
-                "obj_x", 
-                "obj_y", 
-                "obj_z", 
-                "obj_vx", 
-                "obj_vy", 
-                "obj_vz",
-                "arc_length",
-                "num_obs",
-                "chi2"
-            ]
-        )
-    orbit_members = pd.DataFrame(
-        columns=[
-            "orbit_id",
-            "obs_id"
-        ]
-    )
-
     # Select observation IDs to use for IOD
     obs_ids = selectObservations(
         observations, 
         method=observation_selection_method, 
     )
+    
+    processable = True
     if len(obs_ids) == 0:
-        return orbit, orbit_members, outliers
+        processable = False
 
     j = 0
-    while not converged:
+    while not converged and processable:
         if j == len(obs_ids):
             break
 
@@ -247,10 +268,11 @@ def iod(observations,
         # and the times at which the observations occur
         coords = coords_all[mask, :]
         coords_obs = coords_obs_all[mask, :]
+        sigmas = sigmas_all[mask, :]
         times = times_all[mask]
 
         # Run IOD 
-        epoch_iod, orbits_iod  = gaussIOD(
+        iod_orbits = gaussIOD(
             coords, 
             times.utc.mjd, 
             coords_obs, 
@@ -259,54 +281,54 @@ def iod(observations,
             max_iter=100, 
             tol=1e-15
         )
-        if len(orbits_iod) == 0:
+        if len(iod_orbits) == 0:
             j += 1
             continue
-        
+
         # Propagate initial orbit to all observation times
-        ephemeris = generateEphemeris(
-            orbits_iod, 
-            Time(epoch_iod, scale="utc", format="mjd"),
+        ephemeris = backend.generateEphemeris(
+            iod_orbits, 
             observers,
-            backend=backend, 
-            backend_kwargs=backend_kwargs
+            threads=1,
         )
-        ephemeris = ephemeris[['orbit_id', 'mjd_utc', 'RA_deg', 'Dec_deg', 'obj_x', 'obj_y', 'obj_z', 'obj_vx', 'obj_vy', 'obj_vz']].values
         
+
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
-        orbit_ids = np.unique(ephemeris[:, 0])
+        orbit_ids = iod_orbits.ids
         for i, orbit_id in enumerate(orbit_ids):
-            orbit_name = np.array(["{}_v{}".format("_".join(ids.astype(str)), i+1)])
-            # Select unique orbit solution
-            orbit_i = ephemeris[np.where(ephemeris[:, 0] == orbit_id)]
+            orbit_name = "{}_v{}".format("_".join(ids.astype(str)), i+1)
+            orbit_name = str(uuid.uuid4().hex)
+            iod_orbits.ids[i] = orbit_name
 
-            # Calculate residuals in RA, make sure to fix any potential wrap around errors
-            pred_dec = np.radians(orbit_i[:, 3])
-            residual_ra = (ra - orbit_i[:, 2]) * np.cos(pred_dec)
-            residual_ra = np.where(residual_ra > 180., 360. - residual_ra, residual_ra)
-
-            # Calculate residuals in Dec
-            residual_dec = dec - orbit_i[:, 3]
-
-            # Calculate chi2
-            chi2 = ((residual_ra**2 / sigma_ra**2) 
-                + (residual_dec**2 / sigma_dec**2))
+            ephemeris_orbit = ephemeris[ephemeris["orbit_id"] == orbit_id]
+            
+            # Calculate residuals and chi2
+            residuals, stats = calcResiduals(
+                coords_all,
+                ephemeris_orbit[["RA_deg", "Dec_deg"]].values,
+                sigmas_actual=sigmas_all,
+                include_probabilistic=False
+            )
+            chi2 = stats[0]
             chi2_total = np.sum(chi2)
 
             # All chi2 values are above the threshold, continue loop
-            if np.all(chi2 >= chi2_threshold):
+            if np.all(chi2 >= chi2_threshold) and num_outliers > 0:
                 continue
 
             # If the total chi2 is less than the threshold accept the orbit
             elif chi2_total <= chi2_threshold:
-                orbit_sol = orbits_iod[i:i+1]
-                epoch_sol = epoch_iod[i:i+1]
+                orbit_sol = iod_orbits[i:i+1]
                 obs_ids_sol = ids
-                chi2_sol = chi2_total    
+                chi2_total_sol = chi2_total    
+                chi2_sol = chi2
+                residuals_sol = residuals
                 remaining_ids = obs_ids_all
+                outliers = np.array([])
                 arc_length = times_all.utc.mjd.max() - times_all.utc.mjd.min()
                 converged = True
+                break 
 
             # Let's now test to see if we can remove some outliers, we 
             # anticipate we get to this stage if the three selected observations 
@@ -328,47 +350,192 @@ def iod(observations,
                     # If the updated chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
                     if chi2_new <= chi2_threshold:
-                        orbit_sol = orbits_iod[i:i+1]
-                        epoch_sol = epoch_iod[i:i+1]
+                        orbit_sol = iod_orbits[i:i+1]
                         obs_ids_sol = ids
-                        chi2_sol = chi2_new
+                        chi2_total_sol = chi2_new
+                        chi2_sol = chi2
+                        residuals_sol = residuals
                         outliers = obs_id_outlier
                         num_obs = len(observations) - len(remove)
                         ids_mask = np.isin(obs_ids_all, outliers, invert=True)
-                        arc_length = times_all[ids_mask].max() - times_all[ids_mask].min()
+                        arc_length = times_all[ids_mask].utc.mjd.max() - times_all[ids_mask].utc.mjd.min()
                         remaining_ids = obs_ids_all[ids_mask]
                         converged = True
                         break
                         
             else:
-                continue
+                processable = False
+                break
 
         j += 1
 
-    if converged:
+    if not converged or not processable:
+       
         orbit = pd.DataFrame(
-            np.hstack([epoch_sol.reshape(1, -1), orbit_sol]),
-            columns=[
-                "epoch_mjd_utc", 
-                "obj_x", 
-                "obj_y", 
-                "obj_z", 
-                "obj_vx", 
-                "obj_vy", 
-                "obj_vz"])
-        orbit["arc_length"] = arc_length
-        orbit["num_obs"] = num_obs
-        orbit["chi2"] = chi2_sol
-        orbit.insert(0, "orbit_id", orbit_name)
-        
-        orbit_members = pd.DataFrame(
-            np.vstack([
-                [orbit_name[0] for i in range(num_obs)], 
-                remaining_ids]).T,
             columns=[
                 "orbit_id",
-                "obs_id",
+                "mjd_tdb",
+                "x",
+                "y",
+                "z",
+                "vx",
+                "vy",
+                "vz",
+                "arc_length",
+                "num_obs",
+                "chi2",
             ]
         )
-    return orbit, orbit_members, outliers
-   
+        
+        orbit_members = pd.DataFrame(
+            columns=[
+                "orbit_id", 
+                "obs_id", 
+                "residual_ra", 
+                "residual_dec", 
+                "chi2",
+                "gauss_sol",
+                "outlier"
+            ]
+        )
+    
+    else:
+        orbit = orbit_sol.todf()
+        orbit["arc_length"] = arc_length
+        orbit["num_obs"] = num_obs
+        orbit["chi2"] = chi2_total_sol
+        orbit["rchi2"] = chi2_total_sol / (2 * num_obs - 6)
+        
+        orbit_members = pd.DataFrame({
+            "orbit_id" : [orbit_sol.ids[0] for i in range(len(obs_ids_all))],
+            "obs_id" : obs_ids_all,
+            "residual_ra_arcsec" : residuals_sol[:, 0] * 3600,
+            "residual_dec_arcsec" : residuals_sol[:, 1] * 3600,
+            "chi2" : chi2_sol,
+            "gauss_sol" : np.zeros(len(obs_ids_all), dtype=int),
+            "outlier" : np.zeros(len(obs_ids_all), dtype=int)
+        })
+        orbit_members.loc[orbit_members["obs_id"].isin(outliers), "outlier"] = 1
+        orbit_members.loc[orbit_members["obs_id"].isin(obs_ids_sol), "gauss_sol"] = 1
+    
+    
+    return orbit, orbit_members
+
+
+def initialOrbitDetermination(
+        observations, 
+        linkage_members, 
+        observation_selection_method='combinations',
+        chi2_threshold=10**3,
+        min_obs=6,
+        contamination_percentage=20.0,
+        iterate=False,
+        light_time=True,
+        threads=NUM_THREADS,
+        backend="PYOORB",
+        backend_kwargs={}   
+    ):
+
+    linked_observations = linkage_members.merge(observations, on="obs_id").copy()
+    linked_observations.sort_values(
+        by=["cluster_id", "mjd_utc"], 
+        inplace=True
+    )
+    linked_observations.reset_index(
+        drop=True,
+        inplace=True
+    )
+    grouped_observations = linked_observations.groupby(by=["cluster_id"])
+    observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
+    
+    if threads > 1:
+        num_linkages = len(observations_split)
+    
+        if USE_RAY:
+            shutdown = False
+            if not ray.is_initialized():
+                ray.init(num_cpus=threads)
+                shutdown = True
+
+            p = []
+            for observations_i in observations_split:
+                
+                p.append(
+                    iod_worker.remote(
+                        observations_i,
+                        observation_selection_method=observation_selection_method,
+                        chi2_threshold=chi2_threshold,
+                        min_obs=min_obs,
+                        contamination_percentage=contamination_percentage,
+                        iterate=iterate, 
+                        light_time=light_time,
+                        backend=backend,
+                        backend_kwargs=backend_kwargs
+                    )
+                )
+            
+            iod_orbits_dfs, iod_orbit_members_dfs = ray.get(p)
+
+            if shutdown:
+                ray.shutdown()
+        else:
+            p = mp.Pool(
+                processes=threads,
+                initializer=_init_worker,
+            ) 
+
+            results = p.starmap(
+                partial(
+                    iod_worker, 
+                    observation_selection_method=observation_selection_method,
+                    chi2_threshold=chi2_threshold,
+                    min_obs=min_obs,
+                    contamination_percentage=contamination_percentage,
+                    iterate=iterate, 
+                    light_time=light_time,
+                    backend=backend,
+                    backend_kwargs=backend_kwargs
+                ),
+                zip(
+                    observations_split, 
+                ) 
+            )
+            p.close()  
+            
+            results = list(zip(*results))
+            iod_orbits_dfs = results[0]
+            iod_orbit_members_dfs = results[1]
+
+    else:
+        
+        iod_orbits_dfs = []
+        iod_orbit_members_dfs = []
+        for i, observations_i in enumerate(observations_split):
+            
+            iod_orbits_df, iod_orbit_members_df = iod_worker(
+                observations_i,
+                observation_selection_method=observation_selection_method,
+                chi2_threshold=chi2_threshold,
+                min_obs=min_obs,
+                contamination_percentage=contamination_percentage,
+                iterate=iterate,
+                light_time=light_time,
+                backend=backend,
+                backend_kwargs=backend_kwargs
+            )
+            iod_orbits_dfs.append(iod_orbits_df)
+            iod_orbit_members_dfs.append(iod_orbit_members_df)
+        
+    iod_orbits = pd.concat(iod_orbits_dfs)
+    iod_orbits.reset_index(
+        inplace=True,
+        drop=True
+    )
+    
+    iod_orbit_members = pd.concat(iod_orbit_members_dfs)
+    iod_orbit_members.reset_index(
+        inplace=True,
+        drop=True
+    )
+    
+    return iod_orbits, iod_orbit_members
