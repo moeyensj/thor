@@ -15,12 +15,7 @@ def calcResiduals(
         covariances_actual=None,
         include_probabilistic=True,
     ):
-    if covariances_actual is None and sigmas_actual is None:
-        err = (
-            "Both covariances_actual and sigmas_actual cannot be None."
-        )
-        raise ValueError(err)
-    elif covariances_actual is None and sigmas_actual is not None and include_probabilistic:
+    if covariances_actual is None and sigmas_actual is not None and include_probabilistic:
         covariances_actual_ = [np.diag(i**2) for i in sigmas_actual]
         sigmas_actual_ = sigmas_actual
     elif covariances_actual is not None and sigmas_actual is None:
@@ -66,23 +61,22 @@ def calcSimpleResiduals(
         Actual N coordinates in M dimensions. 
     coords_desired : `~numpy.ndarray` (N, M)
         The desired N coordinates in M dimensions. 
-    sigmas_actual : `~numpy.ndarray` (N, M)
-        The 1-sigma uncertainties of the actual coordinates.
+    sigmas_actual : `~numpy.ndarray` (N, M), optional
+        The 1-sigma uncertainties of the actual coordinates. Can be
+        None, in which case chi2 will be return as a NaN.
         
     Returns
     -------
     residuals : `~numpy.ndarray` (N, 2)
-        
+        Residuals for each coordinate (actual - desired)
     chi2 : `~numpy.ndarray` (N)
-        
+        Chi-squared for each observation given the 1-sigma 
+        uncertainties. NaN if no sigmas_actual is None.
     """
     residuals = np.zeros_like(coords_actual)
 
     ra = coords_actual[:, 0]
     dec = coords_actual[:, 1]
-    sigma_ra = sigmas_actual[:, 0]
-    sigma_dec = sigmas_actual[:, 1]
-
     ra_pred = coords_desired[:, 0]
     dec_pred = coords_desired[:, 1]
 
@@ -93,9 +87,15 @@ def calcSimpleResiduals(
     # Calculate residuals in Dec
     residual_dec = dec - dec_pred
 
-    # Calculate chi2
-    chi2 = ((residual_ra**2 / sigma_ra**2) 
-        + (residual_dec**2 / sigma_dec**2))
+    if isinstance(sigmas_actual, np.ndarray):
+        sigma_ra = sigmas_actual[:, 0]
+        sigma_dec = sigmas_actual[:, 1]
+
+        # Calculate chi2
+        chi2 = ((residual_ra**2 / sigma_ra**2) 
+            + (residual_dec**2 / sigma_dec**2))
+    else:
+        chi2 = np.NaN
 
     residuals[:, 0] = residual_ra
     residuals[:, 1] = residual_dec
