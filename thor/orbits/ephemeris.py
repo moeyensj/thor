@@ -1,6 +1,8 @@
+import warnings
 import pandas as pd
 
 from ..config import Config
+from ..backend import Backend
 from ..backend import PYOORB
 from ..backend import FINDORB
 from ..backend import MJOLNIR
@@ -53,9 +55,15 @@ def generateEphemeris(
     elif backend == "FINDORB":
         backend = FINDORB(**backend_kwargs)
 
+    elif isinstance(backend, Backend):
+        backend = backend
+
+        if len(backend_kwargs) > 0:
+            warnings.warn("backend_kwargs will be ignored since a instantiated backend class has been given.")
+
     else: 
         err = (
-            "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB'"
+            "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB' or an instantiated Backend class"
         )
         raise ValueError(err)
 

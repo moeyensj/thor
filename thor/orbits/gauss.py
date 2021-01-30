@@ -1,9 +1,11 @@
 import numpy as np
 from numpy import roots
 from numba import jit
+from astropy.time import Time
 
 from ..constants import Constants as c
 from ..coordinates import transformCoordinates
+from .orbits import Orbits
 from .stumpff import calcStumpff
 from .universal_propagate import calcChi
 from .gibbs import calcGibbs
@@ -280,4 +282,13 @@ def gaussIOD(coords,
     epochs = epochs[~np.isnan(orbits).any(axis=1)]
     orbits = orbits[~np.isnan(orbits).any(axis=1)]
 
-    return epochs, orbits
+    iod_orbits = Orbits(
+        orbits,
+        Time(
+            epochs,
+            format="mjd",
+            scale="utc"
+        ),
+        orbit_type="cartesian"
+    )
+    return iod_orbits

@@ -27,7 +27,10 @@ __all__ = [
     "initialOrbitDetermination"
 ]
 
-def selectObservations(observations, method="combinations"):
+def selectObservations(
+        observations, 
+        method="combinations"
+    ):
     """
     Selects which three observations to use for IOD depending on the method. 
     
@@ -110,8 +113,8 @@ def selectObservations(observations, method="combinations"):
 def iod_worker(
         observations,
         observation_selection_method="combinations",
-        chi2_threshold=10**3,
         min_obs=6,
+        chi2_threshold=10**3,
         contamination_percentage=0.0,
         iterate=False, 
         light_time=True,
@@ -122,15 +125,15 @@ def iod_worker(
     iod_orbit, iod_orbit_members = iod(
         observations,
         observation_selection_method=observation_selection_method,
-        chi2_threshold=chi2_threshold,
         min_obs=min_obs,
+        chi2_threshold=chi2_threshold,
         contamination_percentage=contamination_percentage,
         iterate=iterate, 
         light_time=light_time,
         backend=backend,
         backend_kwargs=backend_kwargs
     )
-    iod_orbit.insert(1, "cluster_id", observations["cluster_id"].unique()[0])
+    iod_orbit.insert(1, linkage_id_col, observations[linkage_id_col].unique()[0])
     
     return iod_orbit, iod_orbit_members
 
@@ -141,8 +144,8 @@ if USE_RAY:
 def iod(
         observations,
         observation_selection_method="combinations",
-        chi2_threshold=200,
         min_obs=6,
+        chi2_threshold=200,
         contamination_percentage=0.0,
         iterate=False, 
         light_time=True,
@@ -156,20 +159,42 @@ def iod(
     Parameters
     ----------
     observations : `~pandas.DataFrame`
-        Data frame containing the observations of a possible linkage. 
+        Dataframe of observations with at least the following columns:
+            "obs_id" : Observation IDs [str],
+            "mjd_utc" : Observation time in MJD UTC [float],
+            "RA_deg" : equatorial J2000 Right Ascension in degrees [float],
+            "Dec_deg" : equatorial J2000 Declination in degrees [float],
+            "RA_sigma_deg" : 1-sigma uncertainty in equatorial J2000 RA [float],
+            "Dec_sigma_deg" : 1 sigma uncertainty in equatorial J2000 Dec [float],
+            "observatory_code" : MPC recognized observatory code [str],
+            "obs_x" : Observatory's heliocentric ecliptic J2000 x-position in au [float],
+            "obs_y" : Observatory's heliocentric ecliptic J2000 y-position in au [float],
+            "obs_z" : Observatory's heliocentric ecliptic J2000 z-position in au [float],
+            "obs_vx" [Optional] : Observatory's heliocentric ecliptic J2000 x-velocity in au per day [float],
+            "obs_vy" [Optional] : Observatory's heliocentric ecliptic J2000 y-velocity in au per day [float],
+            "obs_vz" [Optional] : Observatory's heliocentric ecliptic J2000 z-velocity in au per day [float]
     observation_selection_method : {'first+middle+last', 'thirds', 'combinations'}, optional
-        Which method to use to select observations. 
-        [Default = 'combinations']
+        Selects which three observations to use for IOD depending on the method. The avaliable methods are:
+            'first+middle+last' : Grab the first, middle and last observations in time. 
+            'thirds' : Grab the middle observation in the first third, second third, and final third. 
+            'combinations' : Return the observation IDs corresponding to every possible combination of three observations with
+                non-coinciding observation times.
+    min_obs : int, optional
+        Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
+        a linkage has 8 observations, at most the two worst observations will be flagged as outliers if their individual
+        chi2 values exceed the chi2 threshold.
     chi2_threshold : float, optional
-        Minimum chi2 required for an initial orbit to be accepted. Note that chi2 here needs to be 
+        Maximum chi2 required for a single observation to not be considered an outlier. Note that chi2 here needs to be 
         interpreted carefully, residuals of order a few arcseconds easily contribute significantly 
-        to the total chi2. 
+        to the chi2 of the observation. 
     contamination_percentage : float, optional
         Maximum percent of observations that can flagged as outliers. 
     iterate : bool, optional
         Iterate the preliminary orbit solution using the state transition iterator. 
     light_time : bool, optional
         Correct preliminary orbit for light travel time.
+    linkage_id_col : str, optional
+        Name of linkage_id column in the linkage_members dataframe.
     backend : {'MJOLNIR', 'PYOORB'}, optional
         Which backend to use for ephemeris generation.
     backend_kwargs : dict, optional
@@ -178,12 +203,32 @@ def iod(
 
     Returns
     -------
-    orbit : `~pandas.DataFrame` (7)
-        Preliminary orbit with epoch_mjd (in UTC) and the the cartesian state vector. Also
-        has a column for number of observations after outliers have been removed, arc length
-        of the remaining observations and the value of chi2 for the solution.
-    orbit_members : `~pandas.DataFrame` (3)
-        Data frame with two columns: orbit_id and observation IDs.
+    iod_orbits : `~pandas.DataFrame` 
+        Dataframe with orbits found in linkages.
+            "orbit_id" : Orbit ID, a uuid [str],
+            "mjd_tdb" : Epoch at which orbit is defined in MJD TDB [float],
+            "x" : Orbit's ecliptic J2000 x-position in au [float],
+            "y" : Orbit's ecliptic J2000 y-position in au [float],
+            "z" : Orbit's ecliptic J2000 z-position in au [float],
+            "vx" : Orbit's ecliptic J2000 x-velocity in au per day [float],
+            "vy" : Orbit's ecliptic J2000 y-velocity in au per day [float],
+            "vz" : Orbit's ecliptic J2000 z-velocity in au per day [float],
+            "arc_length" : Arc length in days [float],
+            "num_obs" : Number of observations that were within the chi2 threshold 
+                of the orbit.
+            "chi2" : Total chi2 of the orbit calculated using the predicted location of the orbit
+                on the sky compared to the consituent observations. 
+
+    iod_orbit_members : `~pandas.DataFrame` 
+        Dataframe of orbit members with the following columns:
+            "orbit_id" : Orbit ID, a uuid [str],
+            "obs_id" : Observation IDs [str], one ID per row. 
+            "residual_ra_arcsec" : Residual (observed - expected) equatorial J2000 Right Ascension in degrees [float]
+            "residual_dec_arcsec" : Residual (observed - expected) equatorial J2000 Declination in degrees [float]
+            "chi2" : Observation's chi2 [float]
+            "gauss_sol" : Flag to indicate which observations were used to calculate the Gauss soluton [int]
+            "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
+                the chi2 threshold) [float]
     """
     # Extract column names
     obs_id_col = "obs_id"
@@ -391,8 +436,8 @@ def iod(
             columns=[
                 "orbit_id", 
                 "obs_id", 
-                "residual_ra", 
-                "residual_dec", 
+                "residual_ra_arcsec", 
+                "residual_dec_arcsec", 
                 "chi2",
                 "gauss_sol",
                 "outlier"
@@ -404,7 +449,7 @@ def iod(
         orbit["arc_length"] = arc_length
         orbit["num_obs"] = num_obs
         orbit["chi2"] = chi2_total_sol
-        orbit["rchi2"] = chi2_total_sol / (2 * num_obs - 6)
+        #orbit["rchi2"] = chi2_total_sol / (2 * num_obs - 6)
         
         orbit_members = pd.DataFrame({
             "orbit_id" : [orbit_sol.ids[0] for i in range(len(obs_ids_all))],
@@ -426,30 +471,112 @@ def initialOrbitDetermination(
         observations, 
         linkage_members, 
         observation_selection_method='combinations',
-        chi2_threshold=10**3,
         min_obs=6,
+        chi2_threshold=10**3,
         contamination_percentage=20.0,
         iterate=False,
         light_time=True,
+        linkage_id_col=linkage_id_col,
         threads=NUM_THREADS,
         backend="PYOORB",
         backend_kwargs={}   
     ):
+    """
+    Run initial orbit determination on linkages found in observations.
 
+    Parameters
+    ----------
+    observations : `~pandas.DataFrame`
+        Dataframe of observations with at least the following columns:
+            "obs_id" : Observation IDs [str],
+            "mjd_utc" : Observation time in MJD UTC [float],
+            "RA_deg" : equatorial J2000 Right Ascension in degrees [float],
+            "Dec_deg" : equatorial J2000 Declination in degrees [float],
+            "RA_sigma_deg" : 1-sigma uncertainty in equatorial J2000 RA [float],
+            "Dec_sigma_deg" : 1 sigma uncertainty in equatorial J2000 Dec [float],
+            "observatory_code" : MPC recognized observatory code [str],
+            "obs_x" : Observatory's heliocentric ecliptic J2000 x-position in au [float],
+            "obs_y" : Observatory's heliocentric ecliptic J2000 y-position in au [float],
+            "obs_z" : Observatory's heliocentric ecliptic J2000 z-position in au [float],
+            "obs_vx" [Optional] : Observatory's heliocentric ecliptic J2000 x-velocity in au per day [float],
+            "obs_vy" [Optional] : Observatory's heliocentric ecliptic J2000 y-velocity in au per day [float],
+            "obs_vz" [Optional] : Observatory's heliocentric ecliptic J2000 z-velocity in au per day [float]
+    linkage_members : `~pandas.DataFrame`
+        Dataframe of linkages with at least two columns:
+            "linkage_id" : Linkage ID [str],
+            "obs_id" : Observation IDs [str], one ID per row. 
+    observation_selection_method : {'first+middle+last', 'thirds', 'combinations'}, optional
+        Selects which three observations to use for IOD depending on the method. The avaliable methods are:
+            'first+middle+last' : Grab the first, middle and last observations in time. 
+            'thirds' : Grab the middle observation in the first third, second third, and final third. 
+            'combinations' : Return the observation IDs corresponding to every possible combination of three observations with
+                non-coinciding observation times.
+    min_obs : int, optional
+        Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
+        a linkage has 8 observations, at most the two worst observations will be flagged as outliers if their individual
+        chi2 values exceed the chi2 threshold.
+    chi2_threshold : float, optional
+        Maximum chi2 required for a single observation to not be considered an outlier. Note that chi2 here needs to be 
+        interpreted carefully, residuals of order a few arcseconds easily contribute significantly 
+        to the chi2 of the observation. 
+    contamination_percentage : float, optional
+        Maximum percent of observations that can flagged as outliers. 
+    iterate : bool, optional
+        Iterate the preliminary orbit solution using the state transition iterator. 
+    light_time : bool, optional
+        Correct preliminary orbit for light travel time.
+    linkage_id_col : str, optional
+        Name of linkage_id column in the linkage_members dataframe.
+    threads : int, optional
+        Number of threads to use for multiprocessing. 
+    backend : {'MJOLNIR', 'PYOORB'}, optional
+        Which backend to use for ephemeris generation.
+    backend_kwargs : dict, optional
+        Settings and additional parameters to pass to selected 
+        backend.
+
+    Returns
+    -------
+    iod_orbits : `~pandas.DataFrame` 
+        Dataframe with orbits found in linkages.
+            "orbit_id" : Orbit ID, a uuid [str],
+            "mjd_tdb" : Epoch at which orbit is defined in MJD TDB [float],
+            "x" : Orbit's ecliptic J2000 x-position in au [float],
+            "y" : Orbit's ecliptic J2000 y-position in au [float],
+            "z" : Orbit's ecliptic J2000 z-position in au [float],
+            "vx" : Orbit's ecliptic J2000 x-velocity in au per day [float],
+            "vy" : Orbit's ecliptic J2000 y-velocity in au per day [float],
+            "vz" : Orbit's ecliptic J2000 z-velocity in au per day [float],
+            "arc_length" : Arc length in days [float],
+            "num_obs" : Number of observations that were within the chi2 threshold 
+                of the orbit.
+            "chi2" : Total chi2 of the orbit calculated using the predicted location of the orbit
+                on the sky compared to the consituent observations. 
+
+    iod_orbit_members : `~pandas.DataFrame` 
+        Dataframe of orbit members with the following columns:
+            "orbit_id" : Orbit ID, a uuid [str],
+            "obs_id" : Observation IDs [str], one ID per row. 
+            "residual_ra_arcsec" : Residual (observed - expected) equatorial J2000 Right Ascension in degrees [float]
+            "residual_dec_arcsec" : Residual (observed - expected) equatorial J2000 Declination in degrees [float]
+            "chi2" : Observation's chi2 [float]
+            "gauss_sol" : Flag to indicate which observations were used to calculate the Gauss soluton [int]
+            "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
+                the chi2 threshold) [float]
+    """
     linked_observations = linkage_members.merge(observations, on="obs_id").copy()
     linked_observations.sort_values(
-        by=["cluster_id", "mjd_utc"], 
+        by=[linkage_id_col, "mjd_utc"], 
         inplace=True
     )
     linked_observations.reset_index(
         drop=True,
         inplace=True
     )
-    grouped_observations = linked_observations.groupby(by=["cluster_id"])
+    grouped_observations = linked_observations.groupby(by=[linkage_id_col])
     observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
     
     if threads > 1:
-        num_linkages = len(observations_split)
     
         if USE_RAY:
             shutdown = False
