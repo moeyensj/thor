@@ -7,6 +7,7 @@ from sklearn.neighbors import BallTree
 
 from ..config import Config
 from ..backend import _init_worker
+from .orbits import Orbits
 from .ephemeris import generateEphemeris
 from .residuals import calcResiduals
 
@@ -14,7 +15,9 @@ USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
 
 __all__ = [
-    "attributeObservations"
+    "attribution_worker",
+    "attributeObservations",
+    "extendOrbits"
 ]
 
 def attribution_worker(
@@ -123,8 +126,8 @@ def attribution_worker(
             "orbit_id" : orbit_ids_associated[:, 0],
             "obs_id" : obs_ids_associated[:, 0],
             "distance" : distances[:, 0],
-            "residual_ra" : residuals[:, 0],
-            "residual_dec" : residuals[:, 1],
+            "residual_ra_arcsec" : residuals[:, 0] * 3600,
+            "residual_dec_arcsec" : residuals[:, 1] * 3600,
             "chi2" : stats[:, 0]
         }
         if include_probabilistic:
@@ -134,7 +137,7 @@ def attribution_worker(
         attributions = pd.DataFrame(attributions)
         
     else:
-        columns = ["orbit_id", "obs_id", "distance", "residual_ra", "residual_dec", "chi2"]
+        columns = ["orbit_id", "obs_id", "distance", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]
         if include_probabilistic:
             columns += ["probability", "mahalanobis_distance"]
             
@@ -246,3 +249,79 @@ def attributeObservations(
     )
    
     return attributions
+
+
+def extendOrbits(
+        od_orbits, 
+        od_orbit_members, 
+        observations, 
+        min_obs=6,
+        eps=1/3600, 
+        include_probabilistic=True, 
+        orbits_chunk_size=100,
+        observations_chunk_size=100000,
+        threads=NUM_THREADS,
+        backend="PYOORB", 
+        backend_kwargs={} 
+    ):
+
+
+    # Run attribution
+    attributions = attributeObservations(
+        Orbits.fromdf(od_orbits),
+        observations,
+        eps=eps,
+        include_probabilistic=include_probabilistic,
+        threads=threads,
+        orbits_chunk_size=orbits_chunk_size,
+        observations_chunk_size=observations_chunk_size,
+        backend=backend,
+        backend_kwargs=backend_kwargs
+    )
+    
+    # Remove any orbits that were attributed to less than the minimum number of 
+    # of observations desired for "discoverability"
+    orbit_occurences = attributions["orbit_id"].value_counts()
+    orbit_ids = orbit_occurences[orbit_occurences.values >= min_obs].index.values
+    attributions = attributions[attributions["orbit_id"].isin(orbit_ids)]
+    
+    # Sort remaining orbits by chi2 value, start with the orbit with the lowest mean chi2. 
+    # Then for each orbit remove the attributed observations and add them to the orbit's 
+    # orbit members. 
+    orbit_ids = attributions.groupby(by=["orbit_id"])["chi2"].mean()
+    orbit_ids = orbit_ids[np.argsort(orbit_ids.values)].index.values
+    od_orbit_members_dfs = []
+    obs_ids_attributed = np.array([])
+    for orbit_id in orbit_ids:
+
+        attributed = attributions[attributions["orbit_id"] == orbit_id].copy()
+        
+        if len(attributed) >= min_obs:
+            obs_ids_attributed = np.concatenate([obs_ids_attributed, attributed["obs_id"].values])
+            od_orbit_members_dfs.append(attributed.reset_index(drop=True))
+            attributions = attributions[~attributions["obs_id"].isin(obs_ids_attributed)]
+
+    # Make new orbits and orbit member's dataframes
+    od_orbit_members = pd.concat(od_orbit_members_dfs)
+    od_orbit_members.reset_index(
+        inplace=True,
+        drop=True
+    )
+    od_orbits = od_orbits[od_orbits["orbit_id"].isin(od_orbit_members["orbit_id"].unique())]
+    
+    od_orbits = od_orbits.sort_values(by=["orbit_id"])
+    od_orbit_members = od_orbit_members.merge(observations[["obs_id", "mjd_utc"]], on="obs_id", how="left")
+    od_orbit_members.sort_values(
+        by=["orbit_id", "mjd_utc"],
+        inplace=True
+    )
+    od_orbits.drop(
+        columns=["covariances", "arc_length", "num_obs", "chi2", "num_params"],
+        inplace=True
+    )
+    od_orbit_members.drop(
+        columns=["mjd_utc"],
+        inplace=True
+    )
+    
+    return od_orbits, od_orbit_members
