@@ -269,7 +269,7 @@ def gaussIOD(coords,
             epoch -= lt
         
         if np.linalg.norm(orbit[3:]) >= C:
-            print("Velocity is greater than speed of light!")
+            continue
         
         if (np.linalg.norm(orbit[:3]) > 300.) and (np.linalg.norm(orbit[3:]) > 25.):
             continue
