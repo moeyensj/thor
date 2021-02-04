@@ -231,6 +231,9 @@ def gaussIOD(coords,
         lambda1, lambda3 = _calcLambdas(r2_mag, t31, t32, t21)
         rho1, rho2, rho3 = _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V)
 
+        if np.dot(rho2, rho2_hat) < 0:
+            continue
+
         # Test if we get the same rho2 as using equation 22 in Milani et al. 2008
         rho2_mag = (h0 - q2_mag**3 / r2_mag**3) * q2_mag / C0
         #np.testing.assert_almost_equal(np.dot(rho2_mag, rho2_hat), rho2)
@@ -271,7 +274,9 @@ def gaussIOD(coords,
         if np.linalg.norm(orbit[3:]) >= C:
             continue
         
-        if (np.linalg.norm(orbit[:3]) > 300.) and (np.linalg.norm(orbit[3:]) > 25.):
+        if (np.linalg.norm(orbit[:3]) > 300.) or (np.linalg.norm(orbit[3:]) > 5.):
+            # Orbits that crash PYOORB:
+            # 58366.84446725786 : 9.5544354809296721e+01  1.4093228616761269e+01 -6.6700146960148423e+00 -6.2618123281073522e+01 -9.4167879481188717e+00  4.4421501034359023e+0
             continue
             
         orbits.append(orbit)
@@ -279,9 +284,10 @@ def gaussIOD(coords,
 
     epochs = np.array(epochs)
     orbits = np.array(orbits)
-    epochs = epochs[~np.isnan(orbits).any(axis=1)]
-    orbits = orbits[~np.isnan(orbits).any(axis=1)]
-
+    if len(orbits) > 0:
+        epochs = epochs[~np.isnan(orbits).any(axis=1)]
+        orbits = orbits[~np.isnan(orbits).any(axis=1)]
+   
     iod_orbits = Orbits(
         orbits,
         Time(
