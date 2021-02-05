@@ -114,10 +114,11 @@ def iod_worker(
         observations,
         observation_selection_method="combinations",
         min_obs=6,
-        chi2_threshold=10**3,
+        rchi2_threshold=10**3,
         contamination_percentage=0.0,
         iterate=False, 
         light_time=True,
+        linkage_id_col="cluster_id",
         backend="PYOORB",
         backend_kwargs={}
     ):
@@ -126,14 +127,15 @@ def iod_worker(
         observations,
         observation_selection_method=observation_selection_method,
         min_obs=min_obs,
-        chi2_threshold=chi2_threshold,
+        rchi2_threshold=rchi2_threshold,
         contamination_percentage=contamination_percentage,
         iterate=iterate, 
         light_time=light_time,
         backend=backend,
         backend_kwargs=backend_kwargs
     )
-    iod_orbit.insert(1, linkage_id_col, observations[linkage_id_col].unique()[0])
+    if len(iod_orbit) > 0:
+        iod_orbit.insert(1, linkage_id_col, observations[linkage_id_col].unique()[0])
     
     return iod_orbit, iod_orbit_members
 
@@ -145,7 +147,7 @@ def iod(
         observations,
         observation_selection_method="combinations",
         min_obs=6,
-        chi2_threshold=200,
+        rchi2_threshold=200,
         contamination_percentage=0.0,
         iterate=False, 
         light_time=True,
@@ -183,10 +185,8 @@ def iod(
         Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
         a linkage has 8 observations, at most the two worst observations will be flagged as outliers if their individual
         chi2 values exceed the chi2 threshold.
-    chi2_threshold : float, optional
-        Maximum chi2 required for a single observation to not be considered an outlier. Note that chi2 here needs to be 
-        interpreted carefully, residuals of order a few arcseconds easily contribute significantly 
-        to the chi2 of the observation. 
+    rchi2_threshold : float, optional
+        Maximum reduced chi2 required for an initial orbit to be accepted. 
     contamination_percentage : float, optional
         Maximum percent of observations that can flagged as outliers. 
     iterate : bool, optional
@@ -223,13 +223,17 @@ def iod(
         Dataframe of orbit members with the following columns:
             "orbit_id" : Orbit ID, a uuid [str],
             "obs_id" : Observation IDs [str], one ID per row. 
-            "residual_ra_arcsec" : Residual (observed - expected) equatorial J2000 Right Ascension in degrees [float]
-            "residual_dec_arcsec" : Residual (observed - expected) equatorial J2000 Declination in degrees [float]
+            "residual_ra_arcsec" : Residual (observed - expected) equatorial J2000 Right Ascension in arcseconds [float]
+            "residual_dec_arcsec" : Residual (observed - expected) equatorial J2000 Declination in arcseconds [float]
             "chi2" : Observation's chi2 [float]
             "gauss_sol" : Flag to indicate which observations were used to calculate the Gauss soluton [int]
             "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
                 the chi2 threshold) [float]
     """
+    processable = True
+    if len(observations) == 0:
+        processable = False
+    
     # Extract column names
     obs_id_col = "obs_id"
     time_col = "mjd_utc"
@@ -282,22 +286,21 @@ def iod(
     chi2_sol = 1e10
     orbit_sol = None
     obs_ids_sol = None
-    remaining_ids = None
     arc_length = None
     outliers = np.array([])
     converged = False
     num_obs = len(observations)
-    chi2_threshold = num_obs * chi2_threshold
+    if num_obs < min_obs:
+        processable = False
     num_outliers = int(num_obs * contamination_percentage / 100.)
-    num_outliers = np.minimum(num_obs - min_obs, num_outliers)
+    num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
     
     # Select observation IDs to use for IOD
     obs_ids = selectObservations(
         observations, 
         method=observation_selection_method, 
     )
-    
-    processable = True
+
     if len(obs_ids) == 0:
         processable = False
 
@@ -313,7 +316,6 @@ def iod(
         # and the times at which the observations occur
         coords = coords_all[mask, :]
         coords_obs = coords_obs_all[mask, :]
-        sigmas = sigmas_all[mask, :]
         times = times_all[mask]
 
         # Run IOD 
@@ -342,7 +344,6 @@ def iod(
         # Find the orbit which yields the lowest chi-squared
         orbit_ids = iod_orbits.ids
         for i, orbit_id in enumerate(orbit_ids):
-            orbit_name = "{}_v{}".format("_".join(ids.astype(str)), i+1)
             orbit_name = str(uuid.uuid4().hex)
             iod_orbits.ids[i] = orbit_name
 
@@ -357,29 +358,40 @@ def iod(
             )
             chi2 = stats[0]
             chi2_total = np.sum(chi2)
+            rchi2 = chi2_total / (2 * num_obs - 6)
 
-            # All chi2 values are above the threshold, continue loop
-            if np.all(chi2 >= chi2_threshold) and num_outliers > 0:
-                continue
+            # The reduced chi2 is above the threshold and no outliers are 
+            # allowed, this cannot be improved by outlier rejection 
+            # so continue to the next IOD orbit
+            if rchi2 > rchi2_threshold and num_outliers == 0:
+                # If we have iterated through all iod orbits and no outliers
+                # are allowed for this linkage then no other combination of 
+                # observations will make it acceptable, so exit here.
+                if (i + 1) == len(iod_orbits):
+                    processable = False
+                    break
+                
+                continue       
 
-            # If the total chi2 is less than the threshold accept the orbit
-            elif chi2_total <= chi2_threshold:
+            # If the total reduced chi2 is less than the threshold accept the orbit
+            elif rchi2 <= rchi2_threshold:
                 orbit_sol = iod_orbits[i:i+1]
                 obs_ids_sol = ids
                 chi2_total_sol = chi2_total    
                 chi2_sol = chi2
+                rchi2_sol = rchi2
                 residuals_sol = residuals
-                remaining_ids = obs_ids_all
                 outliers = np.array([])
                 arc_length = times_all.utc.mjd.max() - times_all.utc.mjd.min()
                 converged = True
                 break 
 
             # Let's now test to see if we can remove some outliers, we 
-            # anticipate we get to this stage if the three selected observations 
+            # anticipate that we get to this stage if the three selected observations 
             # belonging to one object yield a good initial orbit but the presence of outlier
             # observations is skewing the sum total of the residuals and chi2
             elif num_outliers > 0:
+
                 for o in range(num_outliers):
                     # Select i highest observations that contribute to 
                     # chi2 (and thereby the residuals)
@@ -390,27 +402,30 @@ def iod(
 
                     # Subtract the outlier's chi2 contribution 
                     # from the total chi2 
+                    # Then recalculate the reduced chi2
                     chi2_new = chi2_total - np.sum(chi2[~mask][remove])
+                    num_obs_new = len(observations) - len(remove)
+                    rchi2_new = chi2_new / (2 * num_obs_new - 6)
                     
-                    # If the updated chi2 total is lower than our desired
+                    
+                    # If the updated reduced chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
-                    if chi2_new <= chi2_threshold:
+                    if rchi2_new <= rchi2_threshold:
                         orbit_sol = iod_orbits[i:i+1]
                         obs_ids_sol = ids
                         chi2_total_sol = chi2_new
-                        chi2_sol = chi2
+                        rchi2_sol = rchi2_new
                         residuals_sol = residuals
                         outliers = obs_id_outlier
-                        num_obs = len(observations) - len(remove)
+                        num_obs = num_obs_new
                         ids_mask = np.isin(obs_ids_all, outliers, invert=True)
                         arc_length = times_all[ids_mask].utc.mjd.max() - times_all[ids_mask].utc.mjd.min()
-                        remaining_ids = obs_ids_all[ids_mask]
+                        chi2_sol = chi2
                         converged = True
                         break
                         
             else:
-                processable = False
-                break
+                continue
 
         j += 1
 
@@ -429,6 +444,7 @@ def iod(
                 "arc_length",
                 "num_obs",
                 "chi2",
+                "rchi2"
             ]
         )
         
@@ -449,7 +465,7 @@ def iod(
         orbit["arc_length"] = arc_length
         orbit["num_obs"] = num_obs
         orbit["chi2"] = chi2_total_sol
-        #orbit["rchi2"] = chi2_total_sol / (2 * num_obs - 6)
+        orbit["rchi2"] = rchi2_sol 
         
         orbit_members = pd.DataFrame({
             "orbit_id" : [orbit_sol.ids[0] for i in range(len(obs_ids_all))],
@@ -463,7 +479,6 @@ def iod(
         orbit_members.loc[orbit_members["obs_id"].isin(outliers), "outlier"] = 1
         orbit_members.loc[orbit_members["obs_id"].isin(obs_ids_sol), "gauss_sol"] = 1
     
-    
     return orbit, orbit_members
 
 
@@ -472,14 +487,15 @@ def initialOrbitDetermination(
         linkage_members, 
         observation_selection_method='combinations',
         min_obs=6,
-        chi2_threshold=10**3,
+        rchi2_threshold=10**3,
         contamination_percentage=20.0,
         iterate=False,
         light_time=True,
-        linkage_id_col=linkage_id_col,
+        linkage_id_col="cluster_id",
         threads=NUM_THREADS,
         backend="PYOORB",
-        backend_kwargs={}   
+        backend_kwargs={},
+        verbose=True
     ):
     """
     Run initial orbit determination on linkages found in observations.
@@ -557,112 +573,160 @@ def initialOrbitDetermination(
         Dataframe of orbit members with the following columns:
             "orbit_id" : Orbit ID, a uuid [str],
             "obs_id" : Observation IDs [str], one ID per row. 
-            "residual_ra_arcsec" : Residual (observed - expected) equatorial J2000 Right Ascension in degrees [float]
-            "residual_dec_arcsec" : Residual (observed - expected) equatorial J2000 Declination in degrees [float]
+            "residual_ra_arcsec" : Residual (observed - expected) equatorial J2000 Right Ascension in arcseconds [float]
+            "residual_dec_arcsec" : Residual (observed - expected) equatorial J2000 Declination in arcseconds [float]
             "chi2" : Observation's chi2 [float]
             "gauss_sol" : Flag to indicate which observations were used to calculate the Gauss soluton [int]
             "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
                 the chi2 threshold) [float]
     """
-    linked_observations = linkage_members.merge(observations, on="obs_id").copy()
-    linked_observations.sort_values(
-        by=[linkage_id_col, "mjd_utc"], 
-        inplace=True
-    )
-    linked_observations.reset_index(
-        drop=True,
-        inplace=True
-    )
-    grouped_observations = linked_observations.groupby(by=[linkage_id_col])
-    observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
+    time_start = time.time()
+    if verbose:
+        print("THOR: initialOrbitDetermination")
+        print("-------------------------------")
+        print("Running initial orbit determination...")
+        print("Observation selection method: {}".format(observation_selection_method))
+        print("Using {} threads...".format(threads))
     
-    if threads > 1:
-    
-        if USE_RAY:
-            shutdown = False
-            if not ray.is_initialized():
-                ray.init(num_cpus=threads)
-                shutdown = True
+    if len(observations) > 0 and len(linkage_members) > 0:
 
-            p = []
-            for observations_i in observations_split:
-                
-                p.append(
-                    iod_worker.remote(
-                        observations_i,
+        linked_observations = linkage_members.merge(observations, on="obs_id").copy()
+        linked_observations.sort_values(
+            by=[linkage_id_col, "mjd_utc"], 
+            inplace=True
+        )
+        linked_observations.reset_index(
+            drop=True,
+            inplace=True
+        )
+        grouped_observations = linked_observations.groupby(by=[linkage_id_col])
+        observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
+
+
+        if threads > 1:
+
+            if USE_RAY:
+                shutdown = False
+                if not ray.is_initialized():
+                    ray.init(num_cpus=threads)
+                    shutdown = True
+
+                p = []
+                for observations_i in observations_split:
+
+                    p.append(
+                        iod_worker.remote(
+                            observations_i,
+                            observation_selection_method=observation_selection_method,
+                            rchi2_threshold=rchi2_threshold,
+                            min_obs=min_obs,
+                            contamination_percentage=contamination_percentage,
+                            iterate=iterate, 
+                            light_time=light_time,
+                            backend=backend,
+                            backend_kwargs=backend_kwargs
+                        )
+                    )
+
+                iod_orbits_dfs, iod_orbit_members_dfs = ray.get(p)
+
+                if shutdown:
+                    ray.shutdown()
+            else:
+                p = mp.Pool(
+                    processes=threads,
+                    initializer=_init_worker,
+                ) 
+
+                results = p.starmap(
+                    partial(
+                        iod_worker, 
                         observation_selection_method=observation_selection_method,
-                        chi2_threshold=chi2_threshold,
+                        rchi2_threshold=rchi2_threshold,
                         min_obs=min_obs,
                         contamination_percentage=contamination_percentage,
                         iterate=iterate, 
                         light_time=light_time,
                         backend=backend,
                         backend_kwargs=backend_kwargs
-                    )
+                    ),
+                    zip(
+                        observations_split, 
+                    ) 
                 )
-            
-            iod_orbits_dfs, iod_orbit_members_dfs = ray.get(p)
+                p.close()  
 
-            if shutdown:
-                ray.shutdown()
+                results = list(zip(*results))
+                iod_orbits_dfs = results[0]
+                iod_orbit_members_dfs = results[1]
+
         else:
-            p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
-            ) 
 
-            results = p.starmap(
-                partial(
-                    iod_worker, 
+            iod_orbits_dfs = []
+            iod_orbit_members_dfs = []
+            for i, observations_i in enumerate(observations_split):
+
+                iod_orbits_df, iod_orbit_members_df = iod_worker(
+                    observations_i,
                     observation_selection_method=observation_selection_method,
-                    chi2_threshold=chi2_threshold,
+                    rchi2_threshold=rchi2_threshold,
                     min_obs=min_obs,
                     contamination_percentage=contamination_percentage,
-                    iterate=iterate, 
+                    iterate=iterate,
                     light_time=light_time,
                     backend=backend,
                     backend_kwargs=backend_kwargs
-                ),
-                zip(
-                    observations_split, 
-                ) 
-            )
-            p.close()  
-            
-            results = list(zip(*results))
-            iod_orbits_dfs = results[0]
-            iod_orbit_members_dfs = results[1]
+                )
+                iod_orbits_dfs.append(iod_orbits_df)
+                iod_orbit_members_dfs.append(iod_orbit_members_df)
 
-    else:
-        
-        iod_orbits_dfs = []
-        iod_orbit_members_dfs = []
-        for i, observations_i in enumerate(observations_split):
-            
-            iod_orbits_df, iod_orbit_members_df = iod_worker(
-                observations_i,
-                observation_selection_method=observation_selection_method,
-                chi2_threshold=chi2_threshold,
-                min_obs=min_obs,
-                contamination_percentage=contamination_percentage,
-                iterate=iterate,
-                light_time=light_time,
-                backend=backend,
-                backend_kwargs=backend_kwargs
-            )
-            iod_orbits_dfs.append(iod_orbits_df)
-            iod_orbit_members_dfs.append(iod_orbit_members_df)
-        
-    iod_orbits = pd.concat(iod_orbits_dfs)
-    iod_orbits.reset_index(
-        inplace=True,
-        drop=True
-    )
+        iod_orbits = pd.concat(iod_orbits_dfs)
+        iod_orbits.reset_index(
+            inplace=True,
+            drop=True
+        )
+
+        iod_orbit_members = pd.concat(iod_orbit_members_dfs)
+        iod_orbit_members.reset_index(
+            inplace=True,
+            drop=True
+        )
     
-    iod_orbit_members = pd.concat(iod_orbit_members_dfs)
-    iod_orbit_members.reset_index(
-        inplace=True,
-        drop=True
-    )
+    else:
+        iod_orbits = pd.DataFrame(
+            columns=[
+                "orbit_id",
+                "mjd_tdb",
+                "x",
+                "y",
+                "z",
+                "vx",
+                "vy",
+                "vz",
+                "arc_length",
+                "num_obs",
+                "chi2",
+                "rchi2"
+            ]
+        )
+        
+        iod_orbit_members = pd.DataFrame(
+            columns=[
+                "orbit_id", 
+                "obs_id", 
+                "residual_ra_arcsec", 
+                "residual_dec_arcsec", 
+                "chi2",
+                "gauss_sol",
+                "outlier"
+            ]
+        )
+
+    time_end = time.time()
+    if verbose:
+        print("Found {} initial orbits.".format(len(iod_orbits)))
+        print("Total time in seconds: {}".format(time_end - time_start))   
+        print("-------------------------------")
+        print("")
     
     return iod_orbits, iod_orbit_members
