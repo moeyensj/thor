@@ -1,5 +1,6 @@
 import os
 import time
+import uuid
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -24,7 +25,8 @@ __all__ = [
     "rangeAndShift_worker",
     "rangeAndShift",
     "clusterVelocity",
-    "_clusterVelocity",
+    "clusterVelocity_worker",
+    "identifySubsetLinkages",
     "clusterAndLink",
 ]
 
@@ -71,18 +73,118 @@ def rangeAndShift_worker(observations, ephemeris, cell_area=10):
         
     return projected_observations
 
+def clusterVelocity(
+        obs_ids,
+        x, 
+        y, 
+        dt, 
+        vx, 
+        vy, 
+        eps=0.005, 
+        min_samples=5,
+    ):
+    """
+    Clusters THOR projection with different velocities
+    in the projection plane using `~scipy.cluster.DBSCAN`.
+    
+    Parameters
+    ----------
+    obs_ids : `~numpy.ndarray' (N)
+        Observation IDs.
+    x : `~numpy.ndarray' (N)
+        Projection space x coordinate in degrees or radians.
+    y : `~numpy.ndarray' (N)
+        Projection space y coordinate in degrees or radians.    
+    dt : `~numpy.ndarray' (N)
+        Change in time from 0th exposure in units of MJD.
+    vx : `~numpy.ndarray' (N)
+        Projection space x velocity in units of degrees or radians per day in MJD. 
+    vy : `~numpy.ndarray' (N)
+        Projection space y velocity in units of degrees or radians per day in MJD. 
+    eps : float, optional
+        The maximum distance between two samples for them to be considered 
+        as in the same neighborhood. 
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 0.005]
+    min_samples : int, optional
+        The number of samples (or total weight) in a neighborhood for a 
+        point to be considered as a core point. This includes the point itself.
+        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        [Default = 5]
+        
+    Returns
+    -------
+    list
+        If clusters are found, will return a list of numpy arrays containing the 
+        observation IDs for each cluster. If no clusters are found, will return np.NaN.
+    """ 
+
+    xx = x - vx * dt
+    yy = y - vy * dt
+    X = np.vstack([xx, yy]).T  
+    db = DBSCAN(
+        eps=eps, 
+        min_samples=min_samples, 
+        n_jobs=1
+    )
+    db.fit(X)
+
+    clusters = db.labels_[np.where(db.labels_ != -1)[0]]
+    cluster_ids = []
+    
+    if len(clusters) != 0:
+        for cluster in np.unique(clusters):
+            cluster_mask = np.where(db.labels_ == cluster)[0]
+            
+            dt_in_cluster = dt[cluster_mask]
+            num_obs = len(dt_in_cluster)
+            if num_obs == len(np.unique(dt_in_cluster)) and num_obs >= min_samples:
+                cluster_ids.append(obs_ids[cluster_mask])
+
+    else:
+        cluster_ids = []
+                
+    del db
+    return cluster_ids
+
+def clusterVelocity_worker(
+        vx,
+        vy,
+        obs_ids=None,
+        x=None,
+        y=None,
+        dt=None,
+        eps=None,
+        min_samples=None,
+    ):
+    """
+    Helper function to multiprocess clustering.
+    
+    """
+    cluster_ids = clusterVelocity(
+        obs_ids,
+        x,
+        y,
+        dt,
+        vx,
+        vy,
+        eps=eps,
+        min_samples=min_samples,
+    )
+    return cluster_ids
+
 if USE_RAY:
     import ray
     rangeAndShift_worker = ray.remote(rangeAndShift_worker)
-
+    clusterVelocity_worker = ray.remote(clusterVelocity_worker)
 
 def rangeAndShift(
         observations, 
         orbit, 
         cell_area=10, 
-        backend="PYOORB", 
-        backend_kwargs=None, 
-        threads=1,
+        threads=NUM_THREADS,
+        backend="PYOORB",
+        backend_kwargs={},
         verbose=True
     ):
     """
@@ -126,7 +228,7 @@ def rangeAndShift(
     time_start = time.time()
     if verbose == True:
         print("THOR: rangeAndShift")
-        print("-------------------------")
+        print("-------------------------------")
         print("Running range and shift...")
         print("Assuming r = {} AU".format(orbit.cartesian[0, :3]))
         print("Assuming v = {} AU per day".format(orbit.cartesian[0, 3:]))
@@ -186,7 +288,9 @@ def rangeAndShift(
     # Do the same for the test orbit's ephemerides
     ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
     ephemeris_split = [ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups]
-        
+    
+    if verbose:
+        print("Using {} threads...".format(threads))
     if threads > 1:
 
         if USE_RAY:
@@ -253,102 +357,104 @@ def rangeAndShift(
     if verbose == True:
         print("Done. Final DataFrame has {} observations.".format(len(projected_observations)))
         print("Total time in seconds: {}".format(time_end - time_start))  
-        print("-------------------------")
+        print("-------------------------------")
         print("")
         
     return projected_observations
 
-def clusterVelocity(obs_ids,
-                    x, 
-                    y, 
-                    dt, 
-                    vx, 
-                    vy, 
-                    eps=0.005, 
-                    min_samples=5):
+def identifySubsetLinkages(
+        all_linkages, 
+        linkage_members, 
+        linkage_id_col="orbit_id"
+    ):
     """
-    Clusters THOR projection with different velocities
-    in the projection plane using `~scipy.cluster.DBSCAN`.
+    Identify each linkage that is a subset of a larger linkage. 
     
     Parameters
     ----------
-    obs_ids : `~numpy.ndarray' (N)
-        Observation IDs.
-    x : `~numpy.ndarray' (N)
-        Projection space x coordinate in degrees or radians.
-    y : `~numpy.ndarray' (N)
-        Projection space y coordinate in degrees or radians.    
-    dt : `~numpy.ndarray' (N)
-        Change in time from 0th exposure in units of MJD.
-    vx : `~numpy.ndarray' (N)
-        Projection space x velocity in units of degrees or radians per day in MJD. 
-    vy : `~numpy.ndarray' (N)
-        Projection space y velocity in units of degrees or radians per day in MJD. 
-    eps : float, optional
-        The maximum distance between two samples for them to be considered 
-        as in the same neighborhood. 
-        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
-        [Default = 0.005]
-    min_samples : int, optional
-        The number of samples (or total weight) in a neighborhood for a 
-        point to be considered as a core point. This includes the point itself.
-        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
-        [Default = 5]
-        
-    Returns
-    -------
-    {list, -1}
-        If clusters are found, will return a list of numpy arrays containing the 
-        observation IDs for each cluster. If no clusters are found returns -1. 
-    """
-    xx = x - vx * dt
-    yy = y - vy * dt
-    X = np.vstack([xx, yy]).T  
-    db = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=1).fit(X)
+    all_linkages : 
     
-    clusters = db.labels_[np.where(db.labels_ != -1)[0]]
-    cluster_ids = []
     
-    if len(clusters) != 0:
-        for cluster in np.unique(clusters):
-            cluster_ids.append(obs_ids[np.where(db.labels_ == cluster)[0]])
-    else:
-        cluster_ids = np.NaN
     
-    del db
-    return cluster_ids
-           
-def _clusterVelocity(vx, vy,
-                     obs_ids=None,
-                     x=None,
-                     y=None,
-                     dt=None,
-                     eps=None,
-                     min_samples=None):
-    """
-    Helper function to multiprocess clustering.
+    
     
     """
-    return clusterVelocity(obs_ids,
-                           x,
-                           y,
-                           dt,
-                           vx,
-                           vy,
-                           eps=eps,
-                           min_samples=min_samples) 
+    
+    
+    linkage_members_merged = linkage_members.copy()
+    all_linkages_merged = all_linkages.copy()
+    all_linkages_merged["subset_of"] = None
 
-def clusterAndLink(observations, 
-                   vx_range=[-0.1, 0.1], 
-                   vy_range=[-0.1, 0.1],
-                   vx_bins=100, 
-                   vy_bins=100,
-                   vx_values=None,
-                   vy_values=None,
-                   threads=12, 
-                   eps=0.005, 
-                   min_samples=5,
-                   verbose=True):
+    counts = linkage_members["obs_id"].value_counts()
+    duplicate_obs_ids = counts.index[counts.values > 1].values
+    
+    subset_linkages = []
+    obs_ids_analyzed = set()
+    i = 0
+    while len(obs_ids_analyzed) != len(duplicate_obs_ids):
+
+        obs_id = duplicate_obs_ids[i]
+
+        if obs_id not in obs_ids_analyzed:
+
+            # Find all linkages that contain this observation (that have not already been identified as a subset)
+            linkage_ids = linkage_members_merged[linkage_members_merged["obs_id"].isin([obs_id])][linkage_id_col].values
+
+            # Count the occurences of these linkages (the number of observations in each linkage)
+            linkage_id_counts = linkage_members_merged[(
+                linkage_members_merged[linkage_id_col].isin(linkage_ids) 
+                & (~linkage_members_merged[linkage_id_col].isin(subset_linkages))
+            )][linkage_id_col].value_counts()
+            linkage_ids = linkage_id_counts.index.values
+
+            for linkage_id_i in linkage_ids:
+
+                # Has linkage i already been identified as a subset? If not, see if it has any subset linkages
+                is_subset_i = all_linkages_merged[all_linkages_merged[linkage_id_col].isin([linkage_id_i])]["subset_of"].values[0]
+                if not is_subset_i:
+
+                    # Grab linkage i's observation IDs
+                    obs_ids_i = linkage_members_merged[linkage_members_merged[linkage_id_col].isin([linkage_id_i])]["obs_id"].values
+
+                    for linkage_id_j in linkage_ids[np.where(linkage_ids != linkage_id_i)]:
+
+                        # If this linkage has not already been marked as a subset of another, check to see 
+                        # if it is a subset 
+                        is_subset_j = all_linkages_merged[all_linkages_merged[linkage_id_col].isin([linkage_id_j])]["subset_of"].values[0]
+                        if not is_subset_j:
+
+                            # Grab linkage j's observation IDs
+                            obs_ids_j = linkage_members_merged[linkage_members_merged[linkage_id_col].isin([linkage_id_j])]["obs_id"].values
+
+                            # If linkage j is a subset of linkage i, flag it as such
+                            if set(obs_ids_j).issubset(set(obs_ids_i)):
+                                all_linkages_merged.loc[all_linkages_merged[linkage_id_col].isin([linkage_id_j]), "subset_of"] = linkage_id_i
+
+                                subset_linkages.append(linkage_id_j)
+                                for j in obs_ids_j:
+                                    obs_ids_analyzed.add(j)
+
+
+            obs_ids_analyzed.add(obs_id)
+
+        i += 1
+        
+    return all_linkages_merged, linkage_members_merged
+
+def clusterAndLink(
+        observations, 
+        vx_range=[-0.1, 0.1], 
+        vy_range=[-0.1, 0.1],
+        vx_bins=100, 
+        vy_bins=100,
+        vx_values=None,
+        vy_values=None,
+        eps=0.005, 
+        min_samples=5,
+        identify_subsets=False,
+        threads=NUM_THREADS, 
+        verbose=True
+    ):
     """
     Cluster and link correctly projected (after ranging and shifting)
     detections.
@@ -447,11 +553,11 @@ def clusterAndLink(observations,
         vyy = vy
     else:
         raise ValueError("")
-
+        
     time_start_cluster = time.time()
     if verbose == True:
         print("THOR: clusterAndLink")
-        print("-------------------------")
+        print("-------------------------------")
         print("Running velocity space clustering...")
         print("X velocity range: {}".format(vx_range))
         
@@ -480,39 +586,72 @@ def clusterAndLink(observations,
             print("Velocity grid size: {}".format(vx_bins))
         print("Max sample distance: {}".format(eps))
         print("Minimum samples: {}".format(min_samples))
-
     
     possible_clusters = []
     if threads > 1:
         if verbose:
             print("Using {} threads...".format(threads))
-        p = mp.Pool(threads, _init_worker)
-        try:
-            possible_clusters = p.starmap(partial(_clusterVelocity, 
-                                                  obs_ids=obs_ids,
-                                                  x=theta_x,
-                                                  y=theta_y,
-                                                  dt=dt,
-                                                  eps=eps,
-                                                  min_samples=min_samples),
-                                                  zip(vxx.T, vyy.T))
-        
-        except KeyboardInterrupt:
-            p.terminate()
             
-        p.close()
+        if USE_RAY:
+            shutdown = False
+            if not ray.is_initialized():
+                ray.init(num_cpus=threads)
+                shutdown = True
+
+            p = []
+            for vxi, vyi in zip(vxx, vyy):
+                p.append(
+                    clusterVelocity_worker.remote(
+                        obs_ids,
+                        theta_x, 
+                        theta_y, 
+                        dt, 
+                        vxi, 
+                        vyi, 
+                        eps=eps, 
+                        min_samples=min_samples
+                    )
+                )
+            possible_clusters = ray.get(p)
+
+            if shutdown:
+                ray.shutdown()
+                
+        else:
+        
+            p = mp.Pool(threads, _init_worker)
+            try:
+                possible_clusters = p.starmap(
+                    partial(
+                        clusterVelocity_worker, 
+                        obs_ids=obs_ids,
+                        x=theta_x,
+                        y=theta_y,
+                        dt=dt,
+                        eps=eps,
+                        min_samples=min_samples,
+                    ),
+                    zip(vxx, vyy)
+                )
+
+            except KeyboardInterrupt:
+                p.terminate()
+
+            p.close()
     else:
         possible_clusters = []
         for vxi, vyi in zip(vxx, vyy):
-            possible_clusters.append(clusterVelocity(
-                obs_ids,
-                theta_x, 
-                theta_y, 
-                dt, 
-                vxi, 
-                vyi, 
-                eps=eps, 
-                min_samples=min_samples)
+            possible_clusters.append(
+                clusterVelocity(
+                    obs_ids,
+                    theta_x, 
+                    theta_y, 
+                    dt, 
+                    vxi, 
+                    vyi, 
+                    eps=eps, 
+                    min_samples=min_samples
+                )
             )
     time_end_cluster = time.time()    
     
@@ -530,6 +669,13 @@ def clusterAndLink(observations,
     possible_clusters = possible_clusters[~possible_clusters["clusters"].isna()]
 
     if len(possible_clusters) != 0:
+        ### The following code is a little messy, its a lot of pandas dataframe manipulation.
+        ### I have tried doing an overhaul wherein the clusters and cluster_members dataframe are created per
+        ### velocity combination in the clusterVelocity function. However, this adds an overhead in that function
+        ### of ~ 1ms. So clustering 90,000 velocities takes 90 seconds longer which on small datasets is problematic.
+        ### On large datasets, the effect is not as pronounced because the below code takes a while to run due to 
+        ### in-memory pandas dataframe restructuring.
+
         # Make DataFrame with cluster velocities so we can figure out which 
         # velocities yielded clusters, add names to index so we can enable the join
         cluster_velocities = pd.DataFrame({"vtheta_x": vxx, "vtheta_y": vyy})
@@ -537,9 +683,15 @@ def clusterAndLink(observations,
 
         # Split lists of cluster ids into one column per cluster for each different velocity
         # then stack the result
-        possible_clusters = pd.DataFrame(possible_clusters["clusters"].values.tolist(), index=possible_clusters.index)
+        possible_clusters = pd.DataFrame(
+            possible_clusters["clusters"].values.tolist(), 
+            index=possible_clusters.index
+        )
         possible_clusters = pd.DataFrame(possible_clusters.stack())
-        possible_clusters.rename(columns={0: "obs_ids"}, inplace=True)
+        possible_clusters.rename(
+            columns={0: "obs_ids"}, 
+            inplace=True
+        )
         possible_clusters = pd.DataFrame(possible_clusters["obs_ids"].values.tolist(), index=possible_clusters.index)
 
         # Drop duplicate clusters
@@ -549,15 +701,19 @@ def clusterAndLink(observations,
         possible_clusters.index.set_names(["velocity_id", "cluster_id"], inplace=True)
 
         # Reset index
-        possible_clusters.reset_index("cluster_id", drop=True, inplace=True)
-        possible_clusters["cluster_id"] = np.arange(1, len(possible_clusters) + 1)
+        possible_clusters.reset_index(
+            "cluster_id", 
+            drop=True, 
+            inplace=True
+        )
+        possible_clusters["cluster_id"] = [str(uuid.uuid4().hex) for i in range(len(possible_clusters))]
 
-        # Make allClusters DataFrame
+        # Make all_clusters DataFrame
         all_clusters = possible_clusters.join(cluster_velocities)
         all_clusters.reset_index(drop=True, inplace=True)
         all_clusters = all_clusters[["cluster_id", "vtheta_x", "vtheta_y"]]
 
-        # Make clusterMembers DataFrame
+        # Make cluster_members DataFrame
         cluster_members = possible_clusters.reset_index(drop=True).copy()
         cluster_members.index = cluster_members["cluster_id"]
         cluster_members.drop("cluster_id", axis=1, inplace=True)
@@ -565,19 +721,55 @@ def clusterAndLink(observations,
         cluster_members.rename(columns={0: "obs_id"}, inplace=True)
         cluster_members.reset_index(inplace=True)
         cluster_members.drop("level_1", axis=1, inplace=True)        
-        
+
+        # Calculate arc length and add it to the all_clusters dataframe
+        cluster_members_time = cluster_members.merge(
+            observations[["obs_id", "mjd_utc"]], 
+            on="obs_id", 
+            how="left"
+        )
+        all_clusters_time = cluster_members_time.groupby(
+            by=["cluster_id"])["mjd_utc"].apply(lambda x: x.max() - x.min()).to_frame()
+        all_clusters_time.reset_index(
+            inplace=True
+        )
+        all_clusters_time.rename(
+            columns={"mjd_utc" : "arc_length"}, 
+            inplace=True
+        )
+        all_clusters = all_clusters.merge(
+            all_clusters_time[["cluster_id", "arc_length"]],
+            on="cluster_id",
+            how="left",
+        )
+       
     else: 
         cluster_members = pd.DataFrame(columns=["cluster_id", "obs_id"])
-        all_clusters = pd.DataFrame(columns=["cluster_id", "vtheta_x", "vtheta_y"])
-    
-    time_end_restr = time.time()
-   
+        all_clusters = pd.DataFrame(columns=["cluster_id", "vtheta_x", "vtheta_y", "arc_length"])
+        
+        
+    time_end_restr = time.time() 
     if verbose == True:
         print("Done. Completed in {} seconds.".format(time_end_restr - time_start_restr))
         print("")
+        
+    if identify_subsets == True:
+        if verbose == True:
+            print("Identifying subsets...")
+        all_clusters, cluster_members = identifySubsetLinkages(
+            all_clusters, 
+            cluster_members,
+            linkage_id_col="cluster_id"
+        )
+        if verbose == True:
+            print("Done. {} subset clusters identified.".format(len(all_clusters[~all_clusters["subset_of"].isna()])))
+
+   
+    if verbose == True:
+        print("")
         print("Found {} clusters.".format(len(all_clusters)))
         print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))   
-        print("-------------------------")
+        print("-------------------------------")
         print("")
         
     return all_clusters, cluster_members
