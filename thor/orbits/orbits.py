@@ -17,10 +17,11 @@ class Orbits:
             orbits, 
             epochs,
             orbit_type="cartesian",
-            covariances=None,
+            covariance=None,
             ids=None,
             H=None,
             G=None,
+            num_obs=None,
         ):
         # Make sure that the given epoch(s) are an astropy time object
         _checkTime(epochs, "epoch")
@@ -31,28 +32,34 @@ class Orbits:
         self.num_orbits = orbits.shape[0]
 
         # Make sure the passed orbits are one of the the supported types
+        self.cartesian = None
+        self.keplerian = None
         if orbit_type == "cartesian":
             self.cartesian = orbits
         elif orbit_type == "keplerian":
             self.keplerian = orbits
-            self.cartesian = convertOrbitalElements(
-                orbits, 
-                "keplerian", 
-                "cartesian"
-            )
         else:
             err = (
                 "orbit_type has to be one of {'cartesian', 'keplerian'}."
             )
             raise ValueError(err)
-        self.orbit_type = "cartesian"
+
+        self.orbit_type = orbit_type
+        if self.cartesian is None:
+            self.cartesian = convertOrbitalElements(
+                self.keplerian, 
+                "keplerian", 
+                "cartesian"
+            )
+            self.orbit_type = "cartesian"
+
 
         # If object IDs have been passed make sure each orbit has one
         if ids is not None:
             assert len(ids) == self.num_orbits
-            self.ids = np.asarray(ids)
+            self.ids = np.asarray(ids, dtype="<U60")
         else:
-            self.ids = np.arange(0, self.num_orbits, 1)
+            self.ids = np.array(["{}".format(i) for i in range(self.num_orbits)], dtype="<U60")
 
         # If H magnitudes have been passed make sure each orbit has one
         if H is not None:
@@ -69,11 +76,17 @@ class Orbits:
             self.G = None
 
         # If covariances matrixes have been passed make sure each orbit has one
-        if covariances is not None:
-            assert len(covariances) == self.num_orbits
-            self.covariances = covariances
+        if covariance is not None:
+            assert len(covariance) == self.num_orbits
+            self.covariance = covariance
         else:
-            self.covariances = None
+            self.covariance = None
+            
+        if num_obs is not None:
+            assert len(num_obs) == self.num_orbits
+            self.num_obs = num_obs
+        else:
+            self.num_obs = None
 
         return
 
@@ -93,8 +106,8 @@ class Orbits:
             args.append(self.__dict__[arg][i])
         
         kwargs = {}
-        for kwarg in ["orbit_type", "ids", "H", "G", "covariances"]:
-            if type(self.__dict__[kwarg]) == np.ndarray:
+        for kwarg in ["orbit_type", "ids", "H", "G", "covariance"]:
+            if isinstance(self.__dict__[kwarg], np.ndarray):
                 kwargs[kwarg] = self.__dict__[kwarg][i]
             else:
                 kwargs[kwarg] = self.__dict__[kwarg]
@@ -105,13 +118,13 @@ class Orbits:
         objs = []
         for chunk in range(0, self.num_orbits, chunk_size):
             args = []
-            for arg in ["cartesian", "keplerian", "epochs"]:
+            for arg in ["cartesian", "epochs"]:
                 if arg in self.__dict__.keys():
                     args.append(self.__dict__[arg][chunk:chunk + chunk_size].copy())
             
             kwargs = {}
-            for kwarg in ["orbit_type", "ids", "H", "G", "covariances"]:
-                if type(self.__dict__[kwarg]) == np.ndarray:
+            for kwarg in ["orbit_type", "ids", "H", "G", "covariance"]:
+                if isinstance(self.__dict__[kwarg], np.ndarray):
                     kwargs[kwarg] = self.__dict__[kwarg][chunk:chunk + chunk_size].copy()
                 else:
                     kwargs[kwarg] = self.__dict__[kwarg]
@@ -165,6 +178,36 @@ class Orbits:
         return orbits
 
     @staticmethod
+    def fromMPCOrbitCatalog(mpcorb):
+        """
+        
+
+        Parameters
+        ----------
+        
+
+        Return
+        ------
+        `~thor.orbits.orbits.Orbits`
+            THOR Orbits class
+        """
+        orbits = mpcorb[["a_au", "e", "i_deg", "ascNode_deg", "argPeri_deg", "meanAnom_deg"]].values
+        epochs = Time(
+            mpcorb["mjd_tt"].values,
+            scale="tt",
+            format="mjd"
+        )
+        args = (orbits, epochs)
+
+        kwargs = {
+            "orbit_type" : "keplerian",
+            "ids" : mpcorb["designation"].values,
+            "H" : mpcorb["H_mag"].values,
+            "G" : mpcorb["G"].values
+        }
+        return Orbits(*args, **kwargs)
+
+    @staticmethod
     def fromdf(dataframe, orbit_type="cartesian"):
         """
         Read orbits from a dataframe. Required columns are 
@@ -215,7 +258,10 @@ class Orbits:
             kwargs["ids"] = dataframe["orbit_id"].values
 
         if "covariance" in dataframe.columns:
-            kwargs["covariances"] = dataframe["covariance"].values
+            kwargs["covariance"] = dataframe["covariance"].values
+            
+        if "num_obs" in dataframe.columns:
+            kwargs["num_obs"] = dataframe["num_obs"].values
 
         for c in ["H", "G"]:
             if c in dataframe.columns:
@@ -253,7 +299,10 @@ class Orbits:
         if self.G is not None:
             data["G"] = self.G
 
-        if self.covariances is not None:
-            data["covariances"] = self.covariances
+        if self.covariance is not None:
+            data["covariance"] = self.covariance
+            
+        if self.num_obs is not None:
+            data["num_obs"] = self.num_obs
 
         return pd.DataFrame(data)
