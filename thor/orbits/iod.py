@@ -10,6 +10,7 @@ from itertools import combinations
 from functools import partial
 
 from ..config import Config
+from ..main import identifySubsetLinkages
 from ..backend import _init_worker
 from ..backend import MJOLNIR
 from ..backend import PYOORB
@@ -492,6 +493,7 @@ def initialOrbitDetermination(
         iterate=False,
         light_time=True,
         linkage_id_col="cluster_id",
+        identify_subsets=True,
         threads=NUM_THREADS,
         backend="PYOORB",
         backend_kwargs={},
@@ -691,6 +693,21 @@ def initialOrbitDetermination(
             inplace=True,
             drop=True
         )
+        if verbose:
+            print("Found {} initial orbits.".format(len(iod_orbits)))
+            print()
+
+        if identify_subsets:
+            if verbose:
+                print("Identifying subsets...")
+            iod_orbits, iod_orbit_members = identifySubsetLinkages(
+                iod_orbits, 
+                iod_orbit_members, 
+                linkage_id_col="orbit_id"
+            )
+            if verbose:
+                print("Done. {} subset orbits identified.".format(len(iod_orbits[~iod_orbits["subset_of"].isna()])))
+                print()
     
     else:
         iod_orbits = pd.DataFrame(
@@ -724,7 +741,6 @@ def initialOrbitDetermination(
 
     time_end = time.time()
     if verbose:
-        print("Found {} initial orbits.".format(len(iod_orbits)))
         print("Total time in seconds: {}".format(time_end - time_start))   
         print("-------------------------------")
         print("")
