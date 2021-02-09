@@ -34,7 +34,7 @@ class FINDORB(Backend):
             if k not in kwargs:
                 kwargs[k] = FINDORB_CONFIG[k]
         
-        super(FINDORB, self).__init__(**kwargs)
+        super(FINDORB, self).__init__(name="Find_Orb", **kwargs)
 
         return
     
@@ -64,8 +64,13 @@ class FINDORB(Backend):
             f.close()
         return 
 
-    def _setWorkEnv(self, temp_dir):
-
+    def _setWorkEnvironment(self, temp_dir):
+        # Copy files from user's find_orb directory located in the 
+        # user's home directory to the .find_orb directory inside
+        # the temporary directory
+        # Try to ignore files that are created by find_orb when processing 
+        # observations, also ignore the DE 430 ephemeris file and the asteroid
+        # ephemeris file if present
         shutil.copytree(
             os.path.expanduser("~/.find_orb"), 
             os.path.join(temp_dir, ".find_orb"),
@@ -82,25 +87,34 @@ class FINDORB(Backend):
                 "elements.json", 
                 "elem_short.json", 
                 "combined.json",
-                "linux_p1550p2650.430t"
+                "linux_p1550p2650.430t",
+                "asteroid_ephemeris.txt"
             )
         )
+
+        # Create a symlink for the DE 430 file that was not copied
         os.symlink(
             os.path.expanduser("~/.find_orb/linux_p1550p2650.430t"), 
             os.path.join(temp_dir, ".find_orb/linux_p1550p2650.430t")
         )
 
+        # If the asteroid ephemeris file is present, also create a symlink for this file
+        asteroid_ephem_file = os.path.expanduser("~/.find_orb/asteroid_ephemeris.txt")
+        if os.path.exists(asteroid_ephem_file):
+            os.symlink(
+                asteroid_ephem_file, 
+                os.path.join(temp_dir, ".find_orb/asteroid_ephemeris.txt")
+            )
+
+        # Create a copy of the environment and set the HOME directory to the 
+        # temporary directory
         env = os.environ.copy()
         env["HOME"] = temp_dir
         return env
 
     def _propagateOrbits(self, orbits, t1):
         """
-        Propagate orbits, represented as cartesian state vectors, define at t0
-        to times t1. 
-
-
-
+        
 
         """
         propagated_dfs = []
@@ -109,8 +123,9 @@ class FINDORB(Backend):
             # Set this environment's home directory to the temporary directory
             # to prevent bugs with multiple processes writing to the ~/.find_orb/
             # directory
-            env = self._setWorkEnv(temp_dir)
-            
+            env = self._setWorkEnvironment(temp_dir)
+
+            # Write the desired times out to a file that find_orb understands
             times_in_file = os.path.join(temp_dir, "times_prop.in")
             self._writeTimes(
                 times_in_file,
@@ -130,6 +145,7 @@ class FINDORB(Backend):
                     ",".join(orbits.cartesian[i].astype("str"))
                 )
 
+                # Run fo
                 call = [
                     "fo", 
                     "-o", 
@@ -151,9 +167,20 @@ class FINDORB(Backend):
                     call, 
                     shell=False, 
                     env=env, 
+                    cwd=temp_dir,
                     check=False, 
                     capture_output=True
                 )
+
+                if (ret.returncode != 0):
+                    warning = (
+                        "fo returned a non-zero error code./n", 
+                        "Command: /n",
+                        " ".join(call) + "/n",
+                        ret.stdout.decode('utf-8'),
+                        ret.stderr.decode('utf-8')
+                    )
+                    warnings.warn(warning)
                 
                 if (os.path.exists(vectors_txt)):
                     df = pd.read_csv(
@@ -168,15 +195,6 @@ class FINDORB(Backend):
                         columns=["orbit_id", "jd_tt", "x", "y", "z", "vx", "vy", "vz"]
                     )
 
-                #result["name"] = trkSub
-                #result["findorb"] = {
-                #    'args': ret.args,
-                #    'returncode': ret.returncode,
-                #    'stdout': ret.stdout.decode('utf-8'),
-                #    'stderr': ret.stderr.decode('utf-8')
-                #}
-                #print(ret.stdout.decode('utf-8'))
-                #print(ret.stderr.decode('utf-8'))
                 propagated_dfs.append(df)
 
             propagated = pd.concat(propagated_dfs)
@@ -204,16 +222,19 @@ class FINDORB(Backend):
             # Set this environment's home directory to the temporary directory
             # to prevent bugs with multiple processes writing to the ~/.find_orb/
             # directory
-            env = self._setWorkEnv(temp_dir)
+            env = self._setWorkEnvironment(temp_dir)
             
             for observatory_code, observation_times in observers.items():
-            
+                
+                # Write the desired times out to a file that find_orb understands
                 times_in_file = os.path.join(temp_dir, "times_eph.in")
                 self._writeTimes(
                     times_in_file,
                     observation_times.tt,
                     "tt"
                 )
+                
+                shutil.copyfile(times_in_file, "/home/moeyensj/Desktop/times_eph.in")
 
                 # Certain observatories are dealt with differently, so appropriately
                 # define the columns
@@ -237,7 +258,7 @@ class FINDORB(Backend):
                 for i in range(orbits.num_orbits):
 
                     # Set directory variables
-                    orbit_id = orbits.ids[i]
+                    orbit_id = "{:09d}".format(i)
                     out_dir = os.path.join(temp_dir, "ephemeris{}_{}".format(orbit_id, observatory_code))
                     ephemeris_txt = os.path.join(out_dir, "ephemeris.txt")
                     
@@ -269,10 +290,12 @@ class FINDORB(Backend):
                         "JSON_SHORT_ELEMENTS={}".format(os.path.join(temp_dir, "short%p.json")),
                         "JSON_COMBINED_NAME={}".format(os.path.join(temp_dir, "com%p_%c.json"))
                     ]
+                    print(" ".join(call))
                     ret = subprocess.run(
                         call, 
                         shell=False, 
                         env=env, 
+                        cwd=temp_dir,
                         check=False, 
                         capture_output=False
                     )
@@ -282,11 +305,15 @@ class FINDORB(Backend):
                             ephemeris_txt,
                             header=0,
                             delim_whitespace=True,
-                            names=columns
+                            names=columns,
+                            float_precision="round_trip"
 
                         )
                         ephemeris["orbit_id"] = [i for _ in range(len(ephemeris))]
                         ephemeris["observatory_code"] = [observatory_code for _ in range(len(ephemeris))]
+                        
+                        shutil.copyfile(ephemeris_txt, "/home/moeyensj/Desktop/ephemeris.txt")
+
                     else:
                         ephemeris = pd.DataFrame(
                             columns=[["orbit_id", "observatory_code"] + columns]
@@ -335,7 +362,12 @@ class FINDORB(Backend):
         epochs = []
         orbits = []
         covariances = []
+        residual_dfs = []
 
+
+        # Find_Orb accepts ADES files as inputs for orbit determination so
+        # lets convert THOR-like observations into essentially dummy
+        # ADES files that find_orb can process
         _observations = observations.copy()
         _observations.rename(
             columns={
@@ -349,8 +381,12 @@ class FINDORB(Backend):
             }, 
             inplace=True
         )
-        _observations["rmsRA"] = _observations["rmsRA"] * np.cos(np.radians(_observations["dec"].values)) / 3600
-        _observations["rmsDec"] = _observations["rmsDec"] / 3600
+        _observations["rmsRA"] = _observations["rmsRA"] * np.cos(np.radians(_observations["dec"].values)) * 3600
+        _observations["rmsDec"] = _observations["rmsDec"] * 3600
+        _observations.sort_values(
+            by=["mjd", "stn"],
+            inplace=True
+        )
 
         id_present = False
         if "permID" in _observations.columns.values:
@@ -370,53 +406,85 @@ class FINDORB(Backend):
             _observations.loc[:, "mode"] = "CCD"
         if "astCat" not in _observations.columns:
             _observations.loc[:, "astCat"] = "None"
+            
+            
+        for obj_id in _observations["obj_id"].unique():
+               
+            with tempfile.TemporaryDirectory() as temp_dir:
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-
-            # Set this environment's home directory to the temporary directory
-            # to prevent bugs with multiple processes writing to the ~/.find_orb/
-            # directory
-            env = self._setWorkEnv(temp_dir)
-
-            for obj_id in _observations["obj_id"].unique():
+                # Set this environment's home directory to the temporary directory
+                # to prevent bugs with multiple processes writing to the ~/.find_orb/
+                # directory
+                env = self._setWorkEnvironment(temp_dir)
 
                 observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(obj_id))
                 out_dir = os.path.join(temp_dir, "od_{}".format(obj_id))
-
+                
                 mask = _observations["obj_id"].isin([obj_id])
+                object_observations = _observations[mask].copy()
+                object_observations.reset_index(inplace=True, drop=True)
+                
                 writeToADES(
-                    _observations[mask], 
+                    object_observations, 
                     observations_file, 
                     mjd_scale="utc"
                 )
-
+                
+                shutil.copyfile(observations_file, "/home/moeyensj/Desktop/{}.psv".format(temp_dir.split("/")[1]))
+                
+                last_observation = Time(
+                    object_observations["mjd"].max(), 
+                    scale="utc", 
+                    format="mjd"
+                )
                 call = [
                     "fo", 
                     observations_file, 
                     "-O", 
                     out_dir,
+                    "-tEjd{}".format(last_observation.tt.jd),
+                    "-j",
                     "-D",
                     self.config_file,
+                    
                 ]
                 ret = subprocess.run(
-                        call, 
-                        shell=False, 
-                        env=env, 
-                        check=False, 
-                        capture_output=True
+                    call, 
+                    shell=False, 
+                    env=env, 
+                    cwd=temp_dir,
+                    check=False, 
+                    capture_output=True
                 )
-                
+
                 covar_json = os.path.join(out_dir, "covar.json")
-                if (os.path.exists(covar_json)):
-                    with open(os.path.join(out_dir, "covar.json")) as f:
+                if (os.path.exists(covar_json)) and ret.returncode == 0:
+                    with open(covar_json) as f:
                         covar_data = json.load(f)
                         epoch = covar_data["epoch"]
                         state = np.array(covar_data["state_vect"])
                         covariance_matrix = np.array(covar_data["covar"])
                 else:
-                    epoch = 0.0
-                    state = np.zeros(6, dtype=float)
-                    covariance_matrix = np.zeros((6, 6), dtype=float)
+                    epoch = np.NaN
+                    state = np.zeros(6) * np.NaN
+                    covariance_matrix = np.zeros((6,6)) * np.NaN
+
+                total_json = os.path.join(out_dir, "total.json")
+                if (os.path.exists(total_json)) and ret.returncode == 0:
+                    with open(total_json) as f:
+                        data = json.load(f)
+                        residuals = pd.DataFrame(data["objects"]["(" + obj_id + ")"]["observations"]["residuals"])
+                        #residuals = pd.DataFrame(data["objects"][obj_id]["observations"]["residuals"])
+                        residuals.sort_values(
+                            by=["JD", "obscode"], 
+                            inplace=True
+                        )
+
+                        residuals = object_observations[["obs_id"]].join(residuals)
+                        
+                        
+                    residual_dfs.append(residuals)
+                        
 
                 ids.append(obj_id)
                 epochs.append(epoch)
@@ -425,7 +493,7 @@ class FINDORB(Backend):
 
         orbits = np.vstack(orbits)
 
-        od = pd.DataFrame({
+        od_orbits = pd.DataFrame({
             "obj_id" : ids,
             "jd_tt" : epochs,
             "x" : orbits[:, 0],
@@ -436,14 +504,15 @@ class FINDORB(Backend):
             "vz" : orbits[:, 5],
             "covariance" : covariances
         })
-        
-        od["mjd_tdb"] = Time(
-            od["jd_tt"].values,
-            format="jd",
-            scale="tt"
+
+        od_orbits["mjd_tdb"] = np.NaN
+        od_orbits.loc[~od_orbits["jd_tt"].isna(), "mjd_tdb"] = Time(
+            od_orbits[~od_orbits["jd_tt"].isna()]["jd_tt"].values,
+            scale="tt",
+            format="jd"
         ).tdb.mjd
         
-        od = od[[
+        od_orbits = od_orbits[[
             "obj_id", 
             "mjd_tdb", 
             "x", 
@@ -455,5 +524,10 @@ class FINDORB(Backend):
             "covariance"
         ]]
         
-        return od
-
+        residuals = pd.concat(residual_dfs)
+        residuals.reset_index(
+            inplace=True,
+            drop=True
+        )
+        
+        return od_orbits, residuals

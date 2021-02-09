@@ -1,4 +1,5 @@
 import os
+import time
 import copy
 import signal
 import pandas as pd
@@ -34,11 +35,11 @@ def ephemeris_worker(orbits, observers, backend):
     ephemeris = backend._generateEphemeris(orbits, observers)
     return ephemeris
 
-def orbitdetermination_worker(observations, backend):
+def orbitDetermination_worker(observations, backend):
     orbits = backend._orbitDetermination(observations)
     return orbits
 
-def projectephemeris_worker(ephemeris, test_orbit_ephemeris):
+def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
     
     assert len(ephemeris["mjd_utc"].unique()) == 1
     assert len(test_orbit_ephemeris["mjd_utc"].unique()) == 1
@@ -64,8 +65,8 @@ if USE_RAY:
     import ray
     propagation_worker = ray.remote(propagation_worker)
     ephemeris_worker = ray.remote(ephemeris_worker)
-    orbitdetermination_worker = ray.remote(orbitdetermination_worker)
-    projectephemeris_worker = ray.remote(projectephemeris_worker)
+    orbitDetermination_worker = ray.remote(orbitDetermination_worker)
+    projectEphemeris_worker = ray.remote(projectEphemeris_worker)
 
 class Backend:
     
@@ -264,7 +265,7 @@ class Backend:
                 
                     p = []
                     for e, te in zip(ephemeris_split, test_orbit_ephemeris_split):
-                        p.append(projectephemeris_worker.remote(e, te))
+                        p.append(projectEphemeris_worker.remote(e, te))
                     ephemeris_dfs = ray.get(p)
 
                 else:
@@ -274,7 +275,7 @@ class Backend:
                     ) 
                     
                     ephemeris_dfs = p.starmap(
-                        projectephemeris_worker, 
+                        projectEphemeris_worker, 
                         zip(
                             ephemeris_split,
                             test_orbit_ephemeris_split
@@ -285,7 +286,7 @@ class Backend:
             else:
                 ephemeris_dfs = []
                 for e, te in zip(ephemeris_split, test_orbit_ephemeris_split):
-                    ephemeris_df = projectephemeris_worker(e, te)
+                    ephemeris_df = projectEphemeris_worker(e, te)
                     ephemeris_dfs.append(ephemeris_df)
             
             ephemeris = pd.concat(ephemeris_dfs)
@@ -344,7 +345,7 @@ class Backend:
         
             od = []
             for o,  b in zip(observations_split, backend_duplicated):
-                od.append(orbitdetermination_worker.remote(o, b))
+                od.append(orbitDetermination_worker.remote(o, b))
             od_orbits_dfs = ray.get(od)
 
             if shutdown:
@@ -356,7 +357,7 @@ class Backend:
             ) 
             
             od_orbits_dfs = p.starmap(
-                orbitdetermination_worker, 
+                orbitDetermination_worker, 
                 zip(
                     observations_split,
                     backend_duplicated,

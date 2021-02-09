@@ -291,7 +291,7 @@ LANGUAGE=e
    numbers -1 to -9 will get you hours/minutes (for RA) or degrees/arcmin
    (for dec) with zero to eight places after the decimal.  Note that the
    higher-precision values will be almost meaningless noise.
-RA_DEC_FORMAT=116,116
+RA_DEC_FORMAT=215,115
 
    By default,  Find_Orb does a decent job of figuring out which objects
    should be included as perturbers.  But if you want to insist that all
@@ -345,7 +345,7 @@ EOP_FILE=finals.all
    the following to MAG_DIGITS=2 to get hundredths (almost always
    a meaningless level of precision,  but some people do get good
    photometry...)
-MAG_DIGITS=2S
+MAG_DIGITS=2
 
    By default,  sigmas and covariance matrix values in 'covar.txt'
    are shown to an abbreviated precision.  It normally makes no sense
