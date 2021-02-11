@@ -4,9 +4,9 @@ from astropy.time import Time
 from astropy import units as u
 
 from ...constants import Constants as c
-from ...utils import testOrbits
 from ...utils import getHorizonsVectors
 from ...utils import getHorizonsElements
+from ...testing import testOrbits
 from ..kepler import convertOrbitalElements
 from ..kepler import _convertCartesianToKeplerian
 from ..kepler import _convertKeplerianToCartesian

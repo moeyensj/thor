@@ -150,11 +150,12 @@ def getHorizonsEphemeris(obj_ids,
             )
             ephemeris = obj.ephemerides(
                 # RA, DEC, r, r_rate, delta, delta_rate, lighttime
-                quantities="1, 2, 19, 20, 21",
+                #quantities="1, 2, 19, 20, 21",
                 extra_precision=True
             ).to_pandas()
             ephemeris["orbit_id"] = [orbit_id for i in range(len(ephemeris))]
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
+            ephemeris["mjd_utc"] = observation_times.utc.mjd
 
             dfs.append(ephemeris)
 

@@ -75,15 +75,16 @@ class TestOrbit:
             print("")
         return
         
-    def apply(self, cell, verbose=True):
+    def applyToObservations(self, observations, verbose=True):
         """
-        Apply the prepared rotations to the given cell. Adds the gnomonic 
-        plane coordinates to the cell's observations (columns: theta_x_deg, theta_y_deg) 
+        Apply the prepared rotations to the given observations. Adds the gnomonic 
+        plane coordinates to observations (columns: theta_x_deg, theta_y_deg) 
         
         Parameters
         ----------
-        cell : `~thor.cell.Cell`
-            THOR cell. 
+        observations : `~pandas.DataFrame`
+            DataFrame of observations defined at the same epoch as this test orbit, 
+            to project into the test orbit's frame.
         verbose : bool, optional
             Print progress statements? 
             [Default = True]
@@ -96,18 +97,34 @@ class TestOrbit:
         if verbose is True:
             print("Applying rotation matrices to observations...")
             print("Converting to ecliptic coordinates...")
-        coords_eq = cell.observations[["RA_deg", "Dec_deg"]].values
+
+        #velocities_present = False
+        #if "vRAcosDec" in observations.columns and "vDec" in observations.columns:
+        #    coords_eq_r = observations[["RA_deg", "Dec_deg"]].values
+        #    coords_eq_v = observations[["vRAcosDec", "vDec"]].values
+        #    coords_eq_v[:, 0] /= np.cos(np.radians(coords_eq_r[:, 1]))
+        #    coords_eq = np.hstack([
+        #        np.ones((len(coords_eq_r), 1)), 
+        #        coords_eq_r, 
+        #        np.zeros((len(coords_eq_r), 1)),
+        #        coords_eq_v
+        #    ])     
+        #    velocities_present = True
+
+        #else:
+        coords_eq = observations[["RA_deg", "Dec_deg"]].values
         coords_eq = np.hstack([np.ones((len(coords_eq), 1)), coords_eq])        
         coords_ec = transformCoordinates(coords_eq, 
             "equatorial", 
             "ecliptic",
             representation_in="spherical",
-            representation_out="spherical")
+            representation_out="spherical"
+        )
         
         if verbose is True:
             print("Calculating object to observer unit vector...")
-        n_ae = calcNae(coords_ec[:, 1:])
-        x_e = cell.observations[["obs_x", "obs_y", "obs_z"]].values
+        n_ae = calcNae(coords_ec[:, 1:3])
+        x_e = observations[["obs_x", "obs_y", "obs_z"]].values
         
         if verbose is True:
             print("Calculating object to observer distance assuming r = {} AU...".format(np.linalg.norm(self.elements[:3])))
@@ -122,27 +139,84 @@ class TestOrbit:
             x_ae[i] = calcXae(delta_i, n_ae_i)
         
         if verbose is True:
-            print("Calculating barycentic object position vector...")
+            print("Calculating heliocentric object position vector...")
         x_a = np.zeros([len(x_ae), 3])
         for i, (x_ae_i, x_e_i) in enumerate(zip(x_ae, x_e)):
             x_a[i] = calcXa(x_ae_i, x_e_i)
         
         if verbose is True:
-            print("Applying rotation matrix M to barycentric object position vector...")
+            print("Applying rotation matrix M to heliocentric object position vector...")
         coords_cart_rotated = np.array(self.M @ x_a.T).T
         
         if verbose is True:
             print("Performing gnomonic projection...")
-        gnomonic = cartesianToGnomonic(coords_cart_rotated)
+        gnomonic_coords = cartesianToGnomonic(coords_cart_rotated)
         
 
-        cell.observations["obj_x"] = x_a[:, 0]
-        cell.observations["obj_y"] = x_a[:, 1]
-        cell.observations["obj_z"] = x_a[:, 2]
-        cell.observations["theta_x_deg"] = np.degrees(gnomonic[:, 0])
-        cell.observations["theta_y_deg"] = np.degrees(gnomonic[:, 1])
+        observations["obj_x"] = x_a[:, 0]
+        observations["obj_y"] = x_a[:, 1]
+        observations["obj_z"] = x_a[:, 2]
+        observations["theta_x_deg"] = np.degrees(gnomonic_coords[:, 0])
+        observations["theta_y_deg"] = np.degrees(gnomonic_coords[:, 1])
+        observations["test_obj_x"] = self.elements[0]
+        observations["test_obj_y"] = self.elements[1]
+        observations["test_obj_z"] = self.elements[2]
+        observations["test_obj_vx"] = self.elements[3]
+        observations["test_obj_vy"] = self.elements[4]
+        observations["test_obj_vz"] = self.elements[5]
 
         if verbose is True:
             print("Done.")
             print("")
         return  
+
+    def applyToEphemeris(self, ephemeris, verbose=True):
+        """
+        Apply the prepared rotations to the given ephemerides. Adds the gnomonic 
+        plane coordinates to observations (columns: theta_x_deg, theta_y_deg, vtheta_x, and vtheta_y) 
+        
+        Parameters
+        ----------
+        ephemeris : `~pandas.DataFrame`
+            DataFrame of ephemeris generated by a THOR backend defined at the same epoch as this test orbit, 
+            to project into the test orbit's frame.
+        verbose : bool, optional
+            Print progress statements? 
+            [Default = True]
+        
+        Returns
+        -------
+        None
+        """
+        coords_cart = ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values
+        coords_cart_rotated = np.zeros_like(coords_cart)
+        
+        if verbose is True:
+            print("Applying rotation matrix M to heliocentric object position vector...")
+        coords_cart_rotated[:, :3] = np.array(self.M @ coords_cart[:, :3].T).T
+
+        if verbose is True:
+            print("Applying rotation matrix M to heliocentric object velocity vector...")
+        # Calculate relative velocity, then rotate to projected frame
+        coords_cart[:, 3:] = coords_cart[:, 3:] - self.elements[3:].reshape(1, -1)
+        coords_cart_rotated[:, 3:] = np.array(self.M @ coords_cart[:, 3:].T).T
+        
+        if verbose is True:
+            print("Performing gnomonic projection...")
+        gnomonic_coords = cartesianToGnomonic(coords_cart_rotated)
+        
+        ephemeris["theta_x_deg"] = np.degrees(gnomonic_coords[:, 0])
+        ephemeris["theta_y_deg"] = np.degrees(gnomonic_coords[:, 1])
+        ephemeris["vtheta_x_deg"] = np.degrees(gnomonic_coords[:, 2])
+        ephemeris["vtheta_y_deg"] = np.degrees(gnomonic_coords[:, 3])
+        ephemeris["test_obj_x"] = self.elements[0]
+        ephemeris["test_obj_y"] = self.elements[1]
+        ephemeris["test_obj_z"] = self.elements[2]
+        ephemeris["test_obj_vx"] = self.elements[3]
+        ephemeris["test_obj_vy"] = self.elements[4]
+        ephemeris["test_obj_vz"] = self.elements[5]
+
+        if verbose is True:
+            print("Done.")
+            print("")
+        return 

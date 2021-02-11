@@ -21,8 +21,20 @@ class Config:
     -------
     None
     """
+    USE_RAY = False
+    NUM_THREADS = 40
 
-    columnMapping = {        
+    ADES_METADATA = {
+        "observatory_code" : "I11",
+        "observatory_name" : "Vera C. Rubin Observatory",
+        "telescope_aperture" : "8.4",
+        "telescope_design" : "Reflector",
+        "telescope_detector" : "CCD",
+        "submitter" : "D. iRAC",
+        "observers" : ["D. iRAC"],
+        "measurers" : ["D. iRAC"],
+    }
+    COLUMN_MAPPING = {        
         ### Observation Parameters
         
         # Observation ID

@@ -39,14 +39,33 @@ def cartesianToGnomonic(coords_cart):
     
     Parameters
     ----------
-    coords_cart : `~numpy.ndarray` (N, 3)
-        Cartesian x, y, z coordinates.
+    coords_cart : `~numpy.ndarray` (N, 3) or (N, 6)
+        Cartesian x, y, z coordinates (can optionally include cartesian
+        velocities)
             
     Returns
     -------
-    coords_gnomonic : `~numpy.ndarray` (N, 2)
+    coords_gnomonic : `~numpy.ndarray` (N, 2) or (N, 4)
         Gnomonic longitude and latitude in radians.
     """
-    u = coords_cart[:,1] / coords_cart[:,0]
-    v = coords_cart[:,2] / coords_cart[:,0]
-    return np.array([u, v]).T
+    x = coords_cart[:,0]
+    y = coords_cart[:,1]
+    z = coords_cart[:,2]
+
+    u = y / x
+    v = z / x
+
+    if coords_cart.shape[1] == 6:
+        vx = coords_cart[:,3]
+        vy = coords_cart[:,4]
+        vz = coords_cart[:,5]
+
+        vu = (x * vy - vx * y) / x**2
+        vv = (x * vz - vx * z) / x**2
+        
+        gnomonic_coords = np.array([u, v, vu, vv]).T
+
+    else:
+        gnomonic_coords = np.array([u, v]).T
+
+    return gnomonic_coords

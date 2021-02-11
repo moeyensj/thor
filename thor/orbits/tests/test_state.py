@@ -3,7 +3,7 @@ import numpy as np
 from astropy import units as u
 from astropy.time import Time
 
-from ...utils import testOrbits
+from ...testing import testOrbits
 from ...utils import getHorizonsVectors
 from ..state import shiftOrbitsOrigin
 
@@ -113,7 +113,7 @@ def test_shiftOrbitsOrigin():
     horizons_states_bary = horizons_states_bary[["x", "y", "z", "vx", "vy", "vz"]].values
 
     # Stack T1 so each Horizons state has a corresponding time
-    T1_ = Time(np.hstack([T1 for i in range(len(TARGETS))]))
+    T1_ = Time(np.hstack([T1.tdb.mjd for i in range(len(TARGETS))]), scale="tdb", format="mjd")
     
     # Shift heliocentric state to the barycenter
     thor_states_bary = shiftOrbitsOrigin(

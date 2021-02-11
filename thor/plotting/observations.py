@@ -12,7 +12,7 @@ def plotObservations(dataframe,
                     colorByObject=False, 
                     usePlotly=True, 
                     returnFig=False, 
-                    columnMapping=Config.columnMapping):
+                    columnMapping=Config.COLUMN_MAPPING):
     """
     Plot observations in 2D. 
     
@@ -28,7 +28,7 @@ def plotObservations(dataframe,
         [Default = True]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
    
     Returns
     -------
@@ -108,7 +108,7 @@ def plotObservations(dataframe,
 
 def plotObservations3D(dataframe, 
                        colorByObject=False, 
-                       columnMapping=Config.columnMapping):
+                       columnMapping=Config.COLUMN_MAPPING):
     """
     Plot observations in 3D. 
     
@@ -121,7 +121,7 @@ def plotObservations3D(dataframe,
         [Default = False]
     columnMapping : dict, optional
         Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.columnMapping`]
+        [Default = `~thor.Config.COLUMN_MAPPING`]
    
     Returns
     -------
