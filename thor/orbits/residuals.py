@@ -15,6 +15,47 @@ def calcResiduals(
         covariances_actual=None,
         include_probabilistic=True,
     ):
+    """
+    Calculate residuals (actual - desired) and the associated chi2 if the 
+    1-sigma uncertainties on the actual quantities are provided. If desired,
+    a probabilistic measure of residual can also be calculated using the 1-sigma
+    uncertainties (which are converted into a covariance matrix) or by providing the 
+    coveriance matrices for each coordinate. The probabilistic statistics include 
+    the chi2 for each measurement, the mahalanobis distance and the associated
+    probability (calculated as 1 - chi2.cdf(mahalanobis_distance, degrees of freedom)).
+    
+    Parameters
+    ----------
+    coords_actual : `~numpy.ndarray` (N, M)
+        Actual N coordinates in M dimensions. 
+    coords_desired : `~numpy.ndarray` (N, M)
+        The desired N coordinates in M dimensions. 
+    sigmas_actual : `~numpy.ndarray` (N, M), optional
+        The 1-sigma uncertainties of the actual coordinates. Can be
+        None, in which case chi2 will be return as a NaN.
+    covariances_actual : list of N `~numpy.ndarray`s (M, M)
+        The covariance matrix in M dimensions for each 
+        actual observation if available. 
+    include_probabilistic : bool, optional
+        Include the calculation of mahalanobis distance and the associated
+        probability. 
+        
+    Returns
+    -------
+    residuals : `~numpy.ndarray` (N, 2)
+        Residuals for each coordinate (actual - desired)
+    stats : tuple (1 or 3)
+        chi2 :  `~numpy.ndarray` (N)
+            Chi-squared for each observation given the 1-sigma 
+            uncertainties. NaN if no sigmas_actual is None.
+        p : `~numpy.ndarray` (N)
+            The probability that the actual coordinates given their uncertainty
+            belong to the same multivariate normal distribution as the desired
+            coordinates. 
+        d : `~numpy.ndarray` (N)
+            The Mahalanobis distance of each coordinate compared to the desired
+            coordinates.
+    """
     if covariances_actual is None and sigmas_actual is not None and include_probabilistic:
         covariances_actual_ = [np.diag(i**2) for i in sigmas_actual]
         sigmas_actual_ = sigmas_actual
@@ -50,10 +91,11 @@ def calcResiduals(
 def calcSimpleResiduals(
         coords_actual, 
         coords_desired, 
-        sigmas_actual
+        sigmas_actual=None,
     ):
     """
-    Calculate residuals and the associated chi2. 
+    Calculate residuals and the associated chi2 if the 
+    1-sigma uncertainties on the actual quantities are provided.
     
     Parameters
     ----------
@@ -118,7 +160,7 @@ def calcProbabilisticResiduals(
         The desired N coordinates in M dimensions. 
     sigmas_actual : `~numpy.ndarray` (N, M)
         The 1-sigma uncertainties of the actual coordinates.
-    covariances_actual list of N `~numpy.ndarray`s (M, M)
+    covariances_actual : list of N `~numpy.ndarray`s (M, M)
         The covariance matrix in M dimensions for each 
         actual observation if available. 
         
