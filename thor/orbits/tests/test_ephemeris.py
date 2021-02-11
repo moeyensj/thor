@@ -6,6 +6,7 @@ from ...utils import _checkTime
 from ...utils import getHorizonsVectors
 from ...utils import getHorizonsEphemeris
 from ...testing import testEphemeris
+from ..orbits import Orbits
 from ..ephemeris import generateEphemeris
 
 TARGETS = [
@@ -16,7 +17,7 @@ TARGETS = [
 EPOCH = 57257.0
 DT = np.array([0])
 T0 = Time(
-    [EPOCH for i in range(len(TARGETS))], 
+    [EPOCH], 
     format="mjd",
     scale="tdb", 
 )
@@ -45,21 +46,17 @@ def test_generateEphemeris():
     horizons_ephemeris = horizons_ephemeris[["RA", "DEC"]].values
 
     # Query Horizons for initial state vectors for each target at T0
-    horizons_cartesian_orbits = getHorizonsVectors(
+    horizons_orbits = Orbits.fromHorizons(
         TARGETS,
-        T0[:1],
-        location="@sun",
-        aberrations="geometric"
+        T0,
     )
-    horizons_cartesian_orbits = horizons_cartesian_orbits[["x", "y", "z", "vx", "vy", "vz"]].values
 
     # Use PYOORB to generate ephemeris for each target observed by 
     # each observer
     pyoorb_ephemeris = generateEphemeris(
-        horizons_cartesian_orbits, 
-        T0, 
+        horizons_orbits, 
         OBSERVERS, 
-        backend="PYOORB"
+        backend="PYOORB",
     )
     pyoorb_ephemeris = pyoorb_ephemeris[["RA_deg", "Dec_deg"]].values
 
@@ -72,20 +69,19 @@ def test_generateEphemeris():
         magnitude=True
     )
 
-    # Use THOR's 2-body propagator to generate ephemeris for each target observed by 
+    # Use MJOLNIR's 2-body propagator to generate ephemeris for each target observed by 
     # each observer
-    thor_ephemeris = generateEphemeris(
-        horizons_cartesian_orbits, 
-        T0, 
+    mjolnir_ephemeris = generateEphemeris(
+        horizons_orbits, 
         OBSERVERS, 
-        backend="PYOORB"
+        backend="MJOLNIR",
     )
-    thor_ephemeris = thor_ephemeris[["RA_deg", "Dec_deg"]].values
+    mjolnir_ephemeris = mjolnir_ephemeris[["RA_deg", "Dec_deg"]].values
 
-    # THOR's 2-body ephemerides agree with Horizons' ephemerides
+    # MJOLNIR's 2-body ephemerides agree with Horizons' ephemerides
     # to within the tolerance below.
     testEphemeris(
-        thor_ephemeris,
+        mjolnir_ephemeris,
         horizons_ephemeris,
         angle_tol=(50*u.milliarcsecond),
         magnitude=True

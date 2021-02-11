@@ -6,6 +6,7 @@ from ...constants import Constants as c
 from ...utils import getHorizonsObserverState
 from ...utils import getHorizonsVectors
 from ...testing import testOrbits
+from ..orbits import Orbits
 from ..ephemeris import generateEphemeris
 from ..gauss import gaussIOD
 
@@ -81,7 +82,7 @@ def test_gaussIOD_withIterator():
             horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
 
             # Generate ephemeris using the 2-body integration
-            THOR_EPHEMERIS_KWARGS = {
+            MJOLNIR_KWARGS = {
                 "light_time" : False, 
                 "lt_tol" : 1e-10,
                 "stellar_aberration" : False,
@@ -89,18 +90,22 @@ def test_gaussIOD_withIterator():
                 "max_iter" : 1000, 
                 "tol" : 1e-16
             }
-            ephemeris = generateEphemeris(
+            orbits = Orbits(
                 horizons_states[selected_obs[1]:selected_obs[1]+1], 
                 T1[selected_obs[1]:selected_obs[1]+1], 
+                orbit_type="cartesian",
+            )
+            ephemeris = generateEphemeris(
+                orbits,
                 observers,
-                backend="THOR",
-                backend_kwargs=THOR_EPHEMERIS_KWARGS
+                backend="MJOLNIR",
+                backend_kwargs=MJOLNIR_KWARGS
             )
             coords = ephemeris[["RA_deg", "Dec_deg"]].values
             states = ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values
 
             # Run IOD
-            iod_epochs, iod_orbits = gaussIOD(
+            iod_orbits = gaussIOD(
                 coords[selected_obs, :], 
                 T1.utc.mjd[selected_obs], 
                 observer_states[selected_obs, :3], 
@@ -112,7 +117,7 @@ def test_gaussIOD_withIterator():
 
             # Select the best IOD orbit
             best_iod_orbit = selectBestIOD(
-                iod_orbits, 
+                iod_orbits.cartesian, 
                 states[selected_obs[1]:selected_obs[1] + 1]
             )
 
