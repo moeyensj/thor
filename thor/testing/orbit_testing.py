@@ -482,7 +482,7 @@ def testOrbits(
         angle_tol=1e-10*u.degree,
         time_tol=1e-6*u.s,
         magnitude=True,
-        raise_error=False
+        raise_error=True
     ):
     """
     Tests that the two sets of orbits are within the desired absolute tolerances
