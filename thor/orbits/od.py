@@ -58,6 +58,7 @@ def od_worker(
     return od_orbit, od_orbit_members
 
 if USE_RAY:
+    import ray
     od_worker = ray.remote(od_worker)
 
 def od(
@@ -313,11 +314,11 @@ def od(
             chi2_prev = chi2_iter
             chi2_total_prev = chi2_total_iter
             rchi2_prev = rchi2_iter
-
+            
             if rchi2_iter <= rchi2_threshold:
                 converged = True
 
-        elif num_outliers > 0 and iterations >= (max_iter * outliers_tried + 1) and outliers_tried <= num_outliers:
+        elif num_outliers > 0 and iterations >= (max_iter * (outliers_tried + 1)) and outliers_tried <= num_outliers:
 
             # Previous fits have failed, lets reset the current best fit orbit back to its original 
             # state and re-run fitting, this time removing outliers
@@ -387,7 +388,7 @@ def od(
         )
     
     else:
-        od_orbit = orbit_prev.todf()
+        od_orbit = orbit_prev.to_df(include_units=False)
         od_orbit["arc_length"] = observations["mjd_utc"].max() - observations["mjd_utc"].min()
         od_orbit["num_obs"] = num_obs
         od_orbit["num_params"] = num_params
@@ -424,6 +425,12 @@ def differentialCorrection(
         backend_kwargs={},
         verbose=True
     ):
+    """
+    Differentially correct (via finite/central differencing) time. 
+
+    Parameters
+    ----------
+    """
     time_start = time.time()
     if verbose:
         print("THOR: differentialCorrection")
@@ -434,7 +441,7 @@ def differentialCorrection(
     
     if len(orbits) > 0 and len(orbit_members) > 0 and len(observations) > 0:
     
-        linked_observations = orbit_members[orbit_members["orbit_id"].isin(orbits["orbit_id"].values)].merge(observations, on="obs_id").copy()
+        linked_observations = orbit_members[orbit_members[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits["orbit_id"].values)].merge(observations, on="obs_id").copy()
         linked_observations.sort_values(
             by=["orbit_id", "mjd_utc"], 
             inplace=True
@@ -454,7 +461,7 @@ def differentialCorrection(
         grouped_observations = linked_observations.groupby(by=["orbit_id"])
         observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
 
-        orbits_initial = Orbits.fromdf(orbits_)
+        orbits_initial = Orbits.from_df(orbits_)
         orbits_split = orbits_initial.split(1)
 
         
