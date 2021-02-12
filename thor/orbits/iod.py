@@ -462,7 +462,7 @@ def iod(
         )
     
     else:
-        orbit = orbit_sol.todf()
+        orbit = orbit_sol.to_df(include_units=False)
         orbit["arc_length"] = arc_length
         orbit["num_obs"] = num_obs
         orbit["chi2"] = chi2_total_sol
@@ -531,12 +531,11 @@ def initialOrbitDetermination(
                 non-coinciding observation times.
     min_obs : int, optional
         Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
-        a linkage has 8 observations, at most the two worst observations will be flagged as outliers if their individual
-        chi2 values exceed the chi2 threshold.
-    chi2_threshold : float, optional
-        Maximum chi2 required for a single observation to not be considered an outlier. Note that chi2 here needs to be 
-        interpreted carefully, residuals of order a few arcseconds easily contribute significantly 
-        to the chi2 of the observation. 
+        a linkage has 8 observations, at most the two worst observations will be flagged as outliers. Only up t o
+        the contamination percentage of observations of will be flagged as outliers, provided that at least min_obs
+        observations remain in the linkage.
+    rchi2_threshold : float, optional
+        Minimum reduced chi2 for an initial orbit to be accepted. If an orbit
     contamination_percentage : float, optional
         Maximum percent of observations that can flagged as outliers. 
     iterate : bool, optional
@@ -625,6 +624,7 @@ def initialOrbitDetermination(
                             contamination_percentage=contamination_percentage,
                             iterate=iterate, 
                             light_time=light_time,
+                            linkage_id_col=linkage_id_col,
                             backend=backend,
                             backend_kwargs=backend_kwargs
                         )
@@ -649,6 +649,7 @@ def initialOrbitDetermination(
                         contamination_percentage=contamination_percentage,
                         iterate=iterate, 
                         light_time=light_time,
+                        linkage_id_col=linkage_id_col,
                         backend=backend,
                         backend_kwargs=backend_kwargs
                     ),
@@ -676,6 +677,7 @@ def initialOrbitDetermination(
                     contamination_percentage=contamination_percentage,
                     iterate=iterate,
                     light_time=light_time,
+                    linkage_id_col=linkage_id_col,
                     backend=backend,
                     backend_kwargs=backend_kwargs
                 )
