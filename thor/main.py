@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import multiprocessing as mp
 from functools import partial
-from sklearn.cluster import DBSCAN
 from astropy.time import Time
 
 from .config import Config
@@ -17,6 +16,13 @@ from .backend import _init_worker
 
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
+
+USE_GPU = False
+if USE_GPU:
+    import cudf
+    from cuml.cluster import DBSCAN
+else:
+    from sklearn.cluster import DBSCAN
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
@@ -121,11 +127,17 @@ def clusterVelocity(
 
     xx = x - vx * dt
     yy = y - vy * dt
+    if USE_GPU:
+        kwargs = {}
+    else:
+        kwargs = {"n_jobs" : 1}
+
     X = np.vstack([xx, yy]).T  
+    
     db = DBSCAN(
         eps=eps, 
-        min_samples=min_samples, 
-        n_jobs=1
+        min_samples=min_samples,
+        **kwargs
     )
     db.fit(X)
 
@@ -588,7 +600,7 @@ def clusterAndLink(
         print("Minimum samples: {}".format(min_samples))
     
     possible_clusters = []
-    if threads > 1:
+    if threads > 1 and not USE_GPU:
         if verbose:
             print("Using {} threads...".format(threads))
             

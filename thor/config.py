@@ -22,6 +22,7 @@ class Config:
     None
     """
     USE_RAY = False
+    USE_GPU = True
     NUM_THREADS = 40
 
     ADES_METADATA = {
