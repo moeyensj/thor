@@ -1,4 +1,5 @@
 import time
+import copy
 import uuid
 import numpy as np
 import pandas as pd
@@ -66,7 +67,7 @@ def od(
         observations,
         rchi2_threshold=100,
         min_obs=5,
-        contamination_percentage=20,
+        contamination_percentage=0.0,
         delta=1e-6,
         max_iter=20,
         method="central",
@@ -113,12 +114,7 @@ def od(
     # Calculate chi2 for residuals on the given observations
     # for the current orbit, the goal is for the orbit to improve 
     # such that the chi2 improves
-    orbit_prev_ = Orbits(
-        orbit.cartesian,
-        orbit.epochs,
-        ids=orbit.ids,
-        orbit_type=orbit.orbit_type
-    )
+    orbit_prev_ = copy.deepcopy(orbit)
     
     ephemeris_prev_ = backend.generateEphemeris(
         orbit_prev_, 
@@ -153,9 +149,7 @@ def od(
     delta_prev = delta
     iterations = 0
     converged = False
-    while not converged:
-        if iterations == (max_iter + num_outliers * max_iter):
-            break
+    while not converged and processable:
        
         delta_iter = delta_prev
         
@@ -306,7 +300,7 @@ def od(
         # reached. Once max iterations have been reached and the orbit still has not converged
         # to an acceptable solution, try removing an observation as an outlier and iterate again. 
         max_iter_i = (max_iter * (outliers_tried + 1))
-        if rchi2_iter < rchi2_prev and iterations < max_iter_i:
+        if rchi2_iter <= rchi2_prev and iterations <= max_iter_i:
 
             orbit_prev = orbit_iter
             residuals_prev = residuals
@@ -318,7 +312,7 @@ def od(
             if rchi2_iter <= rchi2_threshold:
                 converged = True
 
-        elif num_outliers > 0 and iterations >= (max_iter * (outliers_tried + 1)) and outliers_tried <= num_outliers:
+        elif num_outliers > 0 and iterations > max_iter_i and outliers_tried <= num_outliers:
 
             # Previous fits have failed, lets reset the current best fit orbit back to its original 
             # state and re-run fitting, this time removing outliers
@@ -353,14 +347,18 @@ def od(
                 processable = False
 
         iterations += 1
-    
+        if iterations == (max_iter + (num_outliers * max_iter)):
+            if rchi2_prev <= rchi2_threshold:
+                converged = True
+            else:
+                break
 
     if not converged:
        
         od_orbit = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "mjd_tdb",
+                "epoch",
                 "x",
                 "y",
                 "z",
@@ -388,8 +386,9 @@ def od(
         )
     
     else:
+        obs_times = observations["mjd_utc"].values[ids_mask]
         od_orbit = orbit_prev.to_df(include_units=False)
-        od_orbit["arc_length"] = observations["mjd_utc"].max() - observations["mjd_utc"].min()
+        od_orbit["arc_length"] = np.max(obs_times) - np.min(obs_times)
         od_orbit["num_obs"] = num_obs
         od_orbit["num_params"] = num_params
         od_orbit["num_iterations"] = iterations
@@ -567,7 +566,7 @@ def differentialCorrection(
         od_orbits = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "mjd_tdb",
+                "epoch",
                 "x",
                 "y",
                 "z",
