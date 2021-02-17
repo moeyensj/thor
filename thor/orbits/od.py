@@ -259,6 +259,11 @@ def od(
             covariance_matrix = np.linalg.inv(ATWA)
         except np.linalg.LinAlgError:
             iterations += 1
+            if iterations == (max_iter + (num_outliers * max_iter)):
+                if rchi2_prev <= rchi2_threshold:
+                    converged = True
+                else:
+                    break
             continue
        
         if num_params == 6:
@@ -411,9 +416,9 @@ def differentialCorrection(
         orbits, 
         orbit_members,
         observations, 
-        rchi2_threshold=100,
         min_obs=5,
         contamination_percentage=20,
+        rchi2_threshold=100,
         delta=1e-8,
         max_iter=20,
         method="central",
@@ -438,7 +443,7 @@ def differentialCorrection(
         print("Method: {} differencing".format(method))
         print("Using {} threads...".format(threads))
     
-    if len(orbits) > 0 and len(orbit_members) > 0 and len(observations) > 0:
+    if len(orbits) > 0 and len(orbit_members) > 0:
     
         linked_observations = orbit_members[orbit_members[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits["orbit_id"].values)].merge(observations, on="obs_id").copy()
         linked_observations.sort_values(
@@ -588,10 +593,15 @@ def differentialCorrection(
                 "residual_ra_arcsec", 
                 "residual_dec_arcsec", 
                 "chi2",
+                "outlier"
             ]
         )
 
-    
+    for col in ["num_obs"]:
+        od_orbits[col] = od_orbits[col].astype(int)
+    for col in ["outlier"]:
+        od_orbit_members[col] = od_orbit_members[col].astype(int)
+
     time_end = time.time()
     if verbose:
         print("Differentially corrected {} orbits.".format(len(od_orbits)))

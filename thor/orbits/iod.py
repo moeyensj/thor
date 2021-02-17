@@ -146,10 +146,10 @@ if USE_RAY:
 
 def iod(
         observations,
-        observation_selection_method="combinations",
         min_obs=6,
-        rchi2_threshold=200,
         contamination_percentage=0.0,
+        rchi2_threshold=200,
+        observation_selection_method="combinations",
         iterate=False, 
         light_time=True,
         backend="PYOORB",
@@ -176,20 +176,20 @@ def iod(
             "obs_vx" [Optional] : Observatory's heliocentric ecliptic J2000 x-velocity in au per day [float],
             "obs_vy" [Optional] : Observatory's heliocentric ecliptic J2000 y-velocity in au per day [float],
             "obs_vz" [Optional] : Observatory's heliocentric ecliptic J2000 z-velocity in au per day [float]
+    min_obs : int, optional
+        Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
+        a linkage has 8 observations, at most the two worst observations will be flagged as outliers if their individual
+        chi2 values exceed the chi2 threshold.
+    contamination_percentage : float, optional
+        Maximum percent of observations that can flagged as outliers. 
+    rchi2_threshold : float, optional
+        Maximum reduced chi2 required for an initial orbit to be accepted. 
     observation_selection_method : {'first+middle+last', 'thirds', 'combinations'}, optional
         Selects which three observations to use for IOD depending on the method. The avaliable methods are:
             'first+middle+last' : Grab the first, middle and last observations in time. 
             'thirds' : Grab the middle observation in the first third, second third, and final third. 
             'combinations' : Return the observation IDs corresponding to every possible combination of three observations with
                 non-coinciding observation times.
-    min_obs : int, optional
-        Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
-        a linkage has 8 observations, at most the two worst observations will be flagged as outliers if their individual
-        chi2 values exceed the chi2 threshold.
-    rchi2_threshold : float, optional
-        Maximum reduced chi2 required for an initial orbit to be accepted. 
-    contamination_percentage : float, optional
-        Maximum percent of observations that can flagged as outliers. 
     iterate : bool, optional
         Iterate the preliminary orbit solution using the state transition iterator. 
     light_time : bool, optional
@@ -207,7 +207,7 @@ def iod(
     iod_orbits : `~pandas.DataFrame` 
         Dataframe with orbits found in linkages.
             "orbit_id" : Orbit ID, a uuid [str],
-            "mjd_tdb" : Epoch at which orbit is defined in MJD TDB [float],
+            "epoch" : Epoch at which orbit is defined in MJD TDB [float],
             "x" : Orbit's ecliptic J2000 x-position in au [float],
             "y" : Orbit's ecliptic J2000 y-position in au [float],
             "z" : Orbit's ecliptic J2000 z-position in au [float],
@@ -435,7 +435,7 @@ def iod(
         orbit = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "mjd_tdb",
+                "epoch",
                 "x",
                 "y",
                 "z",
@@ -486,10 +486,10 @@ def iod(
 def initialOrbitDetermination(
         observations, 
         linkage_members, 
-        observation_selection_method='combinations',
         min_obs=6,
-        rchi2_threshold=10**3,
         contamination_percentage=20.0,
+        rchi2_threshold=10**3,
+        observation_selection_method='combinations',
         iterate=False,
         light_time=True,
         linkage_id_col="cluster_id",
@@ -557,7 +557,7 @@ def initialOrbitDetermination(
     iod_orbits : `~pandas.DataFrame` 
         Dataframe with orbits found in linkages.
             "orbit_id" : Orbit ID, a uuid [str],
-            "mjd_tdb" : Epoch at which orbit is defined in MJD TDB [float],
+            "epoch" : Epoch at which orbit is defined in MJD TDB [float],
             "x" : Orbit's ecliptic J2000 x-position in au [float],
             "y" : Orbit's ecliptic J2000 y-position in au [float],
             "z" : Orbit's ecliptic J2000 z-position in au [float],
@@ -715,7 +715,7 @@ def initialOrbitDetermination(
         iod_orbits = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "mjd_tdb",
+                "epoch",
                 "x",
                 "y",
                 "z",
@@ -740,6 +740,11 @@ def initialOrbitDetermination(
                 "outlier"
             ]
         )
+    
+    for col in ["num_obs"]:
+        iod_orbits[col] = iod_orbits[col].astype(int)
+    for col in ["gauss_sol", "outlier"]:
+        iod_orbit_members[col] = iod_orbit_members[col].astype(int)
 
     time_end = time.time()
     if verbose:
