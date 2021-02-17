@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -7,9 +8,11 @@ from sklearn.neighbors import BallTree
 
 from ..config import Config
 from ..backend import _init_worker
+from ..utils import identifySubsetLinkages
 from .orbits import Orbits
 from .ephemeris import generateEphemeris
 from .residuals import calcResiduals
+from .od import differentialCorrection
 
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
@@ -17,7 +20,7 @@ NUM_THREADS = Config.NUM_THREADS
 __all__ = [
     "attribution_worker",
     "attributeObservations",
-    "extendOrbits"
+    "mergeAndExtendOrbits"
 ]
 
 def attribution_worker(
@@ -158,8 +161,17 @@ def attributeObservations(
         observations_chunk_size=100000,
         threads=NUM_THREADS,
         backend="PYOORB", 
-        backend_kwargs={} 
+        backend_kwargs={},
+        verbose=True,
     ):
+    time_start = time.time()
+    if verbose:
+        print("THOR: attributeObservations")
+        print("-------------------------------")
+        print("Running attribution...")
+        print("Distance: {} degrees".format(eps))
+        print("Probabilistic residuals: {}".format(include_probabilistic))
+        
     orbits_split = orbits.split(orbits_chunk_size)
     observations_split = []
     for chunk in range(0, len(observations), observations_chunk_size):
@@ -247,81 +259,212 @@ def attributeObservations(
         inplace=True,
         drop=True
     )
-   
+    
+    time_end = time.time()
+    if verbose:
+        print("Attributed {} observations to {} orbits.".format(
+            attributions["obs_id"].nunique(),
+            attributions["orbit_id"].nunique()
+        ))
+        print("Total time in seconds: {}".format(time_end - time_start))   
+        print("-------------------------------")
+        print("")
+        
     return attributions
 
-
-def extendOrbits(
-        od_orbits, 
-        od_orbit_members, 
+def mergeAndExtendOrbits(
+        orbits, 
+        orbit_members, 
         observations, 
         min_obs=6,
+        contamination_percentage=20.0,
+        rchi2_threshold=5,
         eps=1/3600, 
-        include_probabilistic=True, 
-        orbits_chunk_size=100,
+        delta=1e-8,
+        max_iter=20,
+        method="central",
+        fit_epoch=False,
+        orbits_chunk_size=10,
         observations_chunk_size=100000,
-        threads=NUM_THREADS,
+        threads=60,
         backend="PYOORB", 
-        backend_kwargs={} 
+        backend_kwargs={},
+        verbose=True
     ):
-
-
-    # Run attribution
-    attributions = attributeObservations(
-        Orbits.fromdf(od_orbits),
-        observations,
-        eps=eps,
-        include_probabilistic=include_probabilistic,
-        threads=threads,
-        orbits_chunk_size=orbits_chunk_size,
-        observations_chunk_size=observations_chunk_size,
-        backend=backend,
-        backend_kwargs=backend_kwargs
-    )
+    """
+    Attempt to extend an orbit's observational arc by running 
+    attribution on the observations. This is an iterative process: attribution 
+    is run, any observations found for each orbit are added to that orbit and differential correction is
+    run. Orbits which are subset's of other orbits are removed. Iteration continues until there are no
+    duplicate observation assignments.
     
-    # Remove any orbits that were attributed to less than the minimum number of 
-    # of observations desired for "discoverability"
-    orbit_occurences = attributions["orbit_id"].value_counts()
-    orbit_ids = orbit_occurences[orbit_occurences.values >= min_obs].index.values
-    attributions = attributions[attributions["orbit_id"].isin(orbit_ids)]
+    Parameters
+    ----------
     
-    # Sort remaining orbits by chi2 value, start with the orbit with the lowest mean chi2. 
-    # Then for each orbit remove the attributed observations and add them to the orbit's 
-    # orbit members. 
-    orbit_ids = attributions.groupby(by=["orbit_id"])["chi2"].mean()
-    orbit_ids = orbit_ids[np.argsort(orbit_ids.values)].index.values
-    od_orbit_members_dfs = []
-    obs_ids_attributed = np.array([])
-    for orbit_id in orbit_ids:
-
-        attributed = attributions[attributions["orbit_id"] == orbit_id].copy()
+    
+    
+    
+    """
+    time_start = time.time()
+    if verbose:
+        print("THOR: mergeAndExtendOrbits")
+        print("-------------------------------")
+        print("Attempting to merge and extend orbits..")
+        print("Minimum observations: {}".format(min_obs))
         
-        if len(attributed) >= min_obs:
-            obs_ids_attributed = np.concatenate([obs_ids_attributed, attributed["obs_id"].values])
-            od_orbit_members_dfs.append(attributed.reset_index(drop=True))
-            attributions = attributions[~attributions["obs_id"].isin(obs_ids_attributed)]
+    odp_orbits = orbits.copy()
+    odp_orbit_members = orbit_members.copy()
+    iterations = 0
+    num_duplicate_obs_prev = 1e10
+    
+    if len(odp_orbits) > 0:
+        converged = False
 
-    # Make new orbits and orbit member's dataframes
-    od_orbit_members = pd.concat(od_orbit_members_dfs)
-    od_orbit_members.reset_index(
-        inplace=True,
-        drop=True
-    )
-    od_orbits = od_orbits[od_orbits["orbit_id"].isin(od_orbit_members["orbit_id"].unique())]
+        while not converged:
+            
+            odp_orbits, odp_orbit_members = identifySubsetLinkages(
+                odp_orbits,
+                odp_orbit_members,
+            )
+            odp_orbits = odp_orbits[odp_orbits["subset_of"].isna()]
+            odp_orbit_members = odp_orbit_members[odp_orbit_members["orbit_id"].isin(odp_orbits["orbit_id"].values)]
+            
+            odp_orbit_members = odp_orbit_members.merge(
+                observations[["obs_id", "mjd_utc"]],          
+                on="obs_id", 
+                how="left",
+            )
+            
+            # Run attribution
+            attributions = attributeObservations(
+                Orbits.from_df(odp_orbits),
+                observations,
+                eps=eps,
+                include_probabilistic=True,
+                threads=threads,
+                orbits_chunk_size=orbits_chunk_size,
+                observations_chunk_size=observations_chunk_size,
+                backend=backend,
+                backend_kwargs=backend_kwargs,
+                verbose=False
+            )
+            
+            # For each observation attributed, keep only the attribution
+            # with the lowest chi2 residual
+            attributions.sort_values(
+                by=["obs_id", "chi2"],
+                inplace=True
+            )
+            
+            # Add observation time column to remaining attributions
+            attributions = attributions.merge(
+                observations[["obs_id", "mjd_utc"]],          
+                on="obs_id", 
+                how="left"
+            )
+            attributions.reset_index(
+                inplace=True, 
+                drop=True
+            )
+            
+            
+            odp_orbit_members = pd.concat([
+                odp_orbit_members, 
+                attributions[["orbit_id", "obs_id", "residual_ra_arcsec", "residual_dec_arcsec", "chi2", "mjd_utc"]]]
+            )
+            odp_orbit_members.drop_duplicates(
+                subset=["orbit_id", "obs_id"],
+                keep="first",
+                inplace=True
+            )
+            odp_orbits.sort_values(
+                by=["orbit_id"],
+                inplace=True
+            )
+            odp_orbit_members.sort_values(
+                by=["orbit_id", "mjd_utc"],
+                inplace=True
+            )
+            odp_orbit_members.reset_index(
+                inplace=True,
+                drop=True
+            )
+            
+            if "covariance" in orbits.columns:
+                odp_orbits = odp_orbits[['orbit_id', 'epoch', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'covariance']]
+            else:
+                odp_orbits = odp_orbits[['orbit_id', 'epoch', 'x', 'y', 'z', 'vx', 'vy', 'vz']]
+            odp_orbit_members = odp_orbit_members[['orbit_id', 'obs_id']]
+            
+            odp_orbits, odp_orbit_members = differentialCorrection(
+                odp_orbits,
+                odp_orbit_members,
+                observations, 
+                rchi2_threshold=rchi2_threshold,
+                min_obs=min_obs,
+                contamination_percentage=contamination_percentage,
+                delta=delta, 
+                method=method,
+                max_iter=max_iter,
+                threads=threads,
+                fit_epoch=False,
+                backend=backend,
+                backend_kwargs=backend_kwargs,
+                verbose=False
+            )
+            odp_orbit_members = odp_orbit_members[odp_orbit_members["outlier"] == 0]
+            
+            obs_id_occurences = odp_orbit_members["obs_id"].value_counts()
+            duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
+            
+            num_duplicate_obs_iter = len(duplicate_obs_ids)
+            if num_duplicate_obs_iter == 0:
+                converged = True
+            elif num_duplicate_obs_iter == num_duplicate_obs_prev:
+                converged = True
+            else:
+                num_duplicate_obs_prev = num_duplicate_obs_iter
+            
+            iterations += 1
+            if iterations == 50:
+                break
+                    
+    else:
+        odp_orbits = pd.DataFrame(
+            columns=[
+                "orbit_id",
+                "epoch",
+                "x",
+                "y",
+                "z",
+                "vx",
+                "vy",
+                "vz",
+                "covariance",
+                "arc_length",
+                "num_obs",
+                "chi2",
+                "rchi2"
+            ]
+        )
+
+        odp_orbit_members = pd.DataFrame(
+            columns=[
+                "orbit_id", 
+                "obs_id", 
+                "residual_ra_arcsec", 
+                "residual_dec_arcsec", 
+                "chi2",
+                "outlier"
+            ]
+        )
+            
+    time_end = time.time()
+    if verbose:
+        print("Number of attribution / differential correction iterations: {}".format(iterations))
+        print("Extended and/or merged {} orbits into {} orbits.".format(len(orbits), len(odp_orbits)))
+        print("Total time in seconds: {}".format(time_end - time_start))   
+        print("-------------------------------")
+        print("")
     
-    od_orbits = od_orbits.sort_values(by=["orbit_id"])
-    od_orbit_members = od_orbit_members.merge(observations[["obs_id", "mjd_utc"]], on="obs_id", how="left")
-    od_orbit_members.sort_values(
-        by=["orbit_id", "mjd_utc"],
-        inplace=True
-    )
-    od_orbits.drop(
-        columns=["covariances", "arc_length", "num_obs", "chi2", "num_params"],
-        inplace=True
-    )
-    od_orbit_members.drop(
-        columns=["mjd_utc"],
-        inplace=True
-    )
-    
-    return od_orbits, od_orbit_members
+    return odp_orbits, odp_orbit_members

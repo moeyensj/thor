@@ -10,7 +10,7 @@ from itertools import combinations
 from functools import partial
 
 from ..config import Config
-from ..main import identifySubsetLinkages
+from ..utils import identifySubsetLinkages
 from ..backend import _init_worker
 from ..backend import MJOLNIR
 from ..backend import PYOORB
