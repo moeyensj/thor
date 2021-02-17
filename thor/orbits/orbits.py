@@ -476,6 +476,7 @@ class Orbits:
         with np.printoptions(precision=17):
             df.to_csv(
                 file,
+                index=False
             )
         return 
 
@@ -484,7 +485,7 @@ class Orbits:
 
         df = pd.read_csv(
             file,
-            index_col=0, 
+            index_col=False, 
             header=[0, 1], 
             converters={
                 "covariance" : lambda x: np.array(ast.literal_eval(','.join(x.replace('[ ', '[').split())))
