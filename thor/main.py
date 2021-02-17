@@ -10,16 +10,20 @@ from astropy.time import Time
 from .config import Config
 from .cell import Cell
 from .orbit import TestOrbit
+from .orbits import Orbits
 from .orbits import generateEphemeris
-from .orbits import iod
+from .orbits import initialOrbitDetermination
+from .orbits import differentialCorrection
+from .orbits import mergeAndExtendOrbits
 from .backend import _init_worker
 from .utils import identifySubsetLinkages
 
 
 USE_RAY = Config.USE_RAY
+USE_GPU = Config.USE_GPU
+USE_GPU = False
 NUM_THREADS = Config.NUM_THREADS
 
-USE_GPU = False
 if USE_GPU:
     import cudf
     from cuml.cluster import DBSCAN
@@ -35,9 +39,8 @@ __all__ = [
     "clusterVelocity",
     "clusterVelocity_worker",
     "clusterAndLink",
+    "runTHOROrbit"
 ]
-
-USE_RAY = False
 
 def rangeAndShift_worker(observations, ephemeris, cell_area=10):
     
@@ -707,3 +710,133 @@ def clusterAndLink(
         print("")
         
     return all_clusters, cluster_members
+
+def runTHOROrbit(
+        preprocessed_observations, 
+        orbit,
+        range_shift_config=Config.RANGE_SHIFT_CONFIG,
+        cluster_link_config=Config.CLUSTER_LINK_CONFIG,
+        iod_config=Config.IOD_CONFIG,
+        od_config=Config.OD_CONFIG,
+        odp_config=Config.ODP_CONFIG,
+        out_dir=None,
+        verbose=True
+    ):
+    
+    if out_dir is not None:
+        if not os.path.exists(out_dir):
+            os.mkdir(out_dir)
+    
+    # Run range and shift and get the projected observations
+    print("Running range and shift...")
+    projected_observations = rangeAndShift(
+        preprocessed_observations, 
+        orbit, 
+        verbose=False,
+        **range_shift_config
+    )
+    if out_dir is not None:
+        projected_observations.to_csv(
+            os.path.join(out_dir, "projected_observations.csv"),
+            index=False
+            
+        )
+    print("Done. Found {} observations.".format(len(projected_observations)))
+    
+
+    print("Running clustering...")
+    clusters, cluster_members = clusterAndLink(
+        projected_observations, 
+        verbose=False,
+        **cluster_link_config
+    )
+    if out_dir is not None:
+        clusters.to_csv(
+            os.path.join(out_dir, "clusters.csv"),
+            index=False
+        )
+        cluster_members.to_csv(
+            os.path.join(out_dir, "cluster_members.csv"),
+            index=False
+        )
+    print("Done. Found {} clusters.".format(len(clusters)))
+
+    print("Running initial orbit determination...")
+    iod_orbits, iod_orbit_members = initialOrbitDetermination(
+        projected_observations, 
+        cluster_members, 
+        verbose=False,
+        **iod_config
+    )
+    if out_dir is not None:
+        Orbits.from_df(iod_orbits).to_csv(
+            os.path.join(out_dir, "iod_orbits.csv")
+        )
+        iod_orbit_members.to_csv(
+            os.path.join(out_dir, "iod_orbit_members.csv"),
+            index=False
+        )
+    print("Done. Found {} initial orbits.".format(len(iod_orbits)))
+        
+    iod_orbits = iod_orbits[["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz"]]
+    iod_orbit_members = iod_orbit_members[iod_orbit_members["outlier"] == 0][["orbit_id", "obs_id"]]
+
+    print("Running differential correction...")
+    od_orbits, od_orbit_members = differentialCorrection(
+        iod_orbits,
+        iod_orbit_members,
+        projected_observations,
+        verbose=False,
+        **od_config
+    )
+    if out_dir is not None:
+        Orbits.from_df(od_orbits).to_csv(
+            os.path.join(out_dir, "od_orbits.csv")
+        )
+        od_orbit_members.to_csv(
+            os.path.join(out_dir, "od_orbit_members.csv"),
+            index=False
+        )
+    print("Done. Corrected {} initial orbits.".format(len(od_orbits)))
+        
+    od_orbits = od_orbits[["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz", "covariance"]]
+    od_orbit_members = od_orbit_members[od_orbit_members["outlier"] == 0][["orbit_id", "obs_id"]]
+
+    print("Running orbit merging and extending...")
+    odp_orbits, odp_orbit_members = mergeAndExtendOrbits(
+        od_orbits, 
+        od_orbit_members, 
+        projected_observations, 
+        verbose=False,
+        **odp_config
+    )
+    print("Done. Merged/extended {} orbits.".format(len(od_orbits)))
+
+    if out_dir is not None:
+        Orbits.from_df(odp_orbits).to_csv(
+            os.path.join(out_dir, "od+_orbits.csv")
+        )
+        odp_orbit_members.to_csv(
+            os.path.join(out_dir, "od+_orbit_members.csv"),
+            index=False
+        )
+        
+    recovered_orbit_members = odp_orbit_members[odp_orbit_members["outlier"] == 0]
+    recovered_orbit_members.drop(columns="outlier", inplace=True)
+    recovered_orbits = odp_orbits[odp_orbits["orbit_id"].isin(odp_orbit_members["orbit_id"].unique())]
+    for df in [recovered_orbits, recovered_orbit_members]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
+        
+    if out_dir is not None:
+        Orbits.from_df(recovered_orbits).to_csv(
+            os.path.join(out_dir, "recovered_orbits.csv")
+        )
+        recovered_orbit_members.to_csv(
+            os.path.join(out_dir, "recovered_orbit_members.csv"),
+            index=False
+        )
+
+    return recovered_orbits, recovered_orbit_members
