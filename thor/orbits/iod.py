@@ -123,6 +123,7 @@ def iod_worker(
         backend="PYOORB",
         backend_kwargs={}
     ):
+    assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
     
     iod_orbit, iod_orbit_members = iod(
         observations,
@@ -601,7 +602,7 @@ def initialOrbitDetermination(
             inplace=True
         )
         grouped_observations = linked_observations.groupby(by=[linkage_id_col])
-        observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
+        observations_split = [grouped_observations.get_group(g).copy().reset_index(drop=True) for g in grouped_observations.groups]
 
 
         if threads > 1:
@@ -745,6 +746,29 @@ def initialOrbitDetermination(
         iod_orbits[col] = iod_orbits[col].astype(int)
     for col in ["gauss_sol", "outlier"]:
         iod_orbit_members[col] = iod_orbit_members[col].astype(int)
+
+    iod_orbits.sort_values(
+        by=["orbit_id"], 
+        inplace=True
+    )
+    iod_orbit_members = iod_orbit_members.merge(observations[["obs_id", "mjd_utc"]],
+        on="obs_id",
+        how="left"
+    )
+    iod_orbit_members.sort_values(
+        by=["orbit_id", "mjd_utc"], 
+        inplace=True
+    )
+    iod_orbit_members.drop(
+        columns=["mjd_utc"],
+        inplace=True
+    )
+
+    for df in [iod_orbits, iod_orbit_members]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
 
     time_end = time.time()
     if verbose:
