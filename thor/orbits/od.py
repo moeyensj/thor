@@ -1,30 +1,33 @@
+import os
 import time
 import copy
 import uuid
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
+from scipy.linalg import solve
 from functools import partial
 from astropy.time import Time
 
 from ..config import Config
+from ..utils import verifyLinkages
 from ..backend import _init_worker
 from ..backend import PYOORB
 from ..backend import MJOLNIR
 from .orbits import Orbits
 from .residuals import calcResiduals
 
-
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
 
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
 
 __all__ = [
     "od_worker",
     "od",
     "differentialCorrection"
 ]
-
 
 def od_worker(
         orbit, 
@@ -41,7 +44,9 @@ def od_worker(
         backend_kwargs={},
     ):
     assert orbit.ids[0] == observations["orbit_id"].unique()[0]
-    
+    assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
+    assert len(np.unique(observations["mjd_utc"].values)) == len(observations["mjd_utc"].values)
+
     od_orbit, od_orbit_members = od(
         orbit, 
         observations,
@@ -87,7 +92,7 @@ def od(
             "backend should be one of 'MJOLNIR' or 'PYOORB'"
         )
         raise ValueError(err)
-        
+
     observables = ["RA_deg", "Dec_deg"]
         
     obs_ids_all = observations["obs_id"].values
@@ -149,10 +154,25 @@ def od(
     delta_prev = delta
     iterations = 0
     converged = False
+    improved = False
+    DELTA_INCREASE_FACTOR = 10
+    DELTA_DECREASE_FACTOR = 100 
     while not converged and processable:
-       
+        # Make sure delta is well bounded
+        if delta_prev < 1e-12:
+            delta_prev *= DELTA_INCREASE_FACTOR
+        elif delta_prev > 1e-1:
+            delta_prev /= DELTA_DECREASE_FACTOR
+        else:
+            pass
+
+        max_iter_i = (max_iter * (outliers_tried + 1))
         delta_iter = delta_prev
-        
+        if iterations == max_iter_i:
+            if rchi2_prev <= rchi2_threshold:
+                converged = True
+            break
+     
         # Initialize the partials derivatives matrix
         if num_obs > 6 and fit_epoch:
             num_params = 7
@@ -244,8 +264,7 @@ def od(
             
             for n in range(num_obs):
                 A[:, i:i+1, n] = residuals_mod[ids_mask][n:n+1].T / delta_denom
-                
-
+        
         for n in range(num_obs):
             W = np.diag(1 / coords_sigma[n]**2)
             ATWA[:, :, n] = A[:, :, n].T @ W @ A[:, :, n]
@@ -254,24 +273,48 @@ def od(
         ATWA = np.sum(ATWA, axis=2)
         ATWb = np.sum(ATWb, axis=2)
         
-        try:
-            delta_state = np.linalg.solve(ATWA, ATWb).T
-            covariance_matrix = np.linalg.inv(ATWA)
-        except np.linalg.LinAlgError:
+        ATWA_condition = np.linalg.cond(ATWA)
+        ATWb_condition = np.linalg.cond(ATWb)
+
+        if (ATWA_condition > 1e16) or (ATWb_condition > 1e16):
+            delta_prev *= DELTA_INCREASE_FACTOR
             iterations += 1
-            if iterations == (max_iter + (num_outliers * max_iter)):
-                if rchi2_prev <= rchi2_threshold:
-                    converged = True
-                else:
-                    break
             continue
-       
+        elif (ATWA_condition < 1e-16) or (ATWb_condition < 1e-16):
+            delta_prev /= DELTA_DECREASE_FACTOR
+            iterations += 1
+            continue
+        elif np.any(np.isnan(ATWA)) or np.any(np.isnan(ATWb)):
+            delta_prev *= DELTA_INCREASE_FACTOR
+            iterations += 1
+            continue
+        else:
+            try:
+                delta_state = solve(
+                    ATWA, 
+                    ATWb, 
+                ).T
+                covariance_matrix = np.linalg.inv(ATWA)
+            except np.linalg.LinAlgError:
+                delta_prev *= DELTA_INCREASE_FACTOR
+                iterations += 1
+                continue
+        
         if num_params == 6:
             d_state = delta_state
             d_time = 0
         else:
             d_state = delta_state[0, :6]
             d_time = delta_state[0, 6]
+
+        if np.linalg.norm(d_state) < 1e-16:
+            delta_prev *= DELTA_INCREASE_FACTOR
+            iterations += 1
+            continue
+        if np.linalg.norm(d_state) > 100:
+            delta_prev *= DELTA_INCREASE_FACTOR
+            iterations += 1
+            continue
             
         orbit_iter = Orbits(
             orbit_prev.cartesian + d_state,
@@ -299,13 +342,13 @@ def od(
         chi2_iter = stats[0]
         chi2_total_iter = np.sum(chi2_iter[ids_mask])
         rchi2_iter = chi2_total_iter / (2 * num_obs - 6)
-        
+
+        iterations += 1
         # If the new orbit has lower residuals than the previous,
         # accept the orbit and continue iterating until max iterations has been
         # reached. Once max iterations have been reached and the orbit still has not converged
         # to an acceptable solution, try removing an observation as an outlier and iterate again. 
-        max_iter_i = (max_iter * (outliers_tried + 1))
-        if rchi2_iter <= rchi2_prev and iterations <= max_iter_i:
+        if rchi2_iter < rchi2_prev and iterations <= max_iter_i:
 
             orbit_prev = orbit_iter
             residuals_prev = residuals
@@ -313,7 +356,8 @@ def od(
             chi2_prev = chi2_iter
             chi2_total_prev = chi2_total_iter
             rchi2_prev = rchi2_iter
-            
+            improved = True
+
             if rchi2_iter <= rchi2_threshold:
                 converged = True
 
@@ -344,19 +388,7 @@ def od(
         # If the new orbit does not have lower residuals, try changing 
         # delta to see if we get an improvement
         else:
-            
-            # Decrease delta to see if we can get an improvement next iteration
-            delta_prev /= 10
-            
-            if delta_prev < 1e-14:
-                processable = False
-
-        iterations += 1
-        if iterations == (max_iter + (num_outliers * max_iter)):
-            if rchi2_prev <= rchi2_threshold:
-                converged = True
-            else:
-                break
+            delta_prev /= DELTA_DECREASE_FACTOR
 
     if not converged:
        
@@ -376,6 +408,7 @@ def od(
                 "num_iterations",
                 "chi2",
                 "rchi2",
+                "improved",
             ]
         )
         
@@ -399,6 +432,7 @@ def od(
         od_orbit["num_iterations"] = iterations
         od_orbit["chi2"] = chi2_total_prev
         od_orbit["rchi2"] = rchi2_prev
+        od_orbit["improved"] = improved
         
         od_orbit_members = pd.DataFrame({
             "orbit_id" : [orbit_prev.ids[0] for i in range(len(obs_ids_all))],
@@ -444,31 +478,20 @@ def differentialCorrection(
         print("Using {} threads...".format(threads))
     
     if len(orbits) > 0 and len(orbit_members) > 0:
+
+        orbits_, orbit_members_ = verifyLinkages(
+            orbits, 
+            orbit_members,
+            observations
+        )
     
-        linked_observations = orbit_members[orbit_members[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits["orbit_id"].values)].merge(observations, on="obs_id").copy()
-        linked_observations.sort_values(
-            by=["orbit_id", "mjd_utc"], 
-            inplace=True
-        )
-
-        orbits_ = orbits.copy()
-        orbits_.sort_values(
-            by=["orbit_id"],
-            inplace=True
-        )
-        orbits_.reset_index(
-            inplace=True,       
-            drop=True
-        )
-
-
+        linked_observations = orbit_members_[orbit_members_[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits_["orbit_id"].values)].merge(observations, on="obs_id", how="left").copy()
         grouped_observations = linked_observations.groupby(by=["orbit_id"])
-        observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
+        observations_split = [grouped_observations.get_group(g).copy().reset_index(drop=True) for g in grouped_observations.groups]
 
         orbits_initial = Orbits.from_df(orbits_)
         orbits_split = orbits_initial.split(1)
 
-        
         if threads > 1:
 
             if USE_RAY:
@@ -601,6 +624,28 @@ def differentialCorrection(
         od_orbits[col] = od_orbits[col].astype(int)
     for col in ["outlier"]:
         od_orbit_members[col] = od_orbit_members[col].astype(int)
+
+    od_orbits.sort_values(
+        by=["orbit_id"], 
+        inplace=True
+    )
+    od_orbit_members = od_orbit_members.merge(observations[["obs_id", "mjd_utc"]],
+        on="obs_id",
+        how="left"
+    )
+    od_orbit_members.sort_values(
+        by=["orbit_id", "mjd_utc"], 
+        inplace=True
+    )
+    od_orbit_members.drop(
+        columns=["mjd_utc"],
+        inplace=True
+    )
+    for df in [od_orbits, od_orbit_members]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
 
     time_end = time.time()
     if verbose:
