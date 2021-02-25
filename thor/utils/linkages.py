@@ -4,12 +4,45 @@ import numpy as np
 import pandas as pd
 
 __all__ = [
+    "sortLinkages",
     "verifyLinkages",
     "generateCombinations",
     "identifySubsetLinkages",
     "mergeLinkages"
 ]
 
+def sortLinkages(
+        linkages, 
+        linkage_members, 
+        observations,
+        linkage_id_col="orbit_id"
+    ):
+    
+    # Sort the two dataframes by orbit ID and observation time
+    linkages.sort_values(
+        by=[linkage_id_col],
+        inplace=True
+    )
+    linkage_members = linkage_members.merge(
+        observations[["obs_id", "mjd_utc"]],          
+        on="obs_id", 
+        how="left",
+    )
+    linkage_members.sort_values(
+        by=[linkage_id_col, "mjd_utc"],
+        inplace=True
+    )
+    linkage_members.drop(
+        columns=["mjd_utc"],
+        inplace=True
+    )
+    for df in [linkages, linkage_members]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
+        
+    return linkages, linkage_members
 
 def verifyLinkages(linkages, linkage_members, observations, linkage_id_col="orbit_id"):
     
