@@ -11,6 +11,7 @@ from functools import partial
 
 from ..config import Config
 from ..utils import identifySubsetLinkages
+from ..utils import sortLinkages
 from ..backend import _init_worker
 from ..backend import MJOLNIR
 from ..backend import PYOORB
@@ -747,28 +748,12 @@ def initialOrbitDetermination(
     for col in ["gauss_sol", "outlier"]:
         iod_orbit_members[col] = iod_orbit_members[col].astype(int)
 
-    iod_orbits.sort_values(
-        by=["orbit_id"], 
-        inplace=True
+    iod_orbits, iod_orbit_members = sortLinkages(
+        iod_orbits,
+        iod_orbit_members,
+        observations,
+        linkage_id_col="orbit_id"
     )
-    iod_orbit_members = iod_orbit_members.merge(observations[["obs_id", "mjd_utc"]],
-        on="obs_id",
-        how="left"
-    )
-    iod_orbit_members.sort_values(
-        by=["orbit_id", "mjd_utc"], 
-        inplace=True
-    )
-    iod_orbit_members.drop(
-        columns=["mjd_utc"],
-        inplace=True
-    )
-
-    for df in [iod_orbits, iod_orbit_members]:
-        df.reset_index(
-            inplace=True,
-            drop=True
-        )
 
     time_end = time.time()
     if verbose:

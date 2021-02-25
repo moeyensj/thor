@@ -11,6 +11,7 @@ from astropy.time import Time
 
 from ..config import Config
 from ..utils import verifyLinkages
+from ..utils import sortLinkages
 from ..backend import _init_worker
 from ..backend import PYOORB
 from ..backend import MJOLNIR
@@ -43,9 +44,16 @@ def od_worker(
         backend="PYOORB", 
         backend_kwargs={},
     ):
-    assert orbit.ids[0] == observations["orbit_id"].unique()[0]
-    assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
-    assert len(np.unique(observations["mjd_utc"].values)) == len(observations["mjd_utc"].values)
+    try:
+        assert orbit.ids[0] == observations["orbit_id"].unique()[0]
+        assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
+        assert len(np.unique(observations["mjd_utc"].values)) == len(observations["mjd_utc"].values)
+    except:
+        err = (
+            "Invalid observations and orbit have been passed to the OD code.\n"
+            "Orbit ID: {}".format(orbit.ids[0])
+        )
+        raise ValueError(err)
 
     od_orbit, od_orbit_members = od(
         orbit, 
@@ -625,27 +633,12 @@ def differentialCorrection(
     for col in ["outlier"]:
         od_orbit_members[col] = od_orbit_members[col].astype(int)
 
-    od_orbits.sort_values(
-        by=["orbit_id"], 
-        inplace=True
+    od_orbits, od_orbit_members = sortLinkages(
+        od_orbits,
+        od_orbit_members,
+        observations,
+        linkage_id_col="orbit_id"
     )
-    od_orbit_members = od_orbit_members.merge(observations[["obs_id", "mjd_utc"]],
-        on="obs_id",
-        how="left"
-    )
-    od_orbit_members.sort_values(
-        by=["orbit_id", "mjd_utc"], 
-        inplace=True
-    )
-    od_orbit_members.drop(
-        columns=["mjd_utc"],
-        inplace=True
-    )
-    for df in [od_orbits, od_orbit_members]:
-        df.reset_index(
-            inplace=True,
-            drop=True
-        )
 
     time_end = time.time()
     if verbose:
