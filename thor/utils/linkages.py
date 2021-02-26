@@ -17,34 +17,40 @@ def sortLinkages(
         observations,
         linkage_id_col="orbit_id"
     ):
-    
-    # Sort the two dataframes by orbit ID and observation time
-    linkages.sort_values(
+    linkages_sorted = linkages.copy()
+    linkage_members_sorted = linkage_members.copy()
+
+    linkages_sorted.sort_values(
         by=[linkage_id_col],
         inplace=True
     )
-    linkage_members = linkage_members.merge(
+    linkage_members_sorted = linkage_members_sorted.merge(
         observations[["obs_id", "mjd_utc"]],          
         on="obs_id", 
         how="left",
     )
-    linkage_members.sort_values(
-        by=[linkage_id_col, "mjd_utc"],
+    linkage_members_sorted.sort_values(
+        by=[linkage_id_col, "mjd_utc", "obs_id"],
         inplace=True
     )
-    linkage_members.drop(
+    linkage_members_sorted.drop(
         columns=["mjd_utc"],
         inplace=True
     )
-    for df in [linkages, linkage_members]:
+    for df in [linkages_sorted, linkage_members_sorted]:
         df.reset_index(
             inplace=True,
             drop=True
         )
         
-    return linkages, linkage_members
+    return linkages_sorted, linkage_members_sorted
 
-def verifyLinkages(linkages, linkage_members, observations, linkage_id_col="orbit_id"):
+def verifyLinkages(
+        linkages, 
+        linkage_members, 
+        observations, 
+        linkage_id_col="orbit_id"
+    ):
     
     linkages_verified = linkages.copy()
     linkage_members_verified = linkage_members.copy()
@@ -71,7 +77,7 @@ def verifyLinkages(linkages, linkage_members, observations, linkage_id_col="orbi
         on="obs_id",
         how="left"
     )
-    if not np.all(linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"]).values == linkage_members_verified):
+    if not np.all(linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])[["orbit_id", "obs_id"]].values == linkage_members_verified[["orbit_id", "obs_id"]].values):
         warning = (
             "Linkage_members is not sorted by {} and mjd_utc.\n"
             "Sorting..."
@@ -79,7 +85,7 @@ def verifyLinkages(linkages, linkage_members, observations, linkage_id_col="orbi
         warnings.warn(warning.format(linkage_id_col))
 
         linkage_members_verified.sort_values(
-            by=[linkage_id_col, "mjd_utc"], 
+            by=[linkage_id_col, "mjd_utc", "obs_id"], 
             inplace=True
         )
         reset_index = True
