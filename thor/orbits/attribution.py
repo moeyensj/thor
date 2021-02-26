@@ -1,4 +1,5 @@
 import time
+import uuid
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -8,6 +9,9 @@ from sklearn.neighbors import BallTree
 
 from ..config import Config
 from ..backend import _init_worker
+from ..utils import verifyLinkages
+from ..utils import mergeLinkages
+from ..utils import sortLinkages
 from ..utils import identifySubsetLinkages
 from .orbits import Orbits
 from .ephemeris import generateEphemeris
@@ -157,7 +161,7 @@ def attributeObservations(
         observations, 
         eps=5/3600, 
         include_probabilistic=True, 
-        orbits_chunk_size=100,
+        orbits_chunk_size=10,
         observations_chunk_size=100000,
         threads=NUM_THREADS,
         backend="PYOORB", 
@@ -312,33 +316,27 @@ def mergeAndExtendOrbits(
         print("Attempting to merge and extend orbits..")
         print("Minimum observations: {}".format(min_obs))
         
-    odp_orbits = orbits.copy()
-    odp_orbit_members = orbit_members.copy()
+    orbits_iter, orbit_members_iter = verifyLinkages(
+        orbits, 
+        orbit_members, 
+        observations, 
+        linkage_id_col="orbit_id"
+    )
+    observations_iter = observations.copy()
+
     iterations = 0
     num_duplicate_obs_prev = 1e10
-    
-    if len(odp_orbits) > 0:
+    odp_orbits_dfs = []
+    odp_orbit_members_dfs = []
+
+    if len(orbits_iter) > 0:
         converged = False
 
         while not converged:
-            
-            odp_orbits, odp_orbit_members = identifySubsetLinkages(
-                odp_orbits,
-                odp_orbit_members,
-            )
-            odp_orbits = odp_orbits[odp_orbits["subset_of"].isna()]
-            odp_orbit_members = odp_orbit_members[odp_orbit_members["orbit_id"].isin(odp_orbits["orbit_id"].values)]
-            
-            odp_orbit_members = odp_orbit_members.merge(
-                observations[["obs_id", "mjd_utc"]],          
-                on="obs_id", 
-                how="left",
-            )
-            
             # Run attribution
             attributions = attributeObservations(
-                Orbits.from_df(odp_orbits),
-                observations,
+                Orbits.from_df(orbits_iter),
+                observations_iter,
                 eps=eps,
                 include_probabilistic=True,
                 threads=threads,
@@ -348,58 +346,48 @@ def mergeAndExtendOrbits(
                 backend_kwargs=backend_kwargs,
                 verbose=False
             )
-            
-            # For each observation attributed, keep only the attribution
-            # with the lowest chi2 residual
-            attributions.sort_values(
-                by=["obs_id", "chi2"],
-                inplace=True
+
+            assert np.all(np.isin(orbit_members_iter["obs_id"].unique(), observations_iter["obs_id"].unique()))
+
+            # Append attributed observations to the orbit members 
+            # dataframe and then drop any duplicate observations 
+            # that might have been added to each orbit
+            orbit_members_iter = pd.concat([
+                orbit_members_iter, 
+                attributions[["orbit_id", "obs_id", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]]]
             )
-            
-            # Add observation time column to remaining attributions
-            attributions = attributions.merge(
-                observations[["obs_id", "mjd_utc"]],          
-                on="obs_id", 
-                how="left"
-            )
-            attributions.reset_index(
-                inplace=True, 
-                drop=True
-            )
-            
-            
-            odp_orbit_members = pd.concat([
-                odp_orbit_members, 
-                attributions[["orbit_id", "obs_id", "residual_ra_arcsec", "residual_dec_arcsec", "chi2", "mjd_utc"]]]
-            )
-            odp_orbit_members.drop_duplicates(
+            orbit_members_iter.drop_duplicates(
                 subset=["orbit_id", "obs_id"],
                 keep="first",
                 inplace=True
             )
-            odp_orbits.sort_values(
-                by=["orbit_id"],
-                inplace=True
+            
+            # Create a new orbit for each orbit that shares 
+            # observations with another orbit
+            merged_orbits, merged_orbit_members, merged_from = mergeLinkages(
+                orbits_iter, 
+                orbit_members_iter, 
+                observations_iter,
+                linkage_id_col="orbit_id"
             )
-            odp_orbit_members.sort_values(
-                by=["orbit_id", "mjd_utc"],
-                inplace=True
-            )
-            odp_orbit_members.reset_index(
-                inplace=True,
-                drop=True
+
+            if len(merged_orbits) > 0:
+                orbits_iter = pd.concat([orbits_iter, merged_orbits])
+                orbit_members_iter = pd.concat([orbit_members_iter, merged_orbit_members])
+
+            orbits_iter, orbit_members_iter = sortLinkages(
+                orbits_iter,
+                orbit_members_iter[["orbit_id", "obs_id"]],
+                observations_iter,
             )
             
-            if "covariance" in orbits.columns:
-                odp_orbits = odp_orbits[['orbit_id', 'epoch', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'covariance']]
-            else:
-                odp_orbits = odp_orbits[['orbit_id', 'epoch', 'x', 'y', 'z', 'vx', 'vy', 'vz']]
-            odp_orbit_members = odp_orbit_members[['orbit_id', 'obs_id']]
-            
-            odp_orbits, odp_orbit_members = differentialCorrection(
-                odp_orbits,
-                odp_orbit_members,
-                observations, 
+            # Run differential orbit correction on all orbits
+            # with the newly added observations to the orbits 
+            # that had observations attributed to them
+            orbits_iter, orbit_members_iter = differentialCorrection(
+                orbits_iter,
+                orbit_members_iter,
+                observations_iter, 
                 rchi2_threshold=rchi2_threshold,
                 min_obs=min_obs,
                 contamination_percentage=contamination_percentage,
@@ -411,24 +399,90 @@ def mergeAndExtendOrbits(
                 backend=backend,
                 backend_kwargs=backend_kwargs,
                 verbose=False
+            )  
+            orbit_members_iter = orbit_members_iter[orbit_members_iter["outlier"] == 0]
+            orbit_members_iter.reset_index(
+                inplace=True, 
+                drop=True
             )
-            odp_orbit_members = odp_orbit_members[odp_orbit_members["outlier"] == 0]
             
-            obs_id_occurences = odp_orbit_members["obs_id"].value_counts()
+            # Identify any orbits that are subsets of a larger orbit
+            orbits_iter, orbit_members_iter = identifySubsetLinkages(
+                orbits_iter,
+                orbit_members_iter,
+            )
+            # Keep only the orbits that are not a subset of a larger orbit
+            orbits_iter = orbits_iter[orbits_iter["subset_of"].isna()]
+            orbit_members_iter = orbit_members_iter[orbit_members_iter["orbit_id"].isin(orbits_iter["orbit_id"].values)]
+
+            # If orbits were merged before OD, and some of the merged orbits survived OD then remove the orbits
+            # that were used to merge into a larger orbit 
+            if (len(merged_orbits) > 0):
+
+                remaining_merged_orbits = orbits_iter[orbits_iter["orbit_id"].isin(merged_from["orbit_id"].values)]["orbit_id"].values
+                orbits_to_remove = merged_from[merged_from["orbit_id"].isin(remaining_merged_orbits)]["merged_from"].unique()
+
+                orbits_iter = orbits_iter[~orbits_iter["orbit_id"].isin(orbits_to_remove)]
+                orbit_members_iter = orbit_members_iter[orbit_members_iter["orbit_id"].isin(orbits_iter["orbit_id"].values)]
+
+            # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
+            # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
+            # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
+            not_improved = orbits_iter[orbits_iter["improved"] == False]["orbit_id"].values
+            orbits_out = orbits_iter[orbits_iter["orbit_id"].isin(not_improved)].copy()
+            orbit_members_out = orbit_members_iter[orbit_members_iter["orbit_id"].isin(not_improved)].copy()
+            not_improved_obs_ids = orbit_members_out["obs_id"].values
+
+            # If some orbits that were not improved still share observations, keep the orbit with the lowest 
+            # reduced chi2 in the pool of orbits but delete the others.
+            obs_id_occurences = orbit_members_out["obs_id"].value_counts()
             duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
+
+            while len(duplicate_obs_ids) > 0:
+                duplicate_obs_id = duplicate_obs_ids[0]
+
+                orbit_ids = orbit_members_out[orbit_members_out["obs_id"].isin([duplicate_obs_id])]["orbit_id"].values
+                duplicate_orbits = orbits_out[orbits_out["orbit_id"].isin(orbit_ids)]
+                orbit_to_keep = duplicate_orbits[duplicate_orbits["rchi2"] == duplicate_orbits["rchi2"].min()]["orbit_id"].values
+                orbits_to_delete = duplicate_orbits[~duplicate_orbits["orbit_id"].isin(orbit_to_keep)]["orbit_id"].values
+
+                orbits_out = orbits_out[~orbits_out["orbit_id"].isin(orbits_to_delete)]
+                orbit_members_out = orbit_members_out[~orbit_members_out["orbit_id"].isin(orbits_to_delete)]
+
+                orbits_iter = orbits_iter[~orbits_iter["orbit_id"].isin(orbits_to_delete)]
+                orbit_members_iter = orbit_members_iter[~orbit_members_iter["orbit_id"].isin(orbits_to_delete)]
+
+                obs_id_occurences = orbit_members_out["obs_id"].value_counts()
+                duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
             
-            num_duplicate_obs_iter = len(duplicate_obs_ids)
-            if num_duplicate_obs_iter == 0:
-                converged = True
-            elif num_duplicate_obs_iter == num_duplicate_obs_prev:
-                converged = True
-            else:
-                num_duplicate_obs_prev = num_duplicate_obs_iter
-            
+            observations_iter = observations_iter[~observations_iter["obs_id"].isin(orbit_members_out["obs_id"].values)]
+            orbit_members_iter = orbit_members_iter[~orbit_members_iter["orbit_id"].isin(orbits_out["orbit_id"].values)]
+            orbit_members_iter = orbit_members_iter[orbit_members_iter["obs_id"].isin(observations_iter["obs_id"].values)]
+            orbits_iter = orbits_iter[orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())]
+
+            orbit_members_iter = orbit_members_iter[["orbit_id", "obs_id"]]
+
+            odp_orbits_dfs.append(orbits_out)
+            odp_orbit_members_dfs.append(orbit_members_out)
+
             iterations += 1
-            if iterations == 50:
-                break
-                    
+            if len(orbits_iter) == 0:
+                converged = True
+
+        odp_orbits = pd.concat(odp_orbits_dfs)
+        odp_orbit_members = pd.concat(odp_orbit_members_dfs)
+
+        odp_orbits.drop(
+            columns=["subset_of", "improved"],
+            inplace=True
+        )
+        odp_orbits, odp_orbit_members = sortLinkages(
+            odp_orbits,
+            odp_orbit_members,
+            observations,
+            linkage_id_col="orbit_id"
+        )
+
     else:
         odp_orbits = pd.DataFrame(
             columns=[
@@ -458,7 +512,7 @@ def mergeAndExtendOrbits(
                 "outlier"
             ]
         )
-            
+
     time_end = time.time()
     if verbose:
         print("Number of attribution / differential correction iterations: {}".format(iterations))

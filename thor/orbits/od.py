@@ -598,6 +598,11 @@ def differentialCorrection(
             drop=True
         )
 
+        for col in ["num_obs"]:
+            od_orbits[col] = od_orbits[col].astype(int)
+        for col in ["outlier"]:
+            od_orbit_members[col] = od_orbit_members[col].astype(int)
+        
     else:
         od_orbits = pd.DataFrame(
             columns=[
@@ -627,11 +632,6 @@ def differentialCorrection(
                 "outlier"
             ]
         )
-
-    for col in ["num_obs"]:
-        od_orbits[col] = od_orbits[col].astype(int)
-    for col in ["outlier"]:
-        od_orbit_members[col] = od_orbit_members[col].astype(int)
 
     od_orbits, od_orbit_members = sortLinkages(
         od_orbits,
