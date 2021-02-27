@@ -31,7 +31,7 @@ class Config:
     USE_GPU = False
 
     RANGE_SHIFT_CONFIG = {
-        "cell_area" : 100, 
+        "cell_area" : 1000, 
         "threads" : NUM_THREADS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
@@ -67,8 +67,8 @@ class Config:
         "min_obs" : MIN_OBS,
         "contamination_percentage" : CONTAMINATION_PERCENTAGE,
         "rchi2_threshold" : 100,
-        "delta" : 1e-8,
-        "max_iter" : 20,
+        "delta" : 1e-6,
+        "max_iter" : 10,
         "method" : "central",
         "fit_epoch" : False,
         "test_orbit" : None,
@@ -80,13 +80,13 @@ class Config:
     ODP_CONFIG = {
         "min_obs" : MIN_OBS,
         "contamination_percentage" : CONTAMINATION_PERCENTAGE,
-        "rchi2_threshold" : 5,
-        "eps" : 2/3600, 
-        "delta" : 1e-4,
-        "max_iter" : 20,
+        "rchi2_threshold" : 100,
+        "eps" : 1/3600, 
+        "delta" : 1e-6,
+        "max_iter" : 10,
         "method" : "central",
         "fit_epoch" : False,
-        "orbits_chunk_size" : 10,
+        "orbits_chunk_size" : 1,
         "observations_chunk_size" : 100000,
         "threads" : NUM_THREADS,
         "backend" : BACKEND,
