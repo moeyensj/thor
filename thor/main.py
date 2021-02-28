@@ -813,9 +813,9 @@ def runTHOROrbit(
     print("Done. Merged/extended {} orbits.".format(len(od_orbits)))
 
     if out_dir is not None:
-        Orbits.from_df(odp_orbits).to_csv(
-            os.path.join(out_dir, "od+_orbits.csv")
-        )
+        
+        logger.debug("Saved od+_orbits.csv.")
+
         odp_orbit_members.to_csv(
             os.path.join(out_dir, "od+_orbit_members.csv"),
             index=False
