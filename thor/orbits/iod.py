@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import uuid
+import logging
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -21,6 +22,8 @@ from .ephemeris import generateEphemeris
 
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "selectObservations",
@@ -498,8 +501,7 @@ def initialOrbitDetermination(
         identify_subsets=True,
         threads=NUM_THREADS,
         backend="PYOORB",
-        backend_kwargs={},
-        verbose=True
+        backend_kwargs={}
     ):
     """
     Run initial orbit determination on linkages found in observations.
@@ -583,13 +585,9 @@ def initialOrbitDetermination(
             "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
                 the chi2 threshold) [float]
     """
+    logger.info("Running initial orbit determination...")
+
     time_start = time.time()
-    if verbose:
-        print("THOR: initialOrbitDetermination")
-        print("-------------------------------")
-        print("Running initial orbit determination...")
-        print("Observation selection method: {}".format(observation_selection_method))
-        print("Using {} threads...".format(threads))
     
     if len(observations) > 0 and len(linkage_members) > 0:
 
@@ -697,21 +695,6 @@ def initialOrbitDetermination(
             inplace=True,
             drop=True
         )
-        if verbose:
-            print("Found {} initial orbits.".format(len(iod_orbits)))
-            print()
-
-        if identify_subsets:
-            if verbose:
-                print("Identifying subsets...")
-            iod_orbits, iod_orbit_members = identifySubsetLinkages(
-                iod_orbits, 
-                iod_orbit_members, 
-                linkage_id_col="orbit_id"
-            )
-            if verbose:
-                print("Done. {} subset orbits identified.".format(len(iod_orbits[~iod_orbits["subset_of"].isna()])))
-                print()
     
     else:
         iod_orbits = pd.DataFrame(
@@ -748,6 +731,16 @@ def initialOrbitDetermination(
     for col in ["gauss_sol", "outlier"]:
         iod_orbit_members[col] = iod_orbit_members[col].astype(int)
 
+    logger.info("Found {} initial orbits.".format(len(iod_orbits)))
+
+    if identify_subsets and len(iod_orbits) > 0:
+        iod_orbits, iod_orbit_members = identifySubsetLinkages(
+            iod_orbits, 
+            iod_orbit_members, 
+            linkage_id_col="orbit_id"
+        )
+        logger.info("{} subset orbits identified.".format(len(iod_orbits[~iod_orbits["subset_of"].isna()])))
+
     iod_orbits, iod_orbit_members = sortLinkages(
         iod_orbits,
         iod_orbit_members,
@@ -756,9 +749,6 @@ def initialOrbitDetermination(
     )
 
     time_end = time.time()
-    if verbose:
-        print("Total time in seconds: {}".format(time_end - time_start))   
-        print("-------------------------------")
-        print("")
-    
+    logger.info("Initial orbit determination completed in {:.3f} seconds.".format(time_end - time_start))   
+
     return iod_orbits, iod_orbit_members

@@ -1,5 +1,6 @@
 import time
 import uuid
+import logging
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -20,6 +21,8 @@ from .od import differentialCorrection
 
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "attribution_worker",
@@ -165,17 +168,12 @@ def attributeObservations(
         observations_chunk_size=100000,
         threads=NUM_THREADS,
         backend="PYOORB", 
-        backend_kwargs={},
-        verbose=True,
+        backend_kwargs={}
     ):
+    logger.info("Running observation attribution...")
+
     time_start = time.time()
-    if verbose:
-        print("THOR: attributeObservations")
-        print("-------------------------------")
-        print("Running attribution...")
-        print("Distance: {} degrees".format(eps))
-        print("Probabilistic residuals: {}".format(include_probabilistic))
-        
+ 
     orbits_split = orbits.split(orbits_chunk_size)
     observations_split = []
     for chunk in range(0, len(observations), observations_chunk_size):
@@ -265,15 +263,11 @@ def attributeObservations(
     )
     
     time_end = time.time()
-    if verbose:
-        print("Attributed {} observations to {} orbits.".format(
-            attributions["obs_id"].nunique(),
-            attributions["orbit_id"].nunique()
-        ))
-        print("Total time in seconds: {}".format(time_end - time_start))   
-        print("-------------------------------")
-        print("")
-        
+    logger.info("Attributed {} observations to {} orbits.".format(
+        attributions["obs_id"].nunique(),
+        attributions["orbit_id"].nunique()
+    ))
+    logger.info("Attribution completed in {:.3f} seconds.".format(time_end - time_start))    
     return attributions
 
 def mergeAndExtendOrbits(
@@ -292,8 +286,7 @@ def mergeAndExtendOrbits(
         observations_chunk_size=100000,
         threads=60,
         backend="PYOORB", 
-        backend_kwargs={},
-        verbose=True
+        backend_kwargs={}
     ):
     """
     Attempt to extend an orbit's observational arc by running 
@@ -309,13 +302,10 @@ def mergeAndExtendOrbits(
     
     
     """
+    logger.info("Running orbit extension and merging...")
+
     time_start = time.time()
-    if verbose:
-        print("THOR: mergeAndExtendOrbits")
-        print("-------------------------------")
-        print("Attempting to merge and extend orbits..")
-        print("Minimum observations: {}".format(min_obs))
-        
+
     orbits_iter, orbit_members_iter = verifyLinkages(
         orbits, 
         orbit_members, 
@@ -344,7 +334,6 @@ def mergeAndExtendOrbits(
                 observations_chunk_size=observations_chunk_size,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
-                verbose=False
             )
 
             assert np.all(np.isin(orbit_members_iter["obs_id"].unique(), observations_iter["obs_id"].unique()))
@@ -398,7 +387,6 @@ def mergeAndExtendOrbits(
                 fit_epoch=False,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
-                verbose=False
             )  
             orbit_members_iter = orbit_members_iter[orbit_members_iter["outlier"] == 0]
             orbit_members_iter.reset_index(
@@ -514,11 +502,8 @@ def mergeAndExtendOrbits(
         )
 
     time_end = time.time()
-    if verbose:
-        print("Number of attribution / differential correction iterations: {}".format(iterations))
-        print("Extended and/or merged {} orbits into {} orbits.".format(len(orbits), len(odp_orbits)))
-        print("Total time in seconds: {}".format(time_end - time_start))   
-        print("-------------------------------")
-        print("")
-    
+    logger.info("Number of attribution / differential correction iterations: {}".format(iterations))
+    logger.info("Extended and/or merged {} orbits into {} orbits.".format(len(orbits), len(odp_orbits)))
+    logger.info("Orbit extension and merging completed in {:.3f} seconds.".format(time_end - time_start))   
+
     return odp_orbits, odp_orbit_members

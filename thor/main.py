@@ -1,6 +1,9 @@
 import os
+import sys
 import time
 import uuid
+import yaml
+import logging
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -18,7 +21,6 @@ from .orbits import mergeAndExtendOrbits
 from .backend import _init_worker
 from .utils import identifySubsetLinkages
 
-
 USE_RAY = Config.USE_RAY
 USE_GPU = Config.USE_GPU
 USE_GPU = False
@@ -33,13 +35,16 @@ else:
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 
+logger = logging.getLogger("thor")
+
 __all__ = [
     "rangeAndShift_worker",
     "rangeAndShift",
     "clusterVelocity",
     "clusterVelocity_worker",
     "clusterAndLink",
-    "runTHOROrbit"
+    "runTHOROrbit",
+    "runTHOR",
 ]
 
 def rangeAndShift_worker(observations, ephemeris, cell_area=10):
@@ -201,7 +206,7 @@ def rangeAndShift(
         threads=NUM_THREADS,
         backend="PYOORB",
         backend_kwargs={},
-        verbose=True
+        logging_level=logging.INFO
     ):
     """
     Propagate the orbit to all observation times in observations. At each epoch gather a circular region of observations of size cell_area
@@ -231,23 +236,19 @@ def rangeAndShift(
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected 
         backend.
-    verbose : bool, optional
-        Print progress statements? 
-        [Default = True]
         
     Returns
     -------
     projected_observations : {`~pandas.DataFrame`, -1}
         Observations dataframe (from cell.observations) with columns containing
         projected coordinates. 
-    """
+    """    
+    logger.setLevel(logging_level)
+
     time_start = time.time()
-    if verbose == True:
-        print("THOR: rangeAndShift")
-        print("-------------------------------")
-        print("Running range and shift...")
-        print("Assuming r = {} AU".format(orbit.cartesian[0, :3]))
-        print("Assuming v = {} AU per day".format(orbit.cartesian[0, 3:]))
+    logger.info("Running range and shift...")
+    logger.info("Assuming r = {} au".format(orbit.cartesian[0, :3]))
+    logger.info("Assuming v = {} au per day".format(orbit.cartesian[0, 3:]))
 
     # Build observers dictionary: keys are observatory codes with exposure times (as astropy.time objects)
     # as values
@@ -305,8 +306,6 @@ def rangeAndShift(
     ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
     ephemeris_split = [ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups]
     
-    if verbose:
-        print("Using {} threads...".format(threads))
     if threads > 1:
 
         if USE_RAY:
@@ -370,12 +369,9 @@ def rangeAndShift(
         )
     
     time_end = time.time()
-    if verbose == True:
-        print("Done. Final DataFrame has {} observations.".format(len(projected_observations)))
-        print("Total time in seconds: {}".format(time_end - time_start))  
-        print("-------------------------------")
-        print("")
-        
+    logger.info("Found {} observations.".format(len(projected_observations)))
+    logger.info("Range and shift completed in {:.3f} seconds.".format(time_end - time_start))  
+
     return projected_observations
 
 def clusterAndLink(
@@ -390,7 +386,7 @@ def clusterAndLink(
         min_samples=5,
         identify_subsets=False,
         threads=NUM_THREADS, 
-        verbose=True
+        logging_level=logging.INFO
     ):
     """
     Cluster and link correctly projected (after ranging and shifting)
@@ -445,11 +441,16 @@ def clusterAndLink(
         
     Returns
     -------
-    all_clusters : `~pandas.DataFrame`
+    clusters : `~pandas.DataFrame`
         DataFrame with the cluster ID, the number of observations, and the x and y velocity. 
     cluster_members : `~pandas.DataFrame`
         DataFrame containing the cluster ID and the observation IDs of its members. 
     """ 
+    logger.setLevel(logging_level)
+
+    time_start_cluster = time.time()
+    logger.info("Running velocity space clustering...")
+
     # Extract useful quantities
     obs_ids = observations["obs_id"].values
     theta_x = observations["theta_x_deg"].values
@@ -491,44 +492,36 @@ def clusterAndLink(
     else:
         raise ValueError("")
         
-    time_start_cluster = time.time()
-    if verbose == True:
-        print("THOR: clusterAndLink")
-        print("-------------------------------")
-        print("Running velocity space clustering...")
-        print("X velocity range: {}".format(vx_range))
+    logger.info("X velocity range: {}".format(vx_range))
+    if vx_values is not None:
+        logger.info("X velocity values: {}".format(vx_bins))
+    else:
+        logger.info("X velocity bins: {}".format(vx_bins))
         
-        if vx_values is not None:
-            print("X velocity values: {}".format(vx_bins))
-        else:
-            print("X velocity bins: {}".format(vx_bins))
-            
-        print("Y velocity range: {}".format(vy_range))
-        if vy_values is not None:
-            print("Y velocity values: {}".format(vy_bins))
-        else:
-            print("Y velocity bins: {}".format(vy_bins))
-        if vx_values is not None:
-            print("User defined x velocity values: True")
-        else: 
-            print("User defined x velocity values: False")
-        if vy_values is not None:
-            print("User defined y velocity values: True")
-        else:
-            print("User defined y velocity values: False")
-            
-        if vx_values is None and vy_values is None:
-            print("Velocity grid size: {}".format(vx_bins * vy_bins))
-        else: 
-            print("Velocity grid size: {}".format(vx_bins))
-        print("Max sample distance: {}".format(eps))
-        print("Minimum samples: {}".format(min_samples))
+    logger.info("Y velocity range: {}".format(vy_range))
+    if vy_values is not None:
+        logger.info("Y velocity values: {}".format(vy_bins))
+    else:
+        logger.info("Y velocity bins: {}".format(vy_bins))
+    if vx_values is not None:
+        logger.info("User defined x velocity values: True")
+    else: 
+        logger.info("User defined x velocity values: False")
+    if vy_values is not None:
+        logger.info("User defined y velocity values: True")
+    else:
+        logger.info("User defined y velocity values: False")
+        
+    if vx_values is None and vy_values is None:
+        logger.info("Velocity grid size: {}".format(vx_bins * vy_bins))
+    else: 
+        logger.info("Velocity grid size: {}".format(vx_bins))
+    logger.info("Max sample distance: {}".format(eps))
+    logger.info("Minimum samples: {}".format(min_samples))
     
     possible_clusters = []
     if threads > 1 and not USE_GPU:
-        if verbose:
-            print("Using {} threads...".format(threads))
-            
+    
         if USE_RAY:
             shutdown = False
             if not ray.is_initialized():
@@ -591,13 +584,9 @@ def clusterAndLink(
                 )
             )
     time_end_cluster = time.time()    
-    
-    if verbose == True:
-        print("Done. Completed in {} seconds.".format(time_end_cluster - time_start_cluster))
-        print("")
-        
-    if verbose == True:
-        print("Restructuring clusters...")
+    logger.info("Clustering completed in {:.3f} seconds.".format(time_end_cluster - time_start_cluster))
+
+    logger.info("Restructuring clusters...")
     time_start_restr = time.time()
     
     possible_clusters = pd.DataFrame({"clusters": possible_clusters})
@@ -645,10 +634,10 @@ def clusterAndLink(
         )
         possible_clusters["cluster_id"] = [str(uuid.uuid4().hex) for i in range(len(possible_clusters))]
 
-        # Make all_clusters DataFrame
-        all_clusters = possible_clusters.join(cluster_velocities)
-        all_clusters.reset_index(drop=True, inplace=True)
-        all_clusters = all_clusters[["cluster_id", "vtheta_x", "vtheta_y"]]
+        # Make clusters DataFrame
+        clusters = possible_clusters.join(cluster_velocities)
+        clusters.reset_index(drop=True, inplace=True)
+        clusters = clusters[["cluster_id", "vtheta_x", "vtheta_y"]]
 
         # Make cluster_members DataFrame
         cluster_members = possible_clusters.reset_index(drop=True).copy()
@@ -659,57 +648,48 @@ def clusterAndLink(
         cluster_members.reset_index(inplace=True)
         cluster_members.drop("level_1", axis=1, inplace=True)        
 
-        # Calculate arc length and add it to the all_clusters dataframe
+        # Calculate arc length and add it to the clusters dataframe
         cluster_members_time = cluster_members.merge(
             observations[["obs_id", "mjd_utc"]], 
             on="obs_id", 
             how="left"
         )
-        all_clusters_time = cluster_members_time.groupby(
+        clusters_time = cluster_members_time.groupby(
             by=["cluster_id"])["mjd_utc"].apply(lambda x: x.max() - x.min()).to_frame()
-        all_clusters_time.reset_index(
+        clusters_time.reset_index(
             inplace=True
         )
-        all_clusters_time.rename(
+        clusters_time.rename(
             columns={"mjd_utc" : "arc_length"}, 
             inplace=True
         )
-        all_clusters = all_clusters.merge(
-            all_clusters_time[["cluster_id", "arc_length"]],
+        clusters = clusters.merge(
+            clusters_time[["cluster_id", "arc_length"]],
             on="cluster_id",
             how="left",
         )
        
     else: 
         cluster_members = pd.DataFrame(columns=["cluster_id", "obs_id"])
-        all_clusters = pd.DataFrame(columns=["cluster_id", "vtheta_x", "vtheta_y", "arc_length"])
+        clusters = pd.DataFrame(columns=["cluster_id", "vtheta_x", "vtheta_y", "arc_length"])
         
         
     time_end_restr = time.time() 
-    if verbose == True:
-        print("Done. Completed in {} seconds.".format(time_end_restr - time_start_restr))
-        print("")
-        
+    logger.info("Restructuring completed in {:.3f} seconds.".format(time_end_restr - time_start_restr))
+
     if identify_subsets == True:
-        if verbose == True:
-            print("Identifying subsets...")
-        all_clusters, cluster_members = identifySubsetLinkages(
-            all_clusters, 
+        logger.info("Identifying subsets...")
+        clusters, cluster_members = identifySubsetLinkages(
+            clusters, 
             cluster_members,
             linkage_id_col="cluster_id"
         )
-        if verbose == True:
-            print("Done. {} subset clusters identified.".format(len(all_clusters[~all_clusters["subset_of"].isna()])))
+        logger.info("Done. {} subset clusters identified.".format(len(clusters[~clusters["subset_of"].isna()])))
 
-   
-    if verbose == True:
-        print("")
-        print("Found {} clusters.".format(len(all_clusters)))
-        print("Total time in seconds: {}".format(time_end_restr - time_start_cluster))   
-        print("-------------------------------")
-        print("")
-        
-    return all_clusters, cluster_members
+    logger.info("Found {} clusters.".format(len(clusters)))
+    logger.info("Clustering and restructuring completed in {:.3f} seconds.".format(time_end_restr - time_start_cluster))   
+
+    return clusters, cluster_members
 
 def runTHOROrbit(
         preprocessed_observations, 
@@ -720,109 +700,152 @@ def runTHOROrbit(
         od_config=Config.OD_CONFIG,
         odp_config=Config.ODP_CONFIG,
         out_dir=None,
-        verbose=True
+        if_exists="continue",
+        logging_level=logging.INFO
     ):
-    
+    logger = logging.getLogger("thor")
+    logger.setLevel(logging_level)
+
+    RUN_CONFIG = {
+        "RANGE_SHIFT_CONFIG" : range_shift_config,
+        "CLUSTER_LINK_CONFIG" : cluster_link_config,
+        "IOD_CONFIG" : iod_config,
+        "OD_CONFIG" : od_config,
+        "ODP_CONFIG" : odp_config
+    }
+
     if out_dir is not None:
         if not os.path.exists(out_dir):
             os.mkdir(out_dir)
-    
+
+        file_handler = logging.FileHandler(
+            os.path.join(out_dir, "thor.log"),
+            encoding="utf-8", 
+            delay=False
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_format = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)s] [%(thread)s] %(message)s (%(filename)s, %(funcName)s, %(lineno)d)', datefmt='%Y-%m-%d %H:%M:%S')
+        file_handler.setFormatter(file_format)
+        logger.addHandler(file_handler)
+
+        orbit.to_csv(
+            os.path.join(out_dir, "test_orbit.csv")
+        )
+        logger.debug("Saved test_orbit.csv.")
+
+        # Save a file with the pipeline configuration parameters
+        with open(os.path.join(out_dir, "config.yml"), "w") as config_out:
+            yaml.dump(RUN_CONFIG, config_out)
+        
+        logger.debug("Saved config.yml.")
+
     # Run range and shift and get the projected observations
-    print("Running range and shift...")
     projected_observations = rangeAndShift(
         preprocessed_observations, 
         orbit, 
-        verbose=False,
         **range_shift_config
     )
     if out_dir is not None:
         projected_observations.to_csv(
             os.path.join(out_dir, "projected_observations.csv"),
             index=False
-            
         )
-    print("Done. Found {} observations.".format(len(projected_observations)))
-    
-
-    print("Running clustering...")
+        logger.debug("Saved projected_observations.csv.")
+   
     clusters, cluster_members = clusterAndLink(
         projected_observations, 
-        verbose=False,
         **cluster_link_config
     )
+
     if out_dir is not None:
         clusters.to_csv(
             os.path.join(out_dir, "clusters.csv"),
             index=False
         )
+        logger.debug("Saved clusters.csv.")
+
         cluster_members.to_csv(
             os.path.join(out_dir, "cluster_members.csv"),
             index=False
         )
-    print("Done. Found {} clusters.".format(len(clusters)))
+        logger.debug("Saved cluster_members.csv.")
 
-    print("Running initial orbit determination...")
     iod_orbits, iod_orbit_members = initialOrbitDetermination(
         projected_observations, 
         cluster_members, 
-        verbose=False,
         **iod_config
     )
     if out_dir is not None:
         Orbits.from_df(iod_orbits).to_csv(
             os.path.join(out_dir, "iod_orbits.csv")
         )
+        logger.debug("Saved iod_orbits.csv.")
+
         iod_orbit_members.to_csv(
             os.path.join(out_dir, "iod_orbit_members.csv"),
             index=False
         )
-    print("Done. Found {} initial orbits.".format(len(iod_orbits)))
+        logger.debug("Saved iod_orbit_members.csv.")
         
     iod_orbits = iod_orbits[["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz"]]
     iod_orbit_members = iod_orbit_members[iod_orbit_members["outlier"] == 0][["orbit_id", "obs_id"]]
+    iod_orbits = iod_orbits[iod_orbits["orbit_id"].isin(iod_orbit_members["orbit_id"].unique())]
+    for df in [iod_orbits, iod_orbit_members]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
 
-    print("Running differential correction...")
     od_orbits, od_orbit_members = differentialCorrection(
         iod_orbits,
         iod_orbit_members,
         projected_observations,
-        verbose=False,
         **od_config
     )
     if out_dir is not None:
         Orbits.from_df(od_orbits).to_csv(
             os.path.join(out_dir, "od_orbits.csv")
         )
+        logger.debug("Saved od_orbits.csv.")
+
         od_orbit_members.to_csv(
             os.path.join(out_dir, "od_orbit_members.csv"),
             index=False
         )
-    print("Done. Corrected {} initial orbits.".format(len(od_orbits)))
+        logger.debug("Saved od_orbit_members.csv.")
         
-    od_orbits = od_orbits[["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz", "covariance"]]
     od_orbit_members = od_orbit_members[od_orbit_members["outlier"] == 0][["orbit_id", "obs_id"]]
+    od_orbits = od_orbits[od_orbits["orbit_id"].isin(od_orbit_members["orbit_id"].unique())]
+    for df in [od_orbits, od_orbit_members]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
 
-    print("Running orbit merging and extending...")
     odp_orbits, odp_orbit_members = mergeAndExtendOrbits(
         od_orbits, 
         od_orbit_members, 
         projected_observations, 
-        verbose=False,
         **odp_config
     )
-    print("Done. Merged/extended {} orbits.".format(len(od_orbits)))
 
     if out_dir is not None:
-        
+        Orbits.from_df(odp_orbits).to_csv(
+            os.path.join(out_dir, "od+_orbits.csv")
+        )
         logger.debug("Saved od+_orbits.csv.")
 
         odp_orbit_members.to_csv(
             os.path.join(out_dir, "od+_orbit_members.csv"),
             index=False
         )
+        logger.debug("Saved od+_orbit_members.csv.")
         
     recovered_orbit_members = odp_orbit_members[odp_orbit_members["outlier"] == 0]
-    recovered_orbit_members.drop(columns="outlier", inplace=True)
+    recovered_orbit_members.drop(
+        columns="outlier", 
+        inplace=True
+    )
     recovered_orbits = odp_orbits[odp_orbits["orbit_id"].isin(odp_orbit_members["orbit_id"].unique())]
     for df in [recovered_orbits, recovered_orbit_members]:
         df.reset_index(
@@ -834,9 +857,118 @@ def runTHOROrbit(
         Orbits.from_df(recovered_orbits).to_csv(
             os.path.join(out_dir, "recovered_orbits.csv")
         )
+        logger.debug("Saved recovered_orbits.csv.")
+        
         recovered_orbit_members.to_csv(
             os.path.join(out_dir, "recovered_orbit_members.csv"),
             index=False
         )
+        logger.debug("Saved recovered_orbit_members.csv.")
 
+    logger.removeHandler(file_handler)
     return recovered_orbits, recovered_orbit_members
+
+def runTHOR(
+        preprocessed_observations, 
+        test_orbits,
+        range_shift_config=Config.RANGE_SHIFT_CONFIG,
+        cluster_link_config=Config.CLUSTER_LINK_CONFIG,
+        iod_config=Config.IOD_CONFIG,
+        od_config=Config.OD_CONFIG,
+        odp_config=Config.ODP_CONFIG,
+        out_dir=None,
+        logging_level=logging.INFO
+    ):
+    logger.setLevel(logging_level)
+    
+    if out_dir is not None:
+        if not os.path.exists(out_dir):
+            os.mkdir(out_dir)
+            
+        preprocessed_observations.to_csv(
+            os.path.join(out_dir, "preprocessed_observations.csv"),
+            index=False
+        )
+        logger.debug("Saved preprocessed_observations.csv.")
+    
+    test_orbit_dfs = []
+    recovered_orbits_dfs = []
+    recovered_orbit_members_dfs = []
+    obs_ids_linked = []
+    
+    for i, orbit_i in enumerate(test_orbits.split(1)):
+        
+        time_start = time.time()
+        orbit_id = "{:08d}".format(i)
+
+        if out_dir is not None:
+            orbit_dir = os.path.join(out_dir, "orbit_{}".format(orbit_id))
+        else:
+            orbit_dir = None
+        
+        linked_mask = (~preprocessed_observations["obs_id"].isin(obs_ids_linked))
+        
+        recovered_orbits_i, recovered_orbit_members_i = runTHOROrbit(
+            preprocessed_observations[linked_mask], 
+            orbit_i,
+            range_shift_config=range_shift_config,
+            cluster_link_config=cluster_link_config,
+            iod_config=iod_config,
+            od_config=od_config,
+            odp_config=odp_config,
+            out_dir=orbit_dir,
+            logging_level=logging_level
+        )
+        
+        if len(recovered_orbits_i) > 0:
+            recovered_orbits_i.insert(0, "test_orbit_id", orbit_id)
+            recovered_orbit_members_i.insert(0, "test_orbit_id", orbit_id)
+            obs_ids_linked_i = recovered_orbit_members_i["obs_id"].unique()
+            obs_ids_linked = np.concatenate([obs_ids_linked, obs_ids_linked_i])
+            
+            orbits_recovered = len(recovered_orbits_i)
+            observations_linked = len(obs_ids_linked_i)
+        else:
+            orbits_recovered = 0
+            observations_linked = 0
+            
+        test_orbit_i = orbit_i.to_df(include_units=False)
+        test_orbit_i.insert(0, "test_orbit_id", orbit_id)
+        test_orbit_i["orbits_recovered"] = orbits_recovered
+        test_orbit_i["observations_linked"] = observations_linked
+        test_orbit_dfs.append(test_orbit_i)
+        
+        recovered_orbits_dfs.append(recovered_orbits_i)
+        recovered_orbit_members_dfs.append(recovered_orbit_members_i)  
+        
+        time_end = time.time()
+    
+    test_orbits = pd.concat(test_orbit_dfs)
+    recovered_orbits = pd.concat(recovered_orbits_dfs)
+    recovered_orbit_members = pd.concat(recovered_orbit_members_dfs)
+    
+    for df in [test_orbits, recovered_orbits, recovered_orbit_members]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
+        
+    if out_dir is not None:
+        test_orbits.to_csv(
+            os.path.join(out_dir, "test_orbits.csv"),
+            index=False
+        )
+        logger.debug("Saved test_orbits.csv.")
+        
+        Orbits.from_df(recovered_orbits).to_csv(
+            os.path.join(out_dir, "recovered_orbits.csv")
+        )
+        logger.debug("Saved recovered_orbits.csv.")
+
+        recovered_orbit_members.to_csv(
+            os.path.join(out_dir, "recovered_orbit_members.csv"),
+            index=False
+        )
+        logger.debug("Saved recovered_orbit_members.csv.")
+    
+    return test_orbits, recovered_orbits, recovered_orbit_members

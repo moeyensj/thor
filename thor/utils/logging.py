@@ -6,7 +6,7 @@ __all__ = [
     "setupLogger"
 ]
 
-def setupLogger(out_dir=None):
+def setupLogger(name, out_dir=None):
     """
     Create or get a Python logger for THOR. If out_dir is passed, 
     then a file handler will be added to the logger.
@@ -17,7 +17,7 @@ def setupLogger(out_dir=None):
         Logger with a stream handler to stdout, and if out_dir is defined 
         an additional file handler to {out_dir}/thor.log.
     """
-    logger = logging.getLogger("THOR")
+    logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
     add_stream_handler = False

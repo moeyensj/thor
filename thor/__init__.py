@@ -1,3 +1,5 @@
+import logging
+
 from .version import __version__
 from .config import *
 from .constants import *
@@ -13,3 +15,5 @@ from .orbit import *
 from .cell import * 
 from .plotting import *
 from .main import *
+
+logger = setupLogger(__name__)

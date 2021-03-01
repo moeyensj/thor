@@ -2,6 +2,7 @@ import os
 import time
 import copy
 import uuid
+import logging
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
@@ -10,6 +11,7 @@ from functools import partial
 from astropy.time import Time
 
 from ..config import Config
+from ..utils import setupLogger
 from ..utils import verifyLinkages
 from ..utils import sortLinkages
 from ..backend import _init_worker
@@ -23,6 +25,8 @@ NUM_THREADS = Config.NUM_THREADS
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "od_worker",
@@ -163,13 +167,13 @@ def od(
     iterations = 0
     converged = False
     improved = False
-    DELTA_INCREASE_FACTOR = 10
+    DELTA_INCREASE_FACTOR = 5
     DELTA_DECREASE_FACTOR = 100 
     while not converged and processable:
         # Make sure delta is well bounded
-        if delta_prev < 1e-12:
+        if delta_prev < 1e-14:
             delta_prev *= DELTA_INCREASE_FACTOR
-        elif delta_prev > 1e-1:
+        elif delta_prev > 1e-2:
             delta_prev /= DELTA_DECREASE_FACTOR
         else:
             pass
@@ -316,11 +320,11 @@ def od(
             d_time = delta_state[0, 6]
 
         if np.linalg.norm(d_state) < 1e-16:
-            delta_prev *= DELTA_INCREASE_FACTOR
+            delta_prev *= DELTA_DECREASE_FACTOR
             iterations += 1
             continue
-        if np.linalg.norm(d_state) > 100:
-            delta_prev *= DELTA_INCREASE_FACTOR
+        if np.linalg.norm(d_state) > 10:
+            delta_prev /= DELTA_DECREASE_FACTOR
             iterations += 1
             continue
             
@@ -468,8 +472,7 @@ def differentialCorrection(
         test_orbit=None,
         threads=60,
         backend="PYOORB", 
-        backend_kwargs={},
-        verbose=True
+        backend_kwargs={}
     ):
     """
     Differentially correct (via finite/central differencing) time. 
@@ -477,13 +480,9 @@ def differentialCorrection(
     Parameters
     ----------
     """
+    logger.info("Running differential correction...")
+    
     time_start = time.time()
-    if verbose:
-        print("THOR: differentialCorrection")
-        print("-------------------------------")
-        print("Running differential correction...")
-        print("Method: {} differencing".format(method))
-        print("Using {} threads...".format(threads))
     
     if len(orbits) > 0 and len(orbit_members) > 0:
 
@@ -641,9 +640,7 @@ def differentialCorrection(
     )
 
     time_end = time.time()
-    if verbose:
-        print("Differentially corrected {} orbits.".format(len(od_orbits)))
-        print("Total time in seconds: {}".format(time_end - time_start))   
-        print("-------------------------------")
-        print("")
+    logger.info("Differentially corrected {} orbits.".format(len(od_orbits)))
+    logger.info("Differential correction completed in {:.3f} seconds.".format(time_end - time_start))   
+
     return od_orbits, od_orbit_members
