@@ -120,71 +120,92 @@ def od(
             scale="utc"
         )
 
-    num_obs = len(observations)
-    processable = True
-    if num_obs < min_obs:
-        processable = False
-    num_outliers = int(num_obs * contamination_percentage / 100.)
-    num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
-    outliers_tried = 0
-    
-    # Calculate chi2 for residuals on the given observations
-    # for the current orbit, the goal is for the orbit to improve 
-    # such that the chi2 improves
-    orbit_prev_ = copy.deepcopy(orbit)
-    
-    ephemeris_prev_ = backend.generateEphemeris(
-        orbit_prev_, 
-        observers,
-        test_orbit=test_orbit, 
-        threads=1
-    )
-    residuals_prev_, stats_prev_ = calcResiduals(
-        coords,
-        ephemeris_prev_[observables].values,
-        sigmas_actual=coords_sigma,
-        include_probabilistic=False
-    )
-    num_obs_ = len(observations)
-    chi2_prev_ = stats_prev_[0]
-    chi2_total_prev_ = np.sum(chi2_prev_)
-    rchi2_prev_ = np.sum(chi2_prev_) / (2 * num_obs - 6)
-
-    # Save the initial orbit in case we need to reset 
-    # to it later
-    orbit_prev = orbit_prev_
-    ephemeris_prev = ephemeris_prev_
-    residuals_prev = residuals_prev_
-    stats_prev = stats_prev_
-    num_obs = num_obs_
-    chi2_prev = chi2_prev_
-    chi2_total_prev = chi2_total_prev_
-    rchi2_prev = rchi2_prev_
-    
-    ids_mask = np.array([True for i in range(num_obs)])
-    obs_id_outlier = []
-    delta_prev = delta
-    iterations = 0
+    # FLAG: can we stop iterating to find a solution?
     converged = False
+    # FLAG: has an orbit with reduced chi2 less than the reduced chi2 of the input orbit been found?
     improved = False
-    DELTA_INCREASE_FACTOR = 5
-    DELTA_DECREASE_FACTOR = 100 
+    # FLAG: has an orbit with reduced chi2 less than the rchi2_threshold been found?    
+    solution_found = False
+    # FLAG: is this orbit processable? Does it have at least min_obs observations?
+    processable = True
+
+    num_obs = len(observations)
+    if num_obs < min_obs:
+        logger.debug("This orbit has fewer than {} observations.".format(min_obs))
+        processable = False
+    else:
+        num_outliers = int(num_obs * contamination_percentage / 100.)
+        num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
+        outliers_tried = 0
+        
+        # Calculate chi2 for residuals on the given observations
+        # for the current orbit, the goal is for the orbit to improve 
+        # such that the chi2 improves
+        orbit_prev_ = copy.deepcopy(orbit)
+        
+        ephemeris_prev_ = backend.generateEphemeris(
+            orbit_prev_, 
+            observers,
+            test_orbit=test_orbit, 
+            threads=1
+        )
+        residuals_prev_, stats_prev_ = calcResiduals(
+            coords,
+            ephemeris_prev_[observables].values,
+            sigmas_actual=coords_sigma,
+            include_probabilistic=False
+        )
+        num_obs_ = len(observations)
+        chi2_prev_ = stats_prev_[0]
+        chi2_total_prev_ = np.sum(chi2_prev_)
+        rchi2_prev_ = np.sum(chi2_prev_) / (2 * num_obs - 6)
+
+        # Save the initial orbit in case we need to reset 
+        # to it later
+        orbit_prev = orbit_prev_
+        ephemeris_prev = ephemeris_prev_
+        residuals_prev = residuals_prev_
+        stats_prev = stats_prev_
+        num_obs = num_obs_
+        chi2_prev = chi2_prev_
+        chi2_total_prev = chi2_total_prev_
+        rchi2_prev = rchi2_prev_
+        
+        ids_mask = np.array([True for i in range(num_obs)])
+        obs_id_outlier = []
+        delta_prev = delta
+        iterations = 0
+        
+        if rchi2_prev <= rchi2_threshold:
+            logger.debug("Orbit already meets reduced chi2 threshold, will attempt to improve further.")
+            solution_found = True
+        else:
+            solution_found = False
+        
+        DELTA_INCREASE_FACTOR = 5
+        DELTA_DECREASE_FACTOR = 10
+
+        max_iter_i = max_iter
+
     while not converged and processable:
+        # Never exceed max_iter times the maximum number of possible
+        # outliers iterations
+        if iterations == max_iter_i and (solution_found or (num_outliers == outliers_tried)):
+            break
+
         # Make sure delta is well bounded
         if delta_prev < 1e-14:
             delta_prev *= DELTA_INCREASE_FACTOR
+            logger.debug("Delta is too small, increasing.")
         elif delta_prev > 1e-2:
             delta_prev /= DELTA_DECREASE_FACTOR
+            logger.debug("Delta is too large, decreasing.")
         else:
             pass
 
-        max_iter_i = (max_iter * (outliers_tried + 1))
         delta_iter = delta_prev
-        if iterations == max_iter_i:
-            if rchi2_prev <= rchi2_threshold:
-                converged = True
-            break
-     
+        logger.debug("Starting iteration {} with delta {}.".format(iterations + 1, delta_iter))
+
         # Initialize the partials derivatives matrix
         if num_obs > 6 and fit_epoch:
             num_params = 7
@@ -206,7 +227,7 @@ def od(
         
         # Modify each component of the state by a small delta
         d = np.zeros((1, 7))
-        for i in range(7):
+        for i in range(num_params):
             
             # zero the delta vector
             d *= 0.0
@@ -275,7 +296,10 @@ def od(
             )            
             
             for n in range(num_obs):
-                A[:, i:i+1, n] = residuals_mod[ids_mask][n:n+1].T / delta_denom
+                try:
+                    A[:, i:i+1, n] = residuals_mod[ids_mask][n:n+1].T / delta_denom
+                except RuntimeError:
+                    print(orbit_prev.ids)
         
         for n in range(num_obs):
             W = np.diag(1 / coords_sigma[n]**2)
@@ -287,16 +311,12 @@ def od(
         
         ATWA_condition = np.linalg.cond(ATWA)
         ATWb_condition = np.linalg.cond(ATWb)
-
-        if (ATWA_condition > 1e16) or (ATWb_condition > 1e16):
-            delta_prev *= DELTA_INCREASE_FACTOR
-            iterations += 1
-            continue
-        elif (ATWA_condition < 1e-16) or (ATWb_condition < 1e-16):
+       
+        if (ATWA_condition > 1e15) or (ATWb_condition > 1e15):
             delta_prev /= DELTA_DECREASE_FACTOR
             iterations += 1
             continue
-        elif np.any(np.isnan(ATWA)) or np.any(np.isnan(ATWb)):
+        if np.any(np.isnan(ATWA)) or np.any(np.isnan(ATWb)):
             delta_prev *= DELTA_INCREASE_FACTOR
             iterations += 1
             continue
@@ -323,7 +343,7 @@ def od(
             delta_prev *= DELTA_DECREASE_FACTOR
             iterations += 1
             continue
-        if np.linalg.norm(d_state) > 10:
+        if np.linalg.norm(d_state) > 100:
             delta_prev /= DELTA_DECREASE_FACTOR
             iterations += 1
             continue
@@ -353,28 +373,38 @@ def od(
         )
         chi2_iter = stats[0]
         chi2_total_iter = np.sum(chi2_iter[ids_mask])
-        rchi2_iter = chi2_total_iter / (2 * num_obs - 6)
+        rchi2_iter = chi2_total_iter / (2 * num_obs - num_params)
 
         iterations += 1
+        logger.debug("Current r-chi2: {}, Previous r-chi2: {}, Max Iterations: {}, Outliers Tried: {}".format(rchi2_iter, rchi2_prev, max_iter_i, outliers_tried))
         # If the new orbit has lower residuals than the previous,
         # accept the orbit and continue iterating until max iterations has been
         # reached. Once max iterations have been reached and the orbit still has not converged
         # to an acceptable solution, try removing an observation as an outlier and iterate again. 
-        if rchi2_iter < rchi2_prev and iterations <= max_iter_i:
+        if ((rchi2_iter < rchi2_prev) or (iterations % max_iter == 1)) and iterations <= max_iter_i:
 
+            if (rchi2_iter >= rchi2_prev) and (iterations % max_iter == 1):
+                logger.debug("Storing first differential correction iteration for these observations.")
+            else:
+                logger.debug("Potential improvement orbit has been found.")
             orbit_prev = orbit_iter
             residuals_prev = residuals
             stats_prev = stats
             chi2_prev = chi2_iter
             chi2_total_prev = chi2_total_iter
+            delta_rchi2 = rchi2_iter - rchi2_prev
             rchi2_prev = rchi2_iter
-            improved = True
+            
+            if rchi2_prev <= rchi2_prev_:
+                improved = True
+        
+            if rchi2_prev <= rchi2_threshold:
+                logger.debug("Potential solution orbit has been found.")
+                solution_found = True
 
-            if rchi2_iter <= rchi2_threshold:
-                converged = True
+        elif num_outliers > 0 and outliers_tried <= num_outliers and iterations > max_iter_i and not solution_found:
 
-        elif num_outliers > 0 and iterations > max_iter_i and outliers_tried <= num_outliers:
-
+            logger.debug("Attemping to identify possible outliers.")
             # Previous fits have failed, lets reset the current best fit orbit back to its original 
             # state and re-run fitting, this time removing outliers
             orbit_prev = orbit_prev_
@@ -385,6 +415,7 @@ def od(
             chi2_prev = chi2_prev_
             chi2_total_prev = chi2_total_prev_
             rchi2_prev = rchi2_prev_
+            delta_prev = delta
             
             # Select i highest observations that contribute to 
             # chi2 (and thereby the residuals)
@@ -395,14 +426,18 @@ def od(
             num_obs = len(observations) - len(obs_id_outlier)
             ids_mask = np.isin(obs_ids_all, obs_id_outlier, invert=True)
 
+            logger.debug("Possible outlier(s): {}".format(obs_id_outlier))
+
             outliers_tried += 1
+            max_iter_i = (max_iter * (outliers_tried + 1))
                 
         # If the new orbit does not have lower residuals, try changing 
         # delta to see if we get an improvement
         else:
+            logger.debug("Orbit did not improve since previous iteration, decrease delta and continue.")
             delta_prev /= DELTA_DECREASE_FACTOR
 
-    if not converged:
+    if not solution_found or not processable:
        
         od_orbit = pd.DataFrame(
             columns=[
@@ -414,6 +449,7 @@ def od(
                 "vx",
                 "vy",
                 "vz",
+                "covariance",
                 "arc_length",
                 "num_obs",
                 "num_params",
