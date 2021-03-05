@@ -113,7 +113,8 @@ class Orbits:
         """
 
         # Make sure that the given epoch(s) are an astropy time object
-        _checkTime(epochs, "epoch")
+        if len(epochs) > 0:
+            _checkTime(epochs, "epoch")
 
         # Make sure that each orbit has a an epoch
         assert len(epochs) == orbits.shape[0]
@@ -249,6 +250,20 @@ class Orbits:
 
         return Orbits(*args, **kwargs)
 
+    def __eq__(self, other):
+
+        eq = True
+        if not np.all(np.isclose(self.cartesian, other.cartesian, rtol=1e-15, atol=1e-15)):
+            eq = False
+        
+        if not np.all(np.isclose(self.epochs.tdb.mjd, other.epochs.tdb.mjd, rtol=1e-15, atol=1e-15)):
+            eq = False
+
+        if not np.all(self.ids == other.ids):
+            eq = False
+    
+        return eq
+
     def split(self, chunk_size):
         objs = []
         for chunk in range(0, self.num_orbits, chunk_size):
@@ -349,10 +364,16 @@ class Orbits:
             Dataframe containing orbits, epochs and IDs. If H, G, and covariances are defined then 
             those are also added to the dataframe.
         """
-        data = {
-            "orbit_id" : self.ids,
-            "epoch" : self.epochs.tdb.mjd
-        }
+        if self.num_orbits > 0:
+            data = {
+                "orbit_id" : self.ids,
+                "epoch" : self.epochs.tdb.mjd
+            }
+        else:
+            data = {
+                "orbit_id" :[],
+                "epoch" : [],
+            }
 
         if include_units:
             orbit_units_str = []
@@ -428,11 +449,14 @@ class Orbits:
         if isinstance(dataframe.columns, pd.MultiIndex):
             dataframe_.columns = dataframe_.columns.droplevel(level=1)
 
-        epochs = Time(
-            dataframe_["epoch"].values,
-            format="mjd",
-            scale="tdb"
-        )
+        if len(dataframe_) > 0:
+            epochs = Time(
+                dataframe_["epoch"].values,
+                format="mjd",
+                scale="tdb"
+            )
+        else:
+            epochs = np.array([])
 
         # Assert orbit type is one of two types otherwise
         # raise a value error
@@ -473,11 +497,12 @@ class Orbits:
         df = self.to_df(
             include_units=True
         )
-        with np.printoptions(precision=17):
-            df.to_csv(
-                file,
-                index=False
-            )
+        df.to_csv(
+            file,
+            index=False,
+            float_format="%.15e",
+            encoding="utf-8"
+        )
         return 
 
     @staticmethod
@@ -485,13 +510,14 @@ class Orbits:
 
         df = pd.read_csv(
             file,
-            index_col=False, 
+            index_col=None, 
             header=[0, 1], 
             converters={
                 "covariance" : lambda x: np.array(ast.literal_eval(','.join(x.replace('[ ', '[').split())))
             },
             dtype={
                 "orbit_id" : str
-            }
+            },
+            float_precision="round_trip"
         )
         return Orbits.from_df(df)
