@@ -253,15 +253,21 @@ class Orbits:
     def __eq__(self, other):
 
         eq = True
-        if not np.all(np.isclose(self.cartesian, other.cartesian, rtol=1e-15, atol=1e-15)):
-            eq = False
-        
-        if not np.all(np.isclose(self.epochs.tdb.mjd, other.epochs.tdb.mjd, rtol=1e-15, atol=1e-15)):
-            eq = False
+        while eq:
+            if len(self) != len(other):
+                return False
 
-        if not np.all(self.ids == other.ids):
-            eq = False
-    
+            if not np.all(np.isclose(self.cartesian, other.cartesian, rtol=1e-15, atol=1e-15)):
+                return False
+            
+            if not np.all(np.isclose(self.epochs.tdb.mjd, other.epochs.tdb.mjd, rtol=1e-15, atol=1e-15)):
+                return False
+
+            if not np.all(self.ids == other.ids):
+                return False
+
+            break
+
         return eq
 
     def split(self, chunk_size):
@@ -516,7 +522,8 @@ class Orbits:
                 "covariance" : lambda x: np.array(ast.literal_eval(','.join(x.replace('[ ', '[').split())))
             },
             dtype={
-                "orbit_id" : str
+                "orbit_id" : str,
+                "test_orbit_id" : str,
             },
             float_precision="round_trip"
         )
