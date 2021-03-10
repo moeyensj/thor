@@ -98,6 +98,7 @@ def clusterVelocity(
         vy, 
         eps=0.005, 
         min_samples=5,
+        min_arc_length=1.0,
     ):
     """
     Clusters THOR projection with different velocities
@@ -127,6 +128,8 @@ def clusterVelocity(
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
+    min_arc_length : float, optional
+        Minimum arc length in units of days for a cluster to be accepted. 
         
     Returns
     -------
@@ -160,10 +163,11 @@ def clusterVelocity(
             
             dt_in_cluster = dt[cluster_mask]
             num_obs = len(dt_in_cluster)
-            if num_obs == len(np.unique(dt_in_cluster)) and num_obs >= min_samples:
+            arc_length = dt_in_cluster.max() - dt_in_cluster.min()
+            if (num_obs == len(np.unique(dt_in_cluster))) and (num_obs >= min_samples) and (arc_length >= min_arc_length):
                 cluster_ids.append(obs_ids[cluster_mask])
 
-    else:
+    if len(cluster_ids) == 0:
         cluster_ids = np.NaN
                 
     del db
@@ -178,6 +182,7 @@ def clusterVelocity_worker(
         dt=None,
         eps=None,
         min_samples=None,
+        min_arc_length=None,
     ):
     """
     Helper function to multiprocess clustering.
@@ -192,6 +197,7 @@ def clusterVelocity_worker(
         vy,
         eps=eps,
         min_samples=min_samples,
+        min_arc_length=min_arc_length,
     )
     return cluster_ids
 
@@ -382,6 +388,7 @@ def clusterAndLink(
         vy_values=None,
         eps=0.005, 
         min_samples=5,
+        min_arc_length=1.0,
         identify_subsets=False,
         threads=NUM_THREADS
     ):
@@ -454,8 +461,6 @@ def clusterAndLink(
 
     # Select detections in first exposure
     first = np.where(mjd == mjd.min())[0]
-    theta_x0 = theta_x[first]
-    theta_y0 = theta_y[first]
     mjd0 = mjd[first][0]
     dt = mjd - mjd0
 
@@ -534,7 +539,8 @@ def clusterAndLink(
                         vxi, 
                         vyi, 
                         eps=eps, 
-                        min_samples=min_samples
+                        min_samples=min_samples,
+                        min_arc_length=min_arc_length
                     )
                 )
             possible_clusters = ray.get(p)
@@ -555,6 +561,7 @@ def clusterAndLink(
                         dt=dt,
                         eps=eps,
                         min_samples=min_samples,
+                        min_arc_length=min_arc_length
                     ),
                     zip(vxx, vyy)
                 )
@@ -575,7 +582,8 @@ def clusterAndLink(
                     vxi, 
                     vyi, 
                     eps=eps, 
-                    min_samples=min_samples
+                    min_samples=min_samples,
+                    min_arc_length=min_arc_length
                 )
             )
     time_end_cluster = time.time()    
@@ -989,11 +997,13 @@ def runTHOROrbit(
         if not status["mergeAndExtendOrbits"]:
             
             #orbit_ids = od_orbits[od_orbits["arc_length"] > 1.0]["orbit_id"].values
-            orbit_ids = od_orbits[(od_orbits["r_sigma"] / od_orbits["r"]) < 0.1]["orbit_id"].values
+            #orbit_ids = od_orbits[(od_orbits["r_sigma"] / od_orbits["r"]) < 0.1]["orbit_id"].values
 
             recovered_orbits, recovered_orbit_members = mergeAndExtendOrbits(
-                od_orbits[od_orbits["orbit_id"].isin(orbit_ids)], 
-                od_orbit_members[od_orbit_members["orbit_id"].isin(orbit_ids)], 
+                #od_orbits[od_orbits["orbit_id"].isin(orbit_ids)], 
+                #od_orbit_members[od_orbit_members["orbit_id"].isin(orbit_ids)], 
+                od_orbits,
+                od_orbit_members,
                 projected_observations,
                 **odp_config
             )
@@ -1161,7 +1171,7 @@ def runTHOR(
                     )                    
                     logger.info("Previous status file found.")
 
-        if not test_orbits_eq or not config_eq:
+        if (not test_orbits_eq or not config_eq) and continue_:
             if if_exists == "continue":
                 logger.critical("Previous run cannot continue from previous state.")
                 raise ValueError("Previous run cannot continue from previous state. Set if_exists to 'erase' or change/delete the output directory.")

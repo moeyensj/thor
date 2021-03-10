@@ -119,6 +119,7 @@ def iod_worker(
         observations,
         observation_selection_method="combinations",
         min_obs=6,
+        min_arc_length=1.0,
         rchi2_threshold=10**3,
         contamination_percentage=0.0,
         iterate=False, 
@@ -133,6 +134,7 @@ def iod_worker(
         observations,
         observation_selection_method=observation_selection_method,
         min_obs=min_obs,
+        min_arc_length=min_arc_length,
         rchi2_threshold=rchi2_threshold,
         contamination_percentage=contamination_percentage,
         iterate=iterate, 
@@ -152,6 +154,7 @@ if USE_RAY:
 def iod(
         observations,
         min_obs=6,
+        min_arc_length=1.0,
         contamination_percentage=0.0,
         rchi2_threshold=200,
         observation_selection_method="combinations",
@@ -413,10 +416,12 @@ def iod(
                     num_obs_new = len(observations) - len(remove)
                     rchi2_new = chi2_new / (2 * num_obs_new - 6)
                     
+                    ids_mask = np.isin(obs_ids_all, obs_id_outlier, invert=True)
+                    arc_length = times_all[ids_mask].utc.mjd.max() - times_all[ids_mask].utc.mjd.min()
                     
                     # If the updated reduced chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
-                    if rchi2_new <= rchi2_threshold:
+                    if rchi2_new <= rchi2_threshold and arc_length >= min_arc_length:
                         orbit_sol = iod_orbits[i:i+1]
                         obs_ids_sol = ids
                         chi2_total_sol = chi2_new
@@ -492,6 +497,7 @@ def initialOrbitDetermination(
         observations, 
         linkage_members, 
         min_obs=6,
+        min_arc_length=1.0,
         contamination_percentage=20.0,
         rchi2_threshold=10**3,
         observation_selection_method='combinations',
@@ -621,6 +627,7 @@ def initialOrbitDetermination(
                             observation_selection_method=observation_selection_method,
                             rchi2_threshold=rchi2_threshold,
                             min_obs=min_obs,
+                            min_arc_length=min_arc_length,
                             contamination_percentage=contamination_percentage,
                             iterate=iterate, 
                             light_time=light_time,
@@ -646,6 +653,7 @@ def initialOrbitDetermination(
                         observation_selection_method=observation_selection_method,
                         rchi2_threshold=rchi2_threshold,
                         min_obs=min_obs,
+                        min_arc_length=min_arc_length,
                         contamination_percentage=contamination_percentage,
                         iterate=iterate, 
                         light_time=light_time,
@@ -674,6 +682,7 @@ def initialOrbitDetermination(
                     observation_selection_method=observation_selection_method,
                     rchi2_threshold=rchi2_threshold,
                     min_obs=min_obs,
+                    min_arc_length=min_arc_length,
                     contamination_percentage=contamination_percentage,
                     iterate=iterate,
                     light_time=light_time,

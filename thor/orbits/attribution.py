@@ -275,6 +275,7 @@ def mergeAndExtendOrbits(
         orbit_members, 
         observations, 
         min_obs=6,
+        min_arc_length=1.0,
         contamination_percentage=20.0,
         rchi2_threshold=5,
         eps=1/3600, 
@@ -379,6 +380,7 @@ def mergeAndExtendOrbits(
                 observations_iter, 
                 rchi2_threshold=rchi2_threshold,
                 min_obs=min_obs,
+                min_arc_length=min_arc_length,
                 contamination_percentage=contamination_percentage,
                 delta=delta, 
                 method=method,
@@ -426,12 +428,13 @@ def mergeAndExtendOrbits(
             obs_id_occurences = orbit_members_out["obs_id"].value_counts()
             duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
 
+            logger.debug("There are {} observations that appear in more than one orbit.".format(len(duplicate_obs_ids)))
             while len(duplicate_obs_ids) > 0:
                 duplicate_obs_id = duplicate_obs_ids[0]
 
                 orbit_ids = orbit_members_out[orbit_members_out["obs_id"].isin([duplicate_obs_id])]["orbit_id"].values
                 duplicate_orbits = orbits_out[orbits_out["orbit_id"].isin(orbit_ids)]
-                orbit_to_keep = duplicate_orbits[duplicate_orbits["rchi2"] == duplicate_orbits["rchi2"].min()]["orbit_id"].values
+                orbit_to_keep = duplicate_orbits.sort_values(by=["r_sigma", "v_sigma"], ascending=[True, True])["orbit_id"].values[:1]
                 orbits_to_delete = duplicate_orbits[~duplicate_orbits["orbit_id"].isin(orbit_to_keep)]["orbit_id"].values
 
                 orbits_out = orbits_out[~orbits_out["orbit_id"].isin(orbits_to_delete)]

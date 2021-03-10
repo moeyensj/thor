@@ -22,6 +22,7 @@ class Config:
     None
     """
     MIN_OBS = 5
+    MIN_ARC_LENGTH = 1.0
     CONTAMINATION_PERCENTAGE = 20
     BACKEND = "PYOORB"
     BACKEND_KWARGS = {}
@@ -46,11 +47,13 @@ class Config:
         "vy_values" : None,
         "eps" : 5/3600, 
         "min_samples" : MIN_OBS,
-        "threads" : NUM_THREADS
+        "min_arc_length" : MIN_ARC_LENGTH,
+        "threads" : NUM_THREADS,
     }
 
     IOD_CONFIG = {
         "min_obs" : MIN_OBS,
+        "min_arc_length" : MIN_ARC_LENGTH,
         "contamination_percentage" : CONTAMINATION_PERCENTAGE,
         "rchi2_threshold" : 1000,
         "observation_selection_method" : "combinations",
@@ -65,10 +68,11 @@ class Config:
 
     OD_CONFIG = {
         "min_obs" : MIN_OBS,
+        "min_arc_length" : MIN_ARC_LENGTH,
         "contamination_percentage" : CONTAMINATION_PERCENTAGE,
-        "rchi2_threshold" : 100,
+        "rchi2_threshold" : 10,
         "delta" : 1e-6,
-        "max_iter" : 10,
+        "max_iter" : 5,
         "method" : "central",
         "fit_epoch" : False,
         "test_orbit" : None,
@@ -79,11 +83,12 @@ class Config:
 
     ODP_CONFIG = {
         "min_obs" : MIN_OBS,
-        "contamination_percentage" : CONTAMINATION_PERCENTAGE,
-        "rchi2_threshold" : 100,
+        "min_arc_length" : MIN_ARC_LENGTH,
+        "contamination_percentage" : 0.0,
+        "rchi2_threshold" : 5,
         "eps" : 1/3600, 
-        "delta" : 1e-6,
-        "max_iter" : 10,
+        "delta" : 1e-8,
+        "max_iter" : 5,
         "method" : "central",
         "fit_epoch" : False,
         "orbits_chunk_size" : 1,

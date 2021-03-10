@@ -27,6 +27,8 @@ os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
 logger = logging.getLogger(__name__)
+#logger = logging.getLogger("thor")
+#logger.handlers[0].setLevel(logging.INFO)
 
 __all__ = [
     "od_worker",
@@ -39,6 +41,7 @@ def od_worker(
         observations,
         rchi2_threshold=100,
         min_obs=5,
+        min_arc_length=1.0,
         contamination_percentage=20,
         delta=1e-6,
         max_iter=20,
@@ -64,6 +67,7 @@ def od_worker(
         observations,
         rchi2_threshold=rchi2_threshold,
         min_obs=min_obs,
+        min_arc_length=min_arc_length,
         contamination_percentage=contamination_percentage,
         delta=delta,
         max_iter=max_iter,
@@ -84,6 +88,7 @@ def od(
         observations,
         rchi2_threshold=100,
         min_obs=5,
+        min_arc_length=1.0,
         contamination_percentage=0.0,
         delta=1e-6,
         max_iter=20,
@@ -128,6 +133,13 @@ def od(
     solution_found = False
     # FLAG: is this orbit processable? Does it have at least min_obs observations?
     processable = True
+    # FLAG: is this the first iteration with a successful differential correction (this solution is always stored as the solution
+    # which needs to be improved.. input orbits may not have been previously corrected with current set of observations so this
+    # forces at least one succesful iteration to have been taken.)
+    first_solution = True
+
+    # Force differential corrector to iterate max_iter per allowable set of observations
+    force_iter = False
 
     num_obs = len(observations)
     if num_obs < min_obs:
@@ -136,6 +148,7 @@ def od(
     else:
         num_outliers = int(num_obs * contamination_percentage / 100.)
         num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
+        logger.debug("Maximum number of outliers allowed: {}".format(num_outliers))
         outliers_tried = 0
         
         # Calculate chi2 for residuals on the given observations
@@ -172,24 +185,22 @@ def od(
         rchi2_prev = rchi2_prev_
         
         ids_mask = np.array([True for i in range(num_obs)])
+        times_all = ephemeris_prev["mjd_utc"].values
         obs_id_outlier = []
         delta_prev = delta
         iterations = 0
-        
-        if rchi2_prev <= rchi2_threshold:
-            logger.debug("Orbit already meets reduced chi2 threshold, will attempt to improve further.")
-            solution_found = True
-        else:
-            solution_found = False
-        
+
         DELTA_INCREASE_FACTOR = 5
-        DELTA_DECREASE_FACTOR = 10
+        DELTA_DECREASE_FACTOR = 100
 
         max_iter_i = max_iter
 
     while not converged and processable:
         # Never exceed max_iter times the maximum number of possible
         # outliers iterations
+        if iterations == (max_iter * (num_outliers + 1)):
+            break
+
         if iterations == max_iter_i and (solution_found or (num_outliers == outliers_tried)):
             break
 
@@ -327,6 +338,21 @@ def od(
                     ATWb, 
                 ).T
                 covariance_matrix = np.linalg.inv(ATWA)
+
+                r_sigma = np.linalg.norm(np.diag(covariance_matrix[0])[:3])
+                r = np.linalg.norm(orbit_prev.cartesian[0, :3])
+                if (r_sigma / r) > 1:
+                    delta_prev /= DELTA_DECREASE_FACTOR
+                    iterations += 1
+                    logger.debug("Covariance matrix is largely unconstrained. Discarding solution.")
+                    continue
+
+                if np.any(np.isnan(covariance_matrix)):
+                    delta_prev *= DELTA_INCREASE_FACTOR
+                    iterations += 1
+                    logger.debug("Covariance matrix contains NaNs. Discarding solution.")
+                    continue
+
             except np.linalg.LinAlgError:
                 delta_prev *= DELTA_INCREASE_FACTOR
                 iterations += 1
@@ -339,13 +365,14 @@ def od(
             d_state = delta_state[0, :6]
             d_time = delta_state[0, 6]
 
-        if np.linalg.norm(d_state) < 1e-16:
+        if np.linalg.norm(d_state[:3]) < 1e-16:
             delta_prev *= DELTA_DECREASE_FACTOR
             iterations += 1
             continue
-        if np.linalg.norm(d_state) > 100:
+        if np.linalg.norm(d_state[:3]) > 100:
             delta_prev /= DELTA_DECREASE_FACTOR
             iterations += 1
+            logger.debug("Change in state is more than 100 au, discarding solution.")
             continue
             
         orbit_iter = Orbits(
@@ -374,6 +401,7 @@ def od(
         chi2_iter = stats[0]
         chi2_total_iter = np.sum(chi2_iter[ids_mask])
         rchi2_iter = chi2_total_iter / (2 * num_obs - num_params)
+        arc_length = times_all[ids_mask].max() -  times_all[ids_mask].min()
 
         iterations += 1
         logger.debug("Current r-chi2: {}, Previous r-chi2: {}, Max Iterations: {}, Outliers Tried: {}".format(rchi2_iter, rchi2_prev, max_iter_i, outliers_tried))
@@ -381,10 +409,10 @@ def od(
         # accept the orbit and continue iterating until max iterations has been
         # reached. Once max iterations have been reached and the orbit still has not converged
         # to an acceptable solution, try removing an observation as an outlier and iterate again. 
-        if ((rchi2_iter < rchi2_prev) or (iterations % max_iter == 1)) and iterations <= max_iter_i:
+        if ((rchi2_iter < rchi2_prev) or first_solution) and iterations <= max_iter_i and arc_length >= min_arc_length:
 
-            if (rchi2_iter >= rchi2_prev) and (iterations % max_iter == 1):
-                logger.debug("Storing first differential correction iteration for these observations.")
+            if first_solution:
+                logger.debug("Storing first successful differential correction iteration for these observations.")
             else:
                 logger.debug("Potential improvement orbit has been found.")
             orbit_prev = orbit_iter
@@ -401,6 +429,11 @@ def od(
             if rchi2_prev <= rchi2_threshold:
                 logger.debug("Potential solution orbit has been found.")
                 solution_found = True
+
+                if (iterations % max_iter) > 1 and not force_iter:
+                    converged = True
+
+            first_solution = False
 
         elif num_outliers > 0 and outliers_tried <= num_outliers and iterations > max_iter_i and not solution_found:
 
@@ -425,19 +458,26 @@ def od(
             obs_id_outlier = obs_ids_all[remove]
             num_obs = len(observations) - len(obs_id_outlier)
             ids_mask = np.isin(obs_ids_all, obs_id_outlier, invert=True)
-
+            arc_length = times_all[ids_mask].max() -  times_all[ids_mask].min()
+            
             logger.debug("Possible outlier(s): {}".format(obs_id_outlier))
-
             outliers_tried += 1
-            max_iter_i = (max_iter * (outliers_tried + 1))
+            if arc_length >= min_arc_length:
+                max_iter_i = (max_iter * (outliers_tried + 1))
+            else:
+                logger.debug("Removing the outlier will cause the arc length to go below the minimum.")
                 
         # If the new orbit does not have lower residuals, try changing 
         # delta to see if we get an improvement
         else:
-            logger.debug("Orbit did not improve since previous iteration, decrease delta and continue.")
-            delta_prev /= DELTA_DECREASE_FACTOR
+            #logger.debug("Orbit did not improve since previous iteration, decrease delta and continue.")
+            #delta_prev /= DELTA_DECREASE_FACTOR
+            pass
 
-    if not solution_found or not processable:
+    logger.debug("Solution found: {}".format(solution_found))
+    logger.debug("First solution: {}".format(first_solution))
+
+    if not solution_found or not processable or first_solution:
        
         od_orbit = pd.DataFrame(
             columns=[
@@ -450,6 +490,10 @@ def od(
                 "vy",
                 "vz",
                 "covariance",
+                "r",
+                "r_sigma",
+                "v",
+                "v_sigma",
                 "arc_length",
                 "num_obs",
                 "num_params",
@@ -474,6 +518,10 @@ def od(
     else:
         obs_times = observations["mjd_utc"].values[ids_mask]
         od_orbit = orbit_prev.to_df(include_units=False)
+        od_orbit["r"] = np.linalg.norm(orbit_prev.cartesian[0, :3])
+        od_orbit["r_sigma"] = np.linalg.norm(np.diag(orbit_prev.covariance[0])[:3])
+        od_orbit["v"] = np.linalg.norm(orbit_prev.cartesian[0, 3:])
+        od_orbit["v_sigma"] = np.linalg.norm(np.diag(orbit_prev.covariance[0])[3:])
         od_orbit["arc_length"] = np.max(obs_times) - np.min(obs_times)
         od_orbit["num_obs"] = num_obs
         od_orbit["num_params"] = num_params
@@ -499,6 +547,7 @@ def differentialCorrection(
         orbit_members,
         observations, 
         min_obs=5,
+        min_arc_length=1.0,
         contamination_percentage=20,
         rchi2_threshold=100,
         delta=1e-8,
@@ -552,6 +601,7 @@ def differentialCorrection(
                             observations_i,
                             rchi2_threshold=rchi2_threshold,
                             min_obs=min_obs,
+                            min_arc_length=min_arc_length,
                             contamination_percentage=contamination_percentage,
                             delta=delta,
                             max_iter=max_iter,
@@ -578,6 +628,7 @@ def differentialCorrection(
                         od_worker, 
                         rchi2_threshold=rchi2_threshold,
                         min_obs=min_obs,
+                        min_arc_length=min_arc_length,
                         contamination_percentage=contamination_percentage,
                         delta=delta,
                         max_iter=max_iter,
@@ -609,6 +660,7 @@ def differentialCorrection(
                     observations_i,
                     rchi2_threshold=rchi2_threshold,
                     min_obs=min_obs,
+                    min_arc_length=min_arc_length,
                     contamination_percentage=contamination_percentage,
                     delta=delta,
                     max_iter=max_iter,
@@ -650,6 +702,10 @@ def differentialCorrection(
                 "vy",
                 "vz",
                 "covariance",
+                "r",
+                "r_sigma",
+                "v",
+                "v_sigma",
                 "arc_length",
                 "num_obs",
                 "chi2",
