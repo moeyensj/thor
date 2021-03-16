@@ -73,6 +73,7 @@ class Orbits:
             ids=None,
             H=None,
             G=None,
+            orbit_class=None,
             additional_data=None
         ):
         """
@@ -147,6 +148,7 @@ class Orbits:
                 orbits_ = orbits.copy()
             
             self.keplerian = orbits_
+            self.assignOrbitClasses()
             self.orbit_units = KEPLERIAN_UNITS
         else:
             err = (
@@ -154,6 +156,7 @@ class Orbits:
             )
             raise ValueError(err)
 
+        ### THOR prefered orbit type is cartesian, so lets convert to that.
         self.orbit_type = orbit_type
         if self.cartesian is None:
             self.cartesian = convertOrbitalElements(
@@ -161,8 +164,8 @@ class Orbits:
                 "keplerian", 
                 "cartesian"
             )
-            #self.orbit_type = "cartesian"
-
+            self.orbit_type = "cartesian"
+            self.orbit_units = CARTESIAN_UNITS
 
         # If object IDs have been passed make sure each orbit has one
         if ids is not None:
@@ -208,6 +211,13 @@ class Orbits:
         else:
             self.covariance = None
 
+        if orbit_class is not None: 
+            assert len(orbit_class) == self.num_orbits
+            self.orbit_class = np.asarray(orbit_class)
+        else:
+            self.orbit_class = None
+
+
         if additional_data is not None:
             if isinstance(additional_data, pd.DataFrame):
                 assert len(additional_data) == self.num_orbits
@@ -236,7 +246,7 @@ class Orbits:
             args.append(self.__dict__[arg][i])
         
         kwargs = {}
-        for kwarg in ["orbit_type", "orbit_units", "ids", "covariance", "H", "G", "additional_data"]:
+        for kwarg in ["orbit_type", "orbit_units", "ids", "covariance", "H", "G", "orbit_class", "additional_data"]:
             if isinstance(self.__dict__[kwarg], np.ndarray):
                 kwargs[kwarg] = self.__dict__[kwarg][i]
             elif isinstance(self.__dict__[kwarg], pd.DataFrame):
@@ -279,7 +289,7 @@ class Orbits:
                     args.append(self.__dict__[arg][chunk:chunk + chunk_size].copy())
             
             kwargs = {}
-            for kwarg in ["orbit_type", "orbit_units", "ids", "covariance", "H", "G", "additional_data"]:
+            for kwarg in ["orbit_type", "orbit_units", "ids", "covariance", "H", "G", "orbit_class", "additional_data"]:
                 if isinstance(self.__dict__[kwarg], np.ndarray):
                     kwargs[kwarg] = self.__dict__[kwarg][chunk:chunk + chunk_size].copy()
                 elif isinstance(self.__dict__[kwarg], pd.DataFrame):
@@ -294,6 +304,40 @@ class Orbits:
             objs.append(Orbits(*args, **kwargs))
         
         return objs
+
+    def assignOrbitClasses(self):
+
+        if not isinstance(self.keplerian, np.ndarray):
+            raise ValueError("Assigning orbital classes requires keplerian elements.")
+
+        a = self.keplerian[:, 0]
+        e = self.keplerian[:, 1]
+        i = self.keplerian[:, 2]
+        q = a * (1 - e)
+        p = Q = a * (1 + e)
+        
+        classes = np.array(["AST" for i in range(len(self.keplerian))])
+        
+        classes_dict = {
+            "AMO" : np.where((a > 1.0) & (q > 1.017) & (q < 1.3)),
+            "MBA" : np.where((a > 1.0) & (q < 1.017)),
+            "ATE" : np.where((a < 1.0) & (Q > 0.983)),
+            "CEN" : np.where((a > 5.5) & (a < 30.3)),
+            "IEO" : np.where((Q < 0.983))[0],
+            "IMB" : np.where((a < 2.0) & (q > 1.666))[0],
+            "MBA" : np.where((a > 2.0) & (a < 3.2) & (q > 1.666)),
+            "MCA" : np.where((a < 3.2) & (q > 1.3) & (q < 1.666)),
+            "OMB" : np.where((a > 3.2) & (a < 4.6)),
+            "TJN" : np.where((a > 4.6) & (a < 5.5) & (e < 0.3)),
+            "TNO" : np.where((a > 30.1)),
+            "PAA" : np.where((e == 1)),
+            "HYA" : np.where((e > 1)),
+        }
+        for c, v in classes_dict.items():
+            classes[v] = c
+            
+        self.orbit_class = classes
+        return 
 
     @staticmethod
     def fromHorizons(obj_ids, t0):
@@ -415,6 +459,11 @@ class Orbits:
             if include_units:
                 units_index.append("--")
 
+        if self.orbit_class is not None:
+            data["orbit_class"] = self.orbit_class
+            if include_units:
+                units_index.append("--")
+
         dataframe = pd.DataFrame(data)
         if self.additional_data is not None:
             dataframe = dataframe.join(self.additional_data)
@@ -487,7 +536,7 @@ class Orbits:
             "orbit_type" : orbit_type
         }
 
-        columns_optional = ["covariance", "H", "G"]
+        columns_optional = ["covariance", "H", "G", "orbit_class"]
         for col in columns_optional:
             if col in dataframe_.columns:
                 kwargs[col] = dataframe_[col].values
