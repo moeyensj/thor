@@ -171,31 +171,34 @@ def attributeObservations(
         backend_kwargs={}
     ):
     logger.info("Running observation attribution...")
-
     time_start = time.time()
  
-    orbits_split = orbits.split(orbits_chunk_size)
-    observations_split = []
-    for chunk in range(0, len(observations), observations_chunk_size):
-        observations_split.append(observations.iloc[chunk:chunk + observations_chunk_size].copy())
-    
+    # If multi-threading is desired, set up the appropriate pool
     if threads > 1:
-        
-        if USE_RAY:
-            
+        if USE_RAY:    
             shutdown = False
             if not ray.is_initialized():
                 ray.init(num_cpus=threads)
                 shutdown = True
+        else:
+            p = mp.Pool(
+                processes=threads,
+                initializer=_init_worker,
+            ) 
 
-            attribution_dfs = []
-            for obs_i in observations_split:
+    orbits_split = orbits.split(orbits_chunk_size)
+    attribution_dfs = []
+    for chunk in range(0, len(observations), observations_chunk_size):
+        obs_chunk = observations.iloc[chunk:chunk + observations_chunk_size]
+
+        if threads > 1:
+            if USE_RAY:
                 p = []
                 for orbit_i in orbits_split:
                     p.append(
                         attribution_worker.remote(
                             orbit_i,
-                            obs_i,
+                            obs_chunk,
                             eps=eps, 
                             include_probabilistic=include_probabilistic, 
                             backend=backend, 
@@ -205,21 +208,10 @@ def attributeObservations(
                     
                 attribution_dfs_i = ray.get(p)
                 attribution_dfs += attribution_dfs_i
-
-            if shutdown:
-                ray.shutdown()
-        
-        else:
-
-            p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
-            ) 
-            attribution_dfs = []
-            for obs_i in observations_split:
-
-                obs = [obs_i.copy() for i in range(len(orbits_split))]
-
+                
+            else:
+            
+                obs = [obs_chunk for i in range(len(orbits_split))]
                 attribution_dfs_i = p.starmap(
                     partial(
                         attribution_worker, 
@@ -234,23 +226,18 @@ def attributeObservations(
                     ) 
                 )
                 attribution_dfs += attribution_dfs_i
-
-            p.close()  
-            
-    else:
-        attribution_dfs = []
-        for obs_i in observations_split:
+                
+        else:
             for orbit_i in orbits_split:
                 attribution_df_i = attribution_worker(
                     orbit_i,
-                    obs_i,
+                    obs_chunk,
                     eps=eps, 
                     include_probabilistic=include_probabilistic, 
                     backend=backend, 
                     backend_kwargs=backend_kwargs
                 )
                 attribution_dfs.append(attribution_df_i)
-                
         
     attributions = pd.concat(attribution_dfs)
     attributions.sort_values(
@@ -268,6 +255,13 @@ def attributeObservations(
         attributions["orbit_id"].nunique()
     ))
     logger.info("Attribution completed in {:.3f} seconds.".format(time_end - time_start))    
+
+    if threads > 1:
+        if USE_RAY and shutdown:
+            ray.shutdown()    
+        if not USE_RAY:
+            p.close()
+
     return attributions
 
 def mergeAndExtendOrbits(
@@ -397,13 +391,13 @@ def mergeAndExtendOrbits(
             )
             
             # Identify any orbits that are subsets of a larger orbit
-            orbits_iter, orbit_members_iter = identifySubsetLinkages(
-                orbits_iter,
-                orbit_members_iter,
-            )
+            #orbits_iter, orbit_members_iter = identifySubsetLinkages(
+            #    orbits_iter,
+            #    orbit_members_iter,
+            #)
             # Keep only the orbits that are not a subset of a larger orbit
-            orbits_iter = orbits_iter[orbits_iter["subset_of"].isna()]
-            orbit_members_iter = orbit_members_iter[orbit_members_iter["orbit_id"].isin(orbits_iter["orbit_id"].values)]
+            #orbits_iter = orbits_iter[orbits_iter["subset_of"].isna()]
+            #orbit_members_iter = orbit_members_iter[orbit_members_iter["orbit_id"].isin(orbits_iter["orbit_id"].values)]
 
             # If orbits were merged before OD, and some of the merged orbits survived OD then remove the orbits
             # that were used to merge into a larger orbit 
@@ -464,7 +458,7 @@ def mergeAndExtendOrbits(
         odp_orbit_members = pd.concat(odp_orbit_members_dfs)
 
         odp_orbits.drop(
-            columns=["subset_of", "improved"],
+            columns=["improved"],
             inplace=True
         )
         odp_orbits, odp_orbit_members = sortLinkages(

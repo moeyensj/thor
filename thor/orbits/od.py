@@ -577,9 +577,9 @@ def differentialCorrection(
             observations
         )
     
-        linked_observations = orbit_members_[orbit_members_[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits_["orbit_id"].values)].merge(observations, on="obs_id", how="left").copy()
+        linked_observations = orbit_members_[orbit_members_[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits_["orbit_id"].values)].merge(observations, on="obs_id", how="left")
         grouped_observations = linked_observations.groupby(by=["orbit_id"])
-        observations_split = [grouped_observations.get_group(g).copy().reset_index(drop=True) for g in grouped_observations.groups]
+        observations_split = [grouped_observations.get_group(g).reset_index(drop=True) for g in grouped_observations.groups]
 
         orbits_initial = Orbits.from_df(orbits_)
         orbits_split = orbits_initial.split(1)

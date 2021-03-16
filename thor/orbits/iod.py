@@ -595,35 +595,73 @@ def initialOrbitDetermination(
 
     time_start = time.time()
     
+   
     if len(observations) > 0 and len(linkage_members) > 0:
 
-        linked_observations = linkage_members.merge(observations, on="obs_id").copy()
-        linked_observations.sort_values(
-            by=[linkage_id_col, "mjd_utc"], 
-            inplace=True
-        )
-        linked_observations.reset_index(
-            drop=True,
-            inplace=True
-        )
-        grouped_observations = linked_observations.groupby(by=[linkage_id_col])
-        observations_split = [grouped_observations.get_group(g).copy().reset_index(drop=True) for g in grouped_observations.groups]
-
-
         if threads > 1:
-
             if USE_RAY:
                 shutdown = False
                 if not ray.is_initialized():
                     ray.init(num_cpus=threads)
                     shutdown = True
+            else:
+                p = mp.Pool(
+                    processes=threads,
+                    initializer=_init_worker,
+                ) 
 
-                p = []
-                for observations_i in observations_split:
+        iod_orbits_dfs = []
+        iod_orbit_members_dfs = []
 
-                    p.append(
-                        iod_worker.remote(
-                            observations_i,
+        chunk_size = 100000
+        linkage_ids = linkage_members[linkage_id_col].unique()
+        for chunk in range(0, len(linkage_ids), chunk_size):
+
+            linkage_ids_chunk = linkage_ids[chunk:chunk+chunk_size]
+            linkage_members_chunk = linkage_members[linkage_members[linkage_id_col].isin(linkage_ids_chunk)]
+
+            linked_observations = linkage_members_chunk.merge(observations, on="obs_id")
+            linked_observations.sort_values(
+                by=[linkage_id_col, "mjd_utc"], 
+                inplace=True
+            )
+            linked_observations.reset_index(
+                drop=True,
+                inplace=True
+            )
+            grouped_observations = linked_observations.groupby(by=[linkage_id_col])
+            observations_split = [grouped_observations.get_group(g).reset_index(drop=True) for g in grouped_observations.groups]
+
+            if threads > 1:
+
+                if USE_RAY:
+
+                    p = []
+                    for observations_i in observations_split:
+                        p.append(
+                            iod_worker.remote(
+                                observations_i,
+                                observation_selection_method=observation_selection_method,
+                                rchi2_threshold=rchi2_threshold,
+                                min_obs=min_obs,
+                                min_arc_length=min_arc_length,
+                                contamination_percentage=contamination_percentage,
+                                iterate=iterate, 
+                                light_time=light_time,
+                                linkage_id_col=linkage_id_col,
+                                backend=backend,
+                                backend_kwargs=backend_kwargs
+                            )
+                        )
+
+                    iod_orbits_dfs_c, iod_orbit_members_dfs_c = ray.get(p)
+                    iod_orbits_dfs += iod_orbits_dfs_c
+                    iod_orbit_members_dfs += iod_orbit_members_dfs_c
+
+                else:
+                    results = p.starmap(
+                        partial(
+                            iod_worker, 
                             observation_selection_method=observation_selection_method,
                             rchi2_threshold=rchi2_threshold,
                             min_obs=min_obs,
@@ -634,77 +672,54 @@ def initialOrbitDetermination(
                             linkage_id_col=linkage_id_col,
                             backend=backend,
                             backend_kwargs=backend_kwargs
-                        )
+                        ),
+                        zip(
+                            observations_split, 
+                        ) 
                     )
 
-                iod_orbits_dfs, iod_orbit_members_dfs = ray.get(p)
+                    results = list(zip(*results))
+                    iod_orbits_dfs_c = results[0]
+                    iod_orbit_members_dfs_c = results[1]
+                    iod_orbits_dfs += iod_orbits_dfs_c
+                    iod_orbit_members_dfs += iod_orbit_members_dfs_c
 
-                if shutdown:
-                    ray.shutdown()
             else:
-                p = mp.Pool(
-                    processes=threads,
-                    initializer=_init_worker,
-                ) 
 
-                results = p.starmap(
-                    partial(
-                        iod_worker, 
+                for i, observations_i in enumerate(observations_split):
+
+                    iod_orbits_df, iod_orbit_members_df = iod_worker(
+                        observations_i,
                         observation_selection_method=observation_selection_method,
                         rchi2_threshold=rchi2_threshold,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
                         contamination_percentage=contamination_percentage,
-                        iterate=iterate, 
+                        iterate=iterate,
                         light_time=light_time,
                         linkage_id_col=linkage_id_col,
                         backend=backend,
                         backend_kwargs=backend_kwargs
-                    ),
-                    zip(
-                        observations_split, 
-                    ) 
-                )
-                p.close()  
+                    )
+                    iod_orbits_dfs.append(iod_orbits_df)
+                    iod_orbit_members_dfs.append(iod_orbit_members_df)
 
-                results = list(zip(*results))
-                iod_orbits_dfs = results[0]
-                iod_orbit_members_dfs = results[1]
-
-        else:
-
-            iod_orbits_dfs = []
-            iod_orbit_members_dfs = []
-            for i, observations_i in enumerate(observations_split):
-
-                iod_orbits_df, iod_orbit_members_df = iod_worker(
-                    observations_i,
-                    observation_selection_method=observation_selection_method,
-                    rchi2_threshold=rchi2_threshold,
-                    min_obs=min_obs,
-                    min_arc_length=min_arc_length,
-                    contamination_percentage=contamination_percentage,
-                    iterate=iterate,
-                    light_time=light_time,
-                    linkage_id_col=linkage_id_col,
-                    backend=backend,
-                    backend_kwargs=backend_kwargs
-                )
-                iod_orbits_dfs.append(iod_orbits_df)
-                iod_orbit_members_dfs.append(iod_orbit_members_df)
-
-        iod_orbits = pd.concat(iod_orbits_dfs)
-        iod_orbits.reset_index(
-            inplace=True,
-            drop=True
+        iod_orbits = pd.concat(
+            iod_orbits_dfs,
+            ignore_index=True
         )
 
-        iod_orbit_members = pd.concat(iod_orbit_members_dfs)
-        iod_orbit_members.reset_index(
-            inplace=True,
-            drop=True
+        iod_orbit_members = pd.concat(
+            iod_orbit_members_dfs, 
+            ignore_index=True
         )
-    
+
+        if threads > 1:
+            if USE_RAY and shutdown:
+                ray.shutdown()
+            if not USE_RAY:
+                p.close()
+
     else:
         iod_orbits = pd.DataFrame(
             columns=[
