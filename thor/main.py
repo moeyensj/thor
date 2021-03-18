@@ -1212,6 +1212,7 @@ def runTHOR(
     
     # If orbits have previously completed, read the results and continue iterating 
     # through orbits not previously completed.
+    id_offset = 0
     if len(orbits_completed) > 0:
         logger.info("{}/{} orbits have previously finished processing.".format(len(orbits_completed), num_orbits))
 
@@ -1237,14 +1238,13 @@ def runTHOR(
         recovered_orbits_dfs = [recovered_orbits]
         recovered_orbit_members_dfs = [recovered_orbit_members]
         obs_ids_linked = recovered_orbit_members["obs_id"].values
-
-
+        id_offset = len(orbits_completed)
+    
     if len(test_orbits_split) != 0:
-
         for i, orbit_i in enumerate(test_orbits_split):
 
             time_start = time.time()
-            orbit_id = "{:08d}".format(i)
+            orbit_id = "{:08d}".format(i + id_offset)
 
             logger.info("Processing orbit {} ({}/{})...".format(orbit_id, i + 1, num_orbits))
 
@@ -1327,12 +1327,13 @@ def runTHOR(
 
             orbits_completed = np.concatenate([orbits_completed, np.array([orbit_id])])
             if out_dir is not None:
-                np.savetxt(
-                    os.path.join(out_dir, "status.txt"),
-                    orbits_completed,
-                    delimiter="\n",
-                    fmt="%s"
-                )
+                with open(os.path.join(out_dir, "status.txt"), "w") as status_out:
+                    np.savetxt(
+                        status_out,
+                        orbits_completed,
+                        delimiter="\n",
+                        fmt="%s"
+                    )
                 logger.info("Saved status.txt.")
 
           
