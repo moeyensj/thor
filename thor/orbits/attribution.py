@@ -69,6 +69,7 @@ def attribution_worker(
     distances = []
     orbit_ids_associated = []
     obs_ids_associated = []
+    obs_times_associated = []
     eps_rad = np.radians(eps)
     residuals = []
     stats = []
@@ -79,6 +80,7 @@ def attribution_worker(
         assert observations_visit["mjd_utc"].unique()[0] == ephemeris_visit["mjd_utc"].unique()[0]
         
         obs_ids = observations_visit[["obs_id"]].values
+        obs_times = observations_visit[["mjd_utc"]].values
         orbit_ids = ephemeris_visit[["orbit_id"]].values
         coords = observations_visit[["RA_deg", "Dec_deg"]].values
         coords_latlon = observations_visit[["Dec_deg"]].values
@@ -114,6 +116,7 @@ def attribution_worker(
         if len(d[mask]) > 0:
             orbit_ids_associated.append(orbit_ids[i[mask]])
             obs_ids_associated.append(obs_ids[mask[0]])
+            obs_times_associated.append(obs_times[mask[0]])
             distances.append(d[mask].reshape(-1, 1))
             
             residuals_visit, stats_visit = calcResiduals(
@@ -129,12 +132,14 @@ def attribution_worker(
         distances = np.degrees(np.vstack(distances))
         orbit_ids_associated = np.vstack(orbit_ids_associated)
         obs_ids_associated = np.vstack(obs_ids_associated)
+        obs_times_associated = np.vstack(obs_times_associated)
         residuals = np.vstack(residuals)
         stats = np.vstack(stats)
 
         attributions = {
             "orbit_id" : orbit_ids_associated[:, 0],
             "obs_id" : obs_ids_associated[:, 0],
+            "mjd_utc" : obs_times_associated[:, 0],
             "distance" : distances[:, 0],
             "residual_ra_arcsec" : residuals[:, 0] * 3600,
             "residual_dec_arcsec" : residuals[:, 1] * 3600,
@@ -147,7 +152,7 @@ def attribution_worker(
         attributions = pd.DataFrame(attributions)
         
     else:
-        columns = ["orbit_id", "obs_id", "distance", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]
+        columns = ["orbit_id", "obs_id", "mjd_utc", "distance", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]
         if include_probabilistic:
             columns += ["probability", "mahalanobis_distance"]
             
@@ -241,7 +246,7 @@ def attributeObservations(
         
     attributions = pd.concat(attribution_dfs)
     attributions.sort_values(
-        by=["orbit_id", "obs_id", "distance"],
+        by=["orbit_id", "mjd_utc", "distance"],
         inplace=True
     )
     attributions.reset_index(
@@ -333,6 +338,19 @@ def mergeAndExtendOrbits(
 
             assert np.all(np.isin(orbit_members_iter["obs_id"].unique(), observations_iter["obs_id"].unique()))
 
+            # Attributions are sorted by orbit ID, observation time and 
+            # angular distance. Keep only the one observation with smallest distance
+            # for any orbits that have multiple observations attributed at the same observation time.
+            attributions.drop_duplicates(
+                subset=[
+                    "orbit_id", 
+                    "mjd_utc"
+                ], 
+                keep="first",
+                inplace=True,
+                ignore_index=True
+            )
+
             # Append attributed observations to the orbit members 
             # dataframe and then drop any duplicate observations 
             # that might have been added to each orbit
@@ -343,7 +361,13 @@ def mergeAndExtendOrbits(
             orbit_members_iter.drop_duplicates(
                 subset=["orbit_id", "obs_id"],
                 keep="first",
-                inplace=True
+                inplace=True,
+                ignore_index=True
+            )
+            orbits_iter, orbit_members_iter = sortLinkages(
+                orbits_iter,
+                orbit_members_iter[["orbit_id", "obs_id"]],
+                observations_iter,
             )
             
             # Create a new orbit for each orbit that shares 
@@ -422,7 +446,7 @@ def mergeAndExtendOrbits(
             obs_id_occurences = orbit_members_out["obs_id"].value_counts()
             duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
 
-            logger.debug("There are {} observations that appear in more than one orbit.".format(len(duplicate_obs_ids)))
+            logger.info("There are {} observations that appear in more than one orbit.".format(len(duplicate_obs_ids)))
             while len(duplicate_obs_ids) > 0:
                 duplicate_obs_id = duplicate_obs_ids[0]
 
