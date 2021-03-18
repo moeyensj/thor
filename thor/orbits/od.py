@@ -27,8 +27,6 @@ os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
 logger = logging.getLogger(__name__)
-#logger = logging.getLogger("thor")
-#logger.handlers[0].setLevel(logging.INFO)
 
 __all__ = [
     "od_worker",
@@ -339,7 +337,15 @@ def od(
                 ).T
                 covariance_matrix = np.linalg.inv(ATWA)
 
-                r_sigma = np.linalg.norm(np.diag(covariance_matrix[0])[:3])
+                variances = np.diag(covariance_matrix)
+                if np.any(variances <= 0) or np.any(np.isnan(variances)):
+                    delta_prev /= DELTA_DECREASE_FACTOR
+                    iterations += 1
+                    print(variances)
+                    logger.debug("Variances are negative, 0.0 or NaN. Discarding solution.")
+                
+                r_variances = variances[0:3]
+                r_sigma = np.sqrt(np.sum(r_variances))
                 r = np.linalg.norm(orbit_prev.cartesian[0, :3])
                 if (r_sigma / r) > 1:
                     delta_prev /= DELTA_DECREASE_FACTOR
@@ -516,12 +522,16 @@ def od(
         )
     
     else:
+        variances = np.diag(orbit_prev.covariance[0])
+        r_variances = variances[0:3]
+        v_variances = variances[3:6]
+
         obs_times = observations["mjd_utc"].values[ids_mask]
         od_orbit = orbit_prev.to_df(include_units=False)
         od_orbit["r"] = np.linalg.norm(orbit_prev.cartesian[0, :3])
-        od_orbit["r_sigma"] = np.linalg.norm(np.diag(orbit_prev.covariance[0])[:3])
+        od_orbit["r_sigma"] = np.sqrt(np.sum(r_variances))
         od_orbit["v"] = np.linalg.norm(orbit_prev.cartesian[0, 3:])
-        od_orbit["v_sigma"] = np.linalg.norm(np.diag(orbit_prev.covariance[0])[3:])
+        od_orbit["v_sigma"] = np.sqrt(np.sum(v_variances))
         od_orbit["arc_length"] = np.max(obs_times) - np.min(obs_times)
         od_orbit["num_obs"] = num_obs
         od_orbit["num_params"] = num_params
