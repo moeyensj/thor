@@ -1,24 +1,26 @@
 import matplotlib.pyplot as plt
 
-__all__ = ["_setAxes",
-           "_setPercentage"]
+__all__ = [
+    "_setAxes",
+    "_setPercentage"
+]
 
-def _setAxes(ax, coordinateSystem):
+def _setAxes(ax, coordinate_system):
     """
     Helper function to set axes limits depending on the coordinate system.
     
     """
-    if coordinateSystem == "equatorialAngular":
+    if coordinate_system == "equatorialAngular":
         ax.set_xlabel(r"$\alpha$ [deg]")
         ax.set_ylabel(r"$\delta$ [deg]")
-    elif coordinateSystem == "eclipticAngular":
+    elif coordinate_system == "eclipticAngular":
         ax.set_xlabel(r"$\lambda$ [deg]")
         ax.set_ylabel(r"$\beta$ [deg]")
-    elif coordinateSystem == "gnomonic":
+    elif coordinate_system == "gnomonic":
         ax.set_xlabel(r"$\theta_X$ [deg]")
         ax.set_ylabel(r"$\theta_Y$ [deg]")
     else:
-        raise ValueError("coordinateSystem should be one of: 'equatorialAngular', 'eclipticAngular', 'tangentPlane'")
+        raise ValueError("coordinate_system should be one of: 'equatorialAngular', 'eclipticAngular', 'tangentPlane'")
     ax.set_aspect("equal")
     return
 

@@ -4,26 +4,34 @@ import matplotlib.pyplot as plt
 
 from scipy.stats import binned_statistic_2d
 
-__all__ = ["plotBinnedContour",
-           "plotScatterContour"]
+__all__ = [
+    "plotBinnedContour",
+    "plotScatterContour"
+]
 
-def plotBinnedContour(dataframe, 
-                      xColumn,
-                      yColumn, 
-                      zColumn, 
-                      statistic="median", 
-                      logStatistic=False, 
-                      plotCounts=False, 
-                      logCounts=False, 
-                      countLevels=10, 
-                      bins=100, 
-                      mask=None,
-                      xLabel=None,
-                      yLabel=None,
-                      zLabel=None,
-                      contourKwargs={"colors": "red",
-                                      "linewidths": 1},
-                      imshowKwargs={"aspect": "auto"}):
+def plotBinnedContour(
+        dataframe, 
+        x_column,
+        y_column, 
+        z_column, 
+        statistic="median", 
+        log_statistic=False, 
+        plot_counts=False, 
+        log_counts=False, 
+        count_levels=10, 
+        bins=100, 
+        mask=None,
+        x_label=None,
+        y_label=None,
+        z_label=None,
+        contour_kwargs={
+            "colors": "red",
+            "linewidths": 1
+        },
+        imshow_kwargs={
+            "aspect": "auto"
+            }
+        ):
     """
     Plots a binned 2D histogram with optional contours. 
     
@@ -31,26 +39,26 @@ def plotBinnedContour(dataframe,
     ----------
     dataframe : `~pandas.DataFrame`
         DataFrame containing relevant quantities to be plotted.
-    xColumn : str
+    x_column : str
         Name of column containing desired x values.
-    yColumn : str
+    y_column : str
         Name of column containing desired y values.
-    zColumn : str
+    z_column : str
         Name of column containing desired z values.
     statistic : str, optional
         The statistic to compute on values of z for bins in x and y. 
         Uses scipy.stats.binned_statistic_2d.
         [Default = 'median']
-    logStatistic : bool, optional
+    log_statistic : bool, optional
         Plot the log base 10 of the calculated statistic.
         [Defaults = False]
-    plotCounts : bool, optional
+    plot_counts : bool, optional
         Plot contours of the counts in each bin of x and y. 
         [Default = False]
-    logCounts : bool, optional
+    log_counts : bool, optional
         Make contours the log of the counts.
         [Default = False]
-    countLevels : int, optional
+    count_levels : int, optional
         Plot this may contour levels. 
         [Default = 10]
     bins : int, optional
@@ -60,22 +68,22 @@ def plotBinnedContour(dataframe,
     mask : {None, `~pandas.Series`}, optional
         A mask on dataframe that cuts the data to be plotted.
         [Default = None]
-    xLabel : {None, str}, optional
-        If None, will set the x-axis label to xColumn, if not None use
+    x_label : {None, str}, optional
+        If None, will set the x-axis label to x_column, if not None use
         this label instead. 
         [Default = None]
-    yLabel : {None, str}, optional
-        If None, will set the y-axis label to yColumn, if not None use
+    y_label : {None, str}, optional
+        If None, will set the y-axis label to y_column, if not None use
         this label instead. 
         [Default = None]
-    zLabel : {None, str}, optional
-        If None, will set the colorbar label to zColumn, if not None use
+    z_label : {None, str}, optional
+        If None, will set the colorbar label to z_column, if not None use
         this label instead. 
         [Default = None]
-    contourKwargs : dict, optional
+    contour_kwargs : dict, optional
         Dictionary of additional keyword arguments to pass to ax.contour. 
         [Default = {'colors': 'red', 'linewidths': 1}]
-    imshowKwargs : dict, optional
+    imshow_kwargs : dict, optional
         Dictionary of additional keyword arguments to pass to ax.imshow.
         [Default = {'aspect' : 'auto'}]
     
@@ -94,13 +102,14 @@ def plotBinnedContour(dataframe,
         dataframe = dataframe
 
     X = binned_statistic_2d(
-        dataframe[xColumn].values, 
-        dataframe[yColumn].values, 
-        dataframe[zColumn].values, 
+        dataframe[x_column].values, 
+        dataframe[y_column].values, 
+        dataframe[z_column].values, 
         statistic=statistic,
-        bins=bins)
+        bins=bins
+    )
     
-    if logStatistic == True:
+    if log_statistic == True:
         stat = np.log10(X.statistic.T)
     else:
         stat = X.statistic.T
@@ -109,60 +118,65 @@ def plotBinnedContour(dataframe,
     cm = ax.imshow(stat, 
                    origin="lower", 
                    extent=[X.x_edge[0], X.x_edge[-1], X.y_edge[0], X.y_edge[-1]], 
-                   **imshowKwargs)
+                   **imshow_kwargs)
     cb = fig.colorbar(cm)
     
-    if zLabel == None:
-        cb.set_label("{} {}".format(statistic, zColumn))
+    if z_label == None:
+        cb.set_label("{} {}".format(statistic, z_column))
     else:
-        cb.set_label(zLabel)
+        cb.set_label(z_label)
 
-    if plotCounts == True:
+    if plot_counts == True:
         N = binned_statistic_2d(
-            dataframe[xColumn].values, 
-            dataframe[yColumn].values, 
-            dataframe[zColumn].values, 
+            dataframe[x_column].values, 
+            dataframe[y_column].values, 
+            dataframe[z_column].values, 
             statistic="count",
             bins=bins)
-        if logCounts == True:
+        if log_counts == True:
             counts = np.log10(N.statistic.T)
         else:
             counts = N.statistic.T
         
         cs = ax.contour(counts, 
-                   countLevels, 
+                   count_levels, 
                    origin="lower", 
                    extent=[N.x_edge[0], N.x_edge[-1], N.y_edge[0], N.y_edge[-1]],
-                   **contourKwargs)
+                   **contour_kwargs)
         plt.clabel(cs, inline=1, fontsize=5)
     
-    if xLabel == None:
-        ax.set_xlabel(xColumn)
+    if x_label == None:
+        ax.set_x_label(x_column)
     else:
-        ax.set_xlabel(xLabel)
+        ax.set_x_label(x_label)
     
-    if yLabel == None:
-        ax.set_ylabel(yColumn)
+    if y_label == None:
+        ax.set_y_label(y_column)
     else:
-        ax.set_ylabel(yLabel)
+        ax.set_y_label(y_label)
     
     return fig, ax
 
-def plotScatterContour(dataframe, 
-                      xColumn,
-                      yColumn, 
-                      zColumn,
-                      plotCounts=False, 
-                      logCounts=False, 
-                      countLevels=10, 
-                      bins=100, 
-                      mask=None,
-                      xLabel=None,
-                      yLabel=None,
-                      zLabel=None,
-                      contourKwargs={"colors": "red",
-                                    "linewidths": 1},
-                      scatterKwargs={"s": 0.1}):
+def plotScatterContour(
+        dataframe, 
+        x_column,
+        y_column, 
+        z_column,
+        plot_counts=False, 
+        log_counts=False, 
+        count_levels=10, 
+        bins=100, 
+        mask=None,
+        x_label=None,
+        y_label=None,
+        z_label=None,
+        contour_kwargs={
+            "colors": "red",
+            "linewidths": 1
+        },
+        scatterKwargs={
+            "s": 0.1
+        }):
     """
     Plots a scatter plot with optional contours. 
     
@@ -170,19 +184,19 @@ def plotScatterContour(dataframe,
     ----------
     dataframe : `~pandas.DataFrame`
         DataFrame containing relevant quantities to be plotted.
-    xColumn : str
+    x_column : str
         Name of column containing desired x values.
-    yColumn : str
+    y_column : str
         Name of column containing desired y values.
-    zColumn : str
+    z_column : str
         Name of column containing desired z values.
-    plotCounts : bool, optional
+    plot_counts : bool, optional
         Plot contours of the counts in each bin of x and y. 
         [Default = False]
-    logCounts : bool, optional
+    log_counts : bool, optional
         Make contours the log of the counts.
         [Default = False]
-    countLevels : int, optional
+    count_levels : int, optional
         Plot this may contour levels. 
         [Default = 10]
     bins : int, optional
@@ -192,19 +206,19 @@ def plotScatterContour(dataframe,
     mask : {None, `~pandas.Series`}, optional
         A mask on dataframe that cuts the data to be plotted.
         [Default = None]
-    xLabel : {None, str}, optional
-        If None, will set the x-axis label to xColumn, if not None use
+    x_label : {None, str}, optional
+        If None, will set the x-axis label to x_column, if not None use
         this label instead. 
         [Default = None]
-    yLabel : {None, str}, optional
-        If None, will set the y-axis label to yColumn, if not None use
+    y_label : {None, str}, optional
+        If None, will set the y-axis label to y_column, if not None use
         this label instead. 
         [Default = None]
-    zLabel : {None, str}, optional
-        If None, will set the colorbar label to zColumn, if not None use
+    z_label : {None, str}, optional
+        If None, will set the colorbar label to z_column, if not None use
         this label instead. 
         [Default = None]
-    contourKwargs : dict, optional
+    contour_kwargs : dict, optional
         Dictionary of additional keyword arguments to pass to ax.contour. 
         [Default = {'colors': 'red', 'linewidths': 1}]
     scatterKwargs : dict, optional
@@ -226,44 +240,46 @@ def plotScatterContour(dataframe,
         dataframe = dataframe
     
     fig, ax = plt.subplots(1, 1, dpi=600)
-    cm = ax.scatter(dataframe[xColumn].values, 
-                    dataframe[yColumn].values, 
-                    c=dataframe[zColumn].values, 
-                    **scatterKwargs)
+    cm = ax.scatter(
+        dataframe[x_column].values, 
+        dataframe[y_column].values, 
+        c=dataframe[z_column].values, 
+        **scatterKwargs
+    )
     cb = fig.colorbar(cm)
     
-    if zLabel == None:
-        cb.set_label(zColumn)
+    if z_label == None:
+        cb.set_label(z_column)
     else:
-        cb.set_label(zLabel)
+        cb.set_label(z_label)
 
-    if plotCounts == True:
+    if plot_counts == True:
         N = binned_statistic_2d(
-            dataframe[xColumn].values, 
-            dataframe[yColumn].values, 
-            dataframe[zColumn].values, 
+            dataframe[x_column].values, 
+            dataframe[y_column].values, 
+            dataframe[z_column].values, 
             statistic="count",
             bins=bins)
-        if logCounts == True:
+        if log_counts == True:
             counts = np.log10(N.statistic.T)
         else:
             counts = N.statistic.T
         
         cs = ax.contour(counts, 
-                   countLevels, 
+                   count_levels, 
                    origin="lower", 
                    extent=[N.x_edge[0], N.x_edge[-1], N.y_edge[0], N.y_edge[-1]],
-                   **contourKwargs)
+                   **contour_kwargs)
         plt.clabel(cs, inline=1, fontsize=5)
     
-    if xLabel == None:
-        ax.set_xlabel(xColumn)
+    if x_label == None:
+        ax.set_x_label(x_column)
     else:
-        ax.set_xlabel(xLabel)
+        ax.set_x_label(x_label)
     
-    if yLabel == None:
-        ax.set_ylabel(yColumn)
+    if y_label == None:
+        ax.set_y_label(y_column)
     else:
-        ax.set_ylabel(yLabel)
+        ax.set_y_label(y_label)
     
     return fig, ax
