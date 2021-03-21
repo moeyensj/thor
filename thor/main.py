@@ -995,13 +995,8 @@ def runTHOROrbit(
             )
 
         if not status["mergeAndExtendOrbits"]:
-            
-            #orbit_ids = od_orbits[od_orbits["arc_length"] > 1.0]["orbit_id"].values
-            #orbit_ids = od_orbits[(od_orbits["r_sigma"] / od_orbits["r"]) < 0.1]["orbit_id"].values
 
             recovered_orbits, recovered_orbit_members = mergeAndExtendOrbits(
-                #od_orbits[od_orbits["orbit_id"].isin(orbit_ids)], 
-                #od_orbit_members[od_orbit_members["orbit_id"].isin(orbit_ids)], 
                 od_orbits,
                 od_orbit_members,
                 projected_observations,
@@ -1072,10 +1067,7 @@ def runTHOR(
         logging_level=logger.info
     ):
     logger.setLevel(logging_level)
-
-    #logger = logging.getLogger("thor")
-    #logger.setLevel(logging_level)
-
+    
     # Build the configuration directory which stores
     # the run parameters
     RUN_CONFIG = {
@@ -1246,7 +1238,7 @@ def runTHOR(
             time_start = time.time()
             orbit_id = "{:08d}".format(i + id_offset)
 
-            logger.info("Processing orbit {} ({}/{})...".format(orbit_id, i + 1, num_orbits))
+            logger.info("Processing orbit {} ({}/{})...".format(orbit_id, i + 1 + id_offset, num_orbits))
 
             if out_dir is not None:
                 orbit_dir = os.path.join(out_dir, "orbit_{}".format(orbit_id))
