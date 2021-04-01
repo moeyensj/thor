@@ -1125,6 +1125,7 @@ def runTHOR(
 
                 config_file_prev = open(config_file, "r")
                 config_prev = yaml.load(config_file_prev, Loader=yaml.FullLoader)
+                config_file_prev.close()
 
                 if config_prev != RUN_CONFIG:
                     logger.warning("Previous configuration does not match current configuration. Processing will not continue from previous state.")
