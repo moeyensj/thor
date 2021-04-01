@@ -75,6 +75,7 @@ def od_worker(
         backend=backend, 
         backend_kwargs=backend_kwargs,
     )
+
     return od_orbit, od_orbit_members
 
 if USE_RAY:
@@ -255,8 +256,7 @@ def od(
             else:
                 delta_iter = delta_prev/100000
                 
-                d[0, i] = delta_iter
-                
+                d[0, i] = delta_iter                
 
             # Modify component i of the orbit by a small delta
             orbit_iter_p = Orbits(
@@ -264,6 +264,7 @@ def od(
                 orbit_prev.epochs + d[0, 6],
                 orbit_type=orbit_prev.orbit_type
             )
+
             # Calculate the modified ephemerides
             ephemeris_mod_p = backend.generateEphemeris(
                 orbit_iter_p, 
@@ -341,8 +342,8 @@ def od(
                 if np.any(variances <= 0) or np.any(np.isnan(variances)):
                     delta_prev /= DELTA_DECREASE_FACTOR
                     iterations += 1
-                    print(variances)
                     logger.debug("Variances are negative, 0.0 or NaN. Discarding solution.")
+                    continue
                 
                 r_variances = variances[0:3]
                 r_sigma = np.sqrt(np.sum(r_variances))
@@ -388,6 +389,11 @@ def od(
             ids=orbit_prev.ids,
             covariance=[covariance_matrix]
         )
+        if np.linalg.norm(orbit_iter.cartesian[0, 3:]) > 1:
+            delta_prev *= DELTA_INCREASE_FACTOR
+            iterations += 1
+            logger.debug("Orbit is moving extraordinarily fast, discarding solution.")
+            continue
         
         # Generate ephemeris with current nominal orbit
         ephemeris_iter = backend.generateEphemeris(
