@@ -238,7 +238,8 @@ def writeToADES(
         regex=True
     )
 
-    reduced_precision_cols = ["rmsMag", "uncTime", "rmsTime"]
+    #reduced_precision_cols = ["rmsMag", "uncTime", "rmsTime"]
+    reduced_precision_cols = []
     for col in reduced_precision_cols:
         if col in ades.columns:
             ades[col] = ades[col].map(lambda x: '{0:.3f}'.format(x)) 
