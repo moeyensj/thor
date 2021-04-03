@@ -337,7 +337,7 @@ def mergeAndExtendOrbits(
             )
 
             assert np.all(np.isin(orbit_members_iter["obs_id"].unique(), observations_iter["obs_id"].unique()))
-
+        
             # Attributions are sorted by orbit ID, observation time and 
             # angular distance. Keep only the one observation with smallest distance
             # for any orbits that have multiple observations attributed at the same observation time.
@@ -350,20 +350,9 @@ def mergeAndExtendOrbits(
                 inplace=True,
                 ignore_index=True
             )
+            orbit_members_iter = attributions[["orbit_id", "obs_id", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]]
+            orbits_iter = orbits_iter[orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())]
 
-            # Append attributed observations to the orbit members 
-            # dataframe and then drop any duplicate observations 
-            # that might have been added to each orbit
-            orbit_members_iter = pd.concat([
-                orbit_members_iter, 
-                attributions[["orbit_id", "obs_id", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]]]
-            )
-            orbit_members_iter.drop_duplicates(
-                subset=["orbit_id", "obs_id"],
-                keep="first",
-                inplace=True,
-                ignore_index=True
-            )
             orbits_iter, orbit_members_iter = sortLinkages(
                 orbits_iter,
                 orbit_members_iter[["orbit_id", "obs_id"]],
@@ -413,15 +402,6 @@ def mergeAndExtendOrbits(
                 inplace=True, 
                 drop=True
             )
-            
-            # Identify any orbits that are subsets of a larger orbit
-            #orbits_iter, orbit_members_iter = identifySubsetLinkages(
-            #    orbits_iter,
-            #    orbit_members_iter,
-            #)
-            # Keep only the orbits that are not a subset of a larger orbit
-            #orbits_iter = orbits_iter[orbits_iter["subset_of"].isna()]
-            #orbit_members_iter = orbit_members_iter[orbit_members_iter["orbit_id"].isin(orbits_iter["orbit_id"].values)]
 
             # If orbits were merged before OD, and some of the merged orbits survived OD then remove the orbits
             # that were used to merge into a larger orbit 
