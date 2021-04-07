@@ -250,7 +250,7 @@ class Orbits:
             if isinstance(self.__dict__[kwarg], np.ndarray):
                 kwargs[kwarg] = self.__dict__[kwarg][i]
             elif isinstance(self.__dict__[kwarg], pd.DataFrame):
-                kwargs[kwarg] = self.__dict__[kwarg][i]
+                kwargs[kwarg] = self.__dict__[kwarg].iloc[i]
                 kwargs[kwarg].reset_index(
                     inplace=True,
                     drop=True
@@ -512,6 +512,13 @@ class Orbits:
             )
         else:
             epochs = np.array([])
+
+        # If the dataframe's index is not sorted and increasing, reset it 
+        if not np.testing.assert_equal(dataframe_.index.values, np.arange(0, len(dataframe_))):
+            dataframe_.reset_index(
+                inplace=True,
+                drop=True
+            )
 
         # Assert orbit type is one of two types otherwise
         # raise a value error
