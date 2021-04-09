@@ -29,7 +29,7 @@ class PYOORB(Backend):
             if k not in kwargs:
                 kwargs[k] = PYOORB_CONFIG[k]
         
-        super(PYOORB, self).__init__(name="OpenOrb", **kwargs)
+        super().__init__(name="OpenOrb", **kwargs)
         
         return
     

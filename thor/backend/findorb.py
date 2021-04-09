@@ -34,7 +34,7 @@ class FINDORB(Backend):
             if k not in kwargs:
                 kwargs[k] = FINDORB_CONFIG[k]
         
-        super(FINDORB, self).__init__(**kwargs)
+        super().__init__(name="FINDORB", **kwargs)
 
         return
     
@@ -371,13 +371,14 @@ class FINDORB(Backend):
                 "RA_sigma_deg" : "rmsRA",
                 "Dec_sigma_deg" : "rmsDec",
                 "mag_sigma" : "rmsMag",
+                "mjd_sigma_seconds" : "rmsTime",
                 "filter" : "band",
-                "observatory_code" : "stn"
+                "observatory_code" : "stn",
             }, 
             inplace=True
         )
-        _observations["rmsRA"] = _observations["rmsRA"] * np.cos(np.radians(_observations["dec"].values)) * 3600
-        _observations["rmsDec"] = _observations["rmsDec"] * 3600
+        _observations["rmsRA"] = _observations["rmsRA"].values * 3600
+        _observations["rmsDec"] = _observations["rmsDec"].values * 3600
         _observations.sort_values(
             by=["mjd", "stn"],
             inplace=True
@@ -408,7 +409,7 @@ class FINDORB(Backend):
             _observations.loc[:, "astCat"] = "None"
             
             
-        for i, obj_id in enumerate(_observations["obj_id"].unique()):
+        for i, obj_id in enumerate(_observations[id_col].unique()):
                            
             with tempfile.TemporaryDirectory() as temp_dir:
 
@@ -425,7 +426,7 @@ class FINDORB(Backend):
                 observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(obj_id_i))
                 out_dir = os.path.join(temp_dir, "od_{}".format(obj_id_i))
                 
-                mask = _observations["obj_id"].isin([obj_id])
+                mask = _observations[id_col].isin([obj_id])
                 object_observations = _observations[mask].copy()
                 object_observations.loc[:, id_col] = obj_id_i
                 object_observations.reset_index(inplace=True, drop=True)                
@@ -450,7 +451,6 @@ class FINDORB(Backend):
                     "-j",
                     "-D",
                     self.config_file,
-                    
                 ]
 
                 ret = subprocess.run(

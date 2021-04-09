@@ -27,7 +27,6 @@ MJOLNIR_CONFIG = {
 class MJOLNIR(Backend):
     
     def __init__(self, **kwargs):
-        
         # Make sure only the correct kwargs
         # are passed to the constructor
         allowed_kwargs = MJOLNIR_CONFIG.keys()
@@ -41,8 +40,7 @@ class MJOLNIR(Backend):
             if k not in kwargs:
                 kwargs[k] = MJOLNIR_CONFIG[k]
         
-        super(MJOLNIR, self).__init__(**kwargs)
-
+        super().__init__(name="Mjolnir", **kwargs)
         return
 
     def _propagateOrbits(self, orbits, t1):
@@ -172,6 +170,10 @@ class MJOLNIR(Backend):
         # Concatenate data frames, reset index and then keep only the columns
         # we care about 
         ephemeris = pd.concat(ephemeris_dfs)
+        ephemeris.sort_values(
+            by=["orbit_id", "observatory_code", "mjd_utc"],
+            inplace=True
+        )
         ephemeris.reset_index(
             inplace=True, 
             drop=True
