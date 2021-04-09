@@ -23,7 +23,7 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
     
     Keplerian orbital elements are returned in an array with the following elements:
         a : semi-major axis [AU]
-        e : eccentricity [degrees]
+        e : eccentricity
         i : inclination [degrees]
         Omega : longitude of the ascending node [degrees]
         omega : argument of periapsis [degrees]
@@ -251,7 +251,7 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=
             vz : z-velocity [AU per day]
         If 'keplerian':
             a : semi-major axis [AU]
-            e : eccentricity [degrees]
+            e : eccentricity 
             i : inclination [degrees]
             Omega : longitude of the ascending node [degrees]
             omega : argument of periapsis [degrees]
