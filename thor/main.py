@@ -551,24 +551,19 @@ def clusterAndLink(
         else:
         
             p = mp.Pool(threads, _init_worker)
-            try:
-                possible_clusters = p.starmap(
-                    partial(
-                        clusterVelocity_worker, 
-                        obs_ids=obs_ids,
-                        x=theta_x,
-                        y=theta_y,
-                        dt=dt,
-                        eps=eps,
-                        min_samples=min_samples,
-                        min_arc_length=min_arc_length
-                    ),
-                    zip(vxx, vyy)
-                )
-
-            except KeyboardInterrupt:
-                p.terminate()
-
+            possible_clusters = p.starmap(
+                partial(
+                    clusterVelocity_worker, 
+                    obs_ids=obs_ids,
+                    x=theta_x,
+                    y=theta_y,
+                    dt=dt,
+                    eps=eps,
+                    min_samples=min_samples,
+                    min_arc_length=min_arc_length
+                ),
+                zip(vxx, vyy)
+            )
             p.close()
     else:
         possible_clusters = []

@@ -514,7 +514,7 @@ class Orbits:
             epochs = np.array([])
 
         # If the dataframe's index is not sorted and increasing, reset it 
-        if not np.testing.assert_equal(dataframe_.index.values, np.arange(0, len(dataframe_))):
+        if not np.all(dataframe_.index.values == np.arange(0, len(dataframe_))):
             dataframe_.reset_index(
                 inplace=True,
                 drop=True
