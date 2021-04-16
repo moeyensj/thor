@@ -10,6 +10,7 @@ __all__ = [
     "identifySubsetLinkages",
     "mergeLinkages",
     "removeDuplicateLinkages",
+    "removeDuplicateObservations"
 ]
 
 def sortLinkages(
@@ -326,5 +327,69 @@ def removeDuplicateLinkages(linkages, linkage_members, linkage_id_col="orbit_id"
             inplace=True,
             drop=True
         )
-        
+
+    return linkages_, linkage_members_
+
+def removeDuplicateObservations(
+        linkages,
+        linkage_members,
+        min_obs=5, 
+        linkage_id_col="orbit_id",
+        filter_cols=["num_obs", "arc_length"],
+        ascending=[False, False]
+    ):
+    """
+    Removes duplicate observations using the filter columns. The filter columns are used to sort the linkages 
+    as desired by the user. The first instance of the observation is kept and all other instances are removed. 
+    If any linkage's number of observations drops below min_obs, that linkage is removed.
+
+    Parameters
+    ----------
+    linkages : `~pandas.DataFrame`
+        DataFrame containing at least the linkage ID. 
+    linkage_members : `~pandas.DataFrame`
+        Dataframe containing the linkage ID and the observation ID for each of the linkage's
+        constituent observations. Each observation ID should be in a single row.
+    min_obs : int, optional
+        Minimum number of observations for a linkage to be viable.
+    linkage_id_col : str, optional
+        Linkage ID column name (must be the same in both DataFrames).
+    filter_cols : list, optional
+        List of column names to use to sort the linkages.
+    ascending : list, optional
+        Sort the filter_cols in ascending or descending order.
+
+    Returns
+    -------
+    linkages : `~pandas.DataFrame`
+        DataFrame with duplicate observations removed. 
+    linkage_members : `~pandas.DataFrame`
+        DataFrame with duplicate observations removed.
+    """
+    linkages_ = linkages.copy()
+    linkage_members_ = linkage_members.copy()
+
+    linkages_.sort_values(
+        by=filter_cols,
+        ascending=ascending,
+        inplace=True,
+        ignore_index=True
+    )
+
+    linkages_.set_index(linkage_id_col, inplace=True)
+    linkage_members_.set_index(linkage_id_col, inplace=True)
+    linkage_members_ = linkage_members_.loc[linkages_.index.values]
+    linkage_members_.reset_index(inplace=True)
+
+    linkage_members_ = linkage_members_.drop_duplicates(subset=["obs_id"], keep="first")
+    linkage_occurences = linkage_members_[linkage_id_col].value_counts() 
+    linkages_to_keep = linkage_occurences.index.values[linkage_occurences.values >= min_obs]
+    linkages_ = linkages_[linkages_.index.isin(linkages_to_keep)]
+    linkage_members_ = linkage_members_[linkage_members_[linkage_id_col].isin(linkages_to_keep)]
+    
+    linkages_.reset_index(inplace=True)
+    linkage_members_.reset_index(
+        inplace=True,
+        drop=True
+    )
     return linkages_, linkage_members_
