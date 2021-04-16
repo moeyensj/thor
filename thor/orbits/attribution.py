@@ -14,6 +14,7 @@ from ..utils import verifyLinkages
 from ..utils import mergeLinkages
 from ..utils import sortLinkages
 from ..utils import identifySubsetLinkages
+from ..utils import removeDuplicateObservations
 from .orbits import Orbits
 from .ephemeris import generateEphemeris
 from .residuals import calcResiduals
@@ -427,28 +428,19 @@ def mergeAndExtendOrbits(
             duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
 
             logger.info("There are {} observations that appear in more than one orbit.".format(len(duplicate_obs_ids)))
-            while len(duplicate_obs_ids) > 0:
-                duplicate_obs_id = duplicate_obs_ids[0]
+            orbits_out, orbit_members_out = removeDuplicateObservations(
+                orbits_out,
+                orbit_members_out,
+                min_obs=min_obs,
+                linkage_id_col="orbit_id",
+                filter_cols=["num_obs", "arc_length", "r_sigma", "v_sigma"],
+                ascending=[False, False, True, True]
+            )
 
-                orbit_ids = orbit_members_out[orbit_members_out["obs_id"].isin([duplicate_obs_id])]["orbit_id"].values
-                duplicate_orbits = orbits_out[orbits_out["orbit_id"].isin(orbit_ids)]
-                orbit_to_keep = duplicate_orbits.sort_values(by=["r_sigma", "v_sigma"], ascending=[True, True])["orbit_id"].values[:1]
-                orbits_to_delete = duplicate_orbits[~duplicate_orbits["orbit_id"].isin(orbit_to_keep)]["orbit_id"].values
-
-                orbits_out = orbits_out[~orbits_out["orbit_id"].isin(orbits_to_delete)]
-                orbit_members_out = orbit_members_out[~orbit_members_out["orbit_id"].isin(orbits_to_delete)]
-
-                orbits_iter = orbits_iter[~orbits_iter["orbit_id"].isin(orbits_to_delete)]
-                orbit_members_iter = orbit_members_iter[~orbit_members_iter["orbit_id"].isin(orbits_to_delete)]
-
-                obs_id_occurences = orbit_members_out["obs_id"].value_counts()
-                duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
-            
             observations_iter = observations_iter[~observations_iter["obs_id"].isin(orbit_members_out["obs_id"].values)]
             orbit_members_iter = orbit_members_iter[~orbit_members_iter["orbit_id"].isin(orbits_out["orbit_id"].values)]
             orbit_members_iter = orbit_members_iter[orbit_members_iter["obs_id"].isin(observations_iter["obs_id"].values)]
             orbits_iter = orbits_iter[orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())]
-
             orbit_members_iter = orbit_members_iter[["orbit_id", "obs_id"]]
 
             odp_orbits_dfs.append(orbits_out)
