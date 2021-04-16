@@ -8,7 +8,8 @@ __all__ = [
     "verifyLinkages",
     "generateCombinations",
     "identifySubsetLinkages",
-    "mergeLinkages"
+    "mergeLinkages",
+    "removeDuplicateLinkages",
 ]
 
 def sortLinkages(
@@ -286,3 +287,44 @@ def mergeLinkages(linkages, linkage_members, observations, linkage_id_col="orbit
             columns=[linkage_id_col, "merged_from"]
         )
     return merged_linkages[columns], merged_linkage_members[[linkage_id_col, "obs_id"]], merged_from
+
+def removeDuplicateLinkages(linkages, linkage_members, linkage_id_col="orbit_id"):
+    """
+    Removes linkages that have identical observations as another linkage. Linkage quality is not taken
+    into account. 
+
+    Parameters
+    ----------
+    linkages : `~pandas.DataFrame`
+        DataFrame containing at least the linkage ID. 
+    linkage_members : `~pandas.DataFrame`
+        Dataframe containing the linkage ID and the observation ID for each of the linkage's
+        constituent observations. Each observation ID should be in a single row.
+    linkage_id_col : str, optional
+        Linkage ID column name (must be the same in both DataFrames).
+
+    Returns
+    -------
+    linkages : `~pandas.DataFrame`
+        DataFrame with duplicate linkages removed. 
+    linkage_members : `~pandas.DataFrame`
+        DataFrame with duplicate linkages removed.
+    """
+    linkages_ = linkages.copy()
+    linkage_members_ = linkage_members.copy()
+    
+    # Expand observation IDs into columns, then remove duplicates using pandas functionality
+    expanded = linkage_members_[[linkage_id_col, "obs_id"]].groupby(by=[linkage_id_col])["obs_id"].apply(list).to_frame(name="obs_ids")
+    expanded = expanded["obs_ids"].apply(pd.Series)
+    linkage_ids = expanded.drop_duplicates().index.values
+    
+    linkages_ = linkages_[linkages_[linkage_id_col].isin(linkage_ids)]
+    linkage_members_ = linkage_members_[linkage_members_[linkage_id_col].isin(linkage_ids)]
+    
+    for df in [linkages_, linkage_members_]:
+        df.reset_index(
+            inplace=True,
+            drop=True
+        )
+        
+    return linkages_, linkage_members_
