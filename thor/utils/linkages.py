@@ -203,8 +203,47 @@ def identifySubsetLinkages(
         
     return all_linkages_merged, linkage_members_merged
 
-def mergeLinkages(linkages, linkage_members, observations, linkage_id_col="orbit_id"):
+def mergeLinkages(
+        linkages, 
+        linkage_members, 
+        observations, 
+        linkage_id_col="orbit_id",
+        filter_cols=["num_obs", "arc_length"],
+        ascending=[False, False]
+    ):
+    """
+    Merge any observations that share observations into one larger linkage. The larger
+    linkage will be given the linkage properties of the linkage that when sorted using
+    filter_cols is first. Linkages that when merged may have different observations occur at the same
+    time will be split into every possible comibination of unique observation IDs and observation times.
 
+    Parameters
+    ----------
+    linkages : `~pandas.DataFrame`
+        DataFrame containing at least the linkage ID. 
+    linkage_members : `~pandas.DataFrame`
+        Dataframe containing the linkage ID and the observation ID for each of the linkage's
+        constituent observations. Each observation ID should be in a single row.
+    observations : `~pandas.DataFrame`
+        Observations DataFrame containing at least and observation ID column and a observation time
+        column ('mjd_utc').
+    linkage_id_col : str, optional
+        Linkage ID column name (must be the same in both DataFrames).
+    filter_cols : list, optional
+        List of column names to use to sort the linkages.
+    ascending : list, optional
+        Sort the filter_cols in ascending or descending order.
+
+    Returns
+    -------
+    linkages : `~pandas.DataFrame`
+        DataFrame with merged linkages added. 
+    linkage_members : `~pandas.DataFrame`
+        DataFrame with merged linkages added.
+    merged_from : `~pandas.DataFrame`
+        DataFrame with column of newly created linkages, and a column 
+        with their constituent linkages.
+    """
     assert "mjd_utc" not in linkage_members.columns
     
     obs_id_occurences = linkage_members["obs_id"].value_counts()
@@ -231,7 +270,10 @@ def mergeLinkages(linkages, linkage_members, observations, linkage_id_col="orbit
         for combination in generateCombinations(times):
 
             new_possible_linkages = linkages[linkages[linkage_id_col].isin(linkage_ids_i)].copy()
-            new_linkage = new_possible_linkages.sort_values(by=["rchi2"])[:1]
+            new_linkage = new_possible_linkages.sort_values(
+                by=filter_cols, 
+                ascending=ascending
+            )[:1]
             new_linkage_id = str(uuid.uuid4().hex)
             new_linkage[linkage_id_col] = new_linkage_id
 
@@ -241,7 +283,7 @@ def mergeLinkages(linkages, linkage_members, observations, linkage_id_col="orbit
                 "mjd_utc" : times[combination]
             }
             merged_from_i = {
-                "orbit_id" : [new_linkage_id for i in range(len(linkage_ids_i))],
+                linkage_id_col : [new_linkage_id for i in range(len(linkage_ids_i))],
                 "merged_from" : linkage_ids_i
             }
             merged_linkages.append(new_linkage)
@@ -289,7 +331,11 @@ def mergeLinkages(linkages, linkage_members, observations, linkage_id_col="orbit
         )
     return merged_linkages[columns], merged_linkage_members[[linkage_id_col, "obs_id"]], merged_from
 
-def removeDuplicateLinkages(linkages, linkage_members, linkage_id_col="orbit_id"):
+def removeDuplicateLinkages(
+        linkages, 
+        linkage_members,
+        linkage_id_col="orbit_id"
+    ):
     """
     Removes linkages that have identical observations as another linkage. Linkage quality is not taken
     into account. 

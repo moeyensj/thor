@@ -366,7 +366,9 @@ def mergeAndExtendOrbits(
                 orbits_iter, 
                 orbit_members_iter, 
                 observations_iter,
-                linkage_id_col="orbit_id"
+                linkage_id_col="orbit_id",
+                filter_cols=["num_obs", "arc_length"],
+                ascending=[False, False]
             )
 
             if len(merged_orbits) > 0:
