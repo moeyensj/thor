@@ -146,7 +146,7 @@ def analyzeTHOROrbit(
         od_orbit_members,
         all_truths=all_truths,
         min_obs=min_obs,
-        contamination_percentage=contamination_percentage,
+        contamination_percentage=0.0,
         classes=classes,
         column_mapping=column_mapping
     )
