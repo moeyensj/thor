@@ -146,15 +146,26 @@ def plotOrbits(
         orbits, 
         dts=DTS, 
         inner_planets=True, 
-        outer_planets=True
+        outer_planets=True,
+        limits=None,
+        grid=True,
     ):
     
-    gridcolor = "rgb(96,96,96)"
-    zerolinecolor = gridcolor
+    if grid:
+        gridcolor = "rgb(96,96,96)"
+        zerolinecolor = gridcolor
+    else:
+        gridcolor = "rgba(0,0,0,0)"
+        zerolinecolor = "rgba(0,0,0,0)"
 
     data = []
     data += addOrbits(orbits, dts)
-    limits = (-5, 5)
+
+    if not isinstance(limits, tuple) or not isinstance(limits, list):
+        if outer_planets:
+            limits = (-50, 50)
+        else:
+            limits = (-5, 5)
     
     t0 = orbits.epochs[:1]
     data += addPerturber("sun", t0, dts, color="#FFD581")
@@ -166,8 +177,6 @@ def plotOrbits(
     if outer_planets:
         for perturber in ["jupiter barycenter", "saturn barycenter", "uranus barycenter", "neptune barycenter"]:
             data += addPerturber(perturber, t0, dts, color=PLANET_COLORS[perturber])
-            
-        limits = (-50, 50)
 
     layout = dict(
         width=1000,
