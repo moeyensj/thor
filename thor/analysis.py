@@ -163,7 +163,7 @@ def analyzeTHOROrbit(
         column_mapping=column_mapping
     )
     for df in [all_recovered_orbits, all_truths_recovered, summary_recovered]:
-        df.insert(0, "component", "final")
+        df.insert(0, "component", "od+a")
 
 
     summary = pd.concat([summary_clusters, summary_iod, summary_od, summary_recovered])
