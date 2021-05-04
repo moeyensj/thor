@@ -1,22 +1,32 @@
+import os
 import time
+import copy
 import uuid
+import logging
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
+from scipy.linalg import solve
 from functools import partial
 from astropy.time import Time
 
 from ..config import Config
+from ..utils import setupLogger
+from ..utils import verifyLinkages
+from ..utils import sortLinkages
 from ..backend import _init_worker
 from ..backend import PYOORB
 from ..backend import MJOLNIR
 from .orbits import Orbits
 from .residuals import calcResiduals
 
-
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
 
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "od_worker",
@@ -24,12 +34,12 @@ __all__ = [
     "differentialCorrection"
 ]
 
-
 def od_worker(
         orbit, 
         observations,
         rchi2_threshold=100,
         min_obs=5,
+        min_arc_length=1.0,
         contamination_percentage=20,
         delta=1e-6,
         max_iter=20,
@@ -39,13 +49,23 @@ def od_worker(
         backend="PYOORB", 
         backend_kwargs={},
     ):
-    assert orbit.ids[0] == observations["orbit_id"].unique()[0]
-    
+    try:
+        assert orbit.ids[0] == observations["orbit_id"].unique()[0]
+        assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
+        assert len(np.unique(observations["mjd_utc"].values)) == len(observations["mjd_utc"].values)
+    except:
+        err = (
+            "Invalid observations and orbit have been passed to the OD code.\n"
+            "Orbit ID: {}".format(orbit.ids[0])
+        )
+        raise ValueError(err)
+
     od_orbit, od_orbit_members = od(
         orbit, 
         observations,
         rchi2_threshold=rchi2_threshold,
         min_obs=min_obs,
+        min_arc_length=min_arc_length,
         contamination_percentage=contamination_percentage,
         delta=delta,
         max_iter=max_iter,
@@ -55,6 +75,7 @@ def od_worker(
         backend=backend, 
         backend_kwargs=backend_kwargs,
     )
+
     return od_orbit, od_orbit_members
 
 if USE_RAY:
@@ -66,7 +87,8 @@ def od(
         observations,
         rchi2_threshold=100,
         min_obs=5,
-        contamination_percentage=20,
+        min_arc_length=1.0,
+        contamination_percentage=0.0,
         delta=1e-6,
         max_iter=20,
         method="central",
@@ -86,7 +108,7 @@ def od(
             "backend should be one of 'MJOLNIR' or 'PYOORB'"
         )
         raise ValueError(err)
-        
+
     observables = ["RA_deg", "Dec_deg"]
         
     obs_ids_all = observations["obs_id"].values
@@ -102,63 +124,98 @@ def od(
             scale="utc"
         )
 
-    num_obs = len(observations)
-    processable = True
-    if num_obs < min_obs:
-        processable = False
-    num_outliers = int(num_obs * contamination_percentage / 100.)
-    num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
-    outliers_tried = 0
-    
-    # Calculate chi2 for residuals on the given observations
-    # for the current orbit, the goal is for the orbit to improve 
-    # such that the chi2 improves
-    orbit_prev_ = Orbits(
-        orbit.cartesian,
-        orbit.epochs,
-        ids=orbit.ids,
-        orbit_type=orbit.orbit_type
-    )
-    
-    ephemeris_prev_ = backend.generateEphemeris(
-        orbit_prev_, 
-        observers,
-        test_orbit=test_orbit, 
-        threads=1
-    )
-    residuals_prev_, stats_prev_ = calcResiduals(
-        coords,
-        ephemeris_prev_[observables].values,
-        sigmas_actual=coords_sigma,
-        include_probabilistic=False
-    )
-    num_obs_ = len(observations)
-    chi2_prev_ = stats_prev_[0]
-    chi2_total_prev_ = np.sum(chi2_prev_)
-    rchi2_prev_ = np.sum(chi2_prev_) / (2 * num_obs - 6)
-
-    # Save the initial orbit in case we need to reset 
-    # to it later
-    orbit_prev = orbit_prev_
-    ephemeris_prev = ephemeris_prev_
-    residuals_prev = residuals_prev_
-    stats_prev = stats_prev_
-    num_obs = num_obs_
-    chi2_prev = chi2_prev_
-    chi2_total_prev = chi2_total_prev_
-    rchi2_prev = rchi2_prev_
-    
-    ids_mask = np.array([True for i in range(num_obs)])
-    obs_id_outlier = []
-    delta_prev = delta
-    iterations = 0
+    # FLAG: can we stop iterating to find a solution?
     converged = False
-    while not converged:
-        if iterations == (max_iter + num_outliers * max_iter):
-            break
-       
-        delta_iter = delta_prev
+    # FLAG: has an orbit with reduced chi2 less than the reduced chi2 of the input orbit been found?
+    improved = False
+    # FLAG: has an orbit with reduced chi2 less than the rchi2_threshold been found?    
+    solution_found = False
+    # FLAG: is this orbit processable? Does it have at least min_obs observations?
+    processable = True
+    # FLAG: is this the first iteration with a successful differential correction (this solution is always stored as the solution
+    # which needs to be improved.. input orbits may not have been previously corrected with current set of observations so this
+    # forces at least one succesful iteration to have been taken.)
+    first_solution = True
+
+    # Force differential corrector to iterate max_iter per allowable set of observations
+    force_iter = False
+
+    num_obs = len(observations)
+    if num_obs < min_obs:
+        logger.debug("This orbit has fewer than {} observations.".format(min_obs))
+        processable = False
+    else:
+        num_outliers = int(num_obs * contamination_percentage / 100.)
+        num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
+        logger.debug("Maximum number of outliers allowed: {}".format(num_outliers))
+        outliers_tried = 0
         
+        # Calculate chi2 for residuals on the given observations
+        # for the current orbit, the goal is for the orbit to improve 
+        # such that the chi2 improves
+        orbit_prev_ = copy.deepcopy(orbit)
+        
+        ephemeris_prev_ = backend.generateEphemeris(
+            orbit_prev_, 
+            observers,
+            test_orbit=test_orbit, 
+            threads=1
+        )
+        residuals_prev_, stats_prev_ = calcResiduals(
+            coords,
+            ephemeris_prev_[observables].values,
+            sigmas_actual=coords_sigma,
+            include_probabilistic=False
+        )
+        num_obs_ = len(observations)
+        chi2_prev_ = stats_prev_[0]
+        chi2_total_prev_ = np.sum(chi2_prev_)
+        rchi2_prev_ = np.sum(chi2_prev_) / (2 * num_obs - 6)
+
+        # Save the initial orbit in case we need to reset 
+        # to it later
+        orbit_prev = orbit_prev_
+        ephemeris_prev = ephemeris_prev_
+        residuals_prev = residuals_prev_
+        stats_prev = stats_prev_
+        num_obs = num_obs_
+        chi2_prev = chi2_prev_
+        chi2_total_prev = chi2_total_prev_
+        rchi2_prev = rchi2_prev_
+        
+        ids_mask = np.array([True for i in range(num_obs)])
+        times_all = ephemeris_prev["mjd_utc"].values
+        obs_id_outlier = []
+        delta_prev = delta
+        iterations = 0
+
+        DELTA_INCREASE_FACTOR = 5
+        DELTA_DECREASE_FACTOR = 100
+
+        max_iter_i = max_iter
+
+    while not converged and processable:
+        # Never exceed max_iter times the maximum number of possible
+        # outliers iterations
+        if iterations == (max_iter * (num_outliers + 1)):
+            break
+
+        if iterations == max_iter_i and (solution_found or (num_outliers == outliers_tried)):
+            break
+
+        # Make sure delta is well bounded
+        if delta_prev < 1e-14:
+            delta_prev *= DELTA_INCREASE_FACTOR
+            logger.debug("Delta is too small, increasing.")
+        elif delta_prev > 1e-2:
+            delta_prev /= DELTA_DECREASE_FACTOR
+            logger.debug("Delta is too large, decreasing.")
+        else:
+            pass
+
+        delta_iter = delta_prev
+        logger.debug("Starting iteration {} with delta {}.".format(iterations + 1, delta_iter))
+
         # Initialize the partials derivatives matrix
         if num_obs > 6 and fit_epoch:
             num_params = 7
@@ -180,7 +237,7 @@ def od(
         
         # Modify each component of the state by a small delta
         d = np.zeros((1, 7))
-        for i in range(7):
+        for i in range(num_params):
             
             # zero the delta vector
             d *= 0.0
@@ -199,8 +256,7 @@ def od(
             else:
                 delta_iter = delta_prev/100000
                 
-                d[0, i] = delta_iter
-                
+                d[0, i] = delta_iter                
 
             # Modify component i of the orbit by a small delta
             orbit_iter_p = Orbits(
@@ -208,6 +264,7 @@ def od(
                 orbit_prev.epochs + d[0, 6],
                 orbit_type=orbit_prev.orbit_type
             )
+
             # Calculate the modified ephemerides
             ephemeris_mod_p = backend.generateEphemeris(
                 orbit_iter_p, 
@@ -249,9 +306,11 @@ def od(
             )            
             
             for n in range(num_obs):
-                A[:, i:i+1, n] = residuals_mod[ids_mask][n:n+1].T / delta_denom
-                
-
+                try:
+                    A[:, i:i+1, n] = residuals_mod[ids_mask][n:n+1].T / delta_denom
+                except RuntimeError:
+                    print(orbit_prev.ids)
+        
         for n in range(num_obs):
             W = np.diag(1 / coords_sigma[n]**2)
             ATWA[:, :, n] = A[:, :, n].T @ W @ A[:, :, n]
@@ -260,19 +319,68 @@ def od(
         ATWA = np.sum(ATWA, axis=2)
         ATWb = np.sum(ATWb, axis=2)
         
-        try:
-            delta_state = np.linalg.solve(ATWA, ATWb).T
-            covariance_matrix = np.linalg.inv(ATWA)
-        except np.linalg.LinAlgError:
+        ATWA_condition = np.linalg.cond(ATWA)
+        ATWb_condition = np.linalg.cond(ATWb)
+       
+        if (ATWA_condition > 1e15) or (ATWb_condition > 1e15):
+            delta_prev /= DELTA_DECREASE_FACTOR
             iterations += 1
             continue
-       
+        if np.any(np.isnan(ATWA)) or np.any(np.isnan(ATWb)):
+            delta_prev *= DELTA_INCREASE_FACTOR
+            iterations += 1
+            continue
+        else:
+            try:
+                delta_state = solve(
+                    ATWA, 
+                    ATWb, 
+                ).T
+                covariance_matrix = np.linalg.inv(ATWA)
+
+                variances = np.diag(covariance_matrix)
+                if np.any(variances <= 0) or np.any(np.isnan(variances)):
+                    delta_prev /= DELTA_DECREASE_FACTOR
+                    iterations += 1
+                    logger.debug("Variances are negative, 0.0 or NaN. Discarding solution.")
+                    continue
+                
+                r_variances = variances[0:3]
+                r_sigma = np.sqrt(np.sum(r_variances))
+                r = np.linalg.norm(orbit_prev.cartesian[0, :3])
+                if (r_sigma / r) > 1:
+                    delta_prev /= DELTA_DECREASE_FACTOR
+                    iterations += 1
+                    logger.debug("Covariance matrix is largely unconstrained. Discarding solution.")
+                    continue
+
+                if np.any(np.isnan(covariance_matrix)):
+                    delta_prev *= DELTA_INCREASE_FACTOR
+                    iterations += 1
+                    logger.debug("Covariance matrix contains NaNs. Discarding solution.")
+                    continue
+
+            except np.linalg.LinAlgError:
+                delta_prev *= DELTA_INCREASE_FACTOR
+                iterations += 1
+                continue
+        
         if num_params == 6:
             d_state = delta_state
             d_time = 0
         else:
             d_state = delta_state[0, :6]
             d_time = delta_state[0, 6]
+
+        if np.linalg.norm(d_state[:3]) < 1e-16:
+            delta_prev *= DELTA_DECREASE_FACTOR
+            iterations += 1
+            continue
+        if np.linalg.norm(d_state[:3]) > 100:
+            delta_prev /= DELTA_DECREASE_FACTOR
+            iterations += 1
+            logger.debug("Change in state is more than 100 au, discarding solution.")
+            continue
             
         orbit_iter = Orbits(
             orbit_prev.cartesian + d_state,
@@ -281,6 +389,11 @@ def od(
             ids=orbit_prev.ids,
             covariance=[covariance_matrix]
         )
+        if np.linalg.norm(orbit_iter.cartesian[0, 3:]) > 1:
+            delta_prev *= DELTA_INCREASE_FACTOR
+            iterations += 1
+            logger.debug("Orbit is moving extraordinarily fast, discarding solution.")
+            continue
         
         # Generate ephemeris with current nominal orbit
         ephemeris_iter = backend.generateEphemeris(
@@ -299,27 +412,44 @@ def od(
         )
         chi2_iter = stats[0]
         chi2_total_iter = np.sum(chi2_iter[ids_mask])
-        rchi2_iter = chi2_total_iter / (2 * num_obs - 6)
-        
+        rchi2_iter = chi2_total_iter / (2 * num_obs - num_params)
+        arc_length = times_all[ids_mask].max() -  times_all[ids_mask].min()
+
+        iterations += 1
+        logger.debug("Current r-chi2: {}, Previous r-chi2: {}, Max Iterations: {}, Outliers Tried: {}".format(rchi2_iter, rchi2_prev, max_iter_i, outliers_tried))
         # If the new orbit has lower residuals than the previous,
         # accept the orbit and continue iterating until max iterations has been
         # reached. Once max iterations have been reached and the orbit still has not converged
         # to an acceptable solution, try removing an observation as an outlier and iterate again. 
-        max_iter_i = (max_iter * (outliers_tried + 1))
-        if rchi2_iter < rchi2_prev and iterations < max_iter_i:
+        if ((rchi2_iter < rchi2_prev) or first_solution) and iterations <= max_iter_i and arc_length >= min_arc_length:
 
+            if first_solution:
+                logger.debug("Storing first successful differential correction iteration for these observations.")
+            else:
+                logger.debug("Potential improvement orbit has been found.")
             orbit_prev = orbit_iter
             residuals_prev = residuals
             stats_prev = stats
             chi2_prev = chi2_iter
             chi2_total_prev = chi2_total_iter
+            delta_rchi2 = rchi2_iter - rchi2_prev
             rchi2_prev = rchi2_iter
             
-            if rchi2_iter <= rchi2_threshold:
-                converged = True
+            if rchi2_prev <= rchi2_prev_:
+                improved = True
+        
+            if rchi2_prev <= rchi2_threshold:
+                logger.debug("Potential solution orbit has been found.")
+                solution_found = True
 
-        elif num_outliers > 0 and iterations >= (max_iter * (outliers_tried + 1)) and outliers_tried <= num_outliers:
+                if (iterations % max_iter) > 1 and not force_iter:
+                    converged = True
 
+            first_solution = False
+
+        elif num_outliers > 0 and outliers_tried <= num_outliers and iterations > max_iter_i and not solution_found:
+
+            logger.debug("Attemping to identify possible outliers.")
             # Previous fits have failed, lets reset the current best fit orbit back to its original 
             # state and re-run fitting, this time removing outliers
             orbit_prev = orbit_prev_
@@ -330,6 +460,7 @@ def od(
             chi2_prev = chi2_prev_
             chi2_total_prev = chi2_total_prev_
             rchi2_prev = rchi2_prev_
+            delta_prev = delta
             
             # Select i highest observations that contribute to 
             # chi2 (and thereby the residuals)
@@ -339,40 +470,49 @@ def od(
             obs_id_outlier = obs_ids_all[remove]
             num_obs = len(observations) - len(obs_id_outlier)
             ids_mask = np.isin(obs_ids_all, obs_id_outlier, invert=True)
-
+            arc_length = times_all[ids_mask].max() -  times_all[ids_mask].min()
+            
+            logger.debug("Possible outlier(s): {}".format(obs_id_outlier))
             outliers_tried += 1
+            if arc_length >= min_arc_length:
+                max_iter_i = (max_iter * (outliers_tried + 1))
+            else:
+                logger.debug("Removing the outlier will cause the arc length to go below the minimum.")
                 
         # If the new orbit does not have lower residuals, try changing 
         # delta to see if we get an improvement
         else:
-            
-            # Decrease delta to see if we can get an improvement next iteration
-            delta_prev /= 10
-            
-            if delta_prev < 1e-14:
-                processable = False
+            #logger.debug("Orbit did not improve since previous iteration, decrease delta and continue.")
+            #delta_prev /= DELTA_DECREASE_FACTOR
+            pass
 
-        iterations += 1
-    
+    logger.debug("Solution found: {}".format(solution_found))
+    logger.debug("First solution: {}".format(first_solution))
 
-    if not converged:
+    if not solution_found or not processable or first_solution:
        
         od_orbit = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "mjd_tdb",
+                "epoch",
                 "x",
                 "y",
                 "z",
                 "vx",
                 "vy",
                 "vz",
+                "covariance",
+                "r",
+                "r_sigma",
+                "v",
+                "v_sigma",
                 "arc_length",
                 "num_obs",
                 "num_params",
                 "num_iterations",
                 "chi2",
                 "rchi2",
+                "improved",
             ]
         )
         
@@ -388,13 +528,23 @@ def od(
         )
     
     else:
+        variances = np.diag(orbit_prev.covariance[0])
+        r_variances = variances[0:3]
+        v_variances = variances[3:6]
+
+        obs_times = observations["mjd_utc"].values[ids_mask]
         od_orbit = orbit_prev.to_df(include_units=False)
-        od_orbit["arc_length"] = observations["mjd_utc"].max() - observations["mjd_utc"].min()
+        od_orbit["r"] = np.linalg.norm(orbit_prev.cartesian[0, :3])
+        od_orbit["r_sigma"] = np.sqrt(np.sum(r_variances))
+        od_orbit["v"] = np.linalg.norm(orbit_prev.cartesian[0, 3:])
+        od_orbit["v_sigma"] = np.sqrt(np.sum(v_variances))
+        od_orbit["arc_length"] = np.max(obs_times) - np.min(obs_times)
         od_orbit["num_obs"] = num_obs
         od_orbit["num_params"] = num_params
         od_orbit["num_iterations"] = iterations
         od_orbit["chi2"] = chi2_total_prev
         od_orbit["rchi2"] = rchi2_prev
+        od_orbit["improved"] = improved
         
         od_orbit_members = pd.DataFrame({
             "orbit_id" : [orbit_prev.ids[0] for i in range(len(obs_ids_all))],
@@ -412,9 +562,10 @@ def differentialCorrection(
         orbits, 
         orbit_members,
         observations, 
-        rchi2_threshold=100,
         min_obs=5,
+        min_arc_length=1.0,
         contamination_percentage=20,
+        rchi2_threshold=100,
         delta=1e-8,
         max_iter=20,
         method="central",
@@ -422,8 +573,7 @@ def differentialCorrection(
         test_orbit=None,
         threads=60,
         backend="PYOORB", 
-        backend_kwargs={},
-        verbose=True
+        backend_kwargs={}
     ):
     """
     Differentially correct (via finite/central differencing) time. 
@@ -431,40 +581,25 @@ def differentialCorrection(
     Parameters
     ----------
     """
+    logger.info("Running differential correction...")
+    
     time_start = time.time()
-    if verbose:
-        print("THOR: differentialCorrection")
-        print("-------------------------------")
-        print("Running differential correction...")
-        print("Method: {} differencing".format(method))
-        print("Using {} threads...".format(threads))
     
-    if len(orbits) > 0 and len(orbit_members) > 0 and len(observations) > 0:
+    if len(orbits) > 0 and len(orbit_members) > 0:
+
+        orbits_, orbit_members_ = verifyLinkages(
+            orbits, 
+            orbit_members,
+            observations
+        )
     
-        linked_observations = orbit_members[orbit_members[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits["orbit_id"].values)].merge(observations, on="obs_id").copy()
-        linked_observations.sort_values(
-            by=["orbit_id", "mjd_utc"], 
-            inplace=True
-        )
-
-        orbits_ = orbits.copy()
-        orbits_.sort_values(
-            by=["orbit_id"],
-            inplace=True
-        )
-        orbits_.reset_index(
-            inplace=True,       
-            drop=True
-        )
-
-
+        linked_observations = orbit_members_[orbit_members_[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits_["orbit_id"].values)].merge(observations, on="obs_id", how="left")
         grouped_observations = linked_observations.groupby(by=["orbit_id"])
-        observations_split = [grouped_observations.get_group(g).copy() for g in grouped_observations.groups]
+        observations_split = [grouped_observations.get_group(g).reset_index(drop=True) for g in grouped_observations.groups]
 
         orbits_initial = Orbits.from_df(orbits_)
         orbits_split = orbits_initial.split(1)
 
-        
         if threads > 1:
 
             if USE_RAY:
@@ -482,6 +617,7 @@ def differentialCorrection(
                             observations_i,
                             rchi2_threshold=rchi2_threshold,
                             min_obs=min_obs,
+                            min_arc_length=min_arc_length,
                             contamination_percentage=contamination_percentage,
                             delta=delta,
                             max_iter=max_iter,
@@ -508,6 +644,7 @@ def differentialCorrection(
                         od_worker, 
                         rchi2_threshold=rchi2_threshold,
                         min_obs=min_obs,
+                        min_arc_length=min_arc_length,
                         contamination_percentage=contamination_percentage,
                         delta=delta,
                         max_iter=max_iter,
@@ -539,6 +676,7 @@ def differentialCorrection(
                     observations_i,
                     rchi2_threshold=rchi2_threshold,
                     min_obs=min_obs,
+                    min_arc_length=min_arc_length,
                     contamination_percentage=contamination_percentage,
                     delta=delta,
                     max_iter=max_iter,
@@ -563,11 +701,16 @@ def differentialCorrection(
             drop=True
         )
 
+        for col in ["num_obs"]:
+            od_orbits[col] = od_orbits[col].astype(int)
+        for col in ["outlier"]:
+            od_orbit_members[col] = od_orbit_members[col].astype(int)
+        
     else:
         od_orbits = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "mjd_tdb",
+                "epoch",
                 "x",
                 "y",
                 "z",
@@ -575,6 +718,10 @@ def differentialCorrection(
                 "vy",
                 "vz",
                 "covariance",
+                "r",
+                "r_sigma",
+                "v",
+                "v_sigma",
                 "arc_length",
                 "num_obs",
                 "chi2",
@@ -589,14 +736,19 @@ def differentialCorrection(
                 "residual_ra_arcsec", 
                 "residual_dec_arcsec", 
                 "chi2",
+                "outlier"
             ]
         )
 
-    
+    od_orbits, od_orbit_members = sortLinkages(
+        od_orbits,
+        od_orbit_members,
+        observations,
+        linkage_id_col="orbit_id"
+    )
+
     time_end = time.time()
-    if verbose:
-        print("Differentially corrected {} orbits.".format(len(od_orbits)))
-        print("Total time in seconds: {}".format(time_end - time_start))   
-        print("-------------------------------")
-        print("")
+    logger.info("Differentially corrected {} orbits.".format(len(od_orbits)))
+    logger.info("Differential correction completed in {:.3f} seconds.".format(time_end - time_start))   
+
     return od_orbits, od_orbit_members

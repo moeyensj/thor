@@ -13,3 +13,9 @@ from .orbit import *
 from .cell import * 
 from .plotting import *
 from .main import *
+try:
+    from .analysis import *
+except ImportError as error:
+    print(error.__class__.__name__ + ": " + error.message)
+
+logger = setupLogger(__name__)

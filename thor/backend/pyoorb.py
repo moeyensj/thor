@@ -29,7 +29,7 @@ class PYOORB(Backend):
             if k not in kwargs:
                 kwargs[k] = PYOORB_CONFIG[k]
         
-        super(PYOORB, self).__init__(name="OpenOrb", **kwargs)
+        super().__init__(name="OpenOrb", **kwargs)
         
         return
     
@@ -282,13 +282,14 @@ class PYOORB(Backend):
         # Propagate orbits to each epoch and append to list 
         # of new states
         states = []
+        orbits_pyoorb_i = orbits_pyoorb.copy()
         for epoch in epochs_pyoorb:
-            new_state, err = oo.pyoorb.oorb_propagation(
-                in_orbits=orbits_pyoorb,
+            orbits_pyoorb_i, err = oo.pyoorb.oorb_propagation(
+                in_orbits=orbits_pyoorb_i,
                 in_epoch=epoch,
                 in_dynmodel=self.dynamical_model
             )
-            states.append(new_state)
+            states.append(orbits_pyoorb_i)
 
         # Convert list of new states into a pandas data frame
         if orbits.orbit_type == "cartesian":

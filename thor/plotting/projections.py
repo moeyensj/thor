@@ -11,9 +11,8 @@ __all__ = [
 
 def plotProjections(
         projected_observations, 
-        colorByObject=False, 
-        usePlotly=True, 
-        returnFig=False, 
+        color_by_object=False, 
+        use_plotly=True, 
     ):
     """
     Plot projected observations in 2D. 
@@ -22,10 +21,10 @@ def plotProjections(
     ----------
     projected_observations :  `~pandas.DataFrame`
         DataFrame containing projected observations (theta_x, theta_y).
-    colorByObject : bool, optional
+    color_by_object : bool, optional
         Color each unique object separately. 
         [Default = False]
-    usePlotly : bool, optional
+    use_plotly : bool, optional
         Use plotly instead of matplotlib?
         [Default = True]
    
@@ -37,9 +36,9 @@ def plotProjections(
     ax : `~matplotlib.axes._subplots.AxesSubplot`
         If plotting with matplotlib, also returns the axis object.
     """
-    if usePlotly is True:
+    if use_plotly is True:
         data = []
-        if colorByObject is True:
+        if color_by_object is True:
             for name in projected_observations["obj_id"].unique():
                 obj = projected_observations[projected_observations["obj_id"] == name]
                 if name == "None":
@@ -89,7 +88,7 @@ def plotProjections(
    
     else:
         fig, ax = plt.subplots(1, 1, dpi=600)
-        if colorByObject is True:
+        if color_by_object is True:
             a, b = np.unique(projected_observations["obj_id"].values, return_inverse=True)
             hex_map = np.array(sns.color_palette("Accent", len(a)).as_hex())
             c = hex_map[b]
@@ -101,7 +100,7 @@ def plotProjections(
         _setAxes(ax, "gnomonic")
     
     
-    if usePlotly is True:
+    if use_plotly is True:
         return fig
     else: 
         return fig, ax
@@ -109,7 +108,7 @@ def plotProjections(
 
 def plotProjections3D(
         projected_observations, 
-        colorByObject=False, 
+        color_by_object=False, 
     ):
     """
     Plot projected observations in 3D. 
@@ -118,7 +117,7 @@ def plotProjections3D(
     ----------
     projected_observations :  `~pandas.DataFrame`
         DataFrame containing projected observations (theta_x, theta_y).
-    colorByObject : bool, optional
+    color_by_object : bool, optional
         Color each unique object separately. 
         [Default = False]
    
@@ -129,7 +128,7 @@ def plotProjections3D(
 
     """
     data = []
-    if colorByObject is True:
+    if color_by_object is True:
         for name in projected_observations["obj_id"].unique():
             obj = projected_observations[projected_observations["obj_id"] == name]
 

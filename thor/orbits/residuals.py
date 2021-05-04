@@ -123,8 +123,9 @@ def calcSimpleResiduals(
     dec_pred = coords_desired[:, 1]
 
     # Calculate residuals in RA, make sure to fix any potential wrap around errors
-    residual_ra = (ra - ra_pred) * np.cos(np.radians(dec_pred))
+    residual_ra = (ra - ra_pred) 
     residual_ra = np.where(residual_ra > 180., 360. - residual_ra, residual_ra)
+    residual_ra *= np.cos(np.radians(dec_pred))
 
     # Calculate residuals in Dec
     residual_dec = dec - dec_pred

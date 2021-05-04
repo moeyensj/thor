@@ -7,10 +7,12 @@ from .helpers import _setAxes
 
 __all__ = ["plotCell"]
 
-def plotCell(cell,
-             coordinateSystem="equatorialAngular",
-             scatterKwargs={"s":0.05},
-             columnMapping=Config.COLUMN_MAPPING):
+def plotCell(
+        cell,
+        coordinate_system="equatorial_angular",
+        scatter_kwargs={"s":0.05},
+        column_mapping=Config.COLUMN_MAPPING
+    ):
     """
     Plot cell. Needs cell's observations to be loaded.
     
@@ -18,13 +20,13 @@ def plotCell(cell,
     ----------
     cell : `~thor.cell.Cell`
         THOR cell. 
-    coordinateSystem : {'equatorialAngular', 'eclipticAngular'}, optional
+    coordinate_system : {'equatorial_angular', 'ecliptic_angular'}, optional
         Which coordinate system to use.
-        [Default = 'equatorialAngular']
-    scatterKwargs : dict, optional
+        [Default = 'equatorial_angular']
+    scatter_kwargs : dict, optional
         Dictionary of additional keyword arguments to pass to ax.scatter.
         [Default = {'s': 0.05}]
-    columnMapping : dict, optional
+    column_mapping : dict, optional
         Column name mapping of observations to internally used column names. 
         [Default = `~thor.Config.COLUMN_MAPPING`]
         
@@ -40,17 +42,17 @@ def plotCell(cell,
     fig.tight_layout()
     ax.set_aspect("equal")
 
-    if coordinateSystem == "equatorialAngular":
-        x = cell.observations[columnMapping["RA_deg"]].values, 
-        y = cell.observations[columnMapping["Dec_deg"]].values
-    elif coordinateSystem == "eclipticAngular":
-        x = cell.observations[columnMapping["lon_deg"]].values, 
-        y = cell.observations[columnMapping["lat_deg"]].values
+    if coordinate_system == "equatorial_angular":
+        x = cell.observations[column_mapping["RA_deg"]].values, 
+        y = cell.observations[column_mapping["Dec_deg"]].values
+    elif coordinate_system == "ecliptic_angular":
+        x = cell.observations[column_mapping["lon_deg"]].values, 
+        y = cell.observations[column_mapping["lat_deg"]].values
     else:
-        raise ValueError("coordinateSystem should be one of 'equatorialAngular' or 'eclipticAngular'")
+        raise ValueError("coordinate_system should be one of 'equatorial_angular' or 'ecliptic_angular'")
     
-    _setAxes(ax, coordinateSystem)
-    ax.scatter(x, y, **scatterKwargs)
+    _setAxes(ax, coordinate_system)
+    ax.scatter(x, y, **scatter_kwargs)
     
     if cell.shape == "circle":
         cell_p = plt.Circle((cell.center[0], cell.center[1]), np.sqrt(cell.area / np.pi), color="r", fill=False)

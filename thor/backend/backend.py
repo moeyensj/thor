@@ -2,6 +2,7 @@ import os
 import time
 import copy
 import signal
+import logging
 import pandas as pd
 import multiprocessing as mp
 
@@ -14,10 +15,26 @@ NUM_THREADS = Config.NUM_THREADS
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "_init_worker",
     "Backend"
 ]
+TIMEOUT = 30
+
+class Timeout:
+    ### Taken from https://stackoverflow.com/a/22348885
+    def __init__(self, seconds=TIMEOUT, error_message='Timeout'):
+        self.seconds = seconds
+        self.error_message = error_message
+    def handle_timeout(self, signum, frame):
+        raise TimeoutError(self.error_message)
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.seconds)
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
 
 def _init_worker():
     """
@@ -28,15 +45,30 @@ def _init_worker():
     return
 
 def propagation_worker(orbits, t1, backend):
-    propagated = backend._propagateOrbits(orbits, t1)
+    with Timeout(seconds=TIMEOUT):
+        try:
+            propagated = backend._propagateOrbits(orbits, t1)
+        except TimeoutError:
+            logger.CRITICAL("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            propagated = pd.DataFrame()
     return propagated
 
 def ephemeris_worker(orbits, observers, backend):
-    ephemeris = backend._generateEphemeris(orbits, observers)
+    with Timeout(seconds=TIMEOUT):
+        try:
+            ephemeris = backend._generateEphemeris(orbits, observers)
+        except TimeoutError:
+            logger.CRITICAL("Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            ephemeris = pd.DataFrame()
     return ephemeris
 
 def orbitDetermination_worker(observations, backend):
-    orbits = backend._orbitDetermination(observations)
+    with Timeout(seconds=TIMEOUT):
+        try:
+            orbits = backend._orbitDetermination(observations)
+        except TimeoutError:
+            logger.CRITICAL("Orbit determination timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            orbits = pd.DataFrame()
     return orbits
 
 def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):

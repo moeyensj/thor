@@ -212,6 +212,10 @@ def writeToADES(
     ades["mag"] = observations["mag"].values
     if "rmsMag" in observations.columns.values:
         ades["rmsMag"] = observations["rmsMag"].values
+    if "rmsTime" in observations.columns.values:
+        ades["rmsTime"] = observations["rmsTime"].values
+    if "uncTime" in observations.columns.values:
+        ades["uncTime"] = observations["uncTime"].values
     ades["band"] = observations["band"].values
     ades["stn"] = observations["stn"].values
     ades["mode"] = observations["mode"].values
@@ -233,7 +237,13 @@ def writeToADES(
         " ", 
         regex=True
     )
-        
+
+    #reduced_precision_cols = ["rmsMag", "uncTime", "rmsTime"]
+    reduced_precision_cols = []
+    for col in reduced_precision_cols:
+        if col in ades.columns:
+            ades[col] = ades[col].map(lambda x: '{0:.3f}'.format(x)) 
+
     ades.to_csv(
         file_out, 
         sep="|", 

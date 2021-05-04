@@ -79,7 +79,7 @@ def test_convertOrbitalElements_elliptical():
         orbits_keplerian_converted,
         orbits_keplerian_horizons,
         orbit_type="keplerian",
-        position_tol=(1*u.mm),
+        position_tol=(1*u.cm),
         angle_tol=(1*u.microarcsecond),
         unitless_tol=(1e-10*u.dimensionless_unscaled)
     )
@@ -90,7 +90,7 @@ def test_convertOrbitalElements_elliptical():
         orbits_cartesian_converted,
         orbits_cartesian_horizons,
         orbit_type="cartesian",
-        position_tol=(2*u.mm),
+        position_tol=(1*u.cm),
         velocity_tol=(1*u.mm/u.s),
         magnitude=True
     )
@@ -145,7 +145,7 @@ def test_convertOrbitalElements_hyperbolic():
         orbits_keplerian_converted,
         orbits_keplerian_horizons,
         orbit_type="keplerian",
-        position_tol=(1*u.mm),
+        position_tol=(5*u.cm),
         angle_tol=(1*u.microarcsecond),
         unitless_tol=(1e-10*u.dimensionless_unscaled)
     )

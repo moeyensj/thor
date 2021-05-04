@@ -34,7 +34,7 @@ class FINDORB(Backend):
             if k not in kwargs:
                 kwargs[k] = FINDORB_CONFIG[k]
         
-        super(FINDORB, self).__init__(name="Find_Orb", **kwargs)
+        super().__init__(name="FINDORB", **kwargs)
 
         return
     
@@ -234,8 +234,6 @@ class FINDORB(Backend):
                     "tt"
                 )
                 
-                shutil.copyfile(times_in_file, "/home/moeyensj/Desktop/times_eph.in")
-
                 # Certain observatories are dealt with differently, so appropriately
                 # define the columns
                 if (observatory_code == "500"):
@@ -290,7 +288,7 @@ class FINDORB(Backend):
                         "JSON_SHORT_ELEMENTS={}".format(os.path.join(temp_dir, "short%p.json")),
                         "JSON_COMBINED_NAME={}".format(os.path.join(temp_dir, "com%p_%c.json"))
                     ]
-                    print(" ".join(call))
+
                     ret = subprocess.run(
                         call, 
                         shell=False, 
@@ -312,8 +310,6 @@ class FINDORB(Backend):
                         ephemeris["orbit_id"] = [i for _ in range(len(ephemeris))]
                         ephemeris["observatory_code"] = [observatory_code for _ in range(len(ephemeris))]
                         
-                        shutil.copyfile(ephemeris_txt, "/home/moeyensj/Desktop/ephemeris.txt")
-
                     else:
                         ephemeris = pd.DataFrame(
                             columns=[["orbit_id", "observatory_code"] + columns]
@@ -364,7 +360,6 @@ class FINDORB(Backend):
         covariances = []
         residual_dfs = []
 
-
         # Find_Orb accepts ADES files as inputs for orbit determination so
         # lets convert THOR-like observations into essentially dummy
         # ADES files that find_orb can process
@@ -376,27 +371,33 @@ class FINDORB(Backend):
                 "RA_sigma_deg" : "rmsRA",
                 "Dec_sigma_deg" : "rmsDec",
                 "mag_sigma" : "rmsMag",
+                "mjd_sigma_seconds" : "rmsTime",
                 "filter" : "band",
-                "observatory_code" : "stn"
+                "observatory_code" : "stn",
             }, 
             inplace=True
         )
-        _observations["rmsRA"] = _observations["rmsRA"] * np.cos(np.radians(_observations["dec"].values)) * 3600
-        _observations["rmsDec"] = _observations["rmsDec"] * 3600
+        _observations["rmsRA"] = _observations["rmsRA"].values * 3600
+        _observations["rmsDec"] = _observations["rmsDec"].values * 3600
         _observations.sort_values(
             by=["mjd", "stn"],
             inplace=True
         )
 
         id_present = False
+        id_col = None
         if "permID" in _observations.columns.values:
             id_present = True
+            id_col = "permID"
         if "provID" in _observations.columns.values:
             id_present = True
+            id_col = "provID"
         if "trkSub" in _observations.columns.values:
             id_present = True
+            id_col = "trkSub"
         if not id_present:
             _observations["trkSub"] = _observations["obj_id"]
+            id_col = "trkSub"
         
         if "mag" not in _observations.columns:
             _observations.loc[:, "mag"] = 20.0
@@ -408,29 +409,33 @@ class FINDORB(Backend):
             _observations.loc[:, "astCat"] = "None"
             
             
-        for obj_id in _observations["obj_id"].unique():
-               
+        for i, obj_id in enumerate(_observations[id_col].unique()):
+                           
             with tempfile.TemporaryDirectory() as temp_dir:
 
                 # Set this environment's home directory to the temporary directory
                 # to prevent bugs with multiple processes writing to the ~/.find_orb/
                 # directory
                 env = self._setWorkEnvironment(temp_dir)
-
-                observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(obj_id))
-                out_dir = os.path.join(temp_dir, "od_{}".format(obj_id))
                 
-                mask = _observations["obj_id"].isin([obj_id])
+                # If you give fo a string for a numbered object it will typically append brackets
+                # automatically which makes retrieving the object's orbit a little more tedious so by making sure
+                # the object ID is not numeric we can work around that. 
+                obj_id_i = "o{:08d}".format(i)
+
+                observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(obj_id_i))
+                out_dir = os.path.join(temp_dir, "od_{}".format(obj_id_i))
+                
+                mask = _observations[id_col].isin([obj_id])
                 object_observations = _observations[mask].copy()
-                object_observations.reset_index(inplace=True, drop=True)
+                object_observations.loc[:, id_col] = obj_id_i
+                object_observations.reset_index(inplace=True, drop=True)                
                 
                 writeToADES(
                     object_observations, 
                     observations_file, 
                     mjd_scale="utc"
                 )
-                
-                shutil.copyfile(observations_file, "/home/moeyensj/Desktop/{}.psv".format(temp_dir.split("/")[1]))
                 
                 last_observation = Time(
                     object_observations["mjd"].max(), 
@@ -446,8 +451,8 @@ class FINDORB(Backend):
                     "-j",
                     "-D",
                     self.config_file,
-                    
                 ]
+
                 ret = subprocess.run(
                     call, 
                     shell=False, 
@@ -473,15 +478,14 @@ class FINDORB(Backend):
                 if (os.path.exists(total_json)) and ret.returncode == 0:
                     with open(total_json) as f:
                         data = json.load(f)
-                        residuals = pd.DataFrame(data["objects"]["(" + obj_id + ")"]["observations"]["residuals"])
-                        #residuals = pd.DataFrame(data["objects"][obj_id]["observations"]["residuals"])
+                        residuals = pd.DataFrame(
+                            data["objects"][obj_id_i]["observations"]["residuals"]
+                        )
                         residuals.sort_values(
                             by=["JD", "obscode"], 
                             inplace=True
                         )
-
                         residuals = object_observations[["obs_id"]].join(residuals)
-                        
                         
                     residual_dfs.append(residuals)
                         

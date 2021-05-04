@@ -28,8 +28,6 @@ class TestOrbit:
         Epoch at which orbital elements are defined.
     """
     def __init__(self, elements, epoch):
-        _checkTime(epoch, "epoch")
-        
         self.elements = elements
         self.epoch = epoch
         

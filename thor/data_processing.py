@@ -284,12 +284,13 @@ def preprocessObservations(
     return preprocessed_observations, preprocessed_associations
 
 
-def findAverageOrbits(observations,
-                      orbits,
-                      d_values=None,
-                      element_type="keplerian",
-                      verbose=True,
-                      column_mapping=Config.COLUMN_MAPPING):
+def findAverageOrbits(
+        observations,
+        orbits,
+        d_values=None,
+        element_type="keplerian",
+        column_mapping=Config.COLUMN_MAPPING
+    ):
     """
     Find the object with observations that represents 
     the most average in terms of cartesian velocity and the
@@ -324,10 +325,6 @@ def findAverageOrbits(observations,
     orbits : `~pandas.DataFrame` 
         DataFrame with name, r, v, exposure time, and sky-plane location of the average orbit in each bin of r. 
     """
-    if verbose == True:
-        print("THOR: findAverageObject")
-        print("-------------------------")
-        
     if element_type == "keplerian":
         d_col = column_mapping["a_au"]
     elif element_type == "cartesian":
@@ -338,18 +335,14 @@ def findAverageOrbits(observations,
         )
         raise ValueError(err)
         
-    dataframe = pd.merge(orbits, observations, on=column_mapping["name"])
+    dataframe = pd.merge(orbits, observations, on=column_mapping["name"]).copy()
     dataframe.reset_index(inplace=True, drop=True)
         
     d_bins = []
     if d_values != None:
-        if verbose == True:
-            print("Finding average orbit in {} distance bins...".format(len(d_values) - 1))
         for d_i, d_f in zip(d_values[:-1], d_values[1:]):
             d_bins.append(dataframe[(dataframe[d_col] >= d_i) & (dataframe[d_col] < d_f)])
     else: 
-        if verbose == True:
-            print("Finding average orbit...")
         d_bins.append(dataframe)
     
     average_orbits = []
@@ -357,8 +350,6 @@ def findAverageOrbits(observations,
     for i, obs in enumerate(d_bins):
         if len(obs) == 0:
             # No real objects
-            if verbose == True:
-                print("No real objects found.")
             
             orbit = pd.DataFrame({"orbit_id" : i + 1,
                 column_mapping["exp_mjd"] : np.NaN,
@@ -448,8 +439,4 @@ def findAverageOrbits(observations,
     average_orbits.sort_values(by=["orbit_id", column_mapping["exp_mjd"]], inplace=True)
     average_orbits.reset_index(inplace=True, drop=True)
     
-    if verbose == True:    
-        print("Done.")
-        print("-------------------------")
-        print("")
     return average_orbits
