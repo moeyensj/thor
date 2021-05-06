@@ -1,6 +1,10 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "thor/version.py"
+write_to_template = "__version__ = '{version}'"
 
 [tool.pytest.ini_options]
 python_functions = "test_*"
