@@ -137,7 +137,6 @@ def clusterVelocity(
         If clusters are found, will return a list of numpy arrays containing the 
         observation IDs for each cluster. If no clusters are found, will return np.NaN.
     """ 
-
     xx = x - vx * dt
     yy = y - vy * dt
     if USE_GPU:
@@ -532,13 +531,13 @@ def clusterAndLink(
             for vxi, vyi in zip(vxx, vyy):
                 p.append(
                     clusterVelocity_worker.remote(
-                        obs_ids,
-                        theta_x, 
-                        theta_y, 
-                        dt, 
                         vxi, 
                         vyi, 
-                        eps=eps, 
+                        obs_ids=obs_ids,
+                        x=theta_x,
+                        y=theta_y,
+                        dt=dt,
+                        eps=eps,
                         min_samples=min_samples,
                         min_arc_length=min_arc_length
                     )
