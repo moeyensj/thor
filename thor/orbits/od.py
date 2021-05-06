@@ -629,7 +629,10 @@ def differentialCorrection(
                         )
                     )
 
-                od_orbits_dfs, od_orbit_members_dfs = ray.get(p)
+                results = ray.get(p)
+                results = list(zip(*results))
+                od_orbits_dfs = results[0]
+                od_orbit_members_dfs = results[1]
 
                 if shutdown:
                     ray.shutdown()

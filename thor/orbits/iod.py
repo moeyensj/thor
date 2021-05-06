@@ -654,7 +654,10 @@ def initialOrbitDetermination(
                             )
                         )
 
-                    iod_orbits_dfs_c, iod_orbit_members_dfs_c = ray.get(p)
+                    results = ray.get(p)
+                    results = list(zip(*results))
+                    iod_orbits_dfs_c = results[0]
+                    iod_orbit_members_dfs_c = results[1]
                     iod_orbits_dfs += iod_orbits_dfs_c
                     iod_orbit_members_dfs += iod_orbit_members_dfs_c
 
