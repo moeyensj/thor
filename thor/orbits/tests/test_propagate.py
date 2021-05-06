@@ -65,8 +65,8 @@ def test_propagateOrbits():
        states_mjolnir, 
        states_pyoorb,
        orbit_type="cartesian", 
-       position_tol=1*u.mm, 
-       velocity_tol=(1*u.mm/u.s), 
+       position_tol=20*u.m, 
+       velocity_tol=(1*u.cm/u.s), 
        magnitude=True
     )
     return
