@@ -85,11 +85,11 @@ def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
     )
 
     # Prepare rotation matrices 
-    test_orbit.prepare(verbose=False)
+    test_orbit.prepare()
 
     # Apply rotation matrices and transform observations into the orbit's
     # frame of motion. 
-    test_orbit.applyToEphemeris(ephemeris, verbose=False)
+    test_orbit.applyToEphemeris(ephemeris)
     
     return ephemeris
 
