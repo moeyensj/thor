@@ -110,7 +110,9 @@ def setupSPICE(kernels=["LSK - Latest",
     -------
     None
     """
-    if "THOR_SPICE" in os.environ.keys() and os.environ["THOR_SPICE"] == "True":
+    pid = os.getpid()
+    var_name = f"THOR_SPICE_pid{pid}"
+    if var_name in os.environ.keys() and os.environ[var_name] == "True":
         logger.info("SPICE is already enabled.")
     else:
         logger.info("Enabling SPICE...")
@@ -121,6 +123,6 @@ def setupSPICE(kernels=["LSK - Latest",
                 err = ("{} not found. Please run thor.utils.getSPICEKernels to download SPICE kernels.")
                 raise FileNotFoundError(err.format(file_name))
             sp.furnsh(log[file_name]["location"])
-        os.environ["THOR_SPICE"] = "True"
+        os.environ[var_name] = "True"
         logger.info("SPICE enabled.")
     return
