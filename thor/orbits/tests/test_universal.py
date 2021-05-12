@@ -8,7 +8,7 @@ from ...utils import getHorizonsVectors
 from ...testing import testOrbits
 from ..universal_propagate import propagateUniversal
 
-MU = c.G * c.M_SUN
+MU = c.MU
 
 TARGETS = [
     "Amor",

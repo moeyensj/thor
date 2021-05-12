@@ -16,7 +16,7 @@ __all__ = [
     "addStellarAberration"
 ]
 
-MU = c.G * c.M_SUN
+MU = c.MU
 C = c.C
 
 @jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True)

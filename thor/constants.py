@@ -16,6 +16,9 @@ class Constants:
     
     # Solar Mass: M_sun (1.0)
     M_SUN = 1.0
+
+    # Solar MU : AU**3 / d**2 (0.295912208285591100E-3 -- DE431/DE430)
+    MU = G * M_SUN
     
     # Earth Equatorial Radius: km (6378.1363 km -- DE431/DE430)
     R_EARTH = 6378.1363 / KM_P_AU

@@ -14,7 +14,7 @@ __all__ = ["_convertCartesianToKeplerian",
            "_convertKeplerianToCartesian",
            "convertOrbitalElements"]
 
-MU = c.G * c.M_SUN
+MU = c.MU
 
 @jit(["f8[:,:](f8[:,:], f8)"], nopython=True)
 def _convertCartesianToKeplerian(elements_cart, mu=MU):

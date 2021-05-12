@@ -23,7 +23,7 @@ __all__ = [
     "gaussIOD"
 ]
 
-MU = c.G * c.M_SUN
+MU = c.MU
 C = c.C
 
 def _calcV(rho1_hat, rho2_hat, rho3_hat):

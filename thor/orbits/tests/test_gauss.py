@@ -88,7 +88,7 @@ def test_gaussIOD():
                     "light_time" : True, 
                     "lt_tol" : 1e-10,
                     "stellar_aberration" : False,
-                    "mu" : c.G * c.M_SUN,
+                    "mu" : c.MU,
                     "max_iter" : 1000, 
                     "tol" : 1e-16
                 }

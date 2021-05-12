@@ -33,7 +33,8 @@ TARGETS_ISO = [
     "1I/2017 U1", # Oumuamua  
     "C/2019 Q4" # Borisov
 ]
-        
+
+MU = c.MU       
 
 def test_convertOrbitalElements_elliptical():
     """
@@ -64,6 +65,7 @@ def test_convertOrbitalElements_elliptical():
         orbits_keplerian_horizons, 
         "keplerian", 
         "cartesian",
+        mu=MU
     )
 
     # Convert the cartesian states to keplerian states using THOR
@@ -71,6 +73,7 @@ def test_convertOrbitalElements_elliptical():
         orbits_cartesian_horizons, 
         "cartesian",
         "keplerian", 
+        mu=MU
     )
 
     # Conversion of cartesian orbits to keplerian orbits
@@ -130,6 +133,7 @@ def test_convertOrbitalElements_hyperbolic():
         orbits_keplerian_horizons, 
         "keplerian", 
         "cartesian",
+        mu=MU
     )
 
     # Convert the cartesian states to keplerian states using THOR
@@ -137,6 +141,7 @@ def test_convertOrbitalElements_hyperbolic():
         orbits_cartesian_horizons, 
         "cartesian",
         "keplerian", 
+        mu=MU
     )
 
     # Conversion of cartesian orbits to keplerian orbits
