@@ -1,8 +1,11 @@
 import os
+import logging
 import spiceypy as sp
 
 from .io import _downloadFile
 from .io import _readFileLog
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "getSPICEKernels",
@@ -78,9 +81,8 @@ def getSPICEKernels(kernels=["LSK - Latest",
     None
     """
     for kernel in kernels:
-        print("Checking for {} kernel...".format(kernel))
+        logger.info("Checking for {} kernel...".format(kernel))
         _downloadFile(os.path.join(os.path.dirname(__file__), "..", "data"), KERNELS[kernel][1])
-        print("")
     return
 
 def setupSPICE(kernels=["LSK - Latest",  
@@ -88,8 +90,8 @@ def setupSPICE(kernels=["LSK - Latest",
                         "Earth PCK - Long Term Predict Low Accuracy",
                         "Earth PCK - Historical High Accuracy", 
                         "Earth PCK - Latest High Accuracy", 
-                        "Planetary SPK"],
-    verbose=True):
+                        "Planetary SPK"]
+    ):
     """
     Loads the leapsecond, the Earth planetary constants and the planetary ephemerides kernels into SPICE. 
     
@@ -103,19 +105,15 @@ def setupSPICE(kernels=["LSK - Latest",
             "Earth PCK - Historical High Accuracy"
             "Earth PCK - Long Term Predict Low Accuracy"
             "Planetary SPK"
-    verbose : bool, optional
-        Print progress statements.
-    
+
     Returns
     -------
     None
     """
     if "THOR_SPICE" in os.environ.keys() and os.environ["THOR_SPICE"] == "True":
-        if verbose:
-            print("SPICE is already enabled.")
+        logger.info("SPICE is already enabled.")
     else:
-        if verbose:
-            print("Enabling SPICE...")
+        logger.info("Enabling SPICE...")
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data/log.yaml"))
         for kernel in kernels:
             file_name = KERNELS[kernel][0]
@@ -124,6 +122,5 @@ def setupSPICE(kernels=["LSK - Latest",
                 raise FileNotFoundError(err.format(file_name))
             sp.furnsh(log[file_name]["location"])
         os.environ["THOR_SPICE"] = "True"
-        if verbose:
-            print("Done.")
+        logger.info("SPICE enabled.")
     return
