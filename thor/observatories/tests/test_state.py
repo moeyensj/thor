@@ -5,6 +5,8 @@ from astropy.time import Time
 
 from ...testing import testOrbits
 from ...utils import getSPICEKernels
+from ...utils import setupSPICE
+from ...utils import KERNELS_DE440
 from ...utils import getMPCObservatoryCodes
 from ...utils import getHorizonsObserverState
 from ..state import getObserverState
@@ -25,7 +27,8 @@ def test_getObserverStateAgainstHorizons_heliocentric():
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
     # Insure SPICE is ready for computation
-    getSPICEKernels()
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440)
 
     # Make sure the latest version of the MPC observatory codes
     # has been downloaded
@@ -69,7 +72,8 @@ def test_getObserverStateAgainstHorizons_barycentric():
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
     # Insure SPICE is ready for computation
-    getSPICEKernels()
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440)
 
     # Make sure the latest version of the MPC observatory codes
     # has been downloaded

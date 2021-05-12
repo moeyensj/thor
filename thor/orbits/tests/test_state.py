@@ -5,6 +5,9 @@ from astropy.time import Time
 
 from ...testing import testOrbits
 from ...utils import getHorizonsVectors
+from ...utils import getSPICEKernels
+from ...utils import setupSPICE
+from ...utils import KERNELS_DE440
 from ..state import shiftOrbitsOrigin
 
 TARGETS = [
@@ -32,6 +35,9 @@ def test_shiftOrbitsOrigin():
     and barycentric frames, query Horizons for the heliocentric to barycentric vectors. Compare
     these vectors to ones generated using THOR.
     """
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440)
+
     # Grab barycenter to heliocenter vector from Horizons
     horizons_bary_to_helio = getHorizonsVectors(
         ["sun"], 

@@ -58,7 +58,7 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         )
         raise ValueError(err)
 
-    setupSPICE(verbose=False)
+    setupSPICE()
 
     # Check that times is an astropy time object
     _checkTime(observation_times, "observation_times")

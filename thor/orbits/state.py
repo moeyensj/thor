@@ -77,7 +77,7 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
         raise ValueError(err)
     
     # Make sure SPICE is ready to roll
-    setupSPICE(verbose=False)
+    setupSPICE()
 
     # Check that times is an astropy time object
     _checkTime(times, "times")
