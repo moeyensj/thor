@@ -8,11 +8,14 @@ from .io import _readFileLog
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "KERNEL_URLS",
+    "KERNELS_DE430",
+    "KERNELS_DE440",
     "getSPICEKernels",
     "setupSPICE"
 ]
 
-KERNELS = {
+KERNEL_URLS = {
     # Internal Name :  URL
     "LSK - Latest" : "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/latest_leapseconds.tls",
     "Planetary Constants" : "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc",
@@ -21,6 +24,7 @@ KERNELS = {
     "Earth PCK - Long Term Predict Low Accuracy" : "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_200101_990628_predict.bpc",
     "Earth FK" : "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf",
     "Planetary SPK - DE430" : "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de430.bsp",
+    "Planetary SPK - DE440" : "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp",
 }
 
 BASEKERNELS = [
@@ -31,6 +35,7 @@ BASEKERNELS = [
     "Earth PCK - Latest High Accuracy", 
 ]
 KERNELS_DE430 = BASEKERNELS + ["Planetary SPK - DE430"]
+KERNELS_DE440 = BASEKERNELS + ["Planetary SPK - DE440"]
 
 def getSPICEKernels(
         kernels=KERNELS_DE430
@@ -67,7 +72,7 @@ def getSPICEKernels(
     """
     for kernel in kernels:
         logger.info("Checking for {} kernel...".format(kernel))
-        url = KERNELS[kernel]
+        url = KERNEL_URLS[kernel]
         _downloadFile(os.path.join(os.path.dirname(__file__), "..", "data"), url)
     return
 
@@ -100,7 +105,7 @@ def setupSPICE(
         logger.info("Enabling SPICE...")
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data/log.yaml"))
         for kernel in kernels:
-            file_name = os.path.basename(KERNELS[kernel])
+            file_name = os.path.basename(KERNEL_URLS[kernel])
             if file_name not in log.keys():
                 err = ("{} not found. Please run thor.utils.getSPICEKernels to download SPICE kernels.")
                 raise FileNotFoundError(err.format(file_name))
