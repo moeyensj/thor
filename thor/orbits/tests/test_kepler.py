@@ -4,6 +4,7 @@ import warnings
 from astropy.time import Time
 from astropy import units as u
 
+from ...constants import DE44X as c
 from ...utils import getHorizonsVectors
 from ...utils import getHorizonsElements
 from ...utils import useDE440
@@ -32,6 +33,8 @@ TARGETS_ISO = [
     "C/2019 Q4" # Borisov
 ]
 
+MU = c.MU
+
 @useDE440
 def test_convertOrbitalElements_elliptical():
     """
@@ -40,8 +43,6 @@ def test_convertOrbitalElements_elliptical():
     to cartesian states. Then compare how well the converted states agree to the ones pulled from 
     Horizons.
     """
-    MU = 0.29591220828411956E-03
-
     # Query Horizons for cartesian states of each target at each T0
     orbits_cartesian_horizons = getHorizonsVectors(
         TARGETS, 
@@ -112,8 +113,6 @@ def test_convertOrbitalElements_hyperbolic():
     to cartesian states. Then compare how well the converted states agree to the ones pulled from 
     Horizons.
     """
-    MU = 0.29591220828411956E-03
-    
     # Query Horizons for cartesian states of each target at each T0
     orbits_cartesian_horizons = getHorizonsVectors(
         TARGETS_ISO, 

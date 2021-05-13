@@ -1,12 +1,10 @@
 import numpy as np
 import spiceypy as sp
 
-from ..constants import Constants as c
+from ..constants import KM_P_AU
+from ..constants import S_P_DAY
 from ..utils import setupSPICE
 from ..utils import _checkTime
-
-KM_P_AU = c.KM_P_AU
-S_P_DAY = c.S_P_DAY
 
 NAIF_MAPPING = {
     "solar system barycenter" : 0,
