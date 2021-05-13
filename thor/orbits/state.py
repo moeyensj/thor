@@ -83,8 +83,8 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     _checkTime(times, "times")
 
     # Convert MJD epochs in TDB to ET in TDB
-    epochs_utc = times.tdb
-    epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_utc.jd])
+    epochs_tdb = times.tdb
+    epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
     
     # Get position of the body in heliocentric ecliptic J2000 coordinates 
     states = []
