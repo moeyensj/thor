@@ -1,3 +1,4 @@
+from thor.utils.spice import useDE440
 import pytest
 import numpy as np
 from astropy import units as u
@@ -5,9 +6,7 @@ from astropy.time import Time
 
 from ...testing import testOrbits
 from ...utils import getHorizonsVectors
-from ...utils import getSPICEKernels
-from ...utils import setupSPICE
-from ...utils import KERNELS_DE440
+from ...utils import useDE440
 from ..state import shiftOrbitsOrigin
 
 TARGETS = [
@@ -29,15 +28,13 @@ T1 = Time(
     scale="tdb"
 )
 
+@useDE440
 def test_shiftOrbitsOrigin():
     """
     Query Horizons (via astroquery) for initial state vectors of each target at T0 in the heliocentric
     and barycentric frames, query Horizons for the heliocentric to barycentric vectors. Compare
     these vectors to ones generated using THOR.
     """
-    getSPICEKernels(KERNELS_DE440)
-    setupSPICE(KERNELS_DE440)
-
     # Grab barycenter to heliocenter vector from Horizons
     horizons_bary_to_helio = getHorizonsVectors(
         ["sun"], 

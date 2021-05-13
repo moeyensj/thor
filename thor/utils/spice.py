@@ -12,7 +12,10 @@ __all__ = [
     "KERNELS_DE430",
     "KERNELS_DE440",
     "getSPICEKernels",
-    "setupSPICE"
+    "setupSPICE",
+    "useDE430",
+    "useDE440",
+    "useDefaultDEXXX"
 ]
 
 KERNEL_URLS = {
@@ -113,3 +116,32 @@ def setupSPICE(
         os.environ[var_name] = "True"
         logger.info("SPICE enabled.")
     return
+
+def useDE430(func):
+    """
+    Decorator: Configures SPICE (via spiceypy) to
+    use the DE430 planetary ephemerides.
+    """
+    getSPICEKernels(KERNELS_DE430)
+    setupSPICE(KERNELS_DE430)
+
+    def wrap(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrap
+
+def useDE440(func):
+    """
+    Decorator: Configures SPICE (via spiceypy) to
+    use the DE440 planetary ephemerides.
+    """
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440)
+
+    def wrap(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrap
+
+# Set default to DE430
+useDefaultDEXXX = useDE430

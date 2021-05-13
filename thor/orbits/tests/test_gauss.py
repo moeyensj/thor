@@ -3,8 +3,7 @@ from astropy.time import Time
 from astropy import units as u
 
 from ...constants import Constants as c
-from ...utils import getSPICEKernels
-from ...utils import setupSPICE
+from ...utils import useDefaultDEXXX
 from ...utils import getHorizonsVectors
 from ...utils import getHorizonsObserverState
 from ...testing import testOrbits
@@ -59,11 +58,8 @@ def selectBestIOD(iod_orbits, true_orbit):
     
     return iod_orbits[nearest_iod:nearest_iod+1]
 
+@useDefaultDEXXX
 def test_gaussIOD():
-
-    # Make sure SPICE is ready to use default kernels
-    getSPICEKernels()
-    setupSPICE()
 
     for target in TARGETS:
         for observatory in OBSERVATORIES:

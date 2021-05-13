@@ -4,9 +4,7 @@ from astropy import units as u
 from astropy.time import Time
 
 from ...testing import testOrbits
-from ...utils import getSPICEKernels
-from ...utils import setupSPICE
-from ...utils import KERNELS_DE440
+from ...utils import useDE440
 from ...utils import getMPCObservatoryCodes
 from ...utils import getHorizonsObserverState
 from ..state import getObserverState
@@ -20,16 +18,13 @@ TIMES = Time(
     format="mjd"
 )
 
+@useDE440
 def test_getObserverStateAgainstHorizons_heliocentric():
     """
     Query Horizons (via astroquery) for heliocentric state vectors of each observatory at each observation time. 
     Use THOR to find heliocentric state vectors of each observatory at each observation time. 
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
-    # Insure SPICE is ready for computation
-    getSPICEKernels(KERNELS_DE440)
-    setupSPICE(KERNELS_DE440)
-
     # Make sure the latest version of the MPC observatory codes
     # has been downloaded
     getMPCObservatoryCodes()
@@ -65,16 +60,13 @@ def test_getObserverStateAgainstHorizons_heliocentric():
 
     return
 
+@useDE440
 def test_getObserverStateAgainstHorizons_barycentric():
     """
     Query Horizons (via astroquery) for barycentric state vectors of each observatory at each observation time. 
     Use THOR to find barycentric state vectors of each observatory at each observation time. 
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
-    # Insure SPICE is ready for computation
-    getSPICEKernels(KERNELS_DE440)
-    setupSPICE(KERNELS_DE440)
-
     # Make sure the latest version of the MPC observatory codes
     # has been downloaded
     getMPCObservatoryCodes()
