@@ -155,11 +155,13 @@ def clusterVelocity(
 
     clusters = db.labels_[np.where(db.labels_ != -1)[0]]
     cluster_ids = []
-    
+    logger.debug(
+        f"cluster: vx={vx} vy={vy} n_obs={len(obs_ids)} n_cluster={len(cluster_ids)}",
+    )
     if len(clusters) != 0:
         for cluster in np.unique(clusters):
             cluster_mask = np.where(db.labels_ == cluster)[0]
-            
+
             dt_in_cluster = dt[cluster_mask]
             num_obs = len(dt_in_cluster)
             arc_length = dt_in_cluster.max() - dt_in_cluster.min()
