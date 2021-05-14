@@ -1,0 +1,224 @@
+import os
+import numpy as np
+import pandas as pd
+from astropy.time import Time
+from astroquery.jplsbdb import SBDB
+
+from thor.utils import getHorizonsVectors
+from thor.utils import getHorizonsElements
+from thor.utils import getHorizonsEphemeris
+from thor.utils import getHorizonsObserverState
+
+TARGETS = [
+    # Atira 
+    "2020 AV2",
+    "163693",
+    
+    # Aten 
+    "2010 TK7",
+    "3753",
+
+    # Apollo
+    "54509", 
+    "2063", 
+    
+    # Amor
+    "1221",
+    "433",
+    "3908",
+    
+    # IMB
+    "434",
+    "1876",
+    "2001",
+    
+    # MBA
+    "2", 
+    "6",
+    "6522", 
+    "202930",
+    
+    # Jupiter Trojans
+    "911",
+    "1143",
+    "1172",
+    "3317", 
+    
+    # Centaur
+    "5145",
+    "5335",
+    "49036",
+    
+    # Trans-Neptunian Objects
+    "15760",
+    "15788",
+    "15789",
+    
+    # ISOs
+    "A/2017 U1"
+]
+T0 = Time(
+    [58000], 
+    scale="utc", 
+    format="mjd"
+)
+DTS = np.arange(-30, 30, 1)
+OBSERVATORY_CODES = ["500", "I11", "I41", "F51", "703"]
+CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
+
+DATA_DIR = os.path.abspath(os.path.dirname(__file__))
+
+def getSBDBClass(obj_ids):
+    data = {
+        "targetname" : [],
+        "orbit_class" : []
+    }
+    for obj_id in obj_ids:
+        results = SBDB.query(obj_id)
+        targetname = results["object"]["fullname"]
+        orbit_class = results["object"]["orbit_class"]["name"]
+        data["targetname"].append(targetname)
+        data["orbit_class"].append(orbit_class)
+    
+    return pd.DataFrame(data)
+
+def createTestDataset(
+        targets=TARGETS, 
+        t0=T0, 
+        observatory_codes=OBSERVATORY_CODES,
+        dts=DTS,
+        out_dir=DATA_DIR,
+    ):
+    """
+    Creates a test data set using data products from JPL Horizons and SBDB. 
+    The following files are created: 
+        vectors.csv : heliocentric cartesian state vectors in units of au and au per day
+            for each target at t0. 
+        vectors_barycentric.csv : barycentric cartesian state vectors in units of au and au per day
+            for each target at t0. 
+        elements.csv : keplerian elements in units of au and degrees for each target at t0. 
+        ephemeris.csv : ephemerides for each target as observed by each observer at t0 + dts. 
+        observer_states.csv : heliocentric cartesian state vectors in units of au and au per day
+            for each observer at t1. 
+        observer_states_barycentric.csv : heliocentric cartesian state vectors in units 
+            of au and au per day for each observer at t1. 
+            
+    Parameters
+    ----------
+    targets : list
+        Names of targets for which to great data set.
+    t0 : `~astropy.time.core.Time`
+        Initial epoch at which to get state vectors and elements for 
+        each target.
+    observatory_codes : list
+        MPC observatory codes of observatories for which ephemerides should be generated.
+    dts : `~numpy.ndarray` (N)
+        Array of delta times (in units of days) relative to t0 with which ephemerides should be generated.
+    out_dir : str
+        Location to save data set.
+        
+    Returns
+    -------
+    None
+    """
+    # Set t1 and the observers dictionary
+    t1 = t0 + dts
+    observers = {code : t1 for code in observatory_codes}
+    
+    # Query JPL's SBDB for orbit class of each target
+    orbit_classes = getSBDBClass(targets)
+
+    # Get heliocentric state vectors for each target
+    vectors = getHorizonsVectors(targets, t0, location="@sun")
+    vectors = vectors.join(orbit_classes[["orbit_class"]])
+    vectors["mjd_tdb"] = Time(
+        vectors["datetime_jd"].values,
+        scale="tdb",
+        format="jd"
+    ).tdb.mjd
+    vectors = vectors[["targetname", "mjd_tdb"] + CARTESIAN_COLS + ["orbit_class"]]
+    if out_dir is not None:
+        vectors.to_csv(
+            os.path.join(out_dir, "vectors.csv"),
+            index=False
+        )
+    
+    # Get barycentric state vectors for each target
+    vectors_barycentric = getHorizonsVectors(
+        targets, 
+        t0, 
+        location="@ssb"
+    )
+    vectors_barycentric = vectors_barycentric.join(orbit_classes[["orbit_class"]])
+    vectors_barycentric["mjd_tdb"] = Time(
+        vectors_barycentric["datetime_jd"].values,
+        scale="tdb",
+        format="jd"
+    ).tdb.mjd
+    vectors_barycentric = vectors_barycentric[["targetname", "mjd_tdb"] + CARTESIAN_COLS + ["orbit_class"]]
+    if out_dir is not None:
+        vectors_barycentric.to_csv(
+            os.path.join(out_dir, "vectors_barycentric.csv"),
+            index=False
+        )
+    
+    # Get heliocentric elements for each target
+    elements = getHorizonsElements(targets, t0)
+    elements = elements.join(orbit_classes[["orbit_class"]])
+    if out_dir is not None:
+        elements.to_csv(
+            os.path.join(out_dir, "elements.csv"),
+            index=False
+        )
+    
+    # Get ephemerides for each target as observed by the observers
+    ephemeris = getHorizonsEphemeris(targets, observers)
+    ephemeris = ephemeris[["targetname", "mjd_utc", "RA", "DEC", "observatory_code"]]
+    if out_dir is not None:
+        ephemeris.to_csv(
+            os.path.join(out_dir, "ephemeris.csv"),
+            index=False
+        )
+
+    # Get heliocentric observer states for each observatory
+    observer_states = getHorizonsObserverState(
+        observers.keys(), 
+        t1, 
+        origin="heliocenter"
+    )
+    observer_states["mjd_utc"] = Time(
+        observer_states["datetime_jd"].values,
+        scale="tdb",
+        format="jd"
+    ).utc.mjd
+    observer_states = observer_states[["observatory_code", "mjd_utc"] + CARTESIAN_COLS]
+    
+    if out_dir is not None:
+        observer_states.to_csv(
+            os.path.join(out_dir, "observer_states.csv"),
+            index=False
+        )
+    
+    # Get barycentric observer states for each observatory
+    observer_states_barycentric = getHorizonsObserverState(
+        observers.keys(), 
+        t1, 
+        origin="barycenter"
+    )
+    observer_states_barycentric["mjd_utc"] = Time(
+        observer_states_barycentric["datetime_jd"].values,
+        scale="tdb",
+        format="jd"
+    ).utc.mjd
+    observer_states_barycentric = observer_states_barycentric[["observatory_code", "mjd_utc"] + CARTESIAN_COLS]
+    if out_dir is not None:
+        observer_states_barycentric.to_csv(
+            os.path.join(out_dir, "observer_states_barycentric.csv"),
+            index=False
+        )
+        
+    return
+
+if __name__ == "__main__":
+
+    createTestDataset()
