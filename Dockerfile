@@ -14,7 +14,7 @@ RUN conda update -n base -c defaults conda
 RUN mkdir projects \
 	&& cd projects \
 	&& git clone https://github.com/moeyensj/thor.git --depth=1 \
-	&& cd projects/thor \
+	&& thor \
 	&& conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt python=3.8 --y \
 	&& python -m ipykernel install --user --name thor_py38 --display-name "THOR (Python 3.8)" \
 	&& python setup.py install
