@@ -68,7 +68,7 @@ def test_convertOrbitalElements_elliptical():
         orbits_keplerian_converted,
         elements,
         orbit_type="keplerian",
-        position_tol=(10*u.cm),
+        position_tol=(1*u.m),
         angle_tol=(1*u.microarcsecond),
         unitless_tol=(1e-10*u.dimensionless_unscaled)
     )
