@@ -4,6 +4,7 @@ import cProfile
 import pandas as pd
 from astropy.time import Time
 from difi import analyzeObservations
+from contextlib import contextmanager
 
 from thor import (
     preprocessObservations,
@@ -219,72 +220,56 @@ def init_debug_logging():
     logger.addHandler(ch)
 
 
+@contextmanager
+def cprofile(label):
+    profile = cProfile.Profile()
+    try:
+        profile.enable()
+        yield
+    finally:
+        profile.disable()
+        profile.dump_stats(label)
+        profile.print_stats()
+
+
 def main():
     print(f"THOR: {__version__}")
     DATA_DIR = "../thor_data/2021_05_13"
 
-    profile = cProfile.Profile()
-    profile.enable()
-    observations, associations = load_observations(DATA_DIR)
-    profile.disable()
-    profile.dump_stats("load_observations.profile")
+    with cprofile("load_observations.profile"):
+        observations, associations = load_observations(DATA_DIR)
     print(f"{len(observations)} observations loaded")
     print(f"{len(associations)} associations loaded")
-    profile.print_stats()
 
-    profile = cProfile.Profile()
-    profile.enable()
-    test_orbit = define_test_orbit(observations)
-    profile.disable()
-    profile.dump_stats("define_test_orbit.profile")
+    with cprofile("define_test_orbit.profile"):
+        test_orbit = define_test_orbit(observations)
     print("test orbit defined")
-    profile.print_stats()
 
-    profile = cProfile.Profile()
-    profile.enable()
-    projected_observations = range_and_shift(observations, test_orbit)
-    profile.disable()
-    profile.dump_stats("range_and_shift.profile")
+    with cprofile("range_and_shift.profile"):
+        projected_observations = range_and_shift(observations, test_orbit)
     print("range and shift complete")
-    profile.print_stats()
 
-    profile = cProfile.Profile()
-    profile.enable()
-    clusters, cluster_members = cluster_and_link(projected_observations)
-    profile.disable()
-    profile.dump_stats("cluster_and_link.profile")
+    with cprofile("cluster_and_link.profile"):
+        clusters, cluster_members = cluster_and_link(projected_observations)
     print("cluster and link complete")
-    profile.print_stats()
 
-    profile = cProfile.Profile()
-    profile.enable()
-    iod_orbits, iod_orbit_members = determine_orbits(
-        projected_observations, cluster_members,
-    )
-    profile.disable()
-    profile.dump_stats("iod.profile")
+    with cprofile("iod.profile"):
+        iod_orbits, iod_orbit_members = determine_orbits(
+            projected_observations, cluster_members,
+        )
     print("iod complete")
-    profile.print_stats()
 
-    profile = cProfile.Profile()
-    profile.enable()
-    od_orbits, od_orbit_members = apply_differential_correction(
-        iod_orbits, iod_orbit_members, projected_observations,
-    )
-    profile.disable()
-    profile.dump_stats("differential_correction.profile")
+    with cprofile("differential_correction.profile"):
+        od_orbits, od_orbit_members = apply_differential_correction(
+            iod_orbits, iod_orbit_members, projected_observations,
+        )
     print("differential correction complete")
-    profile.print_stats()
 
-    profile = cProfile.Profile()
-    profile.enable()
-    odp_orbits, odp_orbit_members = merge_and_extend(
-        od_orbits, od_orbit_members, projected_observations,
-    )
-    profile.disable()
-    profile.dump_stats("merge_and_extend.profile")
+    with cprofile("merge_and_extend.profile"):
+        odp_orbits, odp_orbit_members = merge_and_extend(
+            od_orbits, od_orbit_members, projected_observations,
+        )
     print("orbit extension complete")
-    profile.print_stats()
     print("all done")
 
 
