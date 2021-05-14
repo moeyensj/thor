@@ -1,27 +1,23 @@
+import os
 import pytest
-import numpy as np
+import pandas as pd
 from astropy import units as u
 from astropy.time import Time
 
 from ...testing import testOrbits
 from ...utils import useDE440
 from ...utils import getMPCObservatoryCodes
-from ...utils import getHorizonsObserverState
 from ..state import getObserverState
 
-OBSERVATORIES = ["I11", "005", "F51", "500", "568", "W84", "012", "I40", "286"]
-
-# Set some observation times
-TIMES = Time(
-    np.arange(54000, 54030, 1), 
-    scale="tdb", 
-    format="mjd"
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "../../testing/data"
 )
 
 @useDE440
-def test_getObserverStateAgainstHorizons_heliocentric():
+def test_getObserverState_heliocentric():
     """
-    Query Horizons (via astroquery) for heliocentric state vectors of each observatory at each observation time. 
+    Read the test dataset for heliocentric state vectors of each observatory at each observation time. 
     Use THOR to find heliocentric state vectors of each observatory at each observation time. 
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
@@ -29,41 +25,45 @@ def test_getObserverStateAgainstHorizons_heliocentric():
     # has been downloaded
     getMPCObservatoryCodes()
     
+    # Read observatory states from test data file
+    observer_states_df = pd.read_csv(
+        os.path.join(DATA_DIR, "observer_states.csv"),
+        index_col=False
+    )
+
     origin = "heliocenter"
-   
-    # Query Horizons for heliocentric observer states of each observatory at each time
-    horizons_states = getHorizonsObserverState(
-        OBSERVATORIES, 
-        TIMES, 
-        origin=origin,
-        aberrations="geometric",
-    )
-    horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
-
-    # Use THOR to find the heliocentric states for each observatory at each time
-    observer_states = getObserverState(
-        OBSERVATORIES, 
-        TIMES, 
-        origin=origin,
-    )
-    observer_states = observer_states[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
+    for observatory_code in observer_states_df["observatory_code"].unique():
+        observatory_mask = observer_states_df["observatory_code"].isin([observatory_code])
+        
+        times = Time(
+            observer_states_df[observatory_mask]["mjd_utc"].values,
+            scale="utc",
+            format="mjd"
+        )
+        observer_states = observer_states_df[observatory_mask][["x", "y", "z", "vx", "vy", "vz"]].values
     
-    # Test that each state agrees with Horizons
-    # to within the tolerances below
-    testOrbits(
-        observer_states,
-        horizons_states,
-        position_tol=(20*u.m),
-        velocity_tol=(1*u.mm/u.s),
-        magnitude=True
-    )
-
+        observer_states_thor = getObserverState(
+            [observatory_code], 
+            times, 
+            origin=origin,
+        )
+        observer_states_thor = observer_states_thor[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
+        
+        # Test that each state agrees with Horizons
+        # to within the tolerances below
+        testOrbits(
+            observer_states_thor,
+            observer_states,
+            position_tol=(20*u.m),
+            velocity_tol=(1*u.cm/u.s),
+            magnitude=True
+        )
     return
 
 @useDE440
-def test_getObserverStateAgainstHorizons_barycentric():
+def test_getObserverState_barycentric():
     """
-    Query Horizons (via astroquery) for barycentric state vectors of each observatory at each observation time. 
+    Read the test dataset for barycentric state vectors of each observatory at each observation time. 
     Use THOR to find barycentric state vectors of each observatory at each observation time. 
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
@@ -71,45 +71,52 @@ def test_getObserverStateAgainstHorizons_barycentric():
     # has been downloaded
     getMPCObservatoryCodes()
     
-    origin = "barycenter"
-   
-    # Query Horizons for barycentric observer states of each observatory at each time
-    horizons_states = getHorizonsObserverState(
-        OBSERVATORIES, 
-        TIMES, 
-        origin=origin,
-        aberrations="geometric",
+    # Read observatory states from test data file
+    observer_states_df = pd.read_csv(
+        os.path.join(DATA_DIR, "observer_states_barycentric.csv"),
+        index_col=False
     )
-    horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
 
-    # Use THOR to find the barycentric states for each observatory at each time
-    observer_states = getObserverState(
-        OBSERVATORIES, 
-        TIMES, 
-        origin=origin,
-    )
-    observer_states = observer_states[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
+    origin = "barycenter"
+    for observatory_code in observer_states_df["observatory_code"].unique():
+        observatory_mask = observer_states_df["observatory_code"].isin([observatory_code])
+        
+        times = Time(
+            observer_states_df[observatory_mask]["mjd_utc"].values,
+            scale="utc",
+            format="mjd"
+        )
+        observer_states = observer_states_df[observatory_mask][["x", "y", "z", "vx", "vy", "vz"]].values
     
-    # Test that each state agrees with Horizons
-    # to within the tolerances below
-    testOrbits(
-        observer_states,
-        horizons_states,
-        position_tol=(20*u.m),
-        velocity_tol=(1*u.mm/u.s),
-        magnitude=True
-    )
+        observer_states_thor = getObserverState(
+            [observatory_code], 
+            times, 
+            origin=origin,
+        )
+        observer_states_thor = observer_states_thor[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
+        
+        # Test that each state agrees with Horizons
+        # to within the tolerances below
+        testOrbits(
+            observer_states_thor,
+            observer_states,
+            position_tol=(20*u.m),
+            velocity_tol=(1*u.cm/u.s),
+            magnitude=True
+        )
     return
         
 def test_getObserverState_raises():
 
+    times = Time([59000], scale="utc", format="mjd")
+
     with pytest.raises(ValueError):
         # Raise error for incorrect frame 
-        observer_states = getObserverState(["500"], TIMES, frame="eccliptic")
+        observer_states = getObserverState(["500"], times, frame="eccliptic")
         
         # Raise error for incorrect origin
-        observer_states = getObserverState(["500"], TIMES, origin="heeliocenter")
+        observer_states = getObserverState(["500"], times, origin="heeliocenter")
 
     with pytest.raises(TypeError):
         # Raise error for non-astropy time
-        observer_states = getObserverState(["500"], TIMES.tdb.mjd)
+        observer_states = getObserverState(["500"], times.tdb.mjd)
