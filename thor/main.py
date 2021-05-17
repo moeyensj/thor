@@ -99,11 +99,11 @@ def clusterVelocity(
         eps=0.005, 
         min_samples=5,
         min_arc_length=1.0,
+        alg="dbscan",
     ):
     """
     Clusters THOR projection with different velocities
     in the projection plane using `~scipy.cluster.DBSCAN`.
-    
     Parameters
     ----------
     obs_ids : `~numpy.ndarray' (N)
@@ -137,42 +137,121 @@ def clusterVelocity(
         If clusters are found, will return a list of numpy arrays containing the 
         observation IDs for each cluster. If no clusters are found, will return np.NaN.
     """ 
+    logger.debug(f"cluster: vx={vx} vy={vy} n_obs={len(obs_ids)}")
     xx = x - vx * dt
     yy = y - vy * dt
+
+    X = np.stack((xx, yy), 1)
+
+    clusters = find_clusters(X, eps, min_samples, alg=alg)
+    clusters = filter_clusters_by_length(clusters, dt, min_samples, min_arc_length)
+
+    cluster_ids = []
+    for cluster in clusters:
+        cluster_ids.append(obs_ids[cluster])
+
+    if len(cluster_ids) == 0:
+        cluster_ids = np.NaN
+
+    return cluster_ids
+
+
+def filter_clusters_by_length(clusters, dt, min_samples, min_arc_length):
+    """
+    Filter cluster results on the conditions that they span at least
+    min_arc_length in the time dimension, and that each point in the cluster
+    is from a different dt value.
+
+    Parameters
+    -----------
+    clusters: `list of numpy.ndarray'
+
+        A list of clusters. Each cluster should be an array of indexes
+        of observations that are members of the same cluster. The indexes
+        are into the 'dt' array.
+
+    dt: `~numpy.ndarray' (N)
+        Change in time from the 0th exposure in units of MJD.
+
+    min_samples: int
+        Minimum size for a cluster to be included.
+
+    min_arc_length: float
+        Minimum arc length in units of days for a cluster to be accepted.
+
+    Returns
+    -------
+    list of numpy.ndarray
+
+        The original clusters list, filtered down.
+    """
+    filtered_clusters = []
+    for cluster in clusters:
+        dt_in_cluster = dt[cluster]
+        num_obs = len(dt_in_cluster)
+        arc_length = dt_in_cluster.max() - dt_in_cluster.min()
+        if ((num_obs == len(np.unique(dt_in_cluster)))
+            and (num_obs >= min_samples)
+            and (arc_length >= min_arc_length)):
+            filtered_clusters.append(cluster)
+    return filtered_clusters
+
+
+def find_clusters(points, eps, min_samples, alg="dbcan"):
+    """
+    Find all clusters in a 2-dimensional array of datapoints.
+
+    Parameters
+    ----------
+    points: `~numpy.ndarray' (N x N)
+        A 2-dimensional grid of (x, y) points to be clustered.
+    eps: float
+        The minimum distance between two points to be
+        used to establish that they are in the same cluster.
+    min_samples: into
+        The minumum number of points in a cluster.
+    alg: str
+        Algorithm to use. Only valid value right now is 'dbscan'.
+
+    Returns
+    -------
+    list of numpy.array
+        A list of clusters. Each cluster is an array of indexes into points,
+        indicating that the points are members of a cluster together.
+    """
+    if alg == "dbscan":
+        return _find_clusters_dbscan(points, eps, min_samples)
+    else:
+        raise NotImplementedError(f"algorithm '{alg}' is not implemented")
+
+
+def _find_clusters_dbscan(points, eps, min_samples):
     if USE_GPU:
         kwargs = {}
     else:
         kwargs = {"n_jobs" : 1}
 
-    X = np.vstack([xx, yy]).T  
-    
+    # ball_tree algorithm appears to run about 30-40% faster based on a single
+    # test orbit and (vx, vy), run on a laptop, improving from 300ms to 180ms.
+    #
+    # Runtime is not very sensitive to leaf_size, but 30 appears to be roughly
+    # optimal, and is the default value anyway.
     db = DBSCAN(
         eps=eps, 
         min_samples=min_samples,
+        algorithm="ball_tree",
+        leaf_size=30,
         **kwargs
     )
-    db.fit(X)
+    db.fit(points)
 
-    clusters = db.labels_[np.where(db.labels_ != -1)[0]]
-    cluster_ids = []
-    logger.debug(
-        f"cluster: vx={vx} vy={vy} n_obs={len(obs_ids)} n_cluster={len(cluster_ids)}",
-    )
-    if len(clusters) != 0:
-        for cluster in np.unique(clusters):
-            cluster_mask = np.where(db.labels_ == cluster)[0]
-
-            dt_in_cluster = dt[cluster_mask]
-            num_obs = len(dt_in_cluster)
-            arc_length = dt_in_cluster.max() - dt_in_cluster.min()
-            if (num_obs == len(np.unique(dt_in_cluster))) and (num_obs >= min_samples) and (arc_length >= min_arc_length):
-                cluster_ids.append(obs_ids[cluster_mask])
-
-    if len(cluster_ids) == 0:
-        cluster_ids = np.NaN
-                
+    cluster_labels = np.unique(db.labels_[np.where(db.labels_ != -1)])
+    clusters = []
+    for label in cluster_labels:
+        cluster_indices = np.where(db.labels_ == label)[0]
+        clusters.append(cluster_indices)
     del db
-    return cluster_ids
+    return clusters
 
 def clusterVelocity_worker(
         vx,
