@@ -314,10 +314,8 @@ def rangeAndShift(
     if threads > 1:
 
         if USE_RAY:
-            shutdown = False
             if not ray.is_initialized():
-                ray.init(num_cpus=threads)
-                shutdown = True
+                ray.init(address="auto")
 
             p = []
             for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
@@ -330,8 +328,6 @@ def rangeAndShift(
                 )
             projected_dfs = ray.get(p)
 
-            if shutdown:
-                ray.shutdown()
         else:
             p = mp.Pool(
                 processes=threads,
@@ -524,10 +520,8 @@ def clusterAndLink(
     if threads > 1 and not USE_GPU:
     
         if USE_RAY:
-            shutdown = False
             if not ray.is_initialized():
-                ray.init(num_cpus=threads)
-                shutdown = True
+                ray.init(address="auto")
 
             p = []
             for vxi, vyi in zip(vxx, vyy):
@@ -545,9 +539,6 @@ def clusterAndLink(
                     )
                 )
             possible_clusters = ray.get(p)
-
-            if shutdown:
-                ray.shutdown()
                 
         else:
         

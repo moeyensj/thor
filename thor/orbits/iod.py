@@ -600,10 +600,8 @@ def initialOrbitDetermination(
 
         if threads > 1:
             if USE_RAY:
-                shutdown = False
                 if not ray.is_initialized():
-                    ray.init(num_cpus=threads)
-                    shutdown = True
+                    ray.init(address="auto")
             else:
                 p = mp.Pool(
                     processes=threads,
@@ -718,8 +716,6 @@ def initialOrbitDetermination(
         )
 
         if threads > 1:
-            if USE_RAY and shutdown:
-                ray.shutdown()
             if not USE_RAY:
                 p.close()
 
