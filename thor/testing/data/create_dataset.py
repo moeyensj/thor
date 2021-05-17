@@ -65,7 +65,7 @@ T0 = Time(
 DTS = np.arange(-30, 30, 1)
 OBSERVATORY_CODES = ["500", "I11", "I41", "F51", "703"]
 CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
-
+FLOAT_FORMAT = "%.16E"
 DATA_DIR = os.path.abspath(os.path.dirname(__file__))
 
 def getSBDBClass(obj_ids):
@@ -140,7 +140,8 @@ def createTestDataset(
     if out_dir is not None:
         vectors.to_csv(
             os.path.join(out_dir, "vectors.csv"),
-            index=False
+            index=False,
+            float_format=FLOAT_FORMAT
         )
     
     # Get barycentric state vectors for each target
@@ -159,25 +160,38 @@ def createTestDataset(
     if out_dir is not None:
         vectors_barycentric.to_csv(
             os.path.join(out_dir, "vectors_barycentric.csv"),
-            index=False
+            index=False,
+            float_format=FLOAT_FORMAT
         )
     
     # Get heliocentric elements for each target
     elements = getHorizonsElements(targets, t0)
     elements = elements.join(orbit_classes[["orbit_class"]])
+    elements["mjd_tdb"] = Time(
+        elements["datetime_jd"].values,
+        scale="tdb",
+        format="jd"
+    ).tdb.mjd
+    elements = elements[["targetname", "mjd_tdb", "e", "q", "incl", "Omega", "w", "Tp_jd", "n", "M", "nu", "a", "Q", "P", "orbit_class"]]
     if out_dir is not None:
         elements.to_csv(
             os.path.join(out_dir, "elements.csv"),
-            index=False
+            index=False,
+            float_format=FLOAT_FORMAT
         )
     
     # Get ephemerides for each target as observed by the observers
     ephemeris = getHorizonsEphemeris(targets, observers)
-    ephemeris = ephemeris[["targetname", "mjd_utc", "RA", "DEC", "observatory_code"]]
+    ephemeris = ephemeris[["targetname", "observatory_code", "mjd_utc", "RA", "DEC"]]
+    ephemeris.sort_values(
+        by=["targetname", "observatory_code", "mjd_utc"],
+        inplace=True
+    )
     if out_dir is not None:
         ephemeris.to_csv(
             os.path.join(out_dir, "ephemeris.csv"),
-            index=False
+            index=False,
+            float_format=FLOAT_FORMAT
         )
 
     # Get heliocentric observer states for each observatory
@@ -196,7 +210,8 @@ def createTestDataset(
     if out_dir is not None:
         observer_states.to_csv(
             os.path.join(out_dir, "observer_states.csv"),
-            index=False
+            index=False,
+            float_format=FLOAT_FORMAT
         )
     
     # Get barycentric observer states for each observatory
@@ -214,11 +229,12 @@ def createTestDataset(
     if out_dir is not None:
         observer_states_barycentric.to_csv(
             os.path.join(out_dir, "observer_states_barycentric.csv"),
-            index=False
+            index=False,
+            float_format=FLOAT_FORMAT
         )
         
     return
 
 if __name__ == "__main__":
 
-    createTestDataset()
+    createTestDataset(out_dir=os.path.dirname(__file__))
