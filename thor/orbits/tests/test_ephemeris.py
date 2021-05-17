@@ -1,89 +1,92 @@
-import numpy as np
+import os
+import pandas as pd
 from astropy.time import Time
 from astropy import units as u
 
-from ...utils import _checkTime
-from ...utils import getHorizonsVectors
-from ...utils import getHorizonsEphemeris
 from ...testing import testEphemeris
 from ..orbits import Orbits
 from ..ephemeris import generateEphemeris
 
-TARGETS = [
-    "Amor",
-    "Eros", 
-    "Eugenia",
-] 
-EPOCH = 57257.0
-DT = np.array([0])
-T0 = Time(
-    [EPOCH], 
-    format="mjd",
-    scale="tdb", 
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "../../testing/data"
 )
-T1 = Time(
-    EPOCH + DT, 
-    format="mjd",
-    scale="tdb"
-)
-OBSERVATORIES = ["I11", "I41", "005", "F51", "500", "568", "W84", "012", "I40", "286"]
-OBSERVERS =  {k:T1 for k in OBSERVATORIES}
-
 
 def test_generateEphemeris():
     """
-    Query Horizons (via astroquery) for initial state vectors of each target at T0, also query Horizons
-    for ephemerides for each target as observed by each observatory at T1. Use THOR and PYOORB backend to 
-    generate ephemerides for each target as observed by each observatory at T1 using the initial state vectors.
+    Read the test data set for initial state vectors of each target at t0, and read the test data set 
+    for ephemerides for each target as observed by each observatory at t1. Use PYOORB backend to 
+    generate ephemerides for each target as observed by each observatory at t1 using the initial state vectors.
     Compare the resulting ephemerides and test how well they agree with the ones pulled from Horizons.
     """
-    # Query Horizons for ephemerides of each target as observed
-    # by each observatory
-    horizons_ephemeris = getHorizonsEphemeris(
-        TARGETS,
-        OBSERVERS
+    # Read vectors from test data set
+    vectors_df = pd.read_csv(
+        os.path.join(DATA_DIR, "vectors.csv")
     )
-    horizons_ephemeris = horizons_ephemeris[["RA", "DEC"]].values
 
-    # Query Horizons for initial state vectors for each target at T0
-    horizons_orbits = Orbits.fromHorizons(
-        TARGETS,
-        T0,
+    # Read ephemerides from test data
+    ephemeris_df = pd.read_csv(
+        os.path.join(DATA_DIR, "ephemeris.csv")
     )
+
+    # Limit vectors and ephemerides to elliptical orbits only
+    elliptical_vectors = (
+        (~vectors_df["orbit_class"].str.contains("Hyperbolic"))
+        & (~vectors_df["orbit_class"].str.contains("Parabolic"))
+    )
+    vectors_df = vectors_df[elliptical_vectors]
+
+    elliptical_ephemeris = (
+        (ephemeris_df["targetname"].isin(vectors_df["targetname"].unique()))
+    )
+    ephemeris_df = ephemeris_df[elliptical_ephemeris]
+
+    # Get the target names
+    targets = vectors_df["targetname"].unique()
+
+    # Get the initial epochs
+    t0 = Time(
+        vectors_df["mjd_tdb"].values,
+        scale="tdb",
+        format="mjd"
+    )
+
+    # Pull state vectors
+    vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
+   
+    # Create orbits class
+    orbits = Orbits(
+        vectors,
+        t0,
+        ids=targets
+    )
+
+    # Construct observers' dictionary
+    observers = {}
+    for observatory_code in ephemeris_df["observatory_code"].unique():
+        observers[observatory_code] = Time(
+            ephemeris_df[ephemeris_df["observatory_code"].isin([observatory_code])]["mjd_utc"].unique(),
+            scale="utc",
+            format="mjd"
+        )
+    ephemeris = ephemeris_df[["RA", "DEC"]].values
 
     # Use PYOORB to generate ephemeris for each target observed by 
     # each observer
-    pyoorb_ephemeris = generateEphemeris(
-        horizons_orbits, 
-        OBSERVERS, 
+    ephemeris_pyoorb = generateEphemeris(
+        orbits, 
+        observers, 
         backend="PYOORB",
     )
-    pyoorb_ephemeris = pyoorb_ephemeris[["RA_deg", "Dec_deg"]].values
+    ephemeris_pyoorb = ephemeris_pyoorb[["RA_deg", "Dec_deg"]].values
 
     # pyoorb's ephemerides agree with Horizons' ephemerides
     # to within the tolerance below.
     testEphemeris(
-        pyoorb_ephemeris,
-        horizons_ephemeris,
-        angle_tol=(50*u.milliarcsecond),
+        ephemeris_pyoorb,
+        ephemeris,
+        angle_tol=(10*u.milliarcsecond),
         magnitude=True
     )
 
-    # Use MJOLNIR's 2-body propagator to generate ephemeris for each target observed by 
-    # each observer
-    mjolnir_ephemeris = generateEphemeris(
-        horizons_orbits, 
-        OBSERVERS, 
-        backend="MJOLNIR",
-    )
-    mjolnir_ephemeris = mjolnir_ephemeris[["RA_deg", "Dec_deg"]].values
-
-    # MJOLNIR's 2-body ephemerides agree with Horizons' ephemerides
-    # to within the tolerance below.
-    testEphemeris(
-        mjolnir_ephemeris,
-        horizons_ephemeris,
-        angle_tol=(50*u.milliarcsecond),
-        magnitude=True
-    )
     return
