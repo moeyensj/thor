@@ -4,10 +4,13 @@ import pandas as pd
 from astropy.time import Time
 from astroquery.jplsbdb import SBDB
 
+from thor import preprocessObservations
 from thor.utils import getHorizonsVectors
 from thor.utils import getHorizonsElements
 from thor.utils import getHorizonsEphemeris
 from thor.utils import getHorizonsObserverState
+from thor.orbits import Orbits
+from thor.orbits import generateEphemeris
 
 TARGETS = [
     # Atira 
@@ -66,6 +69,8 @@ DTS = np.arange(-30, 30, 1)
 OBSERVATORY_CODES = ["500", "I11", "I41", "F51", "703"]
 CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
 FLOAT_FORMAT = "%.16E"
+NOISE_FACTOR = 0.5
+RANDOM_SEED = 1719
 DATA_DIR = os.path.abspath(os.path.dirname(__file__))
 
 def getSBDBClass(obj_ids):
@@ -102,6 +107,9 @@ def createTestDataset(
             for each observer at t1. 
         observer_states_barycentric.csv : heliocentric cartesian state vectors in units 
             of au and au per day for each observer at t1. 
+        observations.csv : Preprocessed observations for the elliptical orbits. 
+        associations.csv : Labels ('truths') for the preprocessed observations.
+        orbits.csv : Elliptical orbits saved as THOR orbit class.
             
     Parameters
     ----------
@@ -229,6 +237,107 @@ def createTestDataset(
     if out_dir is not None:
         observer_states_barycentric.to_csv(
             os.path.join(out_dir, "observer_states_barycentric.csv"),
+            index=False,
+            float_format=FLOAT_FORMAT
+        )
+
+
+    # Limit vectors and ephemerides to elliptical orbits only
+    elliptical_vectors = (
+        (~vectors["orbit_class"].str.contains("Hyperbolic"))
+        & (~vectors["orbit_class"].str.contains("Parabolic"))
+    )
+    vectors = vectors[elliptical_vectors]
+
+    elliptical_ephemeris = (
+        (ephemeris["targetname"].isin(vectors["targetname"].unique()))
+    )
+    ephemeris_df = ephemeris[elliptical_ephemeris]
+
+    # Get the target names
+    targets = vectors["targetname"].unique()
+
+    # Get the initial epochs
+    t0 = Time(
+        vectors["mjd_tdb"].values,
+        scale="tdb",
+        format="mjd"
+    )
+
+    # Pull state vectors
+    vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
+
+    # Create orbits class
+    orbits = Orbits(
+        vectors,
+        t0,
+        ids=targets
+    )
+    orbits.to_csv(os.path.join(out_dir, "orbits.csv"))
+
+    # Construct observers' dictionary
+    observers = {}
+    for observatory_code in ["I41"]:
+        observers[observatory_code] = Time(
+            ephemeris_df[ephemeris_df["observatory_code"].isin([observatory_code])]["mjd_utc"].unique(),
+            scale="utc",
+            format="mjd"
+        )
+
+    # Generate ephemerides with PYOORB
+    ephemeris = generateEphemeris(
+        orbits,
+        observers,
+        backend="PYOORB",
+        threads=1
+    )
+    observations = ephemeris.sort_values(
+        by=["mjd_utc", "observatory_code"],
+        ignore_index=True,
+    )
+
+    # Add noise observations
+    np.random.seed(RANDOM_SEED)
+    inds = np.arange(0, len(observations))
+    inds_selected = np.random.choice(inds, int(NOISE_FACTOR * len(observations)), replace=False)
+    observations_noise = observations.iloc[sorted(inds_selected)].copy()
+    observations_noise["orbit_id"] = ["u{:08d}".format(i) for i in range(len(observations_noise))]
+    observations_noise.loc[:, ["RA_deg", "Dec_deg"]] = (
+        observations_noise[["RA_deg", "Dec_deg"]].values 
+        + np.random.normal(loc=1/3600, scale=30/3600, size=(len(observations_noise), 2))
+    )
+
+    observations = pd.concat([observations, observations_noise])
+    observations = observations.sort_values(
+        by=["mjd_utc", "observatory_code"],
+        ignore_index=True,
+    )
+
+    column_mapping = {
+        "obs_id" : None,     
+        "mjd" : "mjd_utc",                      
+        "RA_deg" : "RA_deg",                       
+        "Dec_deg" : "Dec_deg",                      
+        "RA_sigma_deg" : None,                
+        "Dec_sigma_deg" : None,               
+        "observatory_code" : "observatory_code",             
+        "obj_id" : "orbit_id",                           
+    }
+    preprocessed_observations, preprocessed_associations = preprocessObservations(
+        observations,
+        column_mapping,
+        astrometric_errors=[0.1/3600, 0.1/3600],
+        mjd_scale='utc',
+    )
+
+    if out_dir is not None:
+        preprocessed_observations.to_csv(
+            os.path.join(out_dir, "observations.csv"),
+            index=False,
+            float_format=FLOAT_FORMAT
+        )
+        preprocessed_associations.to_csv(
+            os.path.join(out_dir, "associations.csv"),
             index=False,
             float_format=FLOAT_FORMAT
         )
