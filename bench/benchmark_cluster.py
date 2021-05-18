@@ -1,4 +1,5 @@
 from thor import clusterVelocity
+from thor import clusters
 import numpy as np
 import pandas as pd
 import random
@@ -36,12 +37,16 @@ def run(max_obs=100, max_exp=-1):
     eps = 0.005
     min_samples = 5
     min_arc_length = 1.0
+
+    points = np.array((x, y))
     prof = cProfile.Profile()
     prof.enable()
-    clusterVelocity(obs_ids, x, y, dt,
-                    vx, vy, eps, min_samples, min_arc_length)
+    clusters.hotspot_search_cpp(points, eps, min_samples)
+    # clusterVelocity(obs_ids, x, y, dt,
+    #                 vx, vy, eps, min_samples,
+    #                 min_arc_length, "hotspot_cy_cpp")
     prof.disable()
-    prof.dump_stats("benchmark_cluster.profile")
+    prof.dump_stats("benchmark_cluster_hotspot_cpp.profile")
     return prof
 
 
