@@ -15,7 +15,7 @@ install:
   - conda config --set always_yes yes --set changeps1 no
   - conda update -q conda
   - conda info -a
-  - conda create -q -n thor_py38 python=$TRAVIS_PYTHON_VERSION -c defaults -c conda-forge -c moeyensj --file requirements_travis.txt
+  - conda create -q -n thor_py38 python=$TRAVIS_PYTHON_VERSION -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt
   - source activate thor_py38
   - python setup.py install
 

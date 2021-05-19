@@ -58,7 +58,7 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         )
         raise ValueError(err)
 
-    setupSPICE(verbose=False)
+    setupSPICE()
 
     # Check that times is an astropy time object
     _checkTime(observation_times, "observation_times")
@@ -97,8 +97,8 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         state = getPerturberState("earth", observation_times, frame=frame, origin=origin)
         
         # Convert MJD epochs in TDB to ET in TDB
-        epochs_utc = observation_times.tdb
-        epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_utc.jd])
+        epochs_tdb = observation_times.tdb
+        epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
         
         # Grab rotaton matrices from ITRF93 to ecliptic J2000
         # The ITRF93 high accuracy Earth rotation model takes into account:

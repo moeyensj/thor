@@ -8,7 +8,7 @@ from ..orbits import Orbits
 from ..propagate import propagateOrbits
 from ..lambert import calcLambert
 
-MU = c.G * c.M_SUN
+MU = c.MU
 TARGETS = [
     "Amor",
     "Eros", 

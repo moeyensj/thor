@@ -13,7 +13,7 @@ from ..orbits import shiftOrbitsOrigin
 from ..observatories import getObserverState
 from .backend import Backend
 
-MU = c.G * c.M_SUN
+MU = c.MU
 MJOLNIR_CONFIG = {
     "origin" : "heliocenter",
     "light_time" : True, 
