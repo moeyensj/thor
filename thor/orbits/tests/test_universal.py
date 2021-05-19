@@ -6,6 +6,9 @@ from astropy.time import Time
 from astropy import units as u
 
 from ...constants import Constants as c
+from ...utils import KERNELS_DE430
+from ...utils import getSPICEKernels
+from ...utils import setupSPICE
 from ...testing import testOrbits
 from ..universal_propagate import propagateUniversal
 
@@ -22,6 +25,9 @@ def test_propagateUniversal():
     those states to all t1 using THOR's 2-body propagator and SPICE's 2-body propagator (via spiceypy).
     Compare the resulting states and test how well they agree.
     """
+    getSPICEKernels(KERNELS_DE430)
+    setupSPICE(KERNELS_DE430, force=True)
+
     # Read vectors from test data set
     vectors_df = pd.read_csv(
         os.path.join(DATA_DIR, "vectors.csv")

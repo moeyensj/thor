@@ -3,9 +3,11 @@ from astropy.time import Time
 from astropy import units as u
 
 from ...constants import Constants as c
-from ...utils import useDefaultDEXXX
 from ...utils import getHorizonsVectors
 from ...utils import getHorizonsObserverState
+from ...utils import KERNELS_DE430
+from ...utils import getSPICEKernels
+from ...utils import setupSPICE
 from ...testing import testOrbits
 from ..orbits import Orbits
 from ..ephemeris import generateEphemeris
@@ -58,8 +60,10 @@ def selectBestIOD(iod_orbits, true_orbit):
     
     return iod_orbits[nearest_iod:nearest_iod+1]
 
-@useDefaultDEXXX
 def test_gaussIOD():
+    
+    getSPICEKernels(KERNELS_DE430)
+    setupSPICE(KERNELS_DE430, force=True)
 
     for target in TARGETS:
         for observatory in OBSERVATORIES:

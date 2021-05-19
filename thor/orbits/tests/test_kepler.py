@@ -4,7 +4,9 @@ import pandas as pd
 from astropy import units as u
 
 from ...constants import DE44X as c
-from ...utils import useDE440
+from ...utils import KERNELS_DE440
+from ...utils import getSPICEKernels
+from ...utils import setupSPICE
 from ...testing import testOrbits
 from ..kepler import convertOrbitalElements
 
@@ -14,7 +16,6 @@ DATA_DIR = os.path.join(
     "../../testing/data"
 )
 
-@useDE440
 def test_convertOrbitalElements_elliptical():
     """
     Read the test dataset for cartesian and keplerian states for each elliptical orbit target at each T0. 
@@ -22,6 +23,9 @@ def test_convertOrbitalElements_elliptical():
     to cartesian states. Then compare how well the converted states agree to the ones pulled from 
     Horizons.
     """
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440, force=True)
+
     # Read vectors and elements from test data set
     vectors_df = pd.read_csv(
         os.path.join(DATA_DIR, "vectors.csv")
@@ -86,12 +90,12 @@ def test_convertOrbitalElements_elliptical():
 
     return
 
-@useDE440
 def test_convertOrbitalElements_parabolilic():
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440, force=True)
     warnings.warn("Need to implement and test parabolic conversions!!!")
     return
 
-@useDE440
 def test_convertOrbitalElements_hyperbolic():
     """
     Read the test dataset for cartesian and keplerian states for each hyperbolic orbit target at each T0. 
@@ -99,6 +103,9 @@ def test_convertOrbitalElements_hyperbolic():
     to cartesian states. Then compare how well the converted states agree to the ones pulled from 
     Horizons.
     """
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440, force=True)
+
     # Read vectors and elements from test data set
     vectors_df = pd.read_csv(
         os.path.join(DATA_DIR, "vectors.csv")

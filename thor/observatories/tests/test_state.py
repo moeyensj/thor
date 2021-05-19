@@ -1,11 +1,14 @@
 import os
+from thor.utils.spice import getSPICEKernels
 import pytest
 import pandas as pd
 from astropy import units as u
 from astropy.time import Time
 
 from ...testing import testOrbits
-from ...utils import useDE440
+from ...utils import KERNELS_DE440
+from ...utils import getSPICEKernels
+from ...utils import setupSPICE
 from ...utils import getMPCObservatoryCodes
 from ..state import getObserverState
 
@@ -14,13 +17,15 @@ DATA_DIR = os.path.join(
     "../../testing/data"
 )
 
-@useDE440
 def test_getObserverState_heliocentric():
     """
     Read the test dataset for heliocentric state vectors of each observatory at each observation time. 
     Use THOR to find heliocentric state vectors of each observatory at each observation time. 
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440, force=True)
+
     # Make sure the latest version of the MPC observatory codes
     # has been downloaded
     getMPCObservatoryCodes()
@@ -60,13 +65,15 @@ def test_getObserverState_heliocentric():
         )
     return
 
-@useDE440
 def test_getObserverState_barycentric():
     """
     Read the test dataset for barycentric state vectors of each observatory at each observation time. 
     Use THOR to find barycentric state vectors of each observatory at each observation time. 
     Compare the resulting state vectors and test how well they agree with the ones pulled from Horizons.
     """
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440, force=True)
+
     # Make sure the latest version of the MPC observatory codes
     # has been downloaded
     getMPCObservatoryCodes()

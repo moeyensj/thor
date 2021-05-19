@@ -4,7 +4,6 @@ import pandas as pd
 from astropy.time import Time
 from astropy import units as u
 
-from ...utils import useDE430
 from ...testing import testOrbits
 from ..orbits import Orbits
 from ..propagate import propagateOrbits
@@ -15,7 +14,6 @@ DATA_DIR = os.path.join(
 )
 DT = np.arange(-1000, 1000, 5)
 
-@useDE430
 def test_propagateOrbits():
     """
     Read the test dataset for the initial state vectors of each target at t0, then propagate

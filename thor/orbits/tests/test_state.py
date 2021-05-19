@@ -5,7 +5,9 @@ import pandas as pd
 from astropy import units as u
 from astropy.time import Time
 
-from ...utils import useDE440
+from ...utils import KERNELS_DE440
+from ...utils import setupSPICE
+from ...utils import getSPICEKernels
 from ...testing import testOrbits
 from ..state import shiftOrbitsOrigin
 
@@ -14,12 +16,14 @@ DATA_DIR = os.path.join(
     "../../testing/data"
 )
 
-@useDE440
 def test_shiftOrbitsOrigin():
     """
     Read test data set for initial for initial state vectors of each target at t0 in the heliocentric
     and barycentric frames, use THOR to shift each vector to a different origin and compare. 
     """
+    getSPICEKernels(KERNELS_DE440)
+    setupSPICE(KERNELS_DE440, force=True)
+
     # Read vectors from test data set
     vectors_heliocentric_df = pd.read_csv(
         os.path.join(DATA_DIR, "vectors.csv")
