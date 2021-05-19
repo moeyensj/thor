@@ -6,7 +6,8 @@ Tracklet-less Heliocentric Orbit Recovery
 [![Coverage Status](https://coveralls.io/repos/github/moeyensj/thor/badge.svg?branch=master)](https://coveralls.io/github/moeyensj/thor?branch=master)
 [![Docker Pulls](https://img.shields.io/docker/pulls/moeyensj/thor)](https://hub.docker.com/r/moeyensj/thor)  
 [![Python 3.7+](https://img.shields.io/badge/Python-3.7%2B-blue)](https://img.shields.io/badge/Python-3.7%2B-blue)
-[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)  
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![DOI](https://zenodo.org/badge/116747066.svg)](https://zenodo.org/badge/latestdoi/116747066)  
 
 ## Installation
 
