@@ -1,11 +1,11 @@
 ![banner](docs/banner.png)
 # THOR
 Tracklet-less Heliocentric Orbit Recovery  
-[![Build Status](https://dev.azure.com/moeyensj/thor/_apis/build/status/moeyensj.thor?branchName=master)](https://dev.azure.com/moeyensj/thor/_build/latest?definitionId=2&branchName=master)
-[![Build Status](https://www.travis-ci.com/moeyensj/thor.svg?token=sWjpnqPgpHyuq3j7qPuj&branch=master)](https://www.travis-ci.com/moeyensj/thor)
-[![Coverage Status](https://coveralls.io/repos/github/moeyensj/thor/badge.svg?branch=master&t=pdSkQA)](https://coveralls.io/github/moeyensj/thor?branch=master)
+[![Build Status](https://dev.azure.com/moeyensj/thor/_apis/build/status/moeyensj.thor?branchName=main)](https://dev.azure.com/moeyensj/thor/_build/latest?definitionId=2&branchName=main)
+[![Build Status](https://www.travis-ci.com/moeyensj/thor.svg?branch=main)](https://www.travis-ci.com/moeyensj/thor)
+[![Coverage Status](https://coveralls.io/repos/github/moeyensj/thor/badge.svg?branch=master)](https://coveralls.io/github/moeyensj/thor?branch=master)
 [![Docker Pulls](https://img.shields.io/docker/pulls/moeyensj/thor)](https://hub.docker.com/r/moeyensj/thor)  
-[![Python 3.6](https://img.shields.io/badge/Python-3.6%2B-blue)](https://img.shields.io/badge/Python-3.6%2B-blue)
+[![Python 3.7+](https://img.shields.io/badge/Python-3.7%2B-blue)](https://img.shields.io/badge/Python-3.7%2B-blue)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)  
 
 ## Installation
@@ -21,31 +21,27 @@ Clone this repository using either `ssh` or `https`. Once cloned and downloaded,
 
 To install THOR in its own `conda` enviroment please do the following:  
 
-```conda create -n thor_py36 -c defaults -c conda-forge -c astropy --file requirements.txt python=3.6```  
+```conda create -n thor_py38 -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt python=3.8```  
 
 Or, to install THOR in a pre-existing `conda` environment called `env`:  
 
 ```conda activate env```  
-```conda install -c defaults -c conda-forge -c astropy --file requirements.txt```  
+```conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt```  
 
-Or, to install pre-requisite software using `pip`:  
-
-```pip install -r requirements.txt```
-
-Once pre-requisites have been installed using either one of the tree options above, then:  
+Once pre-requisites have been installed using either one of the options above, then:  
 
 ```python setup.py install```
 
 Or, if you are actively planning to develop or contribute to THOR, then:
 
-```python setup.py develop```
+```python setup.py develop --no-deps```
 
 You should now be able to start Python and import THOR. 
 ```
-┌─(thor_py36)[~]
-└─▪ python
-Python 3.6.9 (default, Jul 30 2019, 19:07:31) 
-[Clang 4.0.1 (tags/RELEASE_401/final)] :: Anaconda, Inc. on darwin
+┌─(thor_py38)[moeyensj][±][main ✓][~/projects/thor]
+└─▪ python 
+Python 3.8.8 (default, Apr 13 2021, 19:58:26) 
+[GCC 7.3.0] :: Anaconda, Inc. on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>> import thor
 >>> 
