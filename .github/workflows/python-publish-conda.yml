@@ -31,4 +31,7 @@ jobs:
         CONDA_TOKEN: ${{ secrets.CONDA_TOKEN }}
       run: |
         conda config --set anaconda_upload yes
+        conda config --append channels conda-forge 
+        conda config --append channels astropy
+        conda config --append channels moeyensj
         conda build . --token $CONDA_TOKEN --user $CONDA_USERNAME 
