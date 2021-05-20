@@ -14,6 +14,7 @@ from astropy.time import Time
 from sklearn.neighbors import kneighbors_graph
 import scipy.sparse
 import collections
+from numba import int64, float64
 
 
 from .config import Config
@@ -228,15 +229,21 @@ def find_clusters(points, eps, min_samples, alg="dbscan"):
     if alg == "dbscan":
         return _find_clusters_dbscan(points, eps, min_samples)
     if alg == "hotspot_cy_simple":
-        return _find_clusters_hotspots_cy_simple(points, 0.01, 4)
+        return _find_clusters_hotspots_cy_simple(points, eps, min_samples)
     if alg == "hotspot_cy_cpp":
-        return _find_clusters_hotspots_cy_cpp(points, 0.01, 4)
+        return _find_clusters_hotspots_cy_cpp(points, eps, min_samples)
     if alg == "hotspot_numba":
-        return _find_clusters_hotspots_numba(points, 0.01, 4)
+        return _find_clusters_hotspots_numba(points, eps, min_samples)
     if alg == "hotspot_py":
-        return _find_clusters_hotspots_py(points, 0.01, 4)
+        return _find_clusters_hotspots_py(points, eps, min_samples)
+    if alg == "hotspot_collections":
+        return _find_clusters_hotspots_collections(points, eps, min_samples)
+    if alg == "hotspot_numpy_unique":
+        return _find_clusters_hotspots_numpy_unique_counts(points, eps, min_samples)
+    if alg == "hotspot_numpy_offset":
+        return _find_clusters_hotspots_numpy_offsets(points, eps, min_samples)
     if alg == "sparse":
-        return _find_clusters_sparse_matrix(points, 0.01, 4)
+        return _find_clusters_sparse_matrix(points, eps, min_samples)
     else:
         raise NotImplementedError(f"algorithm '{alg}' is not implemented")
 
@@ -276,6 +283,29 @@ def _find_clusters_hotspots_cy_simple(points, eps, min_samples):
 
 def _find_clusters_hotspots_cy_cpp(points, eps, min_samples):
     return hotspot_search_cpp(points, eps, min_samples)
+
+
+def _find_clusters_hotspots_collections(points, eps, min_samples):
+    points = points - points % eps
+    counts = collections.Counter(zip(*points.T))
+
+    pairs = _filter_counts(counts, min_samples)
+
+    clusters = []
+    xvals, yvals = points.T
+    for x, y in pairs:
+        clusters.append(_compute_mask(xvals, yvals, x, y, eps))
+
+    return clusters
+
+
+def _filter_counts(counts, min):
+    counts = np.array([(x, y, n) for ((x, y), n) in counts.items()])
+    return counts[counts[:,2] > min][:, :2]
+
+@numba.jit
+def _compute_mask(xvals, yvals, x, y, eps):
+    return np.where((xvals >= x) & (xvals < x + eps) & (yvals >= y) & (yvals < y + eps))
 
 
 def _find_clusters_hotspots_py(points, eps, min_samples):
@@ -368,6 +398,80 @@ def _find_clusters_hotspots_py(points, eps, min_samples):
                 cluster.extend(hist1[coord])
         if len(cluster) >= min_samples:
             clusters.append(np.array(cluster))
+    return clusters
+
+
+def _find_clusters_hotspots_numpy_unique_counts(points, eps, min_samples):
+    # Convert points to units of 'eps', and then round to integers.
+    if points.shape[0] != 2:
+        points = points.T
+    points_rounded = np.floor((points / eps)).astype("int64")
+    uniques, counts = np.unique(points_rounded, return_counts=True, axis=1)
+    hits = uniques[:, counts >= min_samples]
+    clusters = []
+    for h in hits.T:
+        hit_indices = np.where(np.equal(h, points_rounded.T).all(1))
+        clusters.append(hit_indices)
+    return clusters
+
+
+@numba.jit(nopython=True)
+def _apply_offset_logic(sorted_points, min_samples):
+    # Check if there are any sequences of at least min_samples length with the
+    # same x, y values in a row.
+    offset = min_samples - 1
+    mask_x, mask_y = (sorted_points[:, :-offset] == sorted_points[:, offset:])
+    mask = mask_x & mask_y
+    xy_hits = sorted_points[:, offset:][:, mask]
+    return xy_hits
+
+
+@numba.jit(nopython=True, parallel=True)
+def _convert_units(points, eps):
+    return np.floor(points / eps).astype(np.int64)
+
+
+@numba.jit(nopython=True, parallel=True)
+def _round_points(points, eps):
+    if points.shape[0] != 2:
+        points = points.T
+
+    # Convert points to units of 'eps', and then roud to integers.
+    points_rounded = _convert_units(points, eps)
+    return points_rounded
+
+
+@numba.jit(forceobj=True, parallel=True)
+def _index_match(xy, points_rounded):
+    pair_equals = np.equal(xy, points_rounded.T)
+    return np.logical_and(pair_equals[:, 1], pair_equals[:, 0])
+
+
+@numba.jit(forceobj=True)
+def _gather_indices(xy_hits, points_rounded):
+    clusters = []
+    for xy in xy_hits.T:
+        hit_indices = _index_match(xy, points_rounded)
+        clusters.append(hit_indices)
+    return clusters
+
+
+def _find_clusters_hotspots_numpy_offsets(points, eps, min_samples):
+    points_rounded = _round_points(points, eps)
+    sort_order = np.lexsort(points_rounded)
+    sorted_points = points_rounded[:, sort_order]
+
+    xy_hits = _apply_offset_logic(sorted_points, min_samples)
+
+    if xy_hits.shape[1] == 0:
+        return []
+
+    # Deduplicate because there may be sequences with length > min_samples.
+    xy_hits = np.unique(xy_hits, axis=1)
+
+    # Gather indexes. A plain old for loop is probably fine here because
+    # xy_hits is likely to be small.
+    clusters = _gather_indices(xy_hits, points_rounded)
     return clusters
 
 
@@ -466,42 +570,58 @@ def _find_clusters_hotspots_numba(points, eps, min_samples):
 
 
 def _find_clusters_sparse_matrix(points, eps, min_samples):
-    # Rescale datapoints so that they are in integer units of 'eps'.
-    scaled_points = np.floor((points / eps)).astype("int64")
+    # Perform sparse matrix density search twice: once on the points as given,
+    # then once offset by eps/2 in the X and Y directions. This covers edge
+    # effects in the integerization.
+    clusters = _find_clusters_sparse_matrix_inner(points, eps, min_samples)
+    clusters.extend(_find_clusters_sparse_matrix_inner(points + eps/2, eps, min_samples))
+    return clusters
 
-    # Translate datapoints so they are non-negative.
-    scaled_points_min = scaled_points.min(0)
-    scaled_translated_points = scaled_points - scaled_points_min
 
-    # 'datapoints' are just 1 for every x-y position.
-    data = np.ones(len(points), dtype="int16")
+def _find_clusters_sparse_matrix_inner(points, eps, min_samples):
+    # Rescale datapoints so that they are in non-negative integer units of 'eps'.
+    points = np.floor(points / eps).astype('int64')
+    points = points - points.min(0)
 
-    # Construct the sparse matrix
-    matrix = scipy.sparse.coo_matrix((data, scaled_translated_points.T))
-    matrix.sum_duplicates()
-
-    # Find entries with a value >= 4 - those are 'hot spots'. They represent the
-    # lower end of bins that contain a lot of datapoints.
-    hot_x, hot_y, _ = scipy.sparse.find(matrix >= min_samples)
-
-    # Undo the translation of the hotspot coordinates.
-    hot_x = hot_x + scaled_points_min[0]
-    hot_y = hot_y + scaled_points_min[1]
-
-    # Undo the scaling of the hotspot coordinates.
-    hot_x = hot_x * eps
-    hot_y = hot_y * eps
+    hot_x, hot_y = _find_repeated_integer_pairs(points[:, 0], points[:, 1], min_samples)
 
     # Find indexes of points which lie within [coord, coord+eps). That interval
-    # is right because we used `np.floor` above in the rescaling.
+    # is right because we used `np.floor` above in the integerization.
     clusters = []
     xvals, yvals = points.T
     for i in range(len(hot_x)):
-        x_mask = (xvals >= hot_x[i]) & (xvals < hot_x[i] + eps)
-        y_mask = (yvals >= hot_y[i]) & (yvals < hot_y[i] + eps)
+        x_mask = (xvals >= hot_x[i]) & (xvals < hot_x[i] + 1)
+        y_mask = (yvals >= hot_y[i]) & (yvals < hot_y[i] + 1)
         mask = x_mask & y_mask
         clusters.append(np.where(mask))
+
     return clusters
+
+
+def _find_repeated_integer_pairs(x, y, threshold):
+    """
+    Given a 2 numpy arrays of non-negative integers, find x-y pairs which are
+    appear at least 'threshold' times.
+
+    Assumes that no pairs appear more often than 255 times.
+
+    Parameters
+    ----------
+    x: A numpy array of non-negative integers.
+    y: A numpy array of non-negative integers, with the same length as x.
+    threshold: The minimum number of times an integer must appear to be included.
+
+    Returns
+    -------
+    Pair of numpy arrays, x and y, which
+    """
+    data = np.ones(len(x), dtype='int8')
+    matrix = scipy.sparse.coo_matrix((data, (x, y)))
+    matrix.sum_duplicates()
+    mask = matrix.data >= threshold
+    hot_x = matrix.row[mask]
+    hot_y = matrix.col[mask]
+    return hot_x, hot_y
 
 
 def clusterVelocity_worker(
