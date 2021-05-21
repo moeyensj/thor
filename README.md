@@ -18,7 +18,38 @@ Warning: The THOR code is still in very active development.
 
 The corresponding notebook repository can be found at: https://github.com/moeyensj/thor_notebooks
 
-We recommend installing the code along one of two installation paths: either a source code installation, or an installation via docker. 
+The following installation paths are available:  
+[Anaconda](#Anaconda)  
+[Docker](#Docker)  
+[Source](#Source)  
+
+### Anaconda
+`thor` can be downloaded directly from anaconda:  
+```conda install -c moeyensj thor```
+
+Or, if preferred, installed into its own environment via:  
+```conda create -n thor_py38 -c moeyensj thor python=3.8```
+
+### Docker
+
+A Docker container with the latest version of the code can be pulled using:  
+
+```docker pull moeyensj/thor:latest```
+
+To run the container:  
+
+```docker run -it moeyensj/thor:latest```
+
+The THOR code is installed the /projects directory, and is by default also installed in the container's Python installation. 
+To access the code in Python: 
+```
+(base) root@202110177eee:/# python
+Python 3.6.9 |Anaconda, Inc.| (default, Jul 30 2019, 19:07:31) 
+[GCC 7.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import thor
+>>> 
+```
 
 ### Source
 Clone this repository using either `ssh` or `https`. Once cloned and downloaded, `cd` into the repository. 
@@ -46,27 +77,6 @@ You should now be able to start Python and import THOR.
 └─▪ python 
 Python 3.8.8 (default, Apr 13 2021, 19:58:26) 
 [GCC 7.3.0] :: Anaconda, Inc. on linux
-Type "help", "copyright", "credits" or "license" for more information.
->>> import thor
->>> 
-```
-
-### Docker
-
-A Docker container with the latest version of the code can be pulled using:  
-
-```docker pull moeyensj/thor:latest```
-
-To run the container:  
-
-```docker run -it moeyensj/thor:latest```
-
-The THOR code is installed the /projects directory, and is by default also installed in the container's Python installation. 
-To access the code in Python: 
-```
-(base) root@202110177eee:/# python
-Python 3.6.9 |Anaconda, Inc.| (default, Jul 30 2019, 19:07:31) 
-[GCC 7.3.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>> import thor
 >>> 
