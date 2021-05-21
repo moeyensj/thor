@@ -19,7 +19,7 @@ from numba import int64, float64
 
 from .config import Config
 from .cell import Cell
-from .clusters import hotspot_search_simple, hotspot_search_cpp
+from .clusters import hotspot_search_simple, hotspot_search_offsets
 from .orbit import TestOrbit
 from .orbits import Orbits
 from .orbits import generateEphemeris
@@ -218,7 +218,7 @@ def find_clusters(points, eps, min_samples, alg="dbscan"):
     min_samples: into
         The minumum number of points in a cluster.
     alg: str
-        Algorithm to use. Only valid value right now is 'dbscan'.
+        Algorithm to use. Can be "dbscan" or "hotspot_2d".
 
     Returns
     -------
@@ -228,22 +228,8 @@ def find_clusters(points, eps, min_samples, alg="dbscan"):
     """
     if alg == "dbscan":
         return _find_clusters_dbscan(points, eps, min_samples)
-    if alg == "hotspot_cy_simple":
-        return _find_clusters_hotspots_cy_simple(points, eps, min_samples)
-    if alg == "hotspot_cy_cpp":
-        return _find_clusters_hotspots_cy_cpp(points, eps, min_samples)
-    if alg == "hotspot_numba":
-        return _find_clusters_hotspots_numba(points, eps, min_samples)
-    if alg == "hotspot_py":
-        return _find_clusters_hotspots_py(points, eps, min_samples)
-    if alg == "hotspot_collections":
-        return _find_clusters_hotspots_collections(points, eps, min_samples)
-    if alg == "hotspot_numpy_unique":
-        return _find_clusters_hotspots_numpy_unique_counts(points, eps, min_samples)
-    if alg == "hotspot_numpy_offset":
-        return _find_clusters_hotspots_numpy_offsets(points, eps, min_samples)
-    if alg == "sparse":
-        return _find_clusters_sparse_matrix(points, eps, min_samples)
+    if alg == "hotspot_2d":
+        return _find_clusters_hotspot_2d(points, eps, min_samples)
     else:
         raise NotImplementedError(f"algorithm '{alg}' is not implemented")
 
@@ -277,186 +263,7 @@ def _find_clusters_dbscan(points, eps, min_samples):
     return clusters
 
 
-def _find_clusters_hotspots_cy_simple(points, eps, min_samples):
-    return hotspot_search_simple(points, eps, min_samples)
-
-
-def _find_clusters_hotspots_cy_cpp(points, eps, min_samples):
-    return hotspot_search_cpp(points, eps, min_samples)
-
-
-def _find_clusters_hotspots_collections(points, eps, min_samples):
-    points = points - points % eps
-    counts = collections.Counter(zip(*points.T))
-
-    pairs = _filter_counts(counts, min_samples)
-
-    clusters = []
-    xvals, yvals = points.T
-    for x, y in pairs:
-        clusters.append(_compute_mask(xvals, yvals, x, y, eps))
-
-    return clusters
-
-
-def _filter_counts(counts, min):
-    counts = np.array([(x, y, n) for ((x, y), n) in counts.items()])
-    return counts[counts[:,2] > min][:, :2]
-
-@numba.jit
-def _compute_mask(xvals, yvals, x, y, eps):
-    return np.where((xvals >= x) & (xvals < x + eps) & (yvals >= y) & (yvals < y + eps))
-
-
-def _find_clusters_hotspots_py(points, eps, min_samples):
-    # Create two histograms, offset by half the bin width to deal with edges.
-    hist1 = {}
-    hist2 = {}
-
-    # Reshape the 2 X N points array into a 5 X N array.
-    #  Columns are:
-    #    index
-    #    X rounded to nearest eps
-    #    Y rounded to nearest eps
-    #    X+eps/2, rounded to nearest eps
-    #    Y+eps/2, rounded to nearest eps
-    indices = np.arange(0, len(points))
-    points_rounded = ((points / eps).T).astype('int64')
-    points_rounded_offset = ((points + eps/2) / eps).T.astype('int64')
-
-    points = np.stack(
-        (indices,
-         points_rounded[0],
-         points_rounded[1],
-         points_rounded_offset[0],
-         points_rounded_offset[1]), 1)
-
-    # Loop over the points, keeping track of how many share the same rounded x-y
-    # values. If at least 5 share an x-y value, call that a "hotspot", and mark
-    # it for later.
-    #
-    # TODO: optimize this loop - it's the vast majority of runtime (>90%)
-    # according to line_profiler
-    hotspots1 = set()
-    hotspots2 = set()
-    for (idx, x1, y1, x2, y2) in points:
-        key1 = (x1, y1)
-        if key1 in hist1:
-            hist1[key1].append(idx)
-            if len(hist1[key1]) == min_samples:
-                hotspots1.add(key1)
-        else:
-            hist1[key1] = [idx]
-
-        key2 = (x2, y2)
-        if key2 in hist2:
-            hist2[key2].append(idx)
-            if len(hist2[key2]) == min_samples:
-                hotspots2.add(key2)
-        else:
-            hist2[key2] = [idx]
-
-    # Loop over the hotspots, and pull out the underlying indexes. Call those
-    # hotspots "clusters."
-    # To deal with edge effects, pull out of the other hotspot set.
-    #
-    # hotspots1:        hotspots2:
-    #
-    #  +---+---+---+
-    #  |0,0|1,0|2,0|   +---+---+---+
-    #  +---+---+---+   |0,0|1,0|2,0|
-    #  |0,1|1,1|2,1|   +---+---+---+
-    #  +---+---+---+   |0,1|1,1|2,1|
-    #  |0,2|1,2|2,2|   +---+---+---+
-    #  +---+---+---+   |0,2|1,2|2,2|
-    #                  +---+---+---+
-    #
-    # If a hotspots2 value (x, y) is lit up, we can search nearby values by
-    # checking hotspots1 in (x-1, y-1), (x-1, y), (x, y-1), and (x, y).
-    #
-    # If hotspots1 is lit up, we can check (x, y), (x+1, y), (x, y+1), and (x+1,
-    # y+1).
-    clusters = []
-    visited = set()
-    for (x, y) in hotspots1:
-        cluster = []
-        for coord in [(x, y), (x+1, y), (x, y+1), (x+1, y+1)]:
-            if coord in hist2:
-                cluster.extend(hist2[coord])
-                visited.add(coord)
-        if len(cluster) >= min_samples:
-            clusters.append(np.array(cluster))
-
-    for (x, y) in hotspots2:
-        if (x, y) in visited:
-            # Skip this point because it was covered from the previous loop.
-            continue
-
-        cluster = []
-        for coord in [(x, y), (x-1, y), (x, y-1), (x-1, y-1)]:
-            if coord in hist1:
-                cluster.extend(hist1[coord])
-        if len(cluster) >= min_samples:
-            clusters.append(np.array(cluster))
-    return clusters
-
-
-def _find_clusters_hotspots_numpy_unique_counts(points, eps, min_samples):
-    # Convert points to units of 'eps', and then round to integers.
-    if points.shape[0] != 2:
-        points = points.T
-    points_rounded = np.floor((points / eps)).astype("int64")
-    uniques, counts = np.unique(points_rounded, return_counts=True, axis=1)
-    hits = uniques[:, counts >= min_samples]
-    clusters = []
-    for h in hits.T:
-        hit_indices = np.where(np.equal(h, points_rounded.T).all(1))
-        clusters.append(hit_indices)
-    return clusters
-
-
-@numba.jit(nopython=True)
-def _apply_offset_logic(sorted_points, min_samples):
-    # Check if there are any sequences of at least min_samples length with the
-    # same x, y values in a row.
-    offset = min_samples - 1
-    mask_x, mask_y = (sorted_points[:, :-offset] == sorted_points[:, offset:])
-    mask = mask_x & mask_y
-    xy_hits = sorted_points[:, offset:][:, mask]
-    return xy_hits
-
-
-@numba.jit(nopython=True, parallel=True)
-def _convert_units(points, eps):
-    return np.floor(points / eps).astype(np.int64)
-
-
-@numba.jit(nopython=True, parallel=True)
-def _round_points(points, eps):
-    if points.shape[0] != 2:
-        points = points.T
-
-    # Convert points to units of 'eps', and then roud to integers.
-    points_rounded = _convert_units(points, eps)
-    return points_rounded
-
-
-@numba.jit(forceobj=True, parallel=True)
-def _index_match(xy, points_rounded):
-    pair_equals = np.equal(xy, points_rounded.T)
-    return np.logical_and(pair_equals[:, 1], pair_equals[:, 0])
-
-
-@numba.jit(forceobj=True)
-def _gather_indices(xy_hits, points_rounded):
-    clusters = []
-    for xy in xy_hits.T:
-        hit_indices = _index_match(xy, points_rounded)
-        clusters.append(hit_indices)
-    return clusters
-
-
-def _find_clusters_hotspots_numpy_offsets(points, eps, min_samples):
+def _find_clusters_hotspot_2d(points, eps, min_samples):
     points_rounded = _round_points(points, eps)
     sort_order = np.lexsort(points_rounded)
     sorted_points = points_rounded[:, sort_order]
@@ -475,153 +282,45 @@ def _find_clusters_hotspots_numpy_offsets(points, eps, min_samples):
     return clusters
 
 
-@numba.jit
-def _find_clusters_hotspots_numba(points, eps, min_samples):
-    # Create two histograms, offset by half the bin width to deal with edges.
-    hist1 = {}
-    hist2 = {}
+@numba.jit(nopython=True)
+def _apply_offset_logic(sorted_points, min_samples):
+    # Check if there are any sequences of at least min_samples length with the
+    # same x, y values in a row.
+    offset = min_samples - 1
+    mask_x, mask_y = (sorted_points[:, :-offset] == sorted_points[:, offset:])
+    mask = mask_x & mask_y
+    xy_hits = sorted_points[:, offset:][:, mask]
+    return xy_hits
 
-    # Reshape the 2 X N points array into a 5 X N array.
-    #  Columns are:
-    #    index
-    #    X rounded to nearest eps
-    #    Y rounded to nearest eps
-    #    X+eps/2, rounded to nearest eps
-    #    Y+eps/2, rounded to nearest eps
-    indices = np.arange(0, len(points))
-    points_rounded = ((points / eps).T).astype('int64')
-    points_rounded_offset = ((points + eps/2) / eps).T.astype('int64')
 
-    points = np.stack(
-        (indices,
-         points_rounded[0],
-         points_rounded[1],
-         points_rounded_offset[0],
-         points_rounded_offset[1]), 1)
+@numba.jit(nopython=True, parallel=True)
+def _convert_units(points, eps):
+    return points - points % eps
 
-    # Loop over the points, keeping track of how many share the same rounded x-y
-    # values. If at least 5 share an x-y value, call that a "hotspot", and mark
-    # it for later.
-    #
-    # TODO: optimize this loop - it's the vast majority of runtime (>90%)
-    # according to line_profiler
-    hotspots1 = set()
-    hotspots2 = set()
-    for (idx, x1, y1, x2, y2) in points:
-        key1 = (x1, y1)
-        if key1 in hist1:
-            hist1[key1].append(idx)
-            if len(hist1[key1]) == min_samples:
-                hotspots1.add(key1)
-        else:
-            hist1[key1] = [idx]
 
-        key2 = (x2, y2)
-        if key2 in hist2:
-            hist2[key2].append(idx)
-            if len(hist2[key2]) == min_samples:
-                hotspots2.add(key2)
-        else:
-            hist2[key2] = [idx]
+@numba.jit(nopython=True, parallel=True)
+def _round_points(points, eps):
+    if points.shape[0] != 2:
+        points = points.T
 
-    # Loop over the hotspots, and pull out the underlying indexes. Call those
-    # hotspots "clusters."
-    # To deal with edge effects, pull out of the other hotspot set.
-    #
-    # hotspots1:        hotspots2:
-    #
-    #  +---+---+---+
-    #  |0,0|1,0|2,0|   +---+---+---+
-    #  +---+---+---+   |0,0|1,0|2,0|
-    #  |0,1|1,1|2,1|   +---+---+---+
-    #  +---+---+---+   |0,1|1,1|2,1|
-    #  |0,2|1,2|2,2|   +---+---+---+
-    #  +---+---+---+   |0,2|1,2|2,2|
-    #                  +---+---+---+
-    #
-    # If a hotspots2 value (x, y) is lit up, we can search nearby values by
-    # checking hotspots1 in (x-1, y-1), (x-1, y), (x, y-1), and (x, y).
-    #
-    # If hotspots1 is lit up, we can check (x, y), (x+1, y), (x, y+1), and (x+1,
-    # y+1).
+    # Round the points down to the nearest value which is a multiple of 'eps'.
+    points_rounded = _convert_units(points, eps*2)
+    return points_rounded
+
+
+@numba.jit(nopython=True, parallel=True)
+def _index_match(xy, points_rounded):
+    pair_equals = np.equal(xy, points_rounded.T)
+    return np.where(np.logical_and(pair_equals[:, 1], pair_equals[:, 0]))
+
+
+@numba.jit(forceobj=True)
+def _gather_indices(xy_hits, points_rounded):
     clusters = []
-    visited = set()
-    for (x, y) in hotspots1:
-        cluster = []
-        for coord in [(x, y), (x+1, y), (x, y+1), (x+1, y+1)]:
-            if coord in hist2:
-                cluster.extend(hist2[coord])
-                visited.add(coord)
-        if len(cluster) >= min_samples:
-            clusters.append(np.array(cluster))
-
-    for (x, y) in hotspots2:
-        if (x, y) in visited:
-            # Skip this point because it was covered from the previous loop.
-            continue
-
-        cluster = []
-        for coord in [(x, y), (x-1, y), (x, y-1), (x-1, y-1)]:
-            if coord in hist1:
-                cluster.extend(hist1[coord])
-        if len(cluster) >= min_samples:
-            clusters.append(np.array(cluster))
+    for xy in xy_hits.T:
+        hit_indices = _index_match(xy, points_rounded)
+        clusters.append(hit_indices)
     return clusters
-
-
-def _find_clusters_sparse_matrix(points, eps, min_samples):
-    # Perform sparse matrix density search twice: once on the points as given,
-    # then once offset by eps/2 in the X and Y directions. This covers edge
-    # effects in the integerization.
-    clusters = _find_clusters_sparse_matrix_inner(points, eps, min_samples)
-    clusters.extend(_find_clusters_sparse_matrix_inner(points + eps/2, eps, min_samples))
-    return clusters
-
-
-def _find_clusters_sparse_matrix_inner(points, eps, min_samples):
-    # Rescale datapoints so that they are in non-negative integer units of 'eps'.
-    points = np.floor(points / eps).astype('int64')
-    points = points - points.min(0)
-
-    hot_x, hot_y = _find_repeated_integer_pairs(points[:, 0], points[:, 1], min_samples)
-
-    # Find indexes of points which lie within [coord, coord+eps). That interval
-    # is right because we used `np.floor` above in the integerization.
-    clusters = []
-    xvals, yvals = points.T
-    for i in range(len(hot_x)):
-        x_mask = (xvals >= hot_x[i]) & (xvals < hot_x[i] + 1)
-        y_mask = (yvals >= hot_y[i]) & (yvals < hot_y[i] + 1)
-        mask = x_mask & y_mask
-        clusters.append(np.where(mask))
-
-    return clusters
-
-
-def _find_repeated_integer_pairs(x, y, threshold):
-    """
-    Given a 2 numpy arrays of non-negative integers, find x-y pairs which are
-    appear at least 'threshold' times.
-
-    Assumes that no pairs appear more often than 255 times.
-
-    Parameters
-    ----------
-    x: A numpy array of non-negative integers.
-    y: A numpy array of non-negative integers, with the same length as x.
-    threshold: The minimum number of times an integer must appear to be included.
-
-    Returns
-    -------
-    Pair of numpy arrays, x and y, which
-    """
-    data = np.ones(len(x), dtype='int8')
-    matrix = scipy.sparse.coo_matrix((data, (x, y)))
-    matrix.sum_duplicates()
-    mask = matrix.data >= threshold
-    hot_x = matrix.row[mask]
-    hot_y = matrix.col[mask]
-    return hot_x, hot_y
 
 
 def clusterVelocity_worker(
