@@ -6,15 +6,10 @@ import yaml
 import logging
 import shutil
 import numpy as np
-import numba
 import pandas as pd
 import multiprocessing as mp
 from functools import partial
 from astropy.time import Time
-from sklearn.neighbors import kneighbors_graph
-import scipy.sparse
-import collections
-from numba import int64, float64
 
 
 from .config import Config
