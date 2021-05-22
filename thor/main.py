@@ -18,8 +18,8 @@ from numba import int64, float64
 
 
 from .config import Config
+from .clusters import find_clusters, filter_clusters_by_length
 from .cell import Cell
-from .clusters import hotspot_search_simple, hotspot_search_offsets
 from .orbit import TestOrbit
 from .orbits import Orbits
 from .orbits import generateEphemeris
@@ -141,7 +141,7 @@ def clusterVelocity(
     Returns
     -------
     list
-        If clusters are found, will return a list of numpy arrays containing the
+        If clusters are found, will return a list of numpy arrays containing tphe
         observation IDs for each cluster. If no clusters are found, will return np.NaN.
     """
     logger.debug(f"cluster: vx={vx} vy={vy} n_obs={len(obs_ids)}")
@@ -151,7 +151,9 @@ def clusterVelocity(
     X = np.stack((xx, yy), 1)
 
     clusters = find_clusters(X, eps, min_samples, alg=alg)
-    clusters = filter_clusters_by_length(clusters, dt, min_samples, min_arc_length)
+    clusters = filter_clusters_by_length(
+        clusters, dt, min_samples, min_arc_length,
+    )
 
     cluster_ids = []
     for cluster in clusters:
@@ -161,166 +163,6 @@ def clusterVelocity(
         cluster_ids = np.NaN
 
     return cluster_ids
-
-
-def filter_clusters_by_length(clusters, dt, min_samples, min_arc_length):
-    """
-    Filter cluster results on the conditions that they span at least
-    min_arc_length in the time dimension, and that each point in the cluster
-    is from a different dt value.
-
-    Parameters
-    -----------
-    clusters: `list of numpy.ndarray'
-
-        A list of clusters. Each cluster should be an array of indexes
-        of observations that are members of the same cluster. The indexes
-        are into the 'dt' array.
-
-    dt: `~numpy.ndarray' (N)
-        Change in time from the 0th exposure in units of MJD.
-
-    min_samples: int
-        Minimum size for a cluster to be included.
-
-    min_arc_length: float
-        Minimum arc length in units of days for a cluster to be accepted.
-
-    Returns
-    -------
-    list of numpy.ndarray
-
-        The original clusters list, filtered down.
-    """
-    filtered_clusters = []
-    for cluster in clusters:
-        dt_in_cluster = dt[cluster]
-        num_obs = len(dt_in_cluster)
-        arc_length = dt_in_cluster.max() - dt_in_cluster.min()
-        if ((num_obs == len(np.unique(dt_in_cluster)))
-            and ((num_obs >= min_samples))
-            and (arc_length >= min_arc_length)):
-            filtered_clusters.append(cluster)
-    return filtered_clusters
-
-
-def find_clusters(points, eps, min_samples, alg="dbscan"):
-    """
-    Find all clusters in a 2-dimensional array of datapoints.
-
-    Parameters
-    ----------
-    points: `~numpy.ndarray' (N x N)
-        A 2-dimensional grid of (x, y) points to be clustered.
-    eps: float
-        The minimum distance between two points to be
-        used to establish that they are in the same cluster.
-    min_samples: into
-        The minumum number of points in a cluster.
-    alg: str
-        Algorithm to use. Can be "dbscan" or "hotspot_2d".
-
-    Returns
-    -------
-    list of numpy.array
-        A list of clusters. Each cluster is an array of indexes into points,
-        indicating that the points are members of a cluster together.
-    """
-    if alg == "dbscan":
-        return _find_clusters_dbscan(points, eps, min_samples)
-    if alg == "hotspot_2d":
-        return _find_clusters_hotspot_2d(points, eps, min_samples)
-    else:
-        raise NotImplementedError(f"algorithm '{alg}' is not implemented")
-
-
-def _find_clusters_dbscan(points, eps, min_samples):
-    if USE_GPU:
-        kwargs = {}
-    else:
-        kwargs = {"n_jobs" : 1}
-
-    # ball_tree algorithm appears to run about 30-40% faster based on a single
-    # test orbit and (vx, vy), run on a laptop, improving from 300ms to 180ms.
-    #
-    # Runtime is not very sensitive to leaf_size, but 30 appears to be roughly
-    # optimal, and is the default value anyway.
-    db = DBSCAN(
-        eps=eps,
-        min_samples=min_samples,
-        algorithm="ball_tree",
-        leaf_size=30,
-        **kwargs
-    )
-    db.fit(points)
-
-    cluster_labels = np.unique(db.labels_[np.where(db.labels_ != -1)])
-    clusters = []
-    for label in cluster_labels:
-        cluster_indices = np.where(db.labels_ == label)[0]
-        clusters.append(cluster_indices)
-    del db
-    return clusters
-
-
-def _find_clusters_hotspot_2d(points, eps, min_samples):
-    points_rounded = _round_points(points, eps)
-    sort_order = np.lexsort(points_rounded)
-    sorted_points = points_rounded[:, sort_order]
-
-    xy_hits = _apply_offset_logic(sorted_points, min_samples)
-
-    if xy_hits.shape[1] == 0:
-        return []
-
-    # Deduplicate because there may be sequences with length > min_samples.
-    xy_hits = np.unique(xy_hits, axis=1)
-
-    # Gather indexes. A plain old for loop is probably fine here because
-    # xy_hits is likely to be small.
-    clusters = _gather_indices(xy_hits, points_rounded)
-    return clusters
-
-
-@numba.jit(nopython=True)
-def _apply_offset_logic(sorted_points, min_samples):
-    # Check if there are any sequences of at least min_samples length with the
-    # same x, y values in a row.
-    offset = min_samples - 1
-    mask_x, mask_y = (sorted_points[:, :-offset] == sorted_points[:, offset:])
-    mask = mask_x & mask_y
-    xy_hits = sorted_points[:, offset:][:, mask]
-    return xy_hits
-
-
-@numba.jit(nopython=True, parallel=True)
-def _convert_units(points, eps):
-    return points - points % eps
-
-
-@numba.jit(nopython=True, parallel=True)
-def _round_points(points, eps):
-    if points.shape[0] != 2:
-        points = points.T
-
-    # Round the points down to the nearest value which is a multiple of 'eps'.
-    points_rounded = _convert_units(points, eps*2)
-    return points_rounded
-
-
-@numba.jit(nopython=True, parallel=True)
-def _index_match(xy, points_rounded):
-    pair_equals = np.equal(xy, points_rounded.T)
-    return np.where(np.logical_and(pair_equals[:, 1], pair_equals[:, 0]))
-
-
-@numba.jit(forceobj=True)
-def _gather_indices(xy_hits, points_rounded):
-    clusters = []
-    for xy in xy_hits.T:
-        hit_indices = _index_match(xy, points_rounded)
-        clusters.append(hit_indices)
-    return clusters
 
 
 def clusterVelocity_worker(
