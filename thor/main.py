@@ -136,7 +136,7 @@ def clusterVelocity(
     Returns
     -------
     list
-        If clusters are found, will return a list of numpy arrays containing tphe
+        If clusters are found, will return a list of numpy arrays containing the
         observation IDs for each cluster. If no clusters are found, will return np.NaN.
     """
     logger.debug(f"cluster: vx={vx} vy={vy} n_obs={len(obs_ids)}")
