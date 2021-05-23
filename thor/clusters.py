@@ -1,5 +1,6 @@
 import numba
 import numpy as np
+from sklearn.neighbors import BallTree
 
 from .config import Config
 USE_GPU = Config.USE_GPU
@@ -11,8 +12,7 @@ else:
     from sklearn.cluster import DBSCAN
 
 
-
-def find_clusters(points, eps, min_samples, alg="dbscan"):
+def find_clusters(points, eps, min_samples, alg="hotspot_2d"):
     """
     Find all clusters in a 2-dimensional array of datapoints.
 
@@ -44,7 +44,8 @@ def find_clusters(points, eps, min_samples, alg="dbscan"):
     least min_samples points that are separated by at most eps.
 
     alg="hotspot_2d" is much faster (perhaps 10-20x faster) than dbscan, but it
-    may miss some clusters.
+    may miss some clusters, and may include clusters separated by as much as
+    sqrt(2)*1.5*eps in rare cases.
     """
     if alg == "dbscan":
         return _find_clusters_dbscan(points, eps, min_samples)
@@ -102,27 +103,124 @@ def _find_clusters_hotspots_2d(points, eps, min_samples):
     min_samples times in the dataset.
 
     The search of the grid is done by sorting the points, and then stepping
-    through the points looking for consecutive runsof the same (x, y) value
+    through the points looking for consecutive runs of the same (x, y) value
     repeated at least min_samples times.
+
+    This is repeated, with the X values offset by +eps, which addresses edge
+    effects at the right boundaries of the 2*eps-sized grid windows.
+
+    Similarly, it is repeated with the Y value offset by +eps (dealing with the
+    bottom boundary) and with both X and Y offset (dealing with the corner
+    boundary).
     """
+    points = points.copy()
     points = _enforce_shape(points)
-    points_quantized = _quantize_points(points, 2*eps)  # 0.9ms
-    sort_order = np.lexsort(points_quantized)           # 8.3ms
-    sorted_points = points_quantized[:, sort_order]     # 0.8ms
 
-    xy_hits = _find_runs(sorted_points, min_samples)    # 0.2ms
-
-    if xy_hits.shape[1] == 0:
-        return []
-
-    cluster_labels = _label_clusters(xy_hits, points_quantized)  # 9.4ms
-    unique_labels = np.unique(cluster_labels)           # 0.6ms
-    unique_labels = unique_labels[unique_labels != -1]
     clusters = []
-    for label in unique_labels:                         # 5.3ms
+    cluster_labels = _hotspot_multilabel(points, eps, min_samples)
+    unique_labels = np.unique(cluster_labels)
+    for label in unique_labels:
+        if label == -1:
+            continue
         cluster_indices = np.where(cluster_labels == label)[0]
         clusters.append(cluster_indices)
+
     return clusters
+
+
+@numba.jit(nopython=True)
+def _hotspot_multilabel(points, eps, min_samples):
+    """
+    This code is wordy and repetitive, just in order to make things simple for
+    numba's compiler, which has a big impact on performance.
+    """
+    n = points.shape[1]
+
+    # Find and label runs in the dataset.
+    labels1 = _hotspot_2d_inner(points, eps, min_samples)
+
+    # Repeat, but with X+eps, Y
+    for i in range(n):
+        points[0, i] = points[0, i] + eps
+    labels2 = _hotspot_2d_inner(points, eps, min_samples)
+    # Adjust labels so they don't collide with those of labels1.
+    _adjust_labels(labels2, labels1.max() + 1)
+
+    # Repeat, but with X+eps, Y+eps.
+    for i in range(n):
+        points[1, i] = points[1, i] + eps
+    labels3 = _hotspot_2d_inner(points, eps, min_samples)
+    _adjust_labels(labels3, labels2.max() + 1)
+
+    # Repeat, but with X, Y+eps
+    for i in range(n):
+        points[0, i] = points[0, i] - eps
+    labels4 = _hotspot_2d_inner(points, eps, min_samples)
+    _adjust_labels(labels4, labels3.max() + 1)
+
+    # Make an empty array which will store the cluster IDs of each point.
+    final_labels = np.full(n, -1, dtype=labels1.dtype)
+
+    # Many of the label arrays we built will have the same clusters, but with
+    # different integer labels. Build a mapping to standardize things.
+    label_aliases = _build_label_aliases(labels1, labels2, labels3, labels4, n)
+
+    # Apply labels
+    for i in range(n):
+        if labels1[i] != -1:
+            final_labels[i] = labels1[i]
+        elif labels2[i] != -1:
+            final_labels[i] = label_aliases.get(labels2[i], labels2[i])
+        elif labels3[i] != -1:
+            final_labels[i] = label_aliases.get(labels3[i], labels3[i])
+        elif labels4[i] != -1:
+            final_labels[i] = label_aliases.get(labels4[i], labels4[i])
+
+    return final_labels
+
+
+@numba.njit(parallel=True)
+def _adjust_labels(labels, new_minimum):
+    """
+    Given a bunch of integer labels, adjust the labels to start at new_minimum.
+    """
+    labels[labels != -1] = labels[labels != -1] + new_minimum
+
+
+@numba.njit
+def _build_label_aliases(labels1, labels2, labels3, labels4, n):
+    label_aliases = {}
+    for i in range(n):
+        # Prefer names from labels1, then labels2, then labels3, then labels4.
+        if labels1[i] != -1:
+            label = labels1[i]
+            if labels2[i] != -1:
+                label_aliases[labels2[i]] = label
+            if labels3[i] != -1:
+                label_aliases[labels3[i]] = label
+            if labels4[i] != -1:
+                label_aliases[labels4[i]] = label
+        elif labels2[i] != -1:
+            label = labels2[i]
+            if labels3[i] != -1:
+                label_aliases[labels3[i]] = label
+            if labels4[i] != -1:
+                label_aliases[labels4[i]] = label
+        elif labels3[i] != -1:
+            label = labels3[i]
+            if labels4[i] != -1:
+                label_aliases[labels4[i]] = label
+    return label_aliases
+
+
+@numba.jit(nopython=True)
+def _hotspot_2d_inner(points, eps, min_samples):
+    points_quantized = _quantize_points(_make_points_nonzero(points), 2*eps)
+    sort_order = _sort_order_2d(points_quantized)
+    sorted_points = points_quantized[:, sort_order]
+    xy_hits = _find_runs(sorted_points, min_samples)
+    cluster_labels = _label_clusters(xy_hits, points_quantized)
+    return cluster_labels
 
 
 @numba.jit(nopython=True)
@@ -133,10 +231,30 @@ def _enforce_shape(points):
     return points
 
 
+@numba.jit(nopython=True)  # Careful: parallel=True will give wrong result
+def _make_points_nonzero(points):
+    # Scale up to nonzero
+    return points - points.min()
+
+
 @numba.jit(nopython=True, parallel=True)
 def _quantize_points(points, eps):
-    """Quantize points down to the nearest value of eps."""
-    return points - points % eps
+    """Quantize points to be scaled in units of eps."""
+    return (points / eps).astype(np.uint32)
+
+
+@numba.jit(nopython=True)
+def _sort_order_2d(points):
+    """
+    Return the indices that would sort points by x and then y. Points must be
+    integers.
+
+    This is about twice as fast as np.lexsort(points), and can be numba-d. It
+    works by transforming the 2D sequence of int pairs into a 1D sequence of
+    integers, and then sorting that 1D sequence.
+    """
+    max = points.max()
+    return np.argsort(points[1, :]*max + points[0, :])
 
 
 @numba.jit(nopython=True)
@@ -190,16 +308,13 @@ def _label_clusters(xy_hits, points_quantized):
     """
     Produce a 1D array of integers which label each X-Y in points_quantized with a cluster.
     """
-
-    # A plain old for loop is probably fine here because xy_hits is likely to be
-    # small.
-    labels = np.zeros(points_quantized.shape[1], np.int64)
+    labels = np.full(points_quantized.shape[1], -1, np.int64)
     for i in range(points_quantized.shape[1]):
         for j in range(xy_hits.shape[1]):
             if xy_hits[0, j] == points_quantized[0, i] and xy_hits[1, j] == points_quantized[1, i]:
-                labels[i] = j+1
+                labels[i] = j
                 break
-    return labels - 1
+    return labels
 
 
 def _find_clusters_dbscan(points, eps, min_samples):
