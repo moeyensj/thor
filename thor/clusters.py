@@ -253,8 +253,8 @@ def _sort_order_2d(points):
     works by transforming the 2D sequence of int pairs into a 1D sequence of
     integers, and then sorting that 1D sequence.
     """
-    max = points.max()
-    return np.argsort(points[1, :]*max + points[0, :])
+    scale = points.max() + 1
+    return np.argsort(points[0, :]*scale + points[1, :])
 
 
 @numba.jit(nopython=True)
