@@ -1,0 +1,47 @@
+
+package:
+  name: thor
+  version: "{{ version }}"
+
+source:
+  git_url: "https://github.com/moeyensj/thor.git"
+  git_tag: "v{{ version }}"
+
+requirements:
+  host:
+    - python {{ python }}
+    - pip
+    - setuptools >=45
+    - setuptools_scm >=6.0
+    - wheel
+  run:
+    - python {{ python }}
+    - numpy
+    - numba
+    - pandas
+    - difi
+    - astropy
+    - astroquery
+    - scipy
+    - scikit-learn
+    - pyyaml
+    - openorb
+    - spiceypy
+    - matplotlib
+    - seaborn
+    - plotly
+    - ipykernel
+    - pytest
+    - pytest-cov
+
+build:
+  script: python setup.py install --single-version-externally-managed --record=record.txt
+    
+test:
+  imports:
+    - thor
+
+about:
+  home: https://github.com/moeyensj/thor
+  license: BSD-3 Clause
+  license_file: LICENSE.md

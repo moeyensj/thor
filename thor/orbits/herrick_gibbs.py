@@ -4,7 +4,7 @@ from ..constants import Constants as c
 
 __all__ = ["calcHerrickGibbs"]
 
-MU = c.G * c.M_SUN
+MU = c.MU
 
 def calcHerrickGibbs(r1, r2, r3, t1, t2, t3):
     """

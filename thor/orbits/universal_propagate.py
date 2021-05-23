@@ -19,7 +19,7 @@ __all__ = [
     "propagateUniversal",
 ]
 
-MU = c.G * c.M_SUN
+MU = c.MU
 
 
 @jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True)

@@ -603,10 +603,8 @@ def differentialCorrection(
         if threads > 1:
 
             if USE_RAY:
-                shutdown = False
                 if not ray.is_initialized():
-                    ray.init(num_cpus=threads)
-                    shutdown = True
+                    ray.init(address="auto")
 
                 p = []
                 for orbits_i, observations_i in zip(orbits_split, observations_split):
@@ -634,8 +632,6 @@ def differentialCorrection(
                 od_orbits_dfs = results[0]
                 od_orbit_members_dfs = results[1]
 
-                if shutdown:
-                    ray.shutdown()
             else:
                 p = mp.Pool(
                     processes=threads,

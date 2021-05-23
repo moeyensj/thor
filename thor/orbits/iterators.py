@@ -10,7 +10,7 @@ __all__ = [
     "iterateStateTransition"
 ]
 
-MU = c.G * c.M_SUN
+MU = c.MU
 C = c.C
 
 def _calcM(r0_mag, r_mag, f, g, f_dot, g_dot, c0, c1, c2, c3, c4, c5, alpha, chi, mu=MU):

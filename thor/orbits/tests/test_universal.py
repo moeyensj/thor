@@ -1,61 +1,66 @@
+import os
 import numpy as np
+import pandas as pd
 import spiceypy as sp
 from astropy.time import Time
 from astropy import units as u
 
 from ...constants import Constants as c
-from ...utils import getHorizonsVectors
+from ...utils import KERNELS_DE430
+from ...utils import getSPICEKernels
+from ...utils import setupSPICE
 from ...testing import testOrbits
 from ..universal_propagate import propagateUniversal
 
-MU = c.G * c.M_SUN
-
-TARGETS = [
-    "Amor",
-    "Eros", 
-    "Eugenia",
-    "C/2019 Q4" # Borisov
-] 
-EPOCH = 57257.0
-DT = np.linspace(0, 30, num=30)
-T0 = Time(
-    [EPOCH for i in range(len(TARGETS))], 
-    format="mjd",
-    scale="tdb", 
-)
-T1 = Time(
-    EPOCH + DT, 
-    format="mjd",
-    scale="tdb"
+MU = c.MU
+DT = np.arange(-1000, 1000, 5)
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "../../testing/data"
 )
 
 def test_propagateUniversal():
     """
-    Query Horizons (via astroquery) for initial state vectors of each target at T0, then propagate
-    those states to all T1 using THOR's 2-body propagator and SPICE's 2-body propagator (via spiceypy).
+    Read the test dataset for the initial state vectors of each target at t1, then propagate
+    those states to all t1 using THOR's 2-body propagator and SPICE's 2-body propagator (via spiceypy).
     Compare the resulting states and test how well they agree.
     """
-    # Grab vectors from Horizons at initial epoch
-    orbit_cartesian_horizons = getHorizonsVectors(
-        TARGETS,
-        T1[:1],
-        location="@sun",
-        aberrations="geometric"
+    getSPICEKernels(KERNELS_DE430)
+    setupSPICE(KERNELS_DE430, force=True)
+
+    # Read vectors from test data set
+    vectors_df = pd.read_csv(
+        os.path.join(DATA_DIR, "vectors.csv")
     )
-    orbit_cartesian_horizons = orbit_cartesian_horizons[["x", "y", "z", "vx", "vy", "vz"]].values
+
+    # Get the target names
+    targets = vectors_df["targetname"].unique()
+
+    # Get the initial epochs
+    t0 = Time(
+        vectors_df["mjd_tdb"].values,
+        scale="tdb",
+        format="mjd"
+    )
+
+    # Set propagation epochs
+    t1 = t0[0] + DT
+
+    # Pull state vectors
+    vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
     
     # Propagate initial states to each T1 using SPICE
     states_spice = []
-    for i, target in enumerate(TARGETS): 
+    for i, target in enumerate(targets): 
         for dt in DT:
-            states_spice.append(sp.prop2b(MU, list(orbit_cartesian_horizons[i, :]), dt))
+            states_spice.append(sp.prop2b(MU, list(vectors[i, :]), dt))
     states_spice = np.array(states_spice)
             
     # Repeat but now using THOR's universal 2-body propagator
     states_thor = propagateUniversal(
-        orbit_cartesian_horizons, 
-        T0.tdb.mjd, 
-        T1.tdb.mjd,  
+        vectors, 
+        t0.tdb.mjd, 
+        t1.tdb.mjd,  
         mu=MU, 
         max_iter=1000, 
         tol=1e-15
@@ -68,7 +73,7 @@ def test_propagateUniversal():
        states_thor[:, 2:], 
        states_spice,
        orbit_type="cartesian", 
-       position_tol=2*u.cm, 
+       position_tol=1*u.cm, 
        velocity_tol=(1*u.mm/u.s), 
        magnitude=True
     )

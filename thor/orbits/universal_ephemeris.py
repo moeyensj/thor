@@ -24,7 +24,7 @@ __all__ = [
     "generateEphemerisUniversal"
 ]
 
-MU = c.G * c.M_SUN
+MU = c.MU
 
 def generateEphemerisUniversal(
         orbits, 
