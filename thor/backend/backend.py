@@ -85,11 +85,11 @@ def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
     )
 
     # Prepare rotation matrices 
-    test_orbit.prepare(verbose=False)
+    test_orbit.prepare()
 
     # Apply rotation matrices and transform observations into the orbit's
     # frame of motion. 
-    test_orbit.applyToEphemeris(ephemeris, verbose=False)
+    test_orbit.applyToEphemeris(ephemeris)
     
     return ephemeris
 
@@ -153,18 +153,14 @@ class Backend:
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
             if USE_RAY:
-                shutdown = False
                 if not ray.is_initialized():
-                    ray.init(num_cpus=threads)
-                    shutdown = True
+                    ray.init(address="auto")
             
                 p = []
                 for o, t, b in zip(orbits_split, t1_duplicated, backend_duplicated):
                     p.append(propagation_worker.remote(o, t, b))
                 propagated_dfs = ray.get(p)
 
-                if shutdown:
-                    ray.shutdown()
             else:
                 p = mp.Pool(
                     processes=threads,
@@ -235,17 +231,14 @@ class Backend:
                 RA : Right Ascension in decimal degrees.
                 Dec : Declination in decimal degrees.
         """
-        shutdown = False
         if threads > 1:
             orbits_split = orbits.split(chunk_size)
             observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
             if USE_RAY:
-                shutdown = False
                 if not ray.is_initialized():
-                    ray.init(num_cpus=threads)
-                    shutdown = True
+                    ray.init(address="auto")
             
                 p = []
                 for o, t, b in zip(orbits_split, observers_duplicated, backend_duplicated):
@@ -327,9 +320,6 @@ class Backend:
                 inplace=True
             )
 
-        if shutdown:
-            ray.shutdown()
-
         return ephemeris
 
     def _initialOrbitDetermination(self, observations, linkage_members, threads=NUM_THREADS, chunk_size=10, **kwargs):
@@ -370,18 +360,14 @@ class Backend:
         backend_duplicated = [copy.deepcopy(self) for i in range(len(observations_split))]
 
         if USE_RAY:
-            shutdown = False
             if not ray.is_initialized():
-                ray.init(num_cpus=threads)
-                shutdown = True
+                ray.init(address="auto")
         
             od = []
             for o,  b in zip(observations_split, backend_duplicated):
                 od.append(orbitDetermination_worker.remote(o, b))
             od_orbits_dfs = ray.get(od)
 
-            if shutdown:
-                ray.shutdown()
         else:
             p = mp.Pool(
                 processes=threads,

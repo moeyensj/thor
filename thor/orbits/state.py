@@ -1,12 +1,10 @@
 import numpy as np
 import spiceypy as sp
 
-from ..constants import Constants as c
+from ..constants import KM_P_AU
+from ..constants import S_P_DAY
 from ..utils import setupSPICE
 from ..utils import _checkTime
-
-KM_P_AU = c.KM_P_AU
-S_P_DAY = c.S_P_DAY
 
 NAIF_MAPPING = {
     "solar system barycenter" : 0,
@@ -77,14 +75,14 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
         raise ValueError(err)
     
     # Make sure SPICE is ready to roll
-    setupSPICE(verbose=False)
+    setupSPICE()
 
     # Check that times is an astropy time object
     _checkTime(times, "times")
 
     # Convert MJD epochs in TDB to ET in TDB
-    epochs_utc = times.tdb
-    epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_utc.jd])
+    epochs_tdb = times.tdb
+    epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
     
     # Get position of the body in heliocentric ecliptic J2000 coordinates 
     states = []

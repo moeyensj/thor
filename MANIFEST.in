@@ -1,7 +1,7 @@
 include thor/*.py
 include *.md
 include *.toml
+include *.yaml
 exclude .travis.yml
-exclude requirements_travis.txt
 exclude azure-pipelines.yml 
 exclude Dockerfile

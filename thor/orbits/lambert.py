@@ -4,7 +4,7 @@ from numba import jit
 from ..constants import Constants as c
 from .stumpff import calcStumpff
 
-MU = c.G * c.M_SUN
+MU = c.MU
 
 __all__ = [
     "calcLambert"
