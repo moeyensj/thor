@@ -1,6 +1,5 @@
 import numba
 import numpy as np
-from sklearn.neighbors import BallTree
 
 from .config import Config
 USE_GPU = Config.USE_GPU
@@ -44,8 +43,8 @@ def find_clusters(points, eps, min_samples, alg="hotspot_2d"):
     least min_samples points that are separated by at most eps.
 
     alg="hotspot_2d" is much faster (perhaps 10-20x faster) than dbscan, but it
-    may miss some clusters, and may include clusters separated by as much as
-    sqrt(2)*1.5*eps in rare cases.
+    may miss some clusters, particularly when points are spaced a distance of 'eps'
+    apart.
     """
     if alg == "dbscan":
         return _find_clusters_dbscan(points, eps, min_samples)
@@ -128,9 +127,28 @@ def _find_clusters_hotspots_2d(points, eps, min_samples):
     return clusters
 
 
-@numba.jit(nopython=True)
+@numba.njit
+def _hotspot_2d_inner(points, eps, min_samples):
+    """
+    This function holds the core work of the hotspot2d algorithm: quantize the
+    points, sort them, find runs in the sorted list, and label each point with
+    an ID from the runs that have been found.
+    """
+    points_quantized = _quantize_points(_make_points_nonzero(points), 2*eps)
+    sort_order = _sort_order_2d(points_quantized)
+    sorted_points = points_quantized[:, sort_order]
+    runs = _find_runs(sorted_points, min_samples)
+    cluster_labels = _label_clusters(runs, points_quantized)
+    return cluster_labels
+
+
+@numba.njit
 def _hotspot_multilabel(points, eps, min_samples):
     """
+    Run the hotspot2d algorithm 4 times. Each time, the input points are
+    adjusted a bit, offsetting them by 'eps' in the X, then Y, then X and Y
+    directions. This helps deal with edge effects in the binning of datapoints.
+
     This code is wordy and repetitive, just in order to make things simple for
     numba's compiler, which has a big impact on performance.
     """
@@ -165,7 +183,7 @@ def _hotspot_multilabel(points, eps, min_samples):
     # different integer labels. Build a mapping to standardize things.
     label_aliases = _build_label_aliases(labels1, labels2, labels3, labels4, n)
 
-    # Apply labels
+    # Apply labels.
     for i in range(n):
         if labels1[i] != -1:
             final_labels[i] = labels1[i]
@@ -213,17 +231,7 @@ def _build_label_aliases(labels1, labels2, labels3, labels4, n):
     return label_aliases
 
 
-@numba.jit(nopython=True)
-def _hotspot_2d_inner(points, eps, min_samples):
-    points_quantized = _quantize_points(_make_points_nonzero(points), 2*eps)
-    sort_order = _sort_order_2d(points_quantized)
-    sorted_points = points_quantized[:, sort_order]
-    xy_hits = _find_runs(sorted_points, min_samples)
-    cluster_labels = _label_clusters(xy_hits, points_quantized)
-    return cluster_labels
-
-
-@numba.jit(nopython=True)
+@numba.njit
 def _enforce_shape(points):
     """Ensure that datapoints are in a shape of (2, N)."""
     if points.shape[0] != 2:
@@ -231,19 +239,22 @@ def _enforce_shape(points):
     return points
 
 
-@numba.jit(nopython=True)  # Careful: parallel=True will give wrong result
+@numba.njit
 def _make_points_nonzero(points):
     # Scale up to nonzero
+    #
+    # Careful: numba.njit(parallel=True) would give wrong result, since min()
+    # would get re-evaluated!
     return points - points.min()
 
 
-@numba.jit(nopython=True, parallel=True)
+@numba.njit(parallel=True)
 def _quantize_points(points, eps):
     """Quantize points to be scaled in units of eps."""
-    return (points / eps).astype(np.uint32)
+    return (points / eps).astype(np.int32)
 
 
-@numba.jit(nopython=True)
+@numba.njit
 def _sort_order_2d(points):
     """
     Return the indices that would sort points by x and then y. Points must be
@@ -257,7 +268,7 @@ def _sort_order_2d(points):
     return np.argsort(points[0, :]*scale + points[1, :])
 
 
-@numba.jit(nopython=True)
+@numba.njit
 def _find_runs(sorted_points, min_samples, expected_n_clusters=16):
     """
     Find all subssequences of at least min_samples length with the same x, y
@@ -294,7 +305,7 @@ def _find_runs(sorted_points, min_samples, expected_n_clusters=16):
     return result[:, :n_hit]
 
 
-@numba.jit(nopython=True)
+@numba.njit
 def _extend_2d_array(src, new_size):
     dst = np.empty((2, new_size), dtype=src.dtype)
     for i in range(src.shape[1]):
@@ -303,15 +314,16 @@ def _extend_2d_array(src, new_size):
     return dst
 
 
-@numba.jit(nopython=True)
-def _label_clusters(xy_hits, points_quantized):
+@numba.njit
+def _label_clusters(runs, points_quantized):
     """
-    Produce a 1D array of integers which label each X-Y in points_quantized with a cluster.
+    Produce a 1D array of integers which label each X-Y in points_quantized with
+    a cluster.
     """
     labels = np.full(points_quantized.shape[1], -1, np.int64)
     for i in range(points_quantized.shape[1]):
-        for j in range(xy_hits.shape[1]):
-            if xy_hits[0, j] == points_quantized[0, i] and xy_hits[1, j] == points_quantized[1, i]:
+        for j in range(runs.shape[1]):
+            if runs[0, j] == points_quantized[0, i] and runs[1, j] == points_quantized[1, i]:
                 labels[i] = j
                 break
     return labels
