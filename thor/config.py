@@ -49,6 +49,7 @@ class Config:
         "min_samples" : MIN_OBS,
         "min_arc_length" : MIN_ARC_LENGTH,
         "threads" : NUM_THREADS,
+        "alg" : "dbscan"
     }
 
     IOD_CONFIG = {

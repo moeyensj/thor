@@ -163,6 +163,7 @@ def clusterVelocity_worker(
         eps=None,
         min_samples=None,
         min_arc_length=None,
+        alg=None
     ):
     """
     Helper function to multiprocess clustering.
@@ -178,6 +179,7 @@ def clusterVelocity_worker(
         eps=eps,
         min_samples=min_samples,
         min_arc_length=min_arc_length,
+        alg=alg
     )
     return cluster_ids
 
@@ -366,7 +368,8 @@ def clusterAndLink(
         min_samples=5,
         min_arc_length=1.0,
         identify_subsets=False,
-        threads=NUM_THREADS
+        threads=NUM_THREADS,
+        alg="dbscan"
     ):
     """
     Cluster and link correctly projected (after ranging and shifting)
@@ -415,9 +418,8 @@ def clusterAndLink(
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
-    verbose : bool, optional
-        Print progress statements?
-        [Default = True]
+    alg: str
+        Algorithm to use. Can be "dbscan" or "hotspot_2d".
 
     Returns
     -------
@@ -425,6 +427,18 @@ def clusterAndLink(
         DataFrame with the cluster ID, the number of observations, and the x and y velocity.
     cluster_members : `~pandas.DataFrame`
         DataFrame containing the cluster ID and the observation IDs of its members.
+
+    Notes
+    -----
+    The algorithm chosen can have a big impact on performance and accuracy.
+
+    alg="dbscan" uses the DBSCAN algorithm of Ester et. al. It's relatively slow
+    but works with high accuracy; it is certain to find all clusters with at
+    least min_samples points that are separated by at most eps.
+
+    alg="hotspot_2d" is much faster (perhaps 10-20x faster) than dbscan, but it
+    may miss some clusters, particularly when points are spaced a distance of 'eps'
+    apart.
     """
     time_start_cluster = time.time()
     logger.info("Running velocity space clustering...")
@@ -514,7 +528,8 @@ def clusterAndLink(
                         dt=dt,
                         eps=eps,
                         min_samples=min_samples,
-                        min_arc_length=min_arc_length
+                        min_arc_length=min_arc_length,
+                        alg=alg
                     )
                 )
             possible_clusters = ray.get(p)
@@ -531,7 +546,8 @@ def clusterAndLink(
                     dt=dt,
                     eps=eps,
                     min_samples=min_samples,
-                    min_arc_length=min_arc_length
+                    min_arc_length=min_arc_length,
+                    alg=alg
                 ),
                 zip(vxx, vyy)
             )
@@ -549,7 +565,8 @@ def clusterAndLink(
                     vyi,
                     eps=eps,
                     min_samples=min_samples,
-                    min_arc_length=min_arc_length
+                    min_arc_length=min_arc_length,
+                    alg=alg
                 )
             )
     time_end_cluster = time.time()
