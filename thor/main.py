@@ -101,7 +101,7 @@ def clusterVelocity(
         eps=0.005,
         min_samples=5,
         min_arc_length=1.0,
-        alg="dbscan",
+        alg="hotspot_2d",
     ):
     """
     Clusters THOR projection with different velocities
