@@ -77,11 +77,11 @@ def rangeAndShift_worker(observations, ephemeris, cell_area=10):
         )
 
         # Prepare rotation matrices
-        test_orbit.prepare(verbose=False)
+        test_orbit.prepare()
 
         # Apply rotation matrices and transform observations into the orbit's
         # frame of motion.
-        test_orbit.applyToObservations(cell.observations, verbose=False)
+        test_orbit.applyToObservations(cell.observations)
 
         projected_observations = cell.observations
 
