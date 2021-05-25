@@ -11,12 +11,12 @@ import multiprocessing as mp
 from functools import partial
 from astropy.time import Time
 
-
 from .config import Config
-from .clusters import find_clusters, filter_clusters_by_length
+from .clusters import USE_GPU, find_clusters, filter_clusters_by_length
 from .cell import Cell
 from .orbit import TestOrbit
 from .orbits import Orbits
+from .observatories import getObserverState
 from .orbits import generateEphemeris
 from .orbits import initialOrbitDetermination
 from .orbits import differentialCorrection
@@ -26,14 +26,7 @@ from .utils import identifySubsetLinkages
 
 USE_RAY = Config.USE_RAY
 USE_GPU = Config.USE_GPU
-USE_GPU = False
 NUM_THREADS = Config.NUM_THREADS
-
-if USE_GPU:
-    import cudf
-    from cuml.cluster import DBSCAN
-else:
-    from sklearn.cluster import DBSCAN
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
@@ -526,8 +519,6 @@ def clusterAndLink(
                 )
             possible_clusters = ray.get(p)
 
-            if shutdown:
-                ray.shutdown()
         else:
 
             p = mp.Pool(threads, _init_worker)

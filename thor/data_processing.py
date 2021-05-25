@@ -1,11 +1,9 @@
-import time
 import warnings
 import numpy as np
 import pandas as pd
+from astropy.time import Time
 
 from .config import Config
-from .cell import Cell
-from .orbits.propagate import propagateOrbits
 
 __all__ = [
     "preprocessObservations",
