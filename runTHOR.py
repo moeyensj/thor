@@ -1,16 +1,16 @@
 import yaml
-import logging 
+import logging
 import argparse
 import pandas as pd
 
 if __name__ == "__main__":
-    
+
     parser = argparse.ArgumentParser(
         description="Run Tracklet-less Heliocentric Orbit Recovery"
     )
     parser.add_argument(
         "preprocessed_observations",
-        type=str, 
+        type=str,
         help="Preprocessed observations."
     )
     parser.add_argument(
@@ -28,7 +28,7 @@ if __name__ == "__main__":
         default=None,
     )
     args = parser.parse_args()
-    
+
     from thor import runTHOR
     from thor.orbits import Orbits
     from thor.config import Config
@@ -39,7 +39,7 @@ if __name__ == "__main__":
         config_file = open(args.config, "r")
         config = yaml.load(config_file, Loader=yaml.FullLoader)
         config_file.close()
-    
+
     # Read observations
     preprocessed_observations = pd.read_csv(
         args.preprocessed_observations,
@@ -48,15 +48,15 @@ if __name__ == "__main__":
             "obs_id" : str
         }
     )
-    
+
     # Read test orbits
     test_orbits = Orbits.from_csv(
         args.test_orbits
     )
-    
+
     # Run THOR
     test_orbits_, recovered_orbits, recovered_orbit_members = runTHOR(
-        preprocessed_observations, 
+        preprocessed_observations,
         test_orbits,
         range_shift_config=config["RANGE_SHIFT_CONFIG"],
         cluster_link_config=config["CLUSTER_LINK_CONFIG"],
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         out_dir=args.out_dir,
         if_exists="continue",
         logging_level=logging.INFO
-    )   
+    )
 
 
 

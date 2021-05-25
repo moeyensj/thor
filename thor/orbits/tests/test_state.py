@@ -19,7 +19,7 @@ DATA_DIR = os.path.join(
 def test_shiftOrbitsOrigin():
     """
     Read test data set for initial for initial state vectors of each target at t0 in the heliocentric
-    and barycentric frames, use THOR to shift each vector to a different origin and compare. 
+    and barycentric frames, use THOR to shift each vector to a different origin and compare.
     """
     getSPICEKernels(KERNELS_DE440)
     setupSPICE(KERNELS_DE440, force=True)
@@ -43,14 +43,14 @@ def test_shiftOrbitsOrigin():
 
     # Shift origin of heliocentric vectors to barycenter
     thor_barycentric_vectors = shiftOrbitsOrigin(
-        vectors_heliocentric, 
-        t0, 
+        vectors_heliocentric,
+        t0,
         origin_in="heliocenter",
         origin_out="barycenter"
     )
 
     # Test that THOR barycentric states agree with
-    # Horizons' barycentric states to within the 
+    # Horizons' barycentric states to within the
     # tolerances below
     testOrbits(
         thor_barycentric_vectors,
@@ -63,14 +63,14 @@ def test_shiftOrbitsOrigin():
 
     # Shift origin of heliocentric vectors to barycenter
     thor_heliocentric_vectors = shiftOrbitsOrigin(
-        vectors_barycentric, 
-        t0, 
+        vectors_barycentric,
+        t0,
         origin_in="barycenter",
         origin_out="heliocenter"
     )
 
     # Test that THOR heliocentric states agree with
-    # Horizons' heliocentric states to within the 
+    # Horizons' heliocentric states to within the
     # tolerances below
     testOrbits(
         thor_heliocentric_vectors,
@@ -95,15 +95,15 @@ def test_shiftOrbitsOrigin_raise():
 
         # Raise error for incorrect origin_in
         thor_helio_to_bary = shiftOrbitsOrigin(
-            np.zeros((len(t1), 6), dtype=float), 
-            t1, 
+            np.zeros((len(t1), 6), dtype=float),
+            t1,
             origin_in="baarycenter",
             origin_out="heliocenter")
 
         # Raise error for incorrect origin_out
         thor_helio_to_bary = shiftOrbitsOrigin(
-            np.zeros((len(t1), 6), dtype=float), 
-            t1, 
+            np.zeros((len(t1), 6), dtype=float),
+            t1,
             origin_in="barycenter",
             origin_out="heeliocenter")
 

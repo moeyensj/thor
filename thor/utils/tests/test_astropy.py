@@ -8,14 +8,14 @@ from ..astropy import _checkTime
 def test__checkTime():
     # Create an array of epochs
     times = np.linspace(59580, 59590, 100)
-    
-    # Test that an error is raised when times are not 
+
+    # Test that an error is raised when times are not
     # an astropy time object
     with pytest.raises(TypeError):
         _checkTime(times, "test")
-        
-    # Test that _checkTime passes when an astropy time object is 
+
+    # Test that _checkTime passes when an astropy time object is
     # given as intended
     times_astropy = Time(times, format="mjd", scale="utc")
-    
+
     return

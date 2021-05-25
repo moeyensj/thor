@@ -40,19 +40,19 @@ def test_propagateOrbits():
 
     # Pull state vectors
     vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
-   
+
     # Create orbits class
     orbits = Orbits(
         vectors,
         t0,
         ids=targets
     )
-    
+
     # Propagate the state at T0 to all T1 using MJOLNIR 2-body
     states_mjolnir = propagateOrbits(
-        orbits, 
-        t1, 
-        backend="MJOLNIR", 
+        orbits,
+        t1,
+        backend="MJOLNIR",
         backend_kwargs={},
         threads=1,
         chunk_size=1
@@ -61,9 +61,9 @@ def test_propagateOrbits():
 
     # Propagate the state at T0 to all T1 using PYOORB 2-body
     states_pyoorb = propagateOrbits(
-        orbits, 
-        t1, 
-        backend="PYOORB", 
+        orbits,
+        t1,
+        backend="PYOORB",
         backend_kwargs={"dynamical_model" : "2"},
         threads=1,
         chunk_size=1
@@ -72,11 +72,11 @@ def test_propagateOrbits():
 
     # Test that the propagated states agree to within the tolerances below
     testOrbits(
-       states_mjolnir, 
+       states_mjolnir,
        states_pyoorb,
-       orbit_type="cartesian", 
-       position_tol=200*u.m, 
-       velocity_tol=(1*u.cm/u.s), 
+       orbit_type="cartesian",
+       position_tol=200*u.m,
+       velocity_tol=(1*u.cm/u.s),
        magnitude=True
     )
     return

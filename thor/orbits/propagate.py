@@ -12,14 +12,14 @@ __all__ = [
 
 def propagateOrbits(
         orbits,
-        t1, 
-        backend="MJOLNIR", 
+        t1,
+        backend="MJOLNIR",
         backend_kwargs={},
-        threads=Config.NUM_THREADS, 
+        threads=Config.NUM_THREADS,
         chunk_size=1
     ):
     """
-    Propagate orbits using desired backend. 
+    Propagate orbits using desired backend.
 
     To insure consistency, propagated epochs are always returned in TDB regardless of the backend.
 
@@ -27,14 +27,14 @@ def propagateOrbits(
     ----------
     orbits : `~numpy.ndarray` (N, 6)
         Orbits to propagate. If backend is 'THOR', then these orbits must be expressed
-        as heliocentric ecliptic cartesian elements. If backend is 'PYOORB' orbits may be 
+        as heliocentric ecliptic cartesian elements. If backend is 'PYOORB' orbits may be
         expressed in heliocentric keplerian, cometary or cartesian elements.
     t1 : `~astropy.time.core.Time` (M)
         Epochs to which to propagate each orbit.
     backend : {'MJOLNIR', 'PYOORB', 'FINDORB'}, optional
-        Which backend to use. 
+        Which backend to use.
     backend_kwargs : dict, optional
-        Settings and additional parameters to pass to selected 
+        Settings and additional parameters to pass to selected
         backend.
 
     Returns

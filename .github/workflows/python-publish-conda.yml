@@ -24,7 +24,7 @@ jobs:
         LINE_STR='{% set version = "'${VERSION}'" %}'
         RECIPE_PATH='recipe/meta.yaml'
         echo $LINE_STR | cat - $RECIPE_PATH > temp && mv temp $RECIPE_PATH
-    
+
     - name: Build and publish
       env:
         CONDA_USERNAME: ${{ secrets.CONDA_USERNAME }}

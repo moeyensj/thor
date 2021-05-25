@@ -13,13 +13,13 @@ __all__ = [
 
 
 def readOrbitDir(orbit_dir):
-    
+
     projected_observations = pd.read_csv(
         os.path.join(orbit_dir, "projected_observations.csv"),
         index_col=False,
         dtype={"obs_id" : str}
     )
-    
+
     clusters = pd.read_csv(
         os.path.join(orbit_dir, "clusters.csv"),
         index_col=False
@@ -30,81 +30,81 @@ def readOrbitDir(orbit_dir):
         index_col=False,
         dtype={"obs_id" : str}
     )
-    
+
     iod_orbits = Orbits.from_csv(
         os.path.join(orbit_dir, "iod_orbits.csv"),
     ).to_df(include_units=False)
-        
+
     iod_orbit_members = pd.read_csv(
         os.path.join(orbit_dir, "iod_orbit_members.csv"),
         index_col=False,
         dtype={"obs_id" : str}
     )
-    
+
     od_orbits = Orbits.from_csv(
         os.path.join(orbit_dir, "od_orbits.csv"),
     ).to_df(include_units=False)
-        
+
     od_orbit_members = pd.read_csv(
         os.path.join(orbit_dir, "od_orbit_members.csv"),
         index_col=False,
         dtype={"obs_id" : str}
     )
-    
+
     recovered_orbits = Orbits.from_csv(
         os.path.join(orbit_dir, "recovered_orbits.csv"),
     ).to_df(include_units=False)
-        
+
     recovered_orbit_members = pd.read_csv(
         os.path.join(orbit_dir, "recovered_orbit_members.csv"),
         index_col=False,
         dtype={"obs_id" : str}
     )
-    
+
     data_products = (
-        projected_observations, 
-        clusters, cluster_members, 
-        iod_orbits, iod_orbit_members, 
-        od_orbits, od_orbit_members, 
+        projected_observations,
+        clusters, cluster_members,
+        iod_orbits, iod_orbit_members,
+        od_orbits, od_orbit_members,
         recovered_orbits, recovered_orbit_members
     )
     return data_products
 
 def analyzeTHOROrbit(
         preprocessed_associations,
-        orbit_dir, 
-        classes=None, 
+        orbit_dir,
+        classes=None,
         min_obs=5,
         contamination_percentage=20,
-        metric="min_obs", 
+        metric="min_obs",
         metric_kwargs={
             "min_obs" : 5,
         }):
-    
+
     data_products = readOrbitDir(orbit_dir)
     (
         projected_observations,
         clusters,
-        cluster_members, 
+        cluster_members,
         iod_orbits,
-        iod_orbit_members, 
+        iod_orbit_members,
         od_orbits,
-        od_orbit_members, 
+        od_orbit_members,
         recovered_orbits,
-        recovered_orbit_members 
+        recovered_orbit_members
     ) = data_products
-    
+
     analysis_observations = projected_observations.merge(
-        preprocessed_associations, 
+        preprocessed_associations,
         on="obs_id",
         how="left"
     )
-    
-    
+
+
     column_mapping = {
         "obs_id" : "obs_id",
         "linkage_id" : "cluster_id",
-        "truth" : "obj_id"    
+        "truth" : "obj_id"
     }
 
     all_truths, findable_observations, summary = analyzeObservations(
@@ -152,7 +152,7 @@ def analyzeTHOROrbit(
     )
     for df in [all_od_orbits, all_truths_od, summary_od]:
         df.insert(0, "component", "od")
-        
+
     all_recovered_orbits, all_truths_recovered, summary_recovered = analyzeLinkages(
         analysis_observations,
         recovered_orbit_members,
@@ -171,19 +171,19 @@ def analyzeTHOROrbit(
         inplace=True,
         drop=True
     )
-    
+
     all_truths = pd.concat([all_truths_clusters, all_truths_iod, all_truths_od, all_truths_recovered])
     all_truths.reset_index(
         inplace=True,
         drop=True
     )
-    
+
     all_linkages = pd.concat([all_clusters, all_iod_orbits, all_od_orbits, all_recovered_orbits])
     all_linkages.reset_index(
         inplace=True,
         drop=True
     )
-    
+
     all_linkages = all_linkages[[
         "component", "cluster_id", "orbit_id", "num_obs", "num_members", "pure",
         "pure_complete", "partial", "mixed", "contamination_percentage",
@@ -191,18 +191,18 @@ def analyzeTHOROrbit(
     ]]
     all_linkages.loc[all_linkages["cluster_id"].isna(), "cluster_id"] = "None"
     all_linkages.loc[all_linkages["orbit_id"].isna(), "orbit_id"] = "None"
-    
+
     summary["linkage_purity"] = 100 * (summary["pure_linkages"] / summary["linkages"])
-    
+
     return all_linkages, all_truths, summary
 
 def analyzeTHOR(
-        preprocessed_associations, 
-        out_dir, 
-        min_obs=5, 
+        preprocessed_associations,
+        out_dir,
+        min_obs=5,
         contamination_percentage=20,
         classes=None,
-        metric="min_obs",  
+        metric="min_obs",
         metric_kwargs={
             "min_obs" : 5
         }
@@ -218,13 +218,13 @@ def analyzeTHOR(
     # Merge with prepprocessed associations to create a set of 'analysis observations':
     # observations that contain any previously known labels
     analysis_observations = preprocessed_observations.merge(
-        preprocessed_associations, 
+        preprocessed_associations,
         on="obs_id"
     )
 
     # Calculate which objects should be findable
     column_mapping = {
-        'obs_id' : 'obs_id', 
+        'obs_id' : 'obs_id',
         'truth' : 'obj_id',
         'linkage_id' : 'orbit_id'
     }
@@ -247,7 +247,7 @@ def analyzeTHOR(
         dtype={"obs_id" : str}
     )
 
-    # Calculate which objects were actually recovered 
+    # Calculate which objects were actually recovered
     all_recovered_orbits, all_recovered_truths, recovered_summary = analyzeLinkages(
         analysis_observations,
         recovered_orbit_members,
@@ -277,8 +277,8 @@ def analyzeTHOR(
 
         all_linkages, all_truths, summary = analyzeTHOROrbit(
             preprocessed_associations,
-            orbit_dir, 
-            classes=classes, 
+            orbit_dir,
+            classes=classes,
             min_obs=min_obs,
             contamination_percentage=contamination_percentage,
             metric="min_obs",

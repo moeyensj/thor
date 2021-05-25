@@ -17,20 +17,20 @@ __all__ = [
 ]
 
 def _convertOrbitUnits(
-        orbits, 
-        orbit_units, 
+        orbits,
+        orbit_units,
         desired_units
-    ): 
+    ):
     orbits_ = orbits.copy()
     for i, (unit_desired, unit_given) in enumerate(zip(desired_units, orbit_units)):
         if unit_desired != unit_given:
             orbits_[:, i] = orbits_[:, i] * unit_given.to(unit_desired)
-            
+
     return orbits_
 
 def _convertCovarianceUnits(
-        covariances, 
-        orbit_units, 
+        covariances,
+        orbit_units,
         desired_units,
     ):
     orbit_units_ = np.array([orbit_units])
@@ -38,7 +38,7 @@ def _convertCovarianceUnits(
         orbit_units_.T,
         orbit_units_
     )
-    
+
     desired_units_ = np.array([desired_units])
     desired_units_ = np.dot(
         desired_units_.T,
@@ -52,7 +52,7 @@ def _convertCovarianceUnits(
             unit_given = covariance_units[i, j]
             if unit_desired != unit_given:
                 covariances_[:, i, j] = covariances_[:, i, j] * unit_given.to(unit_desired)
-                
+
     covariances_ = np.split(covariances_, covariances_.shape[0], axis=0)
     covariances_ = [cov[0] for cov in covariances_]
     return covariances_
@@ -64,8 +64,8 @@ class Orbits:
 
     """
     def __init__(
-            self, 
-            orbits, 
+            self,
+            orbits,
             epochs,
             orbit_type="cartesian",
             orbit_units=CARTESIAN_UNITS,
@@ -77,7 +77,7 @@ class Orbits:
             additional_data=None
         ):
         """
-        Class to store orbits and a variety of other useful attributes and 
+        Class to store orbits and a variety of other useful attributes and
         data required to:
             propagate orbits
             generate ephemerides
@@ -87,10 +87,10 @@ class Orbits:
         ----------
         orbits : `~numpy.ndarray` (N, 6)
             Heliocentric ecliptic elements in one of two formats:
-            - cartesian : 
+            - cartesian :
                 x-, y-, z- positions in au (x, y, z)
                 x-, y-, z- velocities in au per day (vx, vy, vz)
-            - keplerian : 
+            - keplerian :
                 a : semi major axis in au
                 e : eccentricity
                 i : inclination in degrees
@@ -99,16 +99,16 @@ class Orbits:
             Time at which each orbit is defined.
         orbit_type : {'cartesian', 'keplerian`}
             The type of the input orbits. If keplerian, this class
-            will convert the keplerian elements to cartesian for use in 
+            will convert the keplerian elements to cartesian for use in
             THOR. THOR uses only cartesian elements but the user may provide
-            alternate orbital reference frames for elements. 
+            alternate orbital reference frames for elements.
         covariance : list of `~numpy.ndarray (6, 6)`, optional
             The covariance matrices for each orbital elements. Covariances are currently
             not used by THOR but generated during orbit determination.
 
 
 
-            
+
 
 
         """
@@ -134,7 +134,7 @@ class Orbits:
                 )
             else:
                 orbits_ = orbits.copy()
-            
+
             self.cartesian = orbits_
             self.orbit_units = CARTESIAN_UNITS
         elif orbit_type == "keplerian":
@@ -146,7 +146,7 @@ class Orbits:
                 )
             else:
                 orbits_ = orbits.copy()
-            
+
             self.keplerian = orbits_
             self.assignOrbitClasses()
             self.orbit_units = KEPLERIAN_UNITS
@@ -160,8 +160,8 @@ class Orbits:
         self.orbit_type = orbit_type
         if self.cartesian is None:
             self.cartesian = convertOrbitalElements(
-                self.keplerian, 
-                "keplerian", 
+                self.keplerian,
+                "keplerian",
                 "cartesian"
             )
             self.orbit_type = "cartesian"
@@ -180,9 +180,9 @@ class Orbits:
             self.H = np.asarray(H)
         else:
             self.H = None
-        
+
         # If the slope parameter G has been passed make sure each orbit has one
-        if G is not None: 
+        if G is not None:
             assert len(G) == self.num_orbits
             self.G = np.asarray(G)
         else:
@@ -193,25 +193,25 @@ class Orbits:
             assert len(covariance) == self.num_orbits
             if self.orbit_type == "cartesian" and orbit_units != CARTESIAN_UNITS:
                 covariance_ = _convertCovarianceUnits(
-                    covariance, 
-                    orbit_units, 
+                    covariance,
+                    orbit_units,
                     CARTESIAN_UNITS,
                 )
             elif self.orbit_type == "keplerian" and orbit_units != KEPLERIAN_UNITS:
                 covariance_ = _convertCovarianceUnits(
-                    covariance, 
-                    orbit_units, 
+                    covariance,
+                    orbit_units,
                     KEPLERIAN_UNITS,
                 )
             else:
                 covariance_ = covariance
 
             self.covariance = covariance_
-            
+
         else:
             self.covariance = None
 
-        if orbit_class is not None: 
+        if orbit_class is not None:
             assert len(orbit_class) == self.num_orbits
             self.orbit_class = np.asarray(orbit_class)
         else:
@@ -244,7 +244,7 @@ class Orbits:
         args = []
         for arg in ["cartesian", "epochs"]:
             args.append(self.__dict__[arg][i])
-        
+
         kwargs = {}
         for kwarg in ["orbit_type", "orbit_units", "ids", "covariance", "H", "G", "orbit_class", "additional_data"]:
             if isinstance(self.__dict__[kwarg], np.ndarray):
@@ -269,7 +269,7 @@ class Orbits:
 
             if not np.all(np.isclose(self.cartesian, other.cartesian, rtol=1e-15, atol=1e-15)):
                 return False
-            
+
             if not np.all(np.isclose(self.epochs.tdb.mjd, other.epochs.tdb.mjd, rtol=1e-15, atol=1e-15)):
                 return False
 
@@ -287,7 +287,7 @@ class Orbits:
             for arg in ["cartesian", "epochs"]:
                 if arg in self.__dict__.keys():
                     args.append(self.__dict__[arg][chunk:chunk + chunk_size].copy())
-            
+
             kwargs = {}
             for kwarg in ["orbit_type", "orbit_units", "ids", "covariance", "H", "G", "orbit_class", "additional_data"]:
                 if isinstance(self.__dict__[kwarg], np.ndarray):
@@ -300,9 +300,9 @@ class Orbits:
                     )
                 else:
                     kwargs[kwarg] = self.__dict__[kwarg]
-            
+
             objs.append(Orbits(*args, **kwargs))
-        
+
         return objs
 
     def assignOrbitClasses(self):
@@ -315,9 +315,9 @@ class Orbits:
         i = self.keplerian[:, 2]
         q = a * (1 - e)
         p = Q = a * (1 + e)
-        
+
         classes = np.array(["AST" for i in range(len(self.keplerian))])
-        
+
         classes_dict = {
             "AMO" : np.where((a > 1.0) & (q > 1.017) & (q < 1.3)),
             "MBA" : np.where((a > 1.0) & (q < 1.017)),
@@ -335,21 +335,21 @@ class Orbits:
         }
         for c, v in classes_dict.items():
             classes[v] = c
-            
+
         self.orbit_class = classes
-        return 
+        return
 
     @staticmethod
     def fromHorizons(obj_ids, t0):
         """
-        Query Horizons for state vectors for each object ID at time t0. 
-        This is a convenience function and should not be used to query for state 
+        Query Horizons for state vectors for each object ID at time t0.
+        This is a convenience function and should not be used to query for state
         vectors for many objects or at many times.
 
         Parameters
         ----------
         obj_ids : `~numpy.ndarray` (N)
-            Object IDs / designations recognizable by HORIZONS. 
+            Object IDs / designations recognizable by HORIZONS.
         t0 : `~astropy.core.time.Time` (1)
             Astropy time object at which to gather state vectors.
 
@@ -366,10 +366,10 @@ class Orbits:
             raise ValueError(err)
 
         horizons_vectors = getHorizonsVectors(
-            obj_ids, 
-            t0, 
-            location="@sun", 
-            id_type="smallbody", 
+            obj_ids,
+            t0,
+            location="@sun",
+            id_type="smallbody",
             aberrations="geometric"
         )
 
@@ -411,7 +411,7 @@ class Orbits:
         Returns
         -------
         dataframe : `~pandas.DataFrame`
-            Dataframe containing orbits, epochs and IDs. If H, G, and covariances are defined then 
+            Dataframe containing orbits, epochs and IDs. If H, G, and covariances are defined then
             those are also added to the dataframe.
         """
         if self.num_orbits > 0:
@@ -448,7 +448,7 @@ class Orbits:
             data["covariance"] = self.covariance
             if include_units:
                 units_index.append("--")
-        
+
         if self.H is not None:
             data["H"] = self.H
             if include_units:
@@ -475,23 +475,23 @@ class Orbits:
             dataframe.columns = pd.MultiIndex.from_arrays(
                 [dataframe.columns, np.array(units_index)]
             )
-        
+
         return dataframe
 
     @staticmethod
     def from_df(dataframe, orbit_type="cartesian"):
         """
-        Read orbits from a dataframe. Required columns are 
-        the epoch at which the orbits are defined ('mjd_tdb') and the 6 dimensional state. 
-        If the states are cartesian then the expected columns are ('x', 'y', 'z', 'vx', 'vy', 'vz'), 
+        Read orbits from a dataframe. Required columns are
+        the epoch at which the orbits are defined ('mjd_tdb') and the 6 dimensional state.
+        If the states are cartesian then the expected columns are ('x', 'y', 'z', 'vx', 'vy', 'vz'),
         if the states are keplerian then the expected columns are ("a", "e", "i", "raan", "argperi", "M").
 
         Parameters
         ----------
         dataframe : `~pandas.DataFrame`
-            Dataframe containing either cartesian or Keplerian orbits. 
+            Dataframe containing either cartesian or Keplerian orbits.
         orbit_type : str, optional
-            The 
+            The
 
 
         Returns
@@ -513,7 +513,7 @@ class Orbits:
         else:
             epochs = np.array([])
 
-        # If the dataframe's index is not sorted and increasing, reset it 
+        # If the dataframe's index is not sorted and increasing, reset it
         if not np.all(dataframe_.index.values == np.arange(0, len(dataframe_))):
             dataframe_.reset_index(
                 inplace=True,
@@ -526,7 +526,7 @@ class Orbits:
         if orbit_type == "cartesian":
             columns_required += CARTESIAN_COLS
             states = dataframe_[CARTESIAN_COLS].values
-        
+
         elif orbit_type == "keplerian":
             columns_required += KEPLERIAN_COLS
             states = dataframe_[KEPLERIAN_COLS].values
@@ -553,9 +553,9 @@ class Orbits:
             kwargs["additional_data"] = dataframe_[dataframe_.columns[~dataframe_.columns.isin(columns)]]
 
         return Orbits(*args, **kwargs)
-    
+
     def to_csv(self, file):
-        
+
         df = self.to_df(
             include_units=True
         )
@@ -565,15 +565,15 @@ class Orbits:
             float_format="%.15e",
             encoding="utf-8"
         )
-        return 
+        return
 
     @staticmethod
     def from_csv(file):
 
         df = pd.read_csv(
             file,
-            index_col=None, 
-            header=[0, 1], 
+            index_col=None,
+            header=[0, 1],
             converters={
                 "covariance" : lambda x: np.array(ast.literal_eval(','.join(x.replace('[ ', '[').split())))
             },

@@ -38,7 +38,7 @@ def calcNae(coords_ec_ang):
         Cartesian unit vector in direction of provided
         angular coordinates.
     """
-    
+
     rho = np.ones(len(coords_ec_ang))
     lon = np.radians(coords_ec_ang[:, 0])
     lat = np.radians(coords_ec_ang[:, 1])
@@ -110,17 +110,17 @@ def calcXa(x_ae, x_e):
 def calcNhat(x_a):
     """
     Calulate the unit vector normal to the plane of the orbit.
-    
+
     Parameters
     ----------
     x_a : `~numpy.ndarray` (3)
         Asteroid position vector in arbitrary units.
-        
+
     Returns
     -------
     n_hat : `~numpy.ndarray` (3)
         Unit vector normal to plane of orbit.
-    
+
     """
     # Make n_a unit vector
     n_a = x_a / norm(x_a)
@@ -133,7 +133,7 @@ def calcNhat(x_a):
 
 def calcR1(x_a, n_hat):
     """
-    Calculate the rotation matrix that would rotate the 
+    Calculate the rotation matrix that would rotate the
     position vector x_ae to the x-y plane.
 
     Parameters

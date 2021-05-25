@@ -11,28 +11,28 @@ __all__ = [
 ]
 
 def plotObservations(
-        dataframe, 
-        color_by_object=False, 
-        use_plotly=True, 
+        dataframe,
+        color_by_object=False,
+        use_plotly=True,
         column_mapping=Config.COLUMN_MAPPING
     ):
     """
-    Plot observations in 2D. 
-    
+    Plot observations in 2D.
+
     Parameters
     ----------
     dataframe : `~pandas.DataFrame`
         DataFrame containing relevant quantities to be plotted.
     color_by_object : bool, optional
-        Color each unique object separately. 
+        Color each unique object separately.
         [Default = False]
     use_plotly : bool, optional
         Use plotly instead of matplotlib?
         [Default = True]
     column_mapping : dict, optional
-        Column name mapping of observations to internally used column names. 
+        Column name mapping of observations to internally used column names.
         [Default = `~thor.Config.COLUMN_MAPPING`]
-   
+
     Returns
     -------
     fig : {`~matplotlib.figure.Figure`, `~plotly.figure`}
@@ -70,7 +70,7 @@ def plotObservations(
                 marker=dict(size=2)
             )
             data.append(trace)
-            
+
         layout = dict(
             width=1000,
             height=1000,
@@ -84,10 +84,10 @@ def plotObservations(
                     title="Dec [deg]",
                 ),
                 aspectratio = dict(x=1, y=1)))
-        
+
         fig = plotly.graph_objs.Figure(data=data, layout=layout)
         plotly.offline.iplot(fig)
-   
+
     else:
         fig, ax = plt.subplots(1, 1, dpi=600)
         if color_by_object is True:
@@ -100,34 +100,34 @@ def plotObservations(
 
         dataframe.plot(x=column_mapping["RA_deg"], y=column_mapping["Dec_deg"], kind="scatter", c=c, s=0.5, ax=ax)
         _setAxes(ax, "equatorialAngular")
-    
-    
+
+
     if use_plotly is True:
         return fig
-    else: 
+    else:
         return fig, ax
-        
+
 
 
 def plotObservations3D(
-        dataframe, 
-        color_by_object=False, 
+        dataframe,
+        color_by_object=False,
         column_mapping=Config.COLUMN_MAPPING
     ):
     """
-    Plot observations in 3D. 
-    
+    Plot observations in 3D.
+
     Parameters
     ----------
     dataframe : `~pandas.DataFrame`
         DataFrame containing relevant quantities to be plotted.
     color_by_object : bool, optional
-        Color each unique object separately. 
+        Color each unique object separately.
         [Default = False]
     column_mapping : dict, optional
-        Column name mapping of observations to internally used column names. 
+        Column name mapping of observations to internally used column names.
         [Default = `~thor.Config.COLUMN_MAPPING`]
-   
+
     Returns
     -------
     fig : `~plotly.figure`
@@ -189,4 +189,4 @@ def plotObservations3D(
     fig = plotly.graph_objs.Figure(data=data, layout=layout)
     plotly.offline.iplot(fig)
     return fig
-    
+

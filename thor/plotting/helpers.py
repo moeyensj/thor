@@ -8,7 +8,7 @@ __all__ = [
 def _setAxes(ax, coordinate_system):
     """
     Helper function to set axes limits depending on the coordinate system.
-    
+
     """
     if coordinate_system == "equatorialAngular":
         ax.set_xlabel(r"$\alpha$ [deg]")
@@ -30,7 +30,7 @@ def _setPercentage(limits, percentage):
     For example, _setPercentage([2, 4], 1.0) would return 4 whereas _setPercentage([2, 4], 0.50)
     would return 3.
 
-    This is particularly useful for putting text on a plot. 
+    This is particularly useful for putting text on a plot.
 
     """
     return (limits[-1] - limits[0]) * percentage + limits[0]

@@ -14,7 +14,7 @@ PYOORB_CONFIG = {
 }
 
 class PYOORB(Backend):
-    
+
     def __init__(self, **kwargs):
         # Make sure only the correct kwargs
         # are passed to the constructor
@@ -22,20 +22,20 @@ class PYOORB(Backend):
         for k in kwargs:
             if k not in allowed_kwargs:
                 raise ValueError()
-        
-        # If an allowed kwarg is missing, add the 
-        # default 
+
+        # If an allowed kwarg is missing, add the
+        # default
         for k in allowed_kwargs:
             if k not in kwargs:
                 kwargs[k] = PYOORB_CONFIG[k]
-        
+
         super().__init__(name="OpenOrb", **kwargs)
-        
+
         return
-    
+
     def setup(self):
         """
-        Initialize PYOORB with the designated JPL ephemeris file.  
+        Initialize PYOORB with the designated JPL ephemeris file.
 
         """
         if "THOR_PYOORB" in os.environ.keys() and os.environ["THOR_PYOORB"] == "True":
@@ -56,16 +56,16 @@ class PYOORB(Backend):
 
     def _configureOrbits(self, orbits, t0, orbit_type, time_scale, magnitude, slope):
         """
-        Convert an array of orbits into the format expected by PYOORB. 
+        Convert an array of orbits into the format expected by PYOORB.
 
         Parameters
         ----------
         orbits : `~numpy.ndarray` (N, 6)
             Orbits to convert. See orbit_type for expected input format.
         t0 : `~numpy.ndarray` (N)
-            Epoch in MJD at which the orbits are defined. 
+            Epoch in MJD at which the orbits are defined.
         orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
-            Orbital element representation of the provided orbits. 
+            Orbital element representation of the provided orbits.
             If cartesian:
                 x : heliocentric ecliptic J2000 x position in AU
                 y : heliocentric ecliptic J2000 y position in AU
@@ -90,14 +90,14 @@ class PYOORB(Backend):
         time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
             Time scale of the MJD epochs.
         magnitude : float or `~numpy.ndarray` (N), optional
-            Absolute H-magnitude or M1 magnitude. 
+            Absolute H-magnitude or M1 magnitude.
         slope : float or `~numpy.ndarray` (N), optional
             Photometric slope parameter G or K1.
 
         Returns
         -------
         orbits_pyoorb : `~numpy.ndarray` (N, 12)
-            Orbits formatted in the format expected by PYOORB. 
+            Orbits formatted in the format expected by PYOORB.
                 orbit_id : index of input orbits
                 elements x6: orbital elements of propagated orbits
                 orbit_type : orbit type
@@ -127,7 +127,7 @@ class PYOORB(Backend):
 
         if time_scale == "UTC":
             time_scale = [1 for i in range(num_orbits)]
-        elif time_scale == "UT1": 
+        elif time_scale == "UT1":
             time_scale = [2 for i in range(num_orbits)]
         elif time_scale == "TT":
             time_scale = [3 for i in range(num_orbits)]
@@ -139,9 +139,9 @@ class PYOORB(Backend):
         if slope is not None:
             if not isinstance(slope, np.ndarray):
                 slope = np.array([slope for i in range(num_orbits)])
-        else: 
+        else:
             slope = [0.15 for i in range(num_orbits)]
-        
+
         if magnitude is not None:
             if not isinstance(magnitude, np.ndarray):
                 magnitude = np.array([magnitude for i in range(num_orbits)])
@@ -153,28 +153,28 @@ class PYOORB(Backend):
         if num_orbits > 1:
             orbits_pyoorb = np.array(
                 np.array([
-                    ids, 
-                    *list(orbits_.T), 
-                     orbit_type, 
-                     t0, 
-                     time_scale, 
-                     magnitude, 
+                    ids,
+                    *list(orbits_.T),
+                     orbit_type,
+                     t0,
+                     time_scale,
+                     magnitude,
                      slope
-                ]).T, 
-                dtype=np.double, 
+                ]).T,
+                dtype=np.double,
                 order='F'
             )
         else:
             orbits_pyoorb = np.array([
                 [
-                    ids[0], 
-                    *list(orbits_.T), 
-                    orbit_type[0], 
-                    t0[0], 
-                    time_scale[0], 
-                    magnitude[0], 
+                    ids[0],
+                    *list(orbits_.T),
+                    orbit_type[0],
+                    t0[0],
+                    time_scale[0],
+                    magnitude[0],
                     slope[0]]
-                ], 
+                ],
                 dtype=np.double,
                 order='F'
             )
@@ -188,8 +188,8 @@ class PYOORB(Backend):
         Parameters
         ----------
         epochs : `~numpy.ndarray` (N)
-            Epoch in MJD to convert. 
-        time_scale : {'UTC', 'UT1', 'TT', 'TAI'} 
+            Epoch in MJD to convert.
+        time_scale : {'UTC', 'UT1', 'TT', 'TAI'}
             Time scale of the MJD epochs.
 
         Returns
@@ -200,7 +200,7 @@ class PYOORB(Backend):
         num_times = len(epochs)
         if time_scale == "UTC":
             time_scale = [1 for i in range(num_times)]
-        elif time_scale == "UT1": 
+        elif time_scale == "UT1":
             time_scale = [2 for i in range(num_times)]
         elif time_scale == "TT":
             time_scale = [3 for i in range(num_times)]
@@ -211,7 +211,7 @@ class PYOORB(Backend):
 
         epochs_pyoorb = np.array(list(np.vstack([epochs, time_scale]).T), dtype=np.double, order='F')
         return epochs_pyoorb
-    
+
     def _propagateOrbits(self, orbits, t1):
         """
         Propagate orbits using PYOORB.
@@ -221,9 +221,9 @@ class PYOORB(Backend):
         orbits : `~numpy.ndarray` (N, 6)
             Orbits to propagate. See orbit_type for expected input format.
         t0 : `~numpy.ndarray` (N)
-            Epoch in MJD at which the orbits are defined. 
+            Epoch in MJD at which the orbits are defined.
         t1 : `~numpy.ndarray` (N)
-            Epoch in MJD to which to propagate the orbits. 
+            Epoch in MJD to which to propagate the orbits.
         orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
             Heliocentric ecliptic J2000 orbital element representation of the provided orbits
             If 'cartesian':
@@ -250,7 +250,7 @@ class PYOORB(Backend):
         time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
             Time scale of the MJD epochs.
         magnitude : float or `~numpy.ndarray` (N), optional
-            Absolute H-magnitude or M1 magnitude. 
+            Absolute H-magnitude or M1 magnitude.
         slope : float or `~numpy.ndarray` (N), optional
             Photometric slope parameter G or K1.
         dynamical_model : {'N', '2'}, optional
@@ -268,9 +268,9 @@ class PYOORB(Backend):
 
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configureOrbits(
-            orbits.cartesian, 
-            orbits.epochs.tt.mjd, 
-            "cartesian", 
+            orbits.cartesian,
+            orbits.epochs.tt.mjd,
+            "cartesian",
             "TT",
             orbits.H,
             orbits.G
@@ -279,7 +279,7 @@ class PYOORB(Backend):
         # Convert epochs into PYOORB format
         epochs_pyoorb = self._configureEpochs(t1.tt.mjd, "TT")
 
-        # Propagate orbits to each epoch and append to list 
+        # Propagate orbits to each epoch and append to list
         # of new states
         states = []
         orbits_pyoorb_i = orbits_pyoorb.copy()
@@ -301,7 +301,7 @@ class PYOORB(Backend):
         else:
             raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
 
-        # Create pandas data frame 
+        # Create pandas data frame
         columns = [
             "orbit_id",
             *elements,
@@ -319,8 +319,8 @@ class PYOORB(Backend):
 
         # Convert output epochs to TDB
         epochs = Time(
-            propagated["epoch_mjd"].values, 
-            format="mjd", 
+            propagated["epoch_mjd"].values,
+            format="mjd",
             scale="tt"
         )
         propagated["epoch_mjd_tdb"] = epochs.tdb.value
@@ -329,7 +329,7 @@ class PYOORB(Backend):
         propagated.drop(
             columns=[
                 "epoch_mjd",
-                "orbit_type", 
+                "orbit_type",
                 "time_scale",
                 "H/M1",
                 "G/K1"
@@ -340,11 +340,11 @@ class PYOORB(Backend):
         # Re-order columns and sort
         propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
         propagated.sort_values(
-            by=["orbit_id", "epoch_mjd_tdb"], 
+            by=["orbit_id", "epoch_mjd_tdb"],
             inplace=True
         )
         propagated.reset_index(
-            inplace=True, 
+            inplace=True,
             drop=True
         )
 
@@ -362,9 +362,9 @@ class PYOORB(Backend):
         orbits : `~numpy.ndarray` (N, 6)
             Orbits to propagate. See orbit_type for expected input format.
         t0 : `~numpy.ndarray` (N)
-            Epoch in MJD at which the orbits are defined. 
+            Epoch in MJD at which the orbits are defined.
         t1 : `~numpy.ndarray` (N)
-            Epoch in MJD to which to propagate the orbits. 
+            Epoch in MJD to which to propagate the orbits.
         orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
             Heliocentric ecliptic J2000 orbital element representation of the provided orbits
             If 'cartesian':
@@ -391,7 +391,7 @@ class PYOORB(Backend):
         time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
             Time scale of the MJD epochs.
         magnitude : float or `~numpy.ndarray` (N), optional
-            Absolute H-magnitude or M1 magnitude. 
+            Absolute H-magnitude or M1 magnitude.
         slope : float or `~numpy.ndarray` (N), optional
             Photometric slope parameter G or K1.
         observatory_code : str, optional
@@ -403,17 +403,17 @@ class PYOORB(Backend):
         """
         if not self.is_setup:
             self.setup()
-            
+
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configureOrbits(
-            orbits.cartesian, 
-            orbits.epochs.tt.mjd, 
-            "cartesian", 
+            orbits.cartesian,
+            orbits.epochs.tt.mjd,
+            "cartesian",
             "TT",
             orbits.H,
             orbits.G
         )
-        
+
         columns = [
             "mjd_utc",
             "RA_deg",
@@ -450,8 +450,8 @@ class PYOORB(Backend):
             "obs_z",
             "TrueAnom"
         ]
-        
-        
+
+
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
             _checkTime(observation_times, "observation_times")
@@ -471,15 +471,15 @@ class PYOORB(Backend):
                 warnings.warn("PYOORB has returned an error!", UserWarning)
 
             ephemeris = pd.DataFrame(
-                np.vstack(ephemeris), 
+                np.vstack(ephemeris),
                 columns=columns
             )
-            
+
             ids = np.arange(0, orbits.num_orbits)
             ephemeris["orbit_id"] = [i for i in ids for j in observation_times.utc.mjd]
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
             ephemeris = ephemeris[["orbit_id", "observatory_code"] + columns]
-            
+
             ephemeris_dfs.append(ephemeris)
 
         ephemeris = pd.concat(ephemeris_dfs)

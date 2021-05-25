@@ -15,16 +15,16 @@ from ..gauss import gaussIOD
 
 TARGETS = [
     "Ivezic",
-] 
+]
 EPOCH = 59000.0
 DT = np.arange(0, 30, 1)
 T0 = Time(
     [EPOCH for i in range(len(TARGETS))],
     format="mjd",
-    scale="tdb", 
+    scale="tdb",
 )
 T1 = Time(
-    EPOCH + DT, 
+    EPOCH + DT,
     format="mjd",
     scale="tdb"
 )
@@ -33,35 +33,35 @@ SELECTED_OBS = [
     [0, 6, -1],
 ]
 
-                
+
 def selectBestIOD(iod_orbits, true_orbit):
     """
     Helper function that selects the best preliminary orbit
-    by selecting the orbit closes in position to the 
-    true orbit. 
-    
+    by selecting the orbit closes in position to the
+    true orbit.
+
     This is intended to only used for testing.
-    
+
     Parameters
     ----------
     iod_orbits : `~numpy.ndarray` (N, 6)
         Cartesian preliminary orbits from IOD functions.
     true_orbit : `~numpy.ndarray` (1, 6)
         True cartesian orbit.
-        
+
     Returns
     -------
     best_iod_orbit : `~numpy.ndarray` (1, 6)
-        The orbit closest in position to the true orbit. 
+        The orbit closest in position to the true orbit.
     """
     delta_state = iod_orbits - true_orbit
     delta_position = np.linalg.norm(delta_state[:, :3], axis=1)
     nearest_iod = np.argmin(delta_position)
-    
+
     return iod_orbits[nearest_iod:nearest_iod+1]
 
 def test_gaussIOD():
-    
+
     getSPICEKernels(KERNELS_DE430)
     setupSPICE(KERNELS_DE430, force=True)
 
@@ -73,9 +73,9 @@ def test_gaussIOD():
 
                 # Query Horizons for observatory's state vectors at each T1
                 horizons_observer_states = getHorizonsObserverState(
-                    [observatory], 
-                    T1, 
-                    origin="heliocenter", 
+                    [observatory],
+                    T1,
+                    origin="heliocenter",
                     aberrations="geometric"
                 )
                 observer_states = horizons_observer_states[["x", "y", "z", "vx", "vy", "vz"]].values
@@ -91,16 +91,16 @@ def test_gaussIOD():
 
                 # Generate ephemeris using the 2-body integration
                 MJOLNIR_KWARGS = {
-                    "light_time" : True, 
+                    "light_time" : True,
                     "lt_tol" : 1e-10,
                     "stellar_aberration" : False,
                     "mu" : c.MU,
-                    "max_iter" : 1000, 
+                    "max_iter" : 1000,
                     "tol" : 1e-16
                 }
                 orbits = Orbits(
-                    horizons_states[selected_obs[1]:selected_obs[1]+1], 
-                    T1[selected_obs[1]:selected_obs[1]+1], 
+                    horizons_states[selected_obs[1]:selected_obs[1]+1],
+                    T1[selected_obs[1]:selected_obs[1]+1],
                     orbit_type="cartesian",
                 )
                 ephemeris = generateEphemeris(
@@ -114,9 +114,9 @@ def test_gaussIOD():
 
                 # Run IOD
                 iod_orbits = gaussIOD(
-                    coords[selected_obs, :], 
-                    T1.utc.mjd[selected_obs], 
-                    observer_states[selected_obs, :3], 
+                    coords[selected_obs, :],
+                    T1.utc.mjd[selected_obs],
+                    observer_states[selected_obs, :3],
                     velocity_method="gibbs",
                     light_time=True,
                     max_iter=100,
@@ -125,11 +125,11 @@ def test_gaussIOD():
 
                 # Select the best IOD orbit
                 best_iod_orbit = selectBestIOD(
-                    iod_orbits.cartesian, 
+                    iod_orbits.cartesian,
                     states[selected_obs[1]:selected_obs[1] + 1]
                 )
 
-                # Test that the resulting orbit is within the tolerances of the 
+                # Test that the resulting orbit is within the tolerances of the
                 # true state below
                 testOrbits(
                     best_iod_orbit,

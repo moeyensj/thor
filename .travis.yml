@@ -5,7 +5,7 @@ branches:
     - main
 python:
   - "3.8"
-  
+
 install:
   - sudo apt-get update
   - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
@@ -19,7 +19,7 @@ install:
   - source activate thor_py38
   - python setup.py install
 
-script: 
+script:
   - pytest thor --cov=thor
 
 after_success:

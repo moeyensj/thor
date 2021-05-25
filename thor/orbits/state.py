@@ -32,13 +32,13 @@ __all__ = [
 def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     """
     Query the JPL ephemeris files loaded in SPICE for the state vectors of desired perturbers.
-    
-    Major bodies and dynamical centers available: 
+
+    Major bodies and dynamical centers available:
         'solar system barycenter', 'sun',
-        'mercury', 'venus', 'earth', 
-        'mars', 'jupiter', 'saturn', 
+        'mercury', 'venus', 'earth',
+        'mars', 'jupiter', 'saturn',
         'uranus', 'neptune'
-    
+
     Parameters
     ----------
     body_name : str
@@ -46,21 +46,21 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     times : `~astropy.time.core.Time` (N)
         Times at which to get state vectors.
     frame : {'equatorial', 'ecliptic'}
-        Return perturber state in the equatorial or ecliptic J2000 frames. 
+        Return perturber state in the equatorial or ecliptic J2000 frames.
     origin : {'barycenter', 'heliocenter'}
         Return perturber state with heliocentric or barycentric origin.
-    
+
     Returns
     -------
     states : `~numpy.ndarray` (N, 6)
-        Heliocentric ecliptic J2000 state vector with postion in AU 
+        Heliocentric ecliptic J2000 state vector with postion in AU
         and velocity in AU per day.
     """
     if origin == "barycenter":
         center = 0 # Solar System Barycenter
     elif origin == "heliocenter":
         center = 10 # Heliocenter
-    else: 
+    else:
         err = ("origin should be one of 'heliocenter' or 'barycenter'")
         raise ValueError(err)
 
@@ -73,7 +73,7 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
             "frame should be one of {'equatorial', 'ecliptic'}"
         )
         raise ValueError(err)
-    
+
     # Make sure SPICE is ready to roll
     setupSPICE()
 
@@ -83,20 +83,20 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     # Convert MJD epochs in TDB to ET in TDB
     epochs_tdb = times.tdb
     epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
-    
-    # Get position of the body in heliocentric ecliptic J2000 coordinates 
+
+    # Get position of the body in heliocentric ecliptic J2000 coordinates
     states = []
     for epoch in epochs_et:
         state, lt = sp.spkez(
-            NAIF_MAPPING[body_name.lower()], 
-            epoch, 
+            NAIF_MAPPING[body_name.lower()],
+            epoch,
             frame_spice,
             'NONE',
             center
         )
         states.append(state)
     states = np.vstack(states)
-    
+
     # Convert to AU and AU per day
     states = states / KM_P_AU
     states[:, 3:] = states[:, 3:] * S_P_DAY
@@ -104,9 +104,9 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
 
 def shiftOrbitsOrigin(orbits, t0, origin_in="heliocenter", origin_out="barycenter"):
     """
-    Shift the origin of the given orbits. Orbits should be expressed in 
+    Shift the origin of the given orbits. Orbits should be expressed in
     ecliptic J2000 cartesian coordinates.
-    
+
     Parameters
     ----------
     orbits : `~numpy.ndarray` (N, 6)
@@ -114,21 +114,21 @@ def shiftOrbitsOrigin(orbits, t0, origin_in="heliocenter", origin_out="barycente
     t0 : `~astropy.time.core.Time` (N)
         Epoch at which orbits are defined.
     origin_in : {'heliocenter', 'barycenter'}
-        Origin of the input orbits. 
+        Origin of the input orbits.
     origin_out : {'heliocenter', 'barycenter'}
         Desired origin of the output orbits.
-    
+
     Returns
     -------
     orbits_shifted : `~numpy.ndarray` (N, 6)
         Orbits shifted to the desired output origin.
     """
     _checkTime(t0, "t0")
-    
+
     orbits_shifted = orbits.copy()
     bary_to_helio = getPerturberState("sun", t0, origin="barycenter")
     helio_to_bary = getPerturberState("solar system barycenter", t0, origin="heliocenter")
-    
+
     if origin_in == origin_out:
         return orbits_shifted
     elif origin_in == "heliocenter" and origin_out == "barycenter":
@@ -140,5 +140,5 @@ def shiftOrbitsOrigin(orbits, t0, origin_in="heliocenter", origin_out="barycente
             "origin_in and origin_out should be one of {'heliocenter', 'barycenter'}"
         )
         raise ValueError(err)
-    
+
     return orbits_shifted

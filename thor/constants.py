@@ -9,24 +9,24 @@ __all__ = [
 ]
 
 # km in an au
-KM_P_AU = 149597870.700 
+KM_P_AU = 149597870.700
 # seconds in a day
-S_P_DAY = 86400.0  
+S_P_DAY = 86400.0
 
 class _Constants:
-    
+
     def __init__(
-            self,  
+            self,
             C=None,
             MU=None,
             R_Earth=None,
             Obliquity=None
         ):
-        self.C = C 
+        self.C = C
         self.MU = MU
         self.R_EARTH = R_Earth
         self.OBLIQUITY = Obliquity
-        
+
         # Transformation matrix from Equatorial J2000 to Ecliptic J2000
         self.TRANSFORM_EQ2EC = np.array([
             [1, 0, 0],

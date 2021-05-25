@@ -10,24 +10,24 @@ __all__ = [
 ]
 
 def plotProjections(
-        projected_observations, 
-        color_by_object=False, 
-        use_plotly=True, 
+        projected_observations,
+        color_by_object=False,
+        use_plotly=True,
     ):
     """
-    Plot projected observations in 2D. 
-    
+    Plot projected observations in 2D.
+
     Parameters
     ----------
     projected_observations :  `~pandas.DataFrame`
         DataFrame containing projected observations (theta_x, theta_y).
     color_by_object : bool, optional
-        Color each unique object separately. 
+        Color each unique object separately.
         [Default = False]
     use_plotly : bool, optional
         Use plotly instead of matplotlib?
         [Default = True]
-   
+
     Returns
     -------
     fig : {`~matplotlib.figure.Figure`, `~plotly.figure`}
@@ -66,7 +66,7 @@ def plotProjections(
                 marker=dict(size=2)
             )
             data.append(trace)
-            
+
         layout = dict(
             width=1000,
             height=1000,
@@ -82,10 +82,10 @@ def plotProjections(
                 aspectratio = dict(x=1, y=1)
             )
         )
-        
+
         fig = plotly.graph_objs.Figure(data=data, layout=layout)
         plotly.offline.iplot(fig)
-   
+
     else:
         fig, ax = plt.subplots(1, 1, dpi=600)
         if color_by_object is True:
@@ -98,29 +98,29 @@ def plotProjections(
 
         dataframe.plot(x="theta_x_deg", y="theta_y_deg", kind="scatter", c=c, s=0.5, ax=ax)
         _setAxes(ax, "gnomonic")
-    
-    
+
+
     if use_plotly is True:
         return fig
-    else: 
+    else:
         return fig, ax
-        
+
 
 def plotProjections3D(
-        projected_observations, 
-        color_by_object=False, 
+        projected_observations,
+        color_by_object=False,
     ):
     """
-    Plot projected observations in 3D. 
-    
+    Plot projected observations in 3D.
+
     Parameters
     ----------
     projected_observations :  `~pandas.DataFrame`
         DataFrame containing projected observations (theta_x, theta_y).
     color_by_object : bool, optional
-        Color each unique object separately. 
+        Color each unique object separately.
         [Default = False]
-   
+
     Returns
     -------
     fig : `~plotly.figure`
@@ -184,4 +184,4 @@ def plotProjections3D(
     fig = plotly.graph_objs.Figure(data=data, layout=layout)
     plotly.offline.iplot(fig)
     return fig
-    
+

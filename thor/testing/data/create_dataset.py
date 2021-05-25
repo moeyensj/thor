@@ -13,56 +13,56 @@ from thor.orbits import Orbits
 from thor.orbits import generateEphemeris
 
 TARGETS = [
-    # Atira 
+    # Atira
     "2020 AV2",
     "163693",
-    
-    # Aten 
+
+    # Aten
     "2010 TK7",
     "3753",
 
     # Apollo
-    "54509", 
-    "2063", 
-    
+    "54509",
+    "2063",
+
     # Amor
     "1221",
     "433",
     "3908",
-    
+
     # IMB
     "434",
     "1876",
     "2001",
-    
+
     # MBA
-    "2", 
+    "2",
     "6",
-    "6522", 
+    "6522",
     "202930",
-    
+
     # Jupiter Trojans
     "911",
     "1143",
     "1172",
-    "3317", 
-    
+    "3317",
+
     # Centaur
     "5145",
     "5335",
     "49036",
-    
+
     # Trans-Neptunian Objects
     "15760",
     "15788",
     "15789",
-    
+
     # ISOs
     "A/2017 U1"
 ]
 T0 = Time(
-    [58000], 
-    scale="utc", 
+    [58000],
+    scale="utc",
     format="mjd"
 )
 DTS = np.arange(-30, 30, 1)
@@ -84,39 +84,39 @@ def getSBDBClass(obj_ids):
         orbit_class = results["object"]["orbit_class"]["name"]
         data["targetname"].append(targetname)
         data["orbit_class"].append(orbit_class)
-    
+
     return pd.DataFrame(data)
 
 def createTestDataset(
-        targets=TARGETS, 
-        t0=T0, 
+        targets=TARGETS,
+        t0=T0,
         observatory_codes=OBSERVATORY_CODES,
         dts=DTS,
         out_dir=DATA_DIR,
     ):
     """
-    Creates a test data set using data products from JPL Horizons and SBDB. 
-    The following files are created: 
+    Creates a test data set using data products from JPL Horizons and SBDB.
+    The following files are created:
         vectors.csv : heliocentric cartesian state vectors in units of au and au per day
-            for each target at t0. 
+            for each target at t0.
         vectors_barycentric.csv : barycentric cartesian state vectors in units of au and au per day
-            for each target at t0. 
-        elements.csv : keplerian elements in units of au and degrees for each target at t0. 
-        ephemeris.csv : ephemerides for each target as observed by each observer at t0 + dts. 
+            for each target at t0.
+        elements.csv : keplerian elements in units of au and degrees for each target at t0.
+        ephemeris.csv : ephemerides for each target as observed by each observer at t0 + dts.
         observer_states.csv : heliocentric cartesian state vectors in units of au and au per day
-            for each observer at t1. 
-        observer_states_barycentric.csv : heliocentric cartesian state vectors in units 
-            of au and au per day for each observer at t1. 
-        observations.csv : Preprocessed observations for the elliptical orbits. 
+            for each observer at t1.
+        observer_states_barycentric.csv : heliocentric cartesian state vectors in units
+            of au and au per day for each observer at t1.
+        observations.csv : Preprocessed observations for the elliptical orbits.
         associations.csv : Labels ('truths') for the preprocessed observations.
         orbits.csv : Elliptical orbits saved as THOR orbit class.
-            
+
     Parameters
     ----------
     targets : list
         Names of targets for which to great data set.
     t0 : `~astropy.time.core.Time`
-        Initial epoch at which to get state vectors and elements for 
+        Initial epoch at which to get state vectors and elements for
         each target.
     observatory_codes : list
         MPC observatory codes of observatories for which ephemerides should be generated.
@@ -124,7 +124,7 @@ def createTestDataset(
         Array of delta times (in units of days) relative to t0 with which ephemerides should be generated.
     out_dir : str
         Location to save data set.
-        
+
     Returns
     -------
     None
@@ -132,7 +132,7 @@ def createTestDataset(
     # Set t1 and the observers dictionary
     t1 = t0 + dts
     observers = {code : t1 for code in observatory_codes}
-    
+
     # Query JPL's SBDB for orbit class of each target
     orbit_classes = getSBDBClass(targets)
 
@@ -151,11 +151,11 @@ def createTestDataset(
             index=False,
             float_format=FLOAT_FORMAT
         )
-    
+
     # Get barycentric state vectors for each target
     vectors_barycentric = getHorizonsVectors(
-        targets, 
-        t0, 
+        targets,
+        t0,
         location="@ssb"
     )
     vectors_barycentric = vectors_barycentric.join(orbit_classes[["orbit_class"]])
@@ -171,7 +171,7 @@ def createTestDataset(
             index=False,
             float_format=FLOAT_FORMAT
         )
-    
+
     # Get heliocentric elements for each target
     elements = getHorizonsElements(targets, t0)
     elements = elements.join(orbit_classes[["orbit_class"]])
@@ -187,7 +187,7 @@ def createTestDataset(
             index=False,
             float_format=FLOAT_FORMAT
         )
-    
+
     # Get ephemerides for each target as observed by the observers
     ephemeris = getHorizonsEphemeris(targets, observers)
     ephemeris = ephemeris[["targetname", "observatory_code", "mjd_utc", "RA", "DEC"]]
@@ -204,8 +204,8 @@ def createTestDataset(
 
     # Get heliocentric observer states for each observatory
     observer_states = getHorizonsObserverState(
-        observers.keys(), 
-        t1, 
+        observers.keys(),
+        t1,
         origin="heliocenter"
     )
     observer_states["mjd_utc"] = Time(
@@ -214,18 +214,18 @@ def createTestDataset(
         format="jd"
     ).utc.mjd
     observer_states = observer_states[["observatory_code", "mjd_utc"] + CARTESIAN_COLS]
-    
+
     if out_dir is not None:
         observer_states.to_csv(
             os.path.join(out_dir, "observer_states.csv"),
             index=False,
             float_format=FLOAT_FORMAT
         )
-    
+
     # Get barycentric observer states for each observatory
     observer_states_barycentric = getHorizonsObserverState(
-        observers.keys(), 
-        t1, 
+        observers.keys(),
+        t1,
         origin="barycenter"
     )
     observer_states_barycentric["mjd_utc"] = Time(
@@ -303,7 +303,7 @@ def createTestDataset(
     observations_noise = observations.iloc[sorted(inds_selected)].copy()
     observations_noise["orbit_id"] = ["u{:08d}".format(i) for i in range(len(observations_noise))]
     observations_noise.loc[:, ["RA_deg", "Dec_deg"]] = (
-        observations_noise[["RA_deg", "Dec_deg"]].values 
+        observations_noise[["RA_deg", "Dec_deg"]].values
         + np.random.normal(loc=1/3600, scale=30/3600, size=(len(observations_noise), 2))
     )
 
@@ -314,14 +314,14 @@ def createTestDataset(
     )
 
     column_mapping = {
-        "obs_id" : None,     
-        "mjd" : "mjd_utc",                      
-        "RA_deg" : "RA_deg",                       
-        "Dec_deg" : "Dec_deg",                      
-        "RA_sigma_deg" : None,                
-        "Dec_sigma_deg" : None,               
-        "observatory_code" : "observatory_code",             
-        "obj_id" : "orbit_id",                           
+        "obs_id" : None,
+        "mjd" : "mjd_utc",
+        "RA_deg" : "RA_deg",
+        "Dec_deg" : "Dec_deg",
+        "RA_sigma_deg" : None,
+        "Dec_sigma_deg" : None,
+        "observatory_code" : "observatory_code",
+        "obj_id" : "orbit_id",
     }
     preprocessed_observations, preprocessed_associations = preprocessObservations(
         observations,
@@ -341,7 +341,7 @@ def createTestDataset(
             index=False,
             float_format=FLOAT_FORMAT
         )
-        
+
     return
 
 if __name__ == "__main__":

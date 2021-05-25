@@ -14,8 +14,8 @@ DATA_DIR = os.path.join(
 
 def test_generateEphemeris():
     """
-    Read the test data set for initial state vectors of each target at t0, and read the test data set 
-    for ephemerides for each target as observed by each observatory at t1. Use PYOORB backend to 
+    Read the test data set for initial state vectors of each target at t0, and read the test data set
+    for ephemerides for each target as observed by each observatory at t1. Use PYOORB backend to
     generate ephemerides for each target as observed by each observatory at t1 using the initial state vectors.
     Compare the resulting ephemerides and test how well they agree with the ones pulled from Horizons.
     """
@@ -53,7 +53,7 @@ def test_generateEphemeris():
 
     # Pull state vectors
     vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
-   
+
     # Create orbits class
     orbits = Orbits(
         vectors,
@@ -71,11 +71,11 @@ def test_generateEphemeris():
         )
     ephemeris = ephemeris_df[["RA", "DEC"]].values
 
-    # Use PYOORB to generate ephemeris for each target observed by 
+    # Use PYOORB to generate ephemeris for each target observed by
     # each observer
     ephemeris_pyoorb = generateEphemeris(
-        orbits, 
-        observers, 
+        orbits,
+        observers,
         backend="PYOORB",
     )
     ephemeris_pyoorb = ephemeris_pyoorb[["RA_deg", "Dec_deg"]].values

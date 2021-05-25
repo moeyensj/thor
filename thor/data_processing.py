@@ -13,90 +13,90 @@ __all__ = [
 ]
 
 def preprocessObservations(
-        observations, 
-        column_mapping, 
-        astrometric_errors=None, 
-        mjd_scale="utc", 
+        observations,
+        column_mapping,
+        astrometric_errors=None,
+        mjd_scale="utc",
         attribution=False
     ):
     """
     Create two seperate data frames: one with all observation data needed to run THOR stripped of
     object IDs and the other with known object IDs and attempts to attribute unknown observations to
     the latest catalog of known objects from the MPC.
-    
+
     Parameters
     ----------
     observations : `~pandas.DataFrame`
         DataFrame containing at minimum a column of observation IDs, exposure times in MJD (with scale
-        set by mjd_scale), RA in degrees, Dec in degrees, 1-sigma error in RA in degrees, 1-sigma error in 
-        Dec in degrees and the observatory code. 
+        set by mjd_scale), RA in degrees, Dec in degrees, 1-sigma error in RA in degrees, 1-sigma error in
+        Dec in degrees and the observatory code.
     column_mapping : dict
         Dictionary containing internal column names as keys mapped to column names in the data frame as values.
         Should include the following:
         {# Internal : # External
-            "obs_id" : column name or None,                  
-            "mjd" : column name,                      
-            "RA_deg" : column name,                       
-            "Dec_deg" : column name,                      
-            "RA_sigma_deg" : column name or None,                
-            "Dec_sigma_deg" : column name or None,               
-            "observatory_code" : column name,             
-            "obj_id" : column name or None,                           
+            "obs_id" : column name or None,
+            "mjd" : column name,
+            "RA_deg" : column name,
+            "Dec_deg" : column name,
+            "RA_sigma_deg" : column name or None,
+            "Dec_sigma_deg" : column name or None,
+            "observatory_code" : column name,
+            "obj_id" : column name or None,
         }
         Description of columns and their assumed values:
-            'obs_id' : column name or None 
+            'obs_id' : column name or None
                 Observation IDs as type string. If None, THOR will assign
                 an observation ID to each observation.
             'mjd' : column name
                 Observation time in MJD, the input time scale can be set with the
                 'time_scale' parameter. Time scale will be converted if not in UTC.
-            'RA_deg' : column name       
+            'RA_deg' : column name
                 Topocentric J2000 Right Ascension in degrees.
-            'Dec_deg' : column name       
+            'Dec_deg' : column name
                 Topocentric J2000 Declination in degrees.
-            'RA_sigma_deg' : column name or None      
+            'RA_sigma_deg' : column name or None
                  1-sigma astrometric uncertainty in RA in degrees.
                  If certain or all observations are missing astrometric errors, use
                  the 'astrometric_errors' parameter to configure defaults for all observatories
                  or for each observatory individually. If None, THOR will use the 'astrometric_error'
-                 parameter to assign errors. 
-            'Dec_sigma_deg' : column name or None       
+                 parameter to assign errors.
+            'Dec_sigma_deg' : column name or None
                  1-sigma astrometric uncertainty in Dec in degrees.
                  If certain or all observations are missing astrometric errors, use
                  the 'astrometric_errors' parameter to configure defaults for all observatories
                  or for each observatory individually. If None, THOR will use the 'astrometric_error'
-                 parameter to assign errors. 
+                 parameter to assign errors.
             'observatory_code' : column_name
                 The MPC observatory code from which each observation was made. THOR currently
-                only supports ground-based observatories. 
+                only supports ground-based observatories.
             'obj_id' : column_name or None
-                If known, the designation in unpacked or packed form. If unknown, object ID should be 
-                set to 'NaN'. If None, THOR will assume no observations have been associated. 
+                If known, the designation in unpacked or packed form. If unknown, object ID should be
+                set to 'NaN'. If None, THOR will assume no observations have been associated.
     mjd_scale : str, optional
         Time scale of the input MJD exposure times ("utc", "tdb", etc...)
     attribution : bool, optional
         Place holder boolean to trigger attribution
-    
+
     Returns
     -------
     preprocessed_observations : `~pandas.DataFrame`
         DataFrame with observations in the format required by THOR.
     preprocessed_attributions : `~pandas.DataFrame`
         DataFrame containing truths.
-        
+
     Raises
     ------
     ValueError
         If the astrometric_errors parameter is not of type list or dictionary,
-        or if the errors are not correctly defined. 
-    
+        or if the errors are not correctly defined.
+
     Warns
     -----
     UserWarning:
-        If the observation ID, object_ID, or astrometric error columns are not 
+        If the observation ID, object_ID, or astrometric error columns are not
         present in the column_mapping dictionary.
     """
-    # Required columns THOR needs 
+    # Required columns THOR needs
     cols = [
         "obs_id",
         "mjd",
@@ -112,7 +112,7 @@ def preprocessObservations(
     assign_obs_ids = False
     if column_mapping["obs_id"] == None:
         warning = (
-            "No observation ID column defined in the column_mapping dictionary.\n" 
+            "No observation ID column defined in the column_mapping dictionary.\n"
             "Assigning observation IDs...\n"
         )
         warnings.warn(
@@ -126,7 +126,7 @@ def preprocessObservations(
     assign_obj_ids = False
     if column_mapping["obj_id"] == None:
         warning = (
-            "No object ID column defined in the column_mapping dictionary.\n" 
+            "No object ID column defined in the column_mapping dictionary.\n"
             "Assuming no observations have been associated with a known object...\n"
         )
         warnings.warn(
@@ -140,7 +140,7 @@ def preprocessObservations(
     use_astrometric_errors = False
     if (column_mapping["RA_sigma_deg"] == None) and (column_mapping["Dec_sigma_deg"] == None):
         warning = (
-            "No astrometric error columns defined in the column_mapping dictionary.\n" 
+            "No astrometric error columns defined in the column_mapping dictionary.\n"
             "Using 'astrometric_errors' parameter to assign errors...\n"
         )
         warnings.warn(
@@ -150,7 +150,7 @@ def preprocessObservations(
         use_astrometric_errors = True
         cols.remove("RA_sigma_deg")
         cols.remove("Dec_sigma_deg")
-    
+
 
     # Create a copy of the relevant columns in observations
     obs_cols = [column_mapping[c] for c in cols]
@@ -190,7 +190,7 @@ def preprocessObservations(
                     preprocessed_observations.loc[observatory_mask, "RA_sigma_deg"] = errors[0]
                     preprocessed_observations.loc[observatory_mask, "Dec_sigma_deg"] = errors[1]
 
-        else: 
+        else:
             err = (
                 "'astrometric_errors' should be one of {None, list, dict}.\n"
                 "If None, then the given observations must have the ra_sigma_deg\n"
@@ -212,7 +212,7 @@ def preprocessObservations(
     )]["observatory_code"].unique()
 
     if len(missing_codes) > 0:
-        err = ( 
+        err = (
             "Missing astrometric errors for observations from:\n"
             "  {}\n"
         )
@@ -258,7 +258,7 @@ def preprocessObservations(
 
     # Assign object IDs if needed
     if assign_obj_ids:
-        preprocessed_observations.loc[:, "obj_id"] = "None" 
+        preprocessed_observations.loc[:, "obj_id"] = "None"
     else:
         if type(preprocessed_observations["obj_id"]) != object:
             warn = ("Object IDs should be of type string, converting...")
@@ -268,19 +268,19 @@ def preprocessObservations(
 
     # Split observations into two dataframes (make THOR run only on completely blind observations)
     preprocessed_associations = preprocessed_observations[[
-        "obs_id", 
+        "obs_id",
         "obj_id"
     ]].copy()
     preprocessed_observations = preprocessed_observations[[
-        "obs_id", 
-        "mjd_utc", 
-        "RA_deg", 
+        "obs_id",
+        "mjd_utc",
+        "RA_deg",
         "Dec_deg",
         "RA_sigma_deg",
         "Dec_sigma_deg",
         "observatory_code",
     ]]
-    
+
     return preprocessed_observations, preprocessed_associations
 
 
@@ -292,13 +292,13 @@ def findAverageOrbits(
         column_mapping=Config.COLUMN_MAPPING
     ):
     """
-    Find the object with observations that represents 
+    Find the object with observations that represents
     the most average in terms of cartesian velocity and the
-    heliocentric distance. Assumes that a subset of the designations in the orbits 
-    dataframe are identical to at least some of the designations in the observations 
+    heliocentric distance. Assumes that a subset of the designations in the orbits
+    dataframe are identical to at least some of the designations in the observations
     dataframe. No propagation is done, so the orbits need to be defined at an epoch near
-    the time of observations, for example like the midpoint or start of a two-week window. 
-    
+    the time of observations, for example like the midpoint or start of a two-week window.
+
     Parameters
     ----------
     observations : `~pandas.DataFrame`
@@ -306,24 +306,24 @@ def findAverageOrbits(
     orbits : `~pandas.DataFrame`
         DataFrame containing orbits for each unique object in observations.
     d_values : {list (N>=2), None}, optional
-        If None, will find average orbit in all of observations. If a list, will find an 
+        If None, will find average orbit in all of observations. If a list, will find an
         average orbit between each value in the list. For example, passing dValues = [1.0, 2.0, 4.0] will
         mean an average orbit will be found in the following bins: (1.0 <= d < 2.0), (2.0 <= d < 4.0).
     element_type : {'keplerian', 'cartesian'}, optional
-        Find average orbits using which elements. If 'keplerian' will use a-e-i for average, 
-        if 'cartesian' will use r, v. 
+        Find average orbits using which elements. If 'keplerian' will use a-e-i for average,
+        if 'cartesian' will use r, v.
         [Default = 'keplerian']
     verbose : bool, optional
-        Print progress statements? 
+        Print progress statements?
         [Default = True]
     column_mapping : dict, optional
-        Column name mapping of observations to internally used column names. 
-        [Default = `~thor.Config.COLUMN_MAPPING`] 
-    
+        Column name mapping of observations to internally used column names.
+        [Default = `~thor.Config.COLUMN_MAPPING`]
+
     Returns
     -------
-    orbits : `~pandas.DataFrame` 
-        DataFrame with name, r, v, exposure time, and sky-plane location of the average orbit in each bin of r. 
+    orbits : `~pandas.DataFrame`
+        DataFrame with name, r, v, exposure time, and sky-plane location of the average orbit in each bin of r.
     """
     if element_type == "keplerian":
         d_col = column_mapping["a_au"]
@@ -334,23 +334,23 @@ def findAverageOrbits(
             "element_type should be one of {'keplerian', 'cartesian'}"
         )
         raise ValueError(err)
-        
+
     dataframe = pd.merge(orbits, observations, on=column_mapping["name"]).copy()
     dataframe.reset_index(inplace=True, drop=True)
-        
+
     d_bins = []
     if d_values != None:
         for d_i, d_f in zip(d_values[:-1], d_values[1:]):
             d_bins.append(dataframe[(dataframe[d_col] >= d_i) & (dataframe[d_col] < d_f)])
-    else: 
+    else:
         d_bins.append(dataframe)
-    
+
     average_orbits = []
-    
+
     for i, obs in enumerate(d_bins):
         if len(obs) == 0:
             # No real objects
-            
+
             orbit = pd.DataFrame({"orbit_id" : i + 1,
                 column_mapping["exp_mjd"] : np.NaN,
                 column_mapping["obj_x_au"] : np.NaN,
@@ -368,7 +368,7 @@ def findAverageOrbits(
                 column_mapping["name"]: np.NaN}, index=[0])
             average_orbits.append(orbit)
             continue
-            
+
         if element_type == "cartesian":
 
             rv = obs[[
@@ -381,21 +381,21 @@ def findAverageOrbits(
             # Calculate the percent difference between the median of each velocity element
             # and the heliocentric distance
             percent_diff = np.abs((rv - np.median(rv, axis=0)) / np.median(rv, axis=0))
-            
+
         else:
-            aie = obs[[column_mapping["a_au"], 
-                       column_mapping["i_deg"], 
+            aie = obs[[column_mapping["a_au"],
+                       column_mapping["i_deg"],
                        column_mapping["e"]]].values
 
             # Calculate the percent difference between the median of each velocity element
             # and the heliocentric distance
             percent_diff = np.abs((aie - np.median(aie, axis=0)) / np.median(aie, axis=0))
 
-        
+
         # Sum the percent differences
         summed_diff = np.sum(percent_diff, axis=1)
 
-        # Find the minimum summed percent difference and call that 
+        # Find the minimum summed percent difference and call that
         # the average object
         index = np.where(summed_diff == np.min(summed_diff))[0][0]
         name = obs[column_mapping["name"]].values[index]
@@ -412,14 +412,14 @@ def findAverageOrbits(
             column_mapping["obj_dz/dt_au_p_day"],
             column_mapping["RA_deg"],
             column_mapping["Dec_deg"],
-            column_mapping["r_au"], 
+            column_mapping["r_au"],
             column_mapping["a_au"],
             column_mapping["i_deg"],
             column_mapping["e"],
             column_mapping["name"]]].copy()
         obj["orbit_id"] = i + 1
-        
-        average_orbits.append(obj[["orbit_id", 
+
+        average_orbits.append(obj[["orbit_id",
             column_mapping["exp_mjd"],
             column_mapping["obj_x_au"],
             column_mapping["obj_y_au"],
@@ -429,14 +429,14 @@ def findAverageOrbits(
             column_mapping["obj_dz/dt_au_p_day"],
             column_mapping["RA_deg"],
             column_mapping["Dec_deg"],
-            column_mapping["r_au"], 
+            column_mapping["r_au"],
             column_mapping["a_au"],
             column_mapping["i_deg"],
             column_mapping["e"],
             column_mapping["name"]]])
-        
+
     average_orbits = pd.concat(average_orbits)
     average_orbits.sort_values(by=["orbit_id", column_mapping["exp_mjd"]], inplace=True)
     average_orbits.reset_index(inplace=True, drop=True)
-    
+
     return average_orbits
