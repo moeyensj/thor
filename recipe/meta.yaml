@@ -36,7 +36,7 @@ requirements:
 
 build:
   script: python setup.py install --single-version-externally-managed --record=record.txt
-    
+
 test:
   imports:
     - thor

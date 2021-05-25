@@ -21,7 +21,7 @@ def _checkTime(time, arg_name):
 
     Raises
     ------
-    ValueError : If time is not an astropy time object. 
+    ValueError : If time is not an astropy time object.
     """
     err = (
         "Time ({}) has to be an `~astropy.time.core.Time` object.\n"

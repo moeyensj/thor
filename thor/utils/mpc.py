@@ -26,7 +26,7 @@ BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 BASE62_MAP = {BASE62[i] : i for i in range(len(BASE62))}
 
 def _unpackMPCDate(epoch_pf):
-    # Taken from Lynne Jones' SSO TOOLS. 
+    # Taken from Lynne Jones' SSO TOOLS.
     # See https://minorplanetcenter.net/iau/info/PackedDates.html
     # for MPC documentation on packed dates.
     # Examples:
@@ -37,14 +37,14 @@ def _unpackMPCDate(epoch_pf):
     month = _lookupMPC(epoch_pf[3])
     day = _lookupMPC(epoch_pf[4])
     isot_string = "{:d}-{:02d}-{:02d}".format(year, month, day)
-    
+
     if len(epoch_pf) > 5:
         fractional_day = float("." + epoch_pf[5:])
         hours = int((24 * fractional_day))
         minutes = int(60 * ((24 * fractional_day) - hours))
-        seconds = 3600 * (24 * fractional_day - hours - minutes / 60) 
+        seconds = 3600 * (24 * fractional_day - hours - minutes / 60)
         isot_string += "T{:02d}:{:02d}:{:09.6f}".format(hours, minutes, seconds)
-        
+
     return isot_string
 
 def _lookupMPC(x):
@@ -59,7 +59,7 @@ def _lookupMPC(x):
 
 def convertMPCPackedDates(pf_tt):
     """
-    Convert MPC packed form dates (in the TT time scale) to 
+    Convert MPC packed form dates (in the TT time scale) to
     MJDs in TT. See: https://minorplanetcenter.net/iau/info/PackedDates.html
     for details on the packed date format.
 
@@ -75,54 +75,54 @@ def convertMPCPackedDates(pf_tt):
     """
     pf_tt = np.asarray(pf_tt)
     isot_tt = np.empty(len(pf_tt), dtype="<U32")
-    
+
     for i, epoch in enumerate(pf_tt):
         isot_tt[i] = _unpackMPCDate(epoch)
-    
+
     epoch = Time(isot_tt, format="isot", scale="tt")
     return epoch.tt.mjd
 
 def packMPCDesignation(designation):
     """
     Pack a unpacked MPC designation. For example, provisional
-    designation 1998 SS162 will be packed to J98SG2S. Permanent 
+    designation 1998 SS162 will be packed to J98SG2S. Permanent
     designation 323 will be packed to 00323.
-    
+
     TODO: add support for comet and natural satellite designations
-    
+
     Parameters
     ----------
     designation : str
         MPC unpacked designation.
-        
+
     Returns
     -------
     designation_pf : str
         MPC packed form designation.
-        
+
     Raises
     ------
-    ValueError : If designation cannot be packed. 
+    ValueError : If designation cannot be packed.
     """
     is_numbered = True
     is_provisional = True
     is_survey = True
     is_packed = False
-    
-    # If the designation contains a dash it must be a 
-    # survey designation 
+
+    # If the designation contains a dash it must be a
+    # survey designation
     if "-" in designation:
         is_numbered = False
         is_provisional = False
-    
+
     # Lets see if its a numbered object
     while is_numbered and not is_packed:
-        try: 
+        try:
             number = int(designation)
             if number <= 99999:
                 designation_pf = "{:05}".format(number)
             elif (number >= 100000) & (number <= 619999):
-                ind = int(np.floor(number / 10000)) 
+                ind = int(np.floor(number / 10000))
                 designation_pf = "{}{:04}".format(BASE62[ind], number % 10000)
             else:
                 x = number - 620000
@@ -133,9 +133,9 @@ def packMPCDesignation(designation):
 
                 number_pf.reverse()
                 designation_pf = "~{}".format("".join(number_pf).zfill(4))
-            
+
             is_packed = True
-        
+
         except:
             is_numbered = False
 
@@ -157,13 +157,13 @@ def packMPCDesignation(designation):
 
             designation_pf = "{}{}{}{}".format(year, letter1, cycle_pf, letter2)
             is_packed = True
-        
+
         except:
             is_provisional = False
-        
+
     # If its a survey designation, deal with it
     while is_survey and not is_packed:
-        try: 
+        try:
             number = designation[0:4]
             survey = designation[5:]
 
@@ -175,7 +175,7 @@ def packMPCDesignation(designation):
 
             designation_pf = "{}{}".format(survey_pf, number.zfill(4))
             is_packed = True
-        
+
         except:
             is_survey = False
 
@@ -195,36 +195,36 @@ def packMPCDesignation(designation):
 def unpackMPCDesignation(designation_pf):
     """
     Unpack a packed MPC designation. For example, provisional
-    designation J98SG2S will be unpacked to 1998 SS162. Permanent 
-    designation 00323 will be unpacked to 323. 
-    
+    designation J98SG2S will be unpacked to 1998 SS162. Permanent
+    designation 00323 will be unpacked to 323.
+
     TODO: add support for comet and natural satellite designations
-    
+
     Parameters
     ----------
     designation_pf : str
         MPC packed form designation.
-        
+
     Returns
     -------
     designation : str
         MPC unpacked designation.
-        
+
     Raises
     ------
-    ValueError : If designation_pf cannot be unpacked. 
+    ValueError : If designation_pf cannot be unpacked.
     """
     is_numbered = True
     is_provisional = True
     is_survey = True
     is_unpacked = False
-    
+
     while is_numbered and not is_unpacked:
         try:
             # Numbered objects (1 - 99999)
             if designation_pf.isdecimal():
                 number = int(designation_pf)
-            
+
             # Numbered objects (620000+)
             elif designation_pf[0] == "~":
                 number = 620000
@@ -232,17 +232,17 @@ def unpackMPCDesignation(designation_pf):
                 for i, c in enumerate(number_pf):
                     power = (len(number_pf) - (i + 1))
                     number += BASE62_MAP[c] * (62**power)
-            
+
             # Numbered objects (100000 - 619999)
             else:
                 number = BASE62_MAP[designation_pf[0]] * 10000 + int(designation_pf[1:])
-                
+
             designation = str(number)
             is_unpacked = True
-        
+
         except:
             is_numbered = False
-    
+
     while is_provisional and not is_unpacked:
         try:
             year = str(BASE62_MAP[designation_pf[0]] * 100 + int(designation_pf[1:3]))
@@ -257,12 +257,12 @@ def unpackMPCDesignation(designation_pf):
 
             designation = "{} {}{}{}".format(year, letter1, letter2, number)
             is_unpacked = True
-        
+
         except:
             is_provisional = False
-        
+
     while is_survey and not is_unpacked:
-        try: 
+        try:
             number = int(designation_pf[3:8])
             survey_pf = designation_pf[0:3]
 
@@ -274,10 +274,10 @@ def unpackMPCDesignation(designation_pf):
 
             designation = "{} {}".format(number, survey)
             is_unpacked = True
-        
+
         except:
             is_survey = False
-        
+
     if not is_numbered and not is_provisional and not is_survey:
         err = (
             "Packed form designation '{}' could not be unpacked.\n"
@@ -287,18 +287,18 @@ def unpackMPCDesignation(designation_pf):
             " - a survey designation (e.g. 'PLS2040', 'T1S3138')"
         )
         raise ValueError(err.format(designation_pf))
-    
+
     return designation
 
 def getMPCObservatoryCodes():
     """
-    Downloads the JSON-formatted MPC observatory codes file. Checks if a newer version of the file exists online, if so, 
-    replaces the previously downloaded file if available. 
-    
+    Downloads the JSON-formatted MPC observatory codes file. Checks if a newer version of the file exists online, if so,
+    replaces the previously downloaded file if available.
+
     Parameters
     ----------
     None
-    
+
     Returns
     -------
     None
@@ -310,18 +310,18 @@ def getMPCObservatoryCodes():
 
 def readMPCObservatoryCodes(observatoryCodes=None):
     """
-    Reads the JSON-formatted MPC observatory codes file. 
-    
+    Reads the JSON-formatted MPC observatory codes file.
+
     Parameters
     ----------
     observatoryCodes : str, optional
         Path to file
-        
+
     Returns
     -------
     observatories : `~pandas.DataFrame`
-        DataFrame indexed on observatory code. 
-        
+        DataFrame indexed on observatory code.
+
     See Also
     --------
     `~thor.utils.mpc.getMPCObservatoryCodes` : Downloads the MPC observatory codes file.
@@ -329,7 +329,7 @@ def readMPCObservatoryCodes(observatoryCodes=None):
     if observatoryCodes is None:
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
         observatoryCodes = log["obscodes_extended.json.gz"]["location"]
-        
+
     observatories = pd.read_json(observatoryCodes).T
     observatories.rename(columns={
         "Longitude" : "longitude_deg",
@@ -341,14 +341,14 @@ def readMPCObservatoryCodes(observatoryCodes=None):
 
 def getMPCDesignationFiles():
     """
-    Downloads the JSON-formatted MPC designation files (both the unpacked and packed versions). 
-    Checks if a newer version of the files exist online, if so, 
-    replaces the previously downloaded files if available. 
-    
+    Downloads the JSON-formatted MPC designation files (both the unpacked and packed versions).
+    Checks if a newer version of the files exist online, if so,
+    replaces the previously downloaded files if available.
+
     Parameters
     ----------
     None
-    
+
     Returns
     -------
     None
@@ -360,22 +360,22 @@ def getMPCDesignationFiles():
 
 def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=None):
     """
-    Reads the JSON-formatted MPC designation files (both the unpacked and packed forms). 
-    
+    Reads the JSON-formatted MPC designation files (both the unpacked and packed forms).
+
     Parameters
     ----------
     mpcDesignationsFile : str, optional
         Path to file
     mpcPackedDesignationsFile : str, optional
         Path to file
-    
+
     Returns
     -------
     designations : `~pandas.DataFrame`
         DataFrame of MPC designations
     designations_pf : `~pandas.DataFrame`
         DataFrame of MPC packed form designations
-    
+
     See Also
     --------
     `~thor.utils.mpc.getMPCDesignationFiles` : Downloads the JSON-formatted MPC designation files.
@@ -383,17 +383,17 @@ def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=
     if mpcDesignationsFile is None:
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
         mpcDesignationsFile = log["mpc_ids.json.gz"]["location"]
-        
+
     if mpcPackedDesignationsFile is None:
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
         mpcPackedDesignationsFile = log["mpc_ids_packed.json.gz"]["location"]
-        
+
     designations = pd.read_json(mpcDesignationsFile, orient='index')
     designations = pd.DataFrame(designations.stack(), columns=["other_designations"])
     designations.reset_index(level=1, inplace=True, drop=True)
     designations.index.name = "designation"
     designations.reset_index(inplace=True)
-    
+
     designations_pf = pd.read_json(mpcPackedDesignationsFile, orient='index')
     designations_pf = pd.DataFrame(designations_pf.stack(), columns=["other_designations_pf"])
     designations_pf.reset_index(level=1, inplace=True, drop=True)
@@ -404,36 +404,36 @@ def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=
 
 def getMPCOrbitCatalog():
     """
-    Downloads the JSON-formatted extended MPC orbit catalog. Checks if a newer version of the file exists online, if so, 
-    replaces the previously downloaded file if available. 
-    
+    Downloads the JSON-formatted extended MPC orbit catalog. Checks if a newer version of the file exists online, if so,
+    replaces the previously downloaded file if available.
+
     Parameters
     ----------
     None
-    
+
     Returns
     -------
     None
     """
     directory = os.path.join(os.path.dirname(__file__), "..", "data")
-    url = "https://www.minorplanetcenter.net/Extended_Files/mpcorb_extended.json.gz" 
+    url = "https://www.minorplanetcenter.net/Extended_Files/mpcorb_extended.json.gz"
     _downloadFile(directory, url)
     return
 
 def readMPCOrbitCatalog(mpcOrbitCatalog=None):
     """
-    Reads the JSON-formatted extended MPC orbit catalog. 
-    
+    Reads the JSON-formatted extended MPC orbit catalog.
+
     Parameters
     ----------
     mpcOrbitCatalog : str, optional
         Path to file
-    
+
     Returns
     -------
     mpcorb : `~pandas.DataFrame`
         DataFrame of MPC minor planet orbits.
-    
+
     See Also
     --------
     `~thor.utils.mpc.getMPCOrbitCatalog` : Downloads the extended MPC orbit catalog.
@@ -442,7 +442,7 @@ def readMPCOrbitCatalog(mpcOrbitCatalog=None):
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
         mpcOrbitCatalog = log["mpcorb_extended.json.gz"]["location"]
     mpcorb = pd.read_json(mpcOrbitCatalog)
-    
+
     # Rename columns, include units where possible
     mpcorb.rename(columns={
         "Number" : "number",
@@ -484,18 +484,18 @@ def readMPCOrbitCatalog(mpcOrbitCatalog=None):
         "Ref" : "reference",
         "Computer" : "computer"
     }, inplace=True)
-    
+
     # Add MJDs from JDs
     mpcorb["mjd_tt"] = Time(mpcorb["jd_tt"].values, format="jd", scale="tt").tt.mjd
     mpcorb["tPeri_mjd_tt"] = Time(mpcorb["tPeri_jd_tt"].values, format="jd", scale="tt").tt.mjd
-    
+
     # Drop redundant columns
     mpcorb.drop(columns=["jd_tt", "tPeri_jd_tt"], inplace=True)
-    
+
     # Create a designation column, if an asteroid is numbered use that as a designation if not use the provisional designation
     mpcorb.loc[~mpcorb["number"].isna(), "designation"] = mpcorb[~mpcorb["number"].isna()]["number"].str.replace('[()]', '', regex=True).values
     mpcorb.loc[mpcorb["designation"].isna(), "designation"] = mpcorb[mpcorb["designation"].isna()]["provisional_designation"].values
-    
+
     # Arrange columns
     columns = [
         "designation",
@@ -544,36 +544,36 @@ def readMPCOrbitCatalog(mpcOrbitCatalog=None):
 
 def getMPCCometCatalog():
     """
-    Downloads the JSON-formatted MPC comet orbit catalog. Checks if a newer version of the file exists online, if so, 
-    replaces the previously downloaded file if available. 
-    
+    Downloads the JSON-formatted MPC comet orbit catalog. Checks if a newer version of the file exists online, if so,
+    replaces the previously downloaded file if available.
+
     Parameters
     ----------
     None
-    
+
     Returns
     -------
     None
     """
     directory = os.path.join(os.path.dirname(__file__), "..", "data")
-    url = "https://www.minorplanetcenter.net/Extended_Files/cometels.json.gz" 
+    url = "https://www.minorplanetcenter.net/Extended_Files/cometels.json.gz"
     _downloadFile(directory, url)
     return
 
 def readMPCCometCatalog(mpcCometCatalog=None):
     """
-    Reads the JSON-formatted MPC comet catalog. 
-    
+    Reads the JSON-formatted MPC comet catalog.
+
     Parameters
     ----------
     mpcCometCatalog : str, optional
         Path to file
-    
+
     Returns
     -------
     mpcorb_comets : `~pandas.DataFrame`
         DataFrame of MPC comet orbits.
-    
+
     See Also
     --------
     `~thor.utils.mpc.getMPCCometCatalog` : Downloads the MPC comet catalog.
@@ -600,9 +600,9 @@ def readMPCCometCatalog(mpcCometCatalog=None):
          "H" : "H_mag",
          "G" : "G",
          "Designation_and_name" : "designation_name",
-         "Ref" : "reference", 
+         "Ref" : "reference",
          "Comet_num" : "comet_number"
-        }, 
+        },
         inplace=True
     )
 
@@ -636,16 +636,16 @@ def readMPCCometCatalog(mpcCometCatalog=None):
         ],
         inplace=True
     )
-    
+
     # Convert comet number to strings
     mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "comet_number"] = mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["comet_number"].apply(lambda x: str(int(x))).values
-    
+
     # Split designation_name into designation
     mpcorb_comets["designation"] = mpcorb_comets["designation_name"].str.split(" [()]", expand=True)[0].values
-    
+
     # Remove name from numbered comets
     mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "designation"] = mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["designation_name"].str.split("/", expand=True)[0].values
-    
+
     # Arrange columns
     columns = [
         "designation",
@@ -665,5 +665,5 @@ def readMPCCometCatalog(mpcCometCatalog=None):
         "reference"
     ]
     mpcorb_comets = mpcorb_comets[columns]
-    
+
     return mpcorb_comets

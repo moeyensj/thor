@@ -21,15 +21,15 @@ PLANET_COLORS = {
 DTS = np.arange(-60, 1, 5)
 
 def addPerturber(perturber, t0, dts, color=None):
-    
+
     # Set perturber's name
     if perturber.find("barycenter"):
         name = perturber.split(" ")[0]
     name = name.capitalize()
-    
+
     if not isinstance(color, str):
         color = "white"
-    
+
     perturber_data = []
     if perturber == "sun":
         trace = plotly.graph_objs.Scatter3d(
@@ -44,7 +44,7 @@ def addPerturber(perturber, t0, dts, color=None):
             ),
         )
         perturber_data.append(trace)
-        
+
     else:
         perturber_state_t0 = getPerturberState(perturber, t0)
         trace = plotly.graph_objs.Scatter3d(
@@ -58,15 +58,15 @@ def addPerturber(perturber, t0, dts, color=None):
                 color=color
             ),
             hovertemplate =
-                '%{text}<br>'+ 
+                '%{text}<br>'+
                 'x: %{x}<br>'+
                 'y: %{y}<br>'+
                 'z: %{z}<br>',
             text = ["MJD [TDB]: {:.5f}".format(i) for i in t0.tdb.mjd],
         )
         perturber_data.append(trace)
-        
-        
+
+
         t1 = t0 + dts
         perturber_states = getPerturberState(perturber, t1)
         trace = plotly.graph_objs.Scatter3d(
@@ -80,7 +80,7 @@ def addPerturber(perturber, t0, dts, color=None):
                 color=color
             ),
             hovertemplate =
-                '%{text}<br>'+ 
+                '%{text}<br>'+
                 'x: %{x}<br>'+
                 'y: %{y}<br>'+
                 'z: %{z}<br>',
@@ -92,15 +92,15 @@ def addPerturber(perturber, t0, dts, color=None):
 
 
 def addOrbits(orbits, dts):
-    
+
     assert len(np.unique(orbits.epochs)) == 1
-    
+
     orbit_data = []
     t1 = orbits.epochs[0] + dts
     propagated = propagateOrbits(orbits, t1)
-    
+
     for orbit_id in orbits.ids:
-    
+
         trace = plotly.graph_objs.Scatter3d(
             x=orbits.cartesian[np.where(orbits.ids == orbit_id)[0], 0],
             y=orbits.cartesian[np.where(orbits.ids == orbit_id)[0], 1],
@@ -112,14 +112,14 @@ def addOrbits(orbits, dts):
                 color="white"
             ),
             hovertemplate =
-                '%{text}<br>'+ 
+                '%{text}<br>'+
                 'x: %{x}<br>'+
                 'y: %{y}<br>'+
                 'z: %{z}<br>',
             text = ["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
         )
         orbit_data.append(trace)
-        
+
         propagated_mask =( propagated["orbit_id"] == orbit_id)
         trace = plotly.graph_objs.Scatter3d(
             x=propagated[propagated_mask]["x"].values,
@@ -132,25 +132,25 @@ def addOrbits(orbits, dts):
                 color="white"
             ),
             hovertemplate =
-                '%{text}<br>'+ 
+                '%{text}<br>'+
                 'x: %{x}<br>'+
                 'y: %{y}<br>'+
                 'z: %{z}<br>',
             text = ["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
         )
         orbit_data.append(trace)
-    
+
     return orbit_data
 
 def plotOrbits(
-        orbits, 
-        dts=DTS, 
-        inner_planets=True, 
+        orbits,
+        dts=DTS,
+        inner_planets=True,
         outer_planets=True,
         limits=None,
         grid=True,
     ):
-    
+
     if grid:
         gridcolor = "rgb(96,96,96)"
         zerolinecolor = gridcolor
@@ -166,14 +166,14 @@ def plotOrbits(
             limits = (-50, 50)
         else:
             limits = (-5, 5)
-    
+
     t0 = orbits.epochs[:1]
     data += addPerturber("sun", t0, dts, color="#FFD581")
-    
+
     if inner_planets:
         for perturber in ["mercury", "venus", "earth", "mars barycenter"]:
             data += addPerturber(perturber, t0, dts, color=PLANET_COLORS[perturber])
-                        
+
     if outer_planets:
         for perturber in ["jupiter barycenter", "saturn barycenter", "uranus barycenter", "neptune barycenter"]:
             data += addPerturber(perturber, t0, dts, color=PLANET_COLORS[perturber])
@@ -206,8 +206,8 @@ def plotOrbits(
                 range=limits
             ),
             aspectratio=dict(
-                x=1, 
-                y=1, 
+                x=1,
+                y=1,
                 z=1
             ),
 

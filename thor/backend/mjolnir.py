@@ -1,6 +1,6 @@
 import os
 import warnings
-import subprocess 
+import subprocess
 import numpy as np
 import pandas as pd
 from astropy.time import Time
@@ -16,16 +16,16 @@ from .backend import Backend
 MU = c.MU
 MJOLNIR_CONFIG = {
     "origin" : "heliocenter",
-    "light_time" : True, 
+    "light_time" : True,
     "lt_tol" : 1e-10,
     "stellar_aberration" : False,
     "mu" : MU,
-    "max_iter" : 1000, 
-    "tol" : 1e-16 
+    "max_iter" : 1000,
+    "tol" : 1e-16
 }
 
 class MJOLNIR(Backend):
-    
+
     def __init__(self, **kwargs):
         # Make sure only the correct kwargs
         # are passed to the constructor
@@ -33,19 +33,19 @@ class MJOLNIR(Backend):
         for k in kwargs:
             if k not in allowed_kwargs:
                 raise ValueError()
-        
-        # If an allowed kwarg is missing, add the 
-        # default 
+
+        # If an allowed kwarg is missing, add the
+        # default
         for k in allowed_kwargs:
             if k not in kwargs:
                 kwargs[k] = MJOLNIR_CONFIG[k]
-        
+
         super().__init__(name="Mjolnir", **kwargs)
         return
 
     def _propagateOrbits(self, orbits, t1):
         """
-        
+
 
         """
         # All propagations in THOR should be done with times in the TDB time scale
@@ -55,15 +55,15 @@ class MJOLNIR(Backend):
         if self.origin == "barycenter":
             # Shift orbits to barycenter
             orbits_ = shiftOrbitsOrigin(
-                orbits.cartesian, 
-                orbits.epochs,  
+                orbits.cartesian,
+                orbits.epochs,
                 origin_in="heliocenter",
                 origin_out="barycenter"
             )
 
         elif self.origin == "heliocenter":
             orbits_ = orbits.cartesian
-            
+
         else:
             err = (
                 "origin should be one of {'heliocenter', 'barycenter'}"
@@ -71,9 +71,9 @@ class MJOLNIR(Backend):
             raise ValueError(err)
 
         propagated = propagateUniversal(
-            orbits_, 
-            t0_tdb, 
-            t1_tdb, 
+            orbits_,
+            t0_tdb,
+            t1_tdb,
             mu=self.mu,
             max_iter=self.max_iter,
             tol=self.tol
@@ -81,13 +81,13 @@ class MJOLNIR(Backend):
 
         if self.origin == "barycenter":
             t1_tdb_stacked = Time(
-                propagated[:, 1], 
-                scale="tdb", 
+                propagated[:, 1],
+                scale="tdb",
                 format="mjd"
             )
             propagated[:, 2:] = shiftOrbitsOrigin(
-                propagated[:, 2:], 
-                t1_tdb_stacked, 
+                propagated[:, 2:],
+                t1_tdb_stacked,
                 origin_in="barycenter",
                 origin_out="heliocenter"
             )
@@ -118,13 +118,13 @@ class MJOLNIR(Backend):
         for observatory_code, observation_times in observers.items():
             # Check that the observation times are astropy time objects
             _checkTime(
-                observation_times, 
+                observation_times,
                 "observation_times for observatory {}".format(observatory_code)
             )
 
-            # Get the observer state for observation times and append to list 
+            # Get the observer state for observation times and append to list
             observer_states = getObserverState(
-                [observatory_code], 
+                [observatory_code],
                 observation_times
             )
             observer_states_list.append(observer_states)
@@ -132,16 +132,16 @@ class MJOLNIR(Backend):
         # Concatenate the dataframes
         observer_states = pd.concat(observer_states_list)
         observer_states.reset_index(
-            inplace=True, 
+            inplace=True,
             drop=True
         )
 
         ephemeris_dfs = []
         for observatory_code in observer_states["observatory_code"].unique():
-            
+
             observer_selected = observer_states[observer_states["observatory_code"].isin([observatory_code])]
             observation_times = observers[observatory_code]
-            
+
             # Grab observer state vectors
             cols = ["obs_x", "obs_y", "obs_z"]
             velocity_cols =  ["obs_vx", "obs_vy", "obs_vz"]
@@ -149,33 +149,33 @@ class MJOLNIR(Backend):
                 observer_selected = observer_selected[cols + velocity_cols].values
             else:
                 observer_selected = observer_selected[cols].values
-            
-            # Generate ephemeris for each orbit 
+
+            # Generate ephemeris for each orbit
             ephemeris = generateEphemerisUniversal(
-                orbits.cartesian, 
+                orbits.cartesian,
                 orbits.epochs,
-                observer_selected, 
-                observation_times, 
-                light_time=self.light_time, 
-                lt_tol=self.lt_tol, 
-                stellar_aberration=self.stellar_aberration, 
-                mu=self.mu, 
-                max_iter=self.max_iter, 
+                observer_selected,
+                observation_times,
+                light_time=self.light_time,
+                lt_tol=self.lt_tol,
+                stellar_aberration=self.stellar_aberration,
+                mu=self.mu,
+                max_iter=self.max_iter,
                 tol=self.tol
             )
-            
+
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
             ephemeris_dfs.append(ephemeris)
 
         # Concatenate data frames, reset index and then keep only the columns
-        # we care about 
+        # we care about
         ephemeris = pd.concat(ephemeris_dfs)
         ephemeris.sort_values(
             by=["orbit_id", "observatory_code", "mjd_utc"],
             inplace=True
         )
         ephemeris.reset_index(
-            inplace=True, 
+            inplace=True,
             drop=True
         )
         ephemeris = ephemeris[[

@@ -14,8 +14,8 @@ __all__ = [
 ]
 
 def sortLinkages(
-        linkages, 
-        linkage_members, 
+        linkages,
+        linkage_members,
         observations,
         linkage_id_col="orbit_id"
     ):
@@ -27,8 +27,8 @@ def sortLinkages(
         inplace=True
     )
     linkage_members_sorted = linkage_members_sorted.merge(
-        observations[["obs_id", "mjd_utc"]],          
-        on="obs_id", 
+        observations[["obs_id", "mjd_utc"]],
+        on="obs_id",
         how="left",
     )
     linkage_members_sorted.sort_values(
@@ -44,19 +44,19 @@ def sortLinkages(
             inplace=True,
             drop=True
         )
-        
+
     return linkages_sorted, linkage_members_sorted
 
 def verifyLinkages(
-        linkages, 
-        linkage_members, 
-        observations, 
+        linkages,
+        linkage_members,
+        observations,
         linkage_id_col="orbit_id"
     ):
-    
+
     linkages_verified = linkages.copy()
     linkage_members_verified = linkage_members.copy()
-    
+
     reset_index = False
     if not np.all(linkages_verified[linkage_id_col].values == linkage_members_verified[linkage_id_col].unique()):
         warning = (
@@ -64,18 +64,18 @@ def verifyLinkages(
             "Sorting..."
         )
         warnings.warn(warning)
-        
+
         linkages_verified.sort_values(
-            by=[linkage_id_col], 
+            by=[linkage_id_col],
             inplace=True
         )
         linkage_members_verified.sort_values(
-            by=[linkage_id_col], 
+            by=[linkage_id_col],
             inplace=True
         )
         reset_index = True
-    
-    linkage_members_verified = linkage_members_verified.merge(observations[["obs_id", "mjd_utc"]], 
+
+    linkage_members_verified = linkage_members_verified.merge(observations[["obs_id", "mjd_utc"]],
         on="obs_id",
         how="left"
     )
@@ -87,7 +87,7 @@ def verifyLinkages(
         warnings.warn(warning.format(linkage_id_col))
 
         linkage_members_verified.sort_values(
-            by=[linkage_id_col, "mjd_utc", "obs_id"], 
+            by=[linkage_id_col, "mjd_utc", "obs_id"],
             inplace=True
         )
         reset_index = True
@@ -98,14 +98,14 @@ def verifyLinkages(
                 inplace=True,
                 drop=True
             )
-    
+
     return linkages_verified, linkage_members_verified[[linkage_id_col, "obs_id"]]
 
 
 def generateCombinations(
-        x, 
-        idx=None, 
-        ct=None, 
+        x,
+        idx=None,
+        ct=None,
         reps=None
     ):
     # Magic from the wizard himself: Mario Juric
@@ -125,31 +125,31 @@ def generateCombinations(
         idx[i] += 1
 
 def identifySubsetLinkages(
-        all_linkages, 
-        linkage_members, 
+        all_linkages,
+        linkage_members,
         linkage_id_col="orbit_id"
     ):
     """
-    Identify each linkage that is a subset of a larger linkage. 
-    
+    Identify each linkage that is a subset of a larger linkage.
+
     Parameters
     ----------
-    all_linkages : 
-    
-    
-    
-    
-    
+    all_linkages :
+
+
+
+
+
     """
-    
-    
+
+
     linkage_members_merged = linkage_members.copy()
     all_linkages_merged = all_linkages.copy()
     all_linkages_merged["subset_of"] = None
 
     counts = linkage_members["obs_id"].value_counts()
     duplicate_obs_ids = counts.index[counts.values > 1].values
-    
+
     subset_linkages = []
     obs_ids_analyzed = set()
     i = 0
@@ -164,7 +164,7 @@ def identifySubsetLinkages(
 
             # Count the occurences of these linkages (the number of observations in each linkage)
             linkage_id_counts = linkage_members_merged[(
-                linkage_members_merged[linkage_id_col].isin(linkage_ids) 
+                linkage_members_merged[linkage_id_col].isin(linkage_ids)
                 & (~linkage_members_merged[linkage_id_col].isin(subset_linkages))
             )][linkage_id_col].value_counts()
             linkage_ids = linkage_id_counts.index.values
@@ -180,8 +180,8 @@ def identifySubsetLinkages(
 
                     for linkage_id_j in linkage_ids[np.where(linkage_ids != linkage_id_i)]:
 
-                        # If this linkage has not already been marked as a subset of another, check to see 
-                        # if it is a subset 
+                        # If this linkage has not already been marked as a subset of another, check to see
+                        # if it is a subset
                         is_subset_j = all_linkages_merged[all_linkages_merged[linkage_id_col].isin([linkage_id_j])]["subset_of"].values[0]
                         if not is_subset_j:
 
@@ -200,13 +200,13 @@ def identifySubsetLinkages(
             obs_ids_analyzed.add(obs_id)
 
         i += 1
-        
+
     return all_linkages_merged, linkage_members_merged
 
 def mergeLinkages(
-        linkages, 
-        linkage_members, 
-        observations, 
+        linkages,
+        linkage_members,
+        observations,
         linkage_id_col="orbit_id",
         filter_cols=["num_obs", "arc_length"],
         ascending=[False, False]
@@ -220,7 +220,7 @@ def mergeLinkages(
     Parameters
     ----------
     linkages : `~pandas.DataFrame`
-        DataFrame containing at least the linkage ID. 
+        DataFrame containing at least the linkage ID.
     linkage_members : `~pandas.DataFrame`
         Dataframe containing the linkage ID and the observation ID for each of the linkage's
         constituent observations. Each observation ID should be in a single row.
@@ -237,15 +237,15 @@ def mergeLinkages(
     Returns
     -------
     linkages : `~pandas.DataFrame`
-        DataFrame with merged linkages added. 
+        DataFrame with merged linkages added.
     linkage_members : `~pandas.DataFrame`
         DataFrame with merged linkages added.
     merged_from : `~pandas.DataFrame`
-        DataFrame with column of newly created linkages, and a column 
+        DataFrame with column of newly created linkages, and a column
         with their constituent linkages.
     """
     assert "mjd_utc" not in linkage_members.columns
-    
+
     obs_id_occurences = linkage_members["obs_id"].value_counts()
     duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
     linkage_members_ = linkage_members.merge(observations[["obs_id", "mjd_utc"]], on="obs_id")
@@ -271,7 +271,7 @@ def mergeLinkages(
 
             new_possible_linkages = linkages[linkages[linkage_id_col].isin(linkage_ids_i)].copy()
             new_linkage = new_possible_linkages.sort_values(
-                by=filter_cols, 
+                by=filter_cols,
                 ascending=ascending
             )[:1]
             new_linkage_id = str(uuid.uuid4().hex)
@@ -293,10 +293,10 @@ def mergeLinkages(
         duplicate_obs_ids = np.delete(duplicate_obs_ids, np.isin(duplicate_obs_ids, obs_ids))
 
     if len(merged_linkages) > 0:
-        merged_linkages = pd.concat(merged_linkages) 
+        merged_linkages = pd.concat(merged_linkages)
         merged_linkage_members = pd.concat(merged_linkage_members)
         merged_from = pd.concat(merged_from)
-        
+
         merged_linkages.sort_values(
             by=[linkage_id_col],
             inplace=True
@@ -309,19 +309,19 @@ def mergeLinkages(
             by=[linkage_id_col],
             inplace=True
         )
-        
+
         for df in [merged_linkages, merged_linkage_members, merged_from]:
             df.reset_index(
                 inplace=True,
                 drop=True
             )
-    
+
     else:
-        
+
         merged_linkages = pd.DataFrame(
             columns=columns
         )
-    
+
         merged_linkage_members = pd.DataFrame(
             columns=[linkage_id_col, "obs_id"]
         )
@@ -332,18 +332,18 @@ def mergeLinkages(
     return merged_linkages[columns], merged_linkage_members[[linkage_id_col, "obs_id"]], merged_from
 
 def removeDuplicateLinkages(
-        linkages, 
+        linkages,
         linkage_members,
         linkage_id_col="orbit_id"
     ):
     """
     Removes linkages that have identical observations as another linkage. Linkage quality is not taken
-    into account. 
+    into account.
 
     Parameters
     ----------
     linkages : `~pandas.DataFrame`
-        DataFrame containing at least the linkage ID. 
+        DataFrame containing at least the linkage ID.
     linkage_members : `~pandas.DataFrame`
         Dataframe containing the linkage ID and the observation ID for each of the linkage's
         constituent observations. Each observation ID should be in a single row.
@@ -353,21 +353,21 @@ def removeDuplicateLinkages(
     Returns
     -------
     linkages : `~pandas.DataFrame`
-        DataFrame with duplicate linkages removed. 
+        DataFrame with duplicate linkages removed.
     linkage_members : `~pandas.DataFrame`
         DataFrame with duplicate linkages removed.
     """
     linkages_ = linkages.copy()
     linkage_members_ = linkage_members.copy()
-    
+
     # Expand observation IDs into columns, then remove duplicates using pandas functionality
     expanded = linkage_members_[[linkage_id_col, "obs_id"]].groupby(by=[linkage_id_col])["obs_id"].apply(list).to_frame(name="obs_ids")
     expanded = expanded["obs_ids"].apply(pd.Series)
     linkage_ids = expanded.drop_duplicates().index.values
-    
+
     linkages_ = linkages_[linkages_[linkage_id_col].isin(linkage_ids)]
     linkage_members_ = linkage_members_[linkage_members_[linkage_id_col].isin(linkage_ids)]
-    
+
     for df in [linkages_, linkage_members_]:
         df.reset_index(
             inplace=True,
@@ -379,20 +379,20 @@ def removeDuplicateLinkages(
 def removeDuplicateObservations(
         linkages,
         linkage_members,
-        min_obs=5, 
+        min_obs=5,
         linkage_id_col="orbit_id",
         filter_cols=["num_obs", "arc_length"],
         ascending=[False, False]
     ):
     """
-    Removes duplicate observations using the filter columns. The filter columns are used to sort the linkages 
-    as desired by the user. The first instance of the observation is kept and all other instances are removed. 
+    Removes duplicate observations using the filter columns. The filter columns are used to sort the linkages
+    as desired by the user. The first instance of the observation is kept and all other instances are removed.
     If any linkage's number of observations drops below min_obs, that linkage is removed.
 
     Parameters
     ----------
     linkages : `~pandas.DataFrame`
-        DataFrame containing at least the linkage ID. 
+        DataFrame containing at least the linkage ID.
     linkage_members : `~pandas.DataFrame`
         Dataframe containing the linkage ID and the observation ID for each of the linkage's
         constituent observations. Each observation ID should be in a single row.
@@ -408,7 +408,7 @@ def removeDuplicateObservations(
     Returns
     -------
     linkages : `~pandas.DataFrame`
-        DataFrame with duplicate observations removed. 
+        DataFrame with duplicate observations removed.
     linkage_members : `~pandas.DataFrame`
         DataFrame with duplicate observations removed.
     """
@@ -428,11 +428,11 @@ def removeDuplicateObservations(
     linkage_members_.reset_index(inplace=True)
 
     linkage_members_ = linkage_members_.drop_duplicates(subset=["obs_id"], keep="first")
-    linkage_occurences = linkage_members_[linkage_id_col].value_counts() 
+    linkage_occurences = linkage_members_[linkage_id_col].value_counts()
     linkages_to_keep = linkage_occurences.index.values[linkage_occurences.values >= min_obs]
     linkages_ = linkages_[linkages_.index.isin(linkages_to_keep)]
     linkage_members_ = linkage_members_[linkage_members_[linkage_id_col].isin(linkages_to_keep)]
-    
+
     linkages_.reset_index(inplace=True)
     linkage_members_.reset_index(
         inplace=True,

@@ -11,18 +11,18 @@ from ..lambert import calcLambert
 MU = c.MU
 TARGETS = [
     "Amor",
-    "Eros", 
+    "Eros",
     "Eugenia",
-] 
+]
 EPOCH = 57257.0
 DT = np.arange(0, 14)
 T0 = Time(
     [EPOCH],
     format="mjd",
-    scale="tdb", 
+    scale="tdb",
 )
 T1 = Time(
-    EPOCH + DT, 
+    EPOCH + DT,
     format="mjd",
     scale="tdb"
 )
@@ -35,38 +35,38 @@ def test_calcLambert():
         # Query Horizons for heliocentric geometric states at each T1
         # Query Horizons for heliocentric geometric states at each T0
         orbits = Orbits.fromHorizons(
-            TARGETS, 
+            TARGETS,
             T0
         )
 
         # Propagate the state at T0 to all T1 using THOR 2-body
         thor_states = propagateOrbits(
             orbits,
-            T1, 
+            T1,
             backend="MJOLNIR",
         )
         thor_states = thor_states[["x", "y", "z", "vx", "vy", "vz"]].values
-        
+
         for selected_obs in [[0, 1]]:
-            
+
             r0 = thor_states[selected_obs[0], :3]
             t0 = T1[selected_obs[0]].utc.mjd
             r1 = thor_states[selected_obs[1], :3]
             t1 = T1[selected_obs[1]].utc.mjd
-            
+
             v0, v1 = calcLambert(
-                r0, 
-                t0, 
-                r1, 
-                t1, 
+                r0,
+                t0,
+                r1,
+                t1,
                 mu=MU,
-                max_iter=1000, 
+                max_iter=1000,
                 dt_tol=1e-12
             )
             lambert_state0 = np.concatenate([r0, v0])
             lambert_state1 = np.concatenate([r1, v1])
-        
-            # Test that the resulting orbit is within the tolerances of the 
+
+            # Test that the resulting orbit is within the tolerances of the
             # true state below
             testOrbits(
                 lambert_state0.reshape(1, -1),
@@ -80,5 +80,5 @@ def test_calcLambert():
                 position_tol=(1e-10*u.mm),
                 velocity_tol=(10*u.mm/u.s)
             )
-            
+
     return

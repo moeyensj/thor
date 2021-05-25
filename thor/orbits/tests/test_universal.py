@@ -48,21 +48,21 @@ def test_propagateUniversal():
 
     # Pull state vectors
     vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
-    
+
     # Propagate initial states to each T1 using SPICE
     states_spice = []
-    for i, target in enumerate(targets): 
+    for i, target in enumerate(targets):
         for dt in DT:
             states_spice.append(sp.prop2b(MU, list(vectors[i, :]), dt))
     states_spice = np.array(states_spice)
-            
+
     # Repeat but now using THOR's universal 2-body propagator
     states_thor = propagateUniversal(
-        vectors, 
-        t0.tdb.mjd, 
-        t1.tdb.mjd,  
-        mu=MU, 
-        max_iter=1000, 
+        vectors,
+        t0.tdb.mjd,
+        t1.tdb.mjd,
+        mu=MU,
+        max_iter=1000,
         tol=1e-15
     )
 
@@ -70,11 +70,11 @@ def test_propagateUniversal():
     # is within this tolerance of SPICE 2-body
     # propagation
     testOrbits(
-       states_thor[:, 2:], 
+       states_thor[:, 2:],
        states_spice,
-       orbit_type="cartesian", 
-       position_tol=1*u.cm, 
-       velocity_tol=(1*u.mm/u.s), 
+       orbit_type="cartesian",
+       position_tol=1*u.cm,
+       velocity_tol=(1*u.mm/u.s),
        magnitude=True
     )
     return

@@ -18,9 +18,9 @@ DATA_DIR = os.path.join(
 
 def test_convertOrbitalElements_elliptical():
     """
-    Read the test dataset for cartesian and keplerian states for each elliptical orbit target at each T0. 
+    Read the test dataset for cartesian and keplerian states for each elliptical orbit target at each T0.
     Using THOR convert the cartesian states to keplerian states, and convert the keplerian states
-    to cartesian states. Then compare how well the converted states agree to the ones pulled from 
+    to cartesian states. Then compare how well the converted states agree to the ones pulled from
     Horizons.
     """
     getSPICEKernels(KERNELS_DE440)
@@ -49,20 +49,20 @@ def test_convertOrbitalElements_elliptical():
     # Pull state vectors and elements
     vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
     elements = elements_df[["a", "e", "incl", "Omega", "w", "M"]].values
-    
+
     # Convert the keplerian states to cartesian states using THOR
     orbits_cartesian_converted = convertOrbitalElements(
-        elements, 
-        "keplerian", 
+        elements,
+        "keplerian",
         "cartesian",
         mu=MU
     )
 
     # Convert the cartesian states to keplerian states using THOR
     orbits_keplerian_converted = convertOrbitalElements(
-        vectors, 
+        vectors,
         "cartesian",
-        "keplerian", 
+        "keplerian",
         mu=MU
     )
 
@@ -98,9 +98,9 @@ def test_convertOrbitalElements_parabolilic():
 
 def test_convertOrbitalElements_hyperbolic():
     """
-    Read the test dataset for cartesian and keplerian states for each hyperbolic orbit target at each T0. 
+    Read the test dataset for cartesian and keplerian states for each hyperbolic orbit target at each T0.
     Using THOR convert the cartesian states to keplerian states, and convert the keplerian states
-    to cartesian states. Then compare how well the converted states agree to the ones pulled from 
+    to cartesian states. Then compare how well the converted states agree to the ones pulled from
     Horizons.
     """
     getSPICEKernels(KERNELS_DE440)
@@ -123,20 +123,20 @@ def test_convertOrbitalElements_hyperbolic():
     # Pull state vectors and elements
     vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
     elements = elements_df[["a", "e", "incl", "Omega", "w", "M"]].values
-    
+
     # Convert the keplerian states to cartesian states using THOR
     orbits_cartesian_converted = convertOrbitalElements(
-        elements, 
-        "keplerian", 
+        elements,
+        "keplerian",
         "cartesian",
         mu=MU
     )
 
     # Convert the cartesian states to keplerian states using THOR
     orbits_keplerian_converted = convertOrbitalElements(
-        vectors, 
+        vectors,
         "cartesian",
-        "keplerian", 
+        "keplerian",
         mu=MU
     )
 

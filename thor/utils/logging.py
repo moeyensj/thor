@@ -8,13 +8,13 @@ __all__ = [
 
 def setupLogger(name, out_dir=None):
     """
-    Create or get a Python logger for THOR. If out_dir is passed, 
+    Create or get a Python logger for THOR. If out_dir is passed,
     then a file handler will be added to the logger.
 
     Returns
     -------
-    logger : 
-        Logger with a stream handler to stdout, and if out_dir is defined 
+    logger :
+        Logger with a stream handler to stdout, and if out_dir is defined
         an additional file handler to {out_dir}/thor.log.
     """
     logger = logging.getLogger(name)
@@ -31,7 +31,7 @@ def setupLogger(name, out_dir=None):
         add_file_handler = True
     else:
         pass
-       
+
     if add_stream_handler:
         stream_handler = logging.StreamHandler(stream=sys.stdout)
         stream_handler.setLevel(logging.INFO)
@@ -42,7 +42,7 @@ def setupLogger(name, out_dir=None):
     if add_file_handler:
         file_handler = logging.FileHandler(
             os.path.join(out_dir, "thor.log"),
-            encoding="utf-8", 
+            encoding="utf-8",
             delay=False
         )
         file_handler.setLevel(logging.DEBUG)

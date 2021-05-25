@@ -14,7 +14,7 @@ DATA_DIR = os.path.join(
 def test_rangeAndShift():
     """
     Read the test observations and orbits, use the orbits as test orbits and make sure their observations
-    are all recovered near 0,0 on the gnomonic tangent plane. 
+    are all recovered near 0,0 on the gnomonic tangent plane.
     """
     preprocessed_observations = pd.read_csv(
         os.path.join(DATA_DIR, "observations.csv"),
@@ -27,7 +27,7 @@ def test_rangeAndShift():
     orbits = Orbits.from_csv(
         os.path.join(DATA_DIR, "orbits.csv")
     )
-    
+
     # Remove noise observations
     noise_ids = preprocessed_associations[preprocessed_associations["obj_id"].str.contains("^u[0-9]{8}", regex=True)]["obs_id"].values
     preprocessed_observations = preprocessed_observations[~preprocessed_observations["obs_id"].isin(noise_ids)]
@@ -55,7 +55,7 @@ def test_rangeAndShift():
         # Test that all this object's observations were recovered with range and shift
         obs_ids = preprocessed_associations[preprocessed_associations["obj_id"].isin([orbit.ids[0]])]["obs_id"].values
         assert np.all(analyis_projected_observations[observations_mask]["obs_id"].values == obs_ids)
-        
+
     return
 
 def test_clusterAndLink():
@@ -74,7 +74,7 @@ def test_clusterAndLink():
     orbits = Orbits.from_csv(
         os.path.join(DATA_DIR, "orbits.csv")
     )
-    
+
     # Remove noise observations
     noise_ids = preprocessed_associations[preprocessed_associations["obj_id"].str.contains("^u[0-9]{8}", regex=True)]["obs_id"].values
     preprocessed_observations = preprocessed_observations[~preprocessed_observations["obs_id"].isin(noise_ids)]
@@ -111,5 +111,5 @@ def test_clusterAndLink():
         # Test that all this object's observations were recovered in a single cluster
         obs_ids = preprocessed_associations[preprocessed_associations["obj_id"].isin([orbit.ids[0]])]["obs_id"].values
         assert np.all(np.in1d(obs_ids, analyis_cluster_members["obs_id"].values))
-        
+
     return

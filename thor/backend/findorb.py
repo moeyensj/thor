@@ -4,7 +4,7 @@ import json
 import shutil
 import tempfile
 import warnings
-import subprocess 
+import subprocess
 import numpy as np
 import pandas as pd
 from astropy.time import Time
@@ -18,30 +18,30 @@ FINDORB_CONFIG = {
 }
 
 class FINDORB(Backend):
-    
+
     def __init__(self, **kwargs):
-        
+
         # Make sure only the correct kwargs
         # are passed to the constructor
         allowed_kwargs = FINDORB_CONFIG.keys()
         for k in kwargs:
             if k not in allowed_kwargs:
                 raise ValueError()
-        
-        # If an allowed kwarg is missing, add the 
-        # default 
+
+        # If an allowed kwarg is missing, add the
+        # default
         for k in allowed_kwargs:
             if k not in kwargs:
                 kwargs[k] = FINDORB_CONFIG[k]
-        
+
         super().__init__(name="FINDORB", **kwargs)
 
         return
-    
+
     def _writeTimes(self, file_name, times, time_scale):
         """
         Write a time file that find_orb can use to propagate orbits
-        and generate ephemerides. 
+        and generate ephemerides.
 
         Parameters
         ----------
@@ -50,29 +50,29 @@ class FINDORB(Backend):
         times :
             Times to write into the file
         time_scale : str
-            Time scale to which to ouput to file. 
+            Time scale to which to ouput to file.
         """
         with open(file_name, "w") as f:
             f.write("OPTION {}\n".format(time_scale.upper()))
             f.write("OPTION ASCENDING\n")
             np.savetxt(
-                f, 
-                times.jd, 
-                newline="\n", 
+                f,
+                times.jd,
+                newline="\n",
                 fmt="%.16f"
             )
             f.close()
-        return 
+        return
 
     def _setWorkEnvironment(self, temp_dir):
-        # Copy files from user's find_orb directory located in the 
+        # Copy files from user's find_orb directory located in the
         # user's home directory to the .find_orb directory inside
         # the temporary directory
-        # Try to ignore files that are created by find_orb when processing 
+        # Try to ignore files that are created by find_orb when processing
         # observations, also ignore the DE 430 ephemeris file and the asteroid
         # ephemeris file if present
         shutil.copytree(
-            os.path.expanduser("~/.find_orb"), 
+            os.path.expanduser("~/.find_orb"),
             os.path.join(temp_dir, ".find_orb"),
             ignore=shutil.ignore_patterns(
                 "elements.txt",
@@ -83,9 +83,9 @@ class FINDORB(Backend):
                 "total.json",
                 "vectors.txt",
                 "covar.txt",
-                "debug.txt", 
-                "elements.json", 
-                "elem_short.json", 
+                "debug.txt",
+                "elements.json",
+                "elem_short.json",
                 "combined.json",
                 "linux_p1550p2650.430t",
                 "asteroid_ephemeris.txt"
@@ -94,7 +94,7 @@ class FINDORB(Backend):
 
         # Create a symlink for the DE 430 file that was not copied
         os.symlink(
-            os.path.expanduser("~/.find_orb/linux_p1550p2650.430t"), 
+            os.path.expanduser("~/.find_orb/linux_p1550p2650.430t"),
             os.path.join(temp_dir, ".find_orb/linux_p1550p2650.430t")
         )
 
@@ -102,11 +102,11 @@ class FINDORB(Backend):
         asteroid_ephem_file = os.path.expanduser("~/.find_orb/asteroid_ephemeris.txt")
         if os.path.exists(asteroid_ephem_file):
             os.symlink(
-                asteroid_ephem_file, 
+                asteroid_ephem_file,
                 os.path.join(temp_dir, ".find_orb/asteroid_ephemeris.txt")
             )
 
-        # Create a copy of the environment and set the HOME directory to the 
+        # Create a copy of the environment and set the HOME directory to the
         # temporary directory
         env = os.environ.copy()
         env["HOME"] = temp_dir
@@ -114,12 +114,12 @@ class FINDORB(Backend):
 
     def _propagateOrbits(self, orbits, t1):
         """
-        
+
 
         """
         propagated_dfs = []
         with tempfile.TemporaryDirectory() as temp_dir:
-            
+
             # Set this environment's home directory to the temporary directory
             # to prevent bugs with multiple processes writing to the ~/.find_orb/
             # directory
@@ -132,9 +132,9 @@ class FINDORB(Backend):
                 t1.tt,
                 "tt"
             )
-            
+
             for i in range(orbits.num_orbits):
-                    
+
                 orbit_id = orbits.ids[i]
                 out_dir = os.path.join(temp_dir, "vectors{}".format(orbit_id))
                 vectors_txt = os.path.join(out_dir, "vectors.txt")
@@ -147,9 +147,9 @@ class FINDORB(Backend):
 
                 # Run fo
                 call = [
-                    "fo", 
-                    "-o", 
-                    "o{}".format(orbit_id), 
+                    "fo",
+                    "-o",
+                    "o{}".format(orbit_id),
                     fo_orbit,
                     "-E",
                     "0",
@@ -160,28 +160,28 @@ class FINDORB(Backend):
                     "-e",
                     vectors_txt,
                     "-D",
-                    self.config_file, 
+                    self.config_file,
                     "EPHEM_STEP_SIZE=t{}".format(times_in_file)
                 ]
                 ret = subprocess.run(
-                    call, 
-                    shell=False, 
-                    env=env, 
+                    call,
+                    shell=False,
+                    env=env,
                     cwd=temp_dir,
-                    check=False, 
+                    check=False,
                     capture_output=True
                 )
 
                 if (ret.returncode != 0):
                     warning = (
-                        "fo returned a non-zero error code./n", 
+                        "fo returned a non-zero error code./n",
                         "Command: /n",
                         " ".join(call) + "/n",
                         ret.stdout.decode('utf-8'),
                         ret.stderr.decode('utf-8')
                     )
                     warnings.warn(warning)
-                
+
                 if (os.path.exists(vectors_txt)):
                     df = pd.read_csv(
                         vectors_txt,
@@ -218,14 +218,14 @@ class FINDORB(Backend):
 
         ephemeris_dfs = []
         with tempfile.TemporaryDirectory() as temp_dir:
-            
+
             # Set this environment's home directory to the temporary directory
             # to prevent bugs with multiple processes writing to the ~/.find_orb/
             # directory
             env = self._setWorkEnvironment(temp_dir)
-            
+
             for observatory_code, observation_times in observers.items():
-                
+
                 # Write the desired times out to a file that find_orb understands
                 times_in_file = os.path.join(temp_dir, "times_eph.in")
                 self._writeTimes(
@@ -233,24 +233,24 @@ class FINDORB(Backend):
                     observation_times.tt,
                     "tt"
                 )
-                
+
                 # Certain observatories are dealt with differently, so appropriately
                 # define the columns
                 if (observatory_code == "500"):
                     columns = [
                         "jd_utc", "RA_deg", "Dec_deg", "delta_au", "r_au",
-                        "elong", "ph_ang", "mag",  
-                        "'/hr", "PA", "rvel", 
+                        "elong", "ph_ang", "mag",
+                        "'/hr", "PA", "rvel",
                         "lon", "lat", "altitude_km"
-                    ] 
+                    ]
                 else:
                     columns = [
                         "jd_utc", "RA_deg", "Dec_deg", "delta_au", "r_au",
-                        "elong", "ph_ang", "mag",  
-                        "RA_'/hr", "dec_'/hr",  
-                        "alt",  "az",  "rvel",   
+                        "elong", "ph_ang", "mag",
+                        "RA_'/hr", "dec_'/hr",
+                        "alt",  "az",  "rvel",
                         "lon", "lat", "altitude_km"
-                    ] 
+                    ]
 
                 # For each orbit calculate their ephemerides
                 for i in range(orbits.num_orbits):
@@ -259,7 +259,7 @@ class FINDORB(Backend):
                     orbit_id = "{:09d}".format(i)
                     out_dir = os.path.join(temp_dir, "ephemeris{}_{}".format(orbit_id, observatory_code))
                     ephemeris_txt = os.path.join(out_dir, "ephemeris.txt")
-                    
+
                     # Format the state vector into the type understood by find_orb
                     fo_orbit = "-v{},{}".format(
                         orbits.epochs[i].tt.jd,
@@ -270,9 +270,9 @@ class FINDORB(Backend):
 
                     # Call fo and generate ephemerides
                     call = [
-                        "fo", 
-                        "-o", 
-                        "o{}".format(orbit_id), 
+                        "fo",
+                        "-o",
+                        "o{}".format(orbit_id),
                         fo_orbit,
                         "-C",
                         "{}".format(observatory_code),
@@ -282,7 +282,7 @@ class FINDORB(Backend):
                         ephemeris_txt,
                         "-D",
                         self.config_file,
-                        "EPHEM_STEP_SIZE=t{}".format(times_in_file),   
+                        "EPHEM_STEP_SIZE=t{}".format(times_in_file),
                         "JSON_EPHEM_NAME={}".format(os.path.join(temp_dir, "eph%p_%c.json")),
                         "JSON_ELEMENTS_NAME={}".format(os.path.join(temp_dir, "ele%p.json")),
                         "JSON_SHORT_ELEMENTS={}".format(os.path.join(temp_dir, "short%p.json")),
@@ -290,14 +290,14 @@ class FINDORB(Backend):
                     ]
 
                     ret = subprocess.run(
-                        call, 
-                        shell=False, 
-                        env=env, 
+                        call,
+                        shell=False,
+                        env=env,
                         cwd=temp_dir,
-                        check=False, 
+                        check=False,
                         capture_output=False
                     )
-                    
+
                     if (os.path.exists(ephemeris_txt)):
                         ephemeris = pd.read_csv(
                             ephemeris_txt,
@@ -309,7 +309,7 @@ class FINDORB(Backend):
                         )
                         ephemeris["orbit_id"] = [i for _ in range(len(ephemeris))]
                         ephemeris["observatory_code"] = [observatory_code for _ in range(len(ephemeris))]
-                        
+
                     else:
                         ephemeris = pd.DataFrame(
                             columns=[["orbit_id", "observatory_code"] + columns]
@@ -374,7 +374,7 @@ class FINDORB(Backend):
                 "mjd_sigma_seconds" : "rmsTime",
                 "filter" : "band",
                 "observatory_code" : "stn",
-            }, 
+            },
             inplace=True
         )
         _observations["rmsRA"] = _observations["rmsRA"].values * 3600
@@ -398,7 +398,7 @@ class FINDORB(Backend):
         if not id_present:
             _observations["trkSub"] = _observations["obj_id"]
             id_col = "trkSub"
-        
+
         if "mag" not in _observations.columns:
             _observations.loc[:, "mag"] = 20.0
         if "band" not in _observations.columns:
@@ -407,45 +407,45 @@ class FINDORB(Backend):
             _observations.loc[:, "mode"] = "CCD"
         if "astCat" not in _observations.columns:
             _observations.loc[:, "astCat"] = "None"
-            
-            
+
+
         for i, obj_id in enumerate(_observations[id_col].unique()):
-                           
+
             with tempfile.TemporaryDirectory() as temp_dir:
 
                 # Set this environment's home directory to the temporary directory
                 # to prevent bugs with multiple processes writing to the ~/.find_orb/
                 # directory
                 env = self._setWorkEnvironment(temp_dir)
-                
+
                 # If you give fo a string for a numbered object it will typically append brackets
                 # automatically which makes retrieving the object's orbit a little more tedious so by making sure
-                # the object ID is not numeric we can work around that. 
+                # the object ID is not numeric we can work around that.
                 obj_id_i = "o{:08d}".format(i)
 
                 observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(obj_id_i))
                 out_dir = os.path.join(temp_dir, "od_{}".format(obj_id_i))
-                
+
                 mask = _observations[id_col].isin([obj_id])
                 object_observations = _observations[mask].copy()
                 object_observations.loc[:, id_col] = obj_id_i
-                object_observations.reset_index(inplace=True, drop=True)                
-                
+                object_observations.reset_index(inplace=True, drop=True)
+
                 writeToADES(
-                    object_observations, 
-                    observations_file, 
+                    object_observations,
+                    observations_file,
                     mjd_scale="utc"
                 )
-                
+
                 last_observation = Time(
-                    object_observations["mjd"].max(), 
-                    scale="utc", 
+                    object_observations["mjd"].max(),
+                    scale="utc",
                     format="mjd"
                 )
                 call = [
-                    "fo", 
-                    observations_file, 
-                    "-O", 
+                    "fo",
+                    observations_file,
+                    "-O",
                     out_dir,
                     "-tEjd{}".format(last_observation.tt.jd),
                     "-j",
@@ -454,11 +454,11 @@ class FINDORB(Backend):
                 ]
 
                 ret = subprocess.run(
-                    call, 
-                    shell=False, 
-                    env=env, 
+                    call,
+                    shell=False,
+                    env=env,
                     cwd=temp_dir,
-                    check=False, 
+                    check=False,
                     capture_output=True
                 )
 
@@ -482,13 +482,13 @@ class FINDORB(Backend):
                             data["objects"][obj_id_i]["observations"]["residuals"]
                         )
                         residuals.sort_values(
-                            by=["JD", "obscode"], 
+                            by=["JD", "obscode"],
                             inplace=True
                         )
                         residuals = object_observations[["obs_id"]].join(residuals)
-                        
+
                     residual_dfs.append(residuals)
-                        
+
 
                 ids.append(obj_id)
                 epochs.append(epoch)
@@ -515,23 +515,23 @@ class FINDORB(Backend):
             scale="tt",
             format="jd"
         ).tdb.mjd
-        
+
         od_orbits = od_orbits[[
-            "obj_id", 
-            "mjd_tdb", 
-            "x", 
-            "y", 
-            "z", 
-            "vx", 
-            "vy", 
-            "vz", 
+            "obj_id",
+            "mjd_tdb",
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
             "covariance"
         ]]
-        
+
         residuals = pd.concat(residual_dfs)
         residuals.reset_index(
             inplace=True,
             drop=True
         )
-        
+
         return od_orbits, residuals

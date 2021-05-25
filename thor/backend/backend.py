@@ -39,7 +39,7 @@ class Timeout:
 def _init_worker():
     """
     Tell multiprocessing worker to ignore signals, will only
-    listen to parent process. 
+    listen to parent process.
     """
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     return
@@ -72,25 +72,25 @@ def orbitDetermination_worker(observations, backend):
     return orbits
 
 def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
-    
+
     assert len(ephemeris["mjd_utc"].unique()) == 1
     assert len(test_orbit_ephemeris["mjd_utc"].unique()) == 1
     assert ephemeris["mjd_utc"].unique()[0] == test_orbit_ephemeris["mjd_utc"].unique()[0]
     observation_time = ephemeris["mjd_utc"].unique()[0]
-    
+
     # Create test orbit with state of orbit at visit time
     test_orbit = TestOrbit(
         test_orbit_ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values[0],
         observation_time
     )
 
-    # Prepare rotation matrices 
+    # Prepare rotation matrices
     test_orbit.prepare()
 
     # Apply rotation matrices and transform observations into the orbit's
-    # frame of motion. 
+    # frame of motion.
     test_orbit.applyToEphemeris(ephemeris)
-    
+
     return ephemeris
 
 if USE_RAY:
@@ -101,22 +101,22 @@ if USE_RAY:
     projectEphemeris_worker = ray.remote(projectEphemeris_worker)
 
 class Backend:
-    
+
     def __init__(self, name="Backend", **kwargs):
         self.__dict__.update(kwargs)
         self.name = name
         self.is_setup = False
-        return  
-    
+        return
+
     def setup(self):
         return
-    
+
     def _propagateOrbits(self, orbits, t1):
         """
-        Propagate orbits from t0 to t1. 
+        Propagate orbits from t0 to t1.
 
         THIS FUNCTION SHOULD BE DEFINED BY THE USER.
-        
+
         """
         err = (
             "This backend does not have orbit propagation implemented."
@@ -144,8 +144,8 @@ class Backend:
             Propagated orbits with at least the following columns:
                 orbit_id : Input orbit ID.
                 epoch_mjd_tdb : Time at which state is defined in MJD TDB.
-                x, y, z, vx, vy, vz : Orbit as cartesian state vector with units 
-                of au and au per day. 
+                x, y, z, vx, vy, vz : Orbit as cartesian state vector with units
+                of au and au per day.
         """
         if threads > 1:
             orbits_split = orbits.split(chunk_size)
@@ -155,7 +155,7 @@ class Backend:
             if USE_RAY:
                 if not ray.is_initialized():
                     ray.init(address="auto")
-            
+
                 p = []
                 for o, t, b in zip(orbits_split, t1_duplicated, backend_duplicated):
                     p.append(propagation_worker.remote(o, t, b))
@@ -165,17 +165,17 @@ class Backend:
                 p = mp.Pool(
                     processes=threads,
                     initializer=_init_worker,
-                ) 
-                
+                )
+
                 propagated_dfs = p.starmap(
-                    propagation_worker, 
+                    propagation_worker,
                     zip(
                         orbits_split,
                         t1_duplicated,
                         backend_duplicated,
-                    ) 
+                    )
                 )
-                p.close()  
+                p.close()
 
             propagated = pd.concat(propagated_dfs)
             propagated.reset_index(
@@ -187,16 +187,16 @@ class Backend:
                 orbits,
                 t1
             )
-            
+
         return propagated
-    
+
     def _generateEphemeris(self, orbits, observers):
         """
-        Generate ephemerides for the given orbits as observed by 
+        Generate ephemerides for the given orbits as observed by
         the observers.
 
         THIS FUNCTION SHOULD BE DEFINED BY THE USER.
-        
+
         """
         err = (
             "This backend does not have ephemeris generation implemented."
@@ -213,7 +213,7 @@ class Backend:
         orbits : `~thor.orbits.orbits.Orbits`
             Orbits for which to generate ephemerides.
         observers : dict or `~pandas.DataFrame`
-            A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values. 
+            A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values.
         test_orbit : `~thor.orbits.orbits.Orbits`
             Test orbit to use to generate projected coordinates.
         threads : int, optional
@@ -239,7 +239,7 @@ class Backend:
             if USE_RAY:
                 if not ray.is_initialized():
                     ray.init(address="auto")
-            
+
                 p = []
                 for o, t, b in zip(orbits_split, observers_duplicated, backend_duplicated):
                     p.append(ephemeris_worker.remote(o, t, b))
@@ -249,17 +249,17 @@ class Backend:
                 p = mp.Pool(
                     processes=threads,
                     initializer=_init_worker,
-                ) 
-                
+                )
+
                 ephemeris_dfs = p.starmap(
-                    ephemeris_worker, 
+                    ephemeris_worker,
                     zip(
                         orbits_split,
                         observers_duplicated,
                         backend_duplicated,
-                    ) 
+                    )
                 )
-                p.close()  
+                p.close()
 
             ephemeris = pd.concat(ephemeris_dfs)
             ephemeris.reset_index(
@@ -287,7 +287,7 @@ class Backend:
             if threads > 1:
 
                 if USE_RAY:
-                
+
                     p = []
                     for e, te in zip(ephemeris_split, test_orbit_ephemeris_split):
                         p.append(projectEphemeris_worker.remote(e, te))
@@ -297,23 +297,23 @@ class Backend:
                     p = mp.Pool(
                         processes=threads,
                         initializer=_init_worker,
-                    ) 
-                    
+                    )
+
                     ephemeris_dfs = p.starmap(
-                        projectEphemeris_worker, 
+                        projectEphemeris_worker,
                         zip(
                             ephemeris_split,
                             test_orbit_ephemeris_split
-                        ) 
+                        )
                     )
-                    p.close()  
-               
+                    p.close()
+
             else:
                 ephemeris_dfs = []
                 for e, te in zip(ephemeris_split, test_orbit_ephemeris_split):
                     ephemeris_df = projectEphemeris_worker(e, te)
                     ephemeris_dfs.append(ephemeris_df)
-            
+
             ephemeris = pd.concat(ephemeris_dfs)
             ephemeris.reset_index(
                 drop=True,
@@ -324,10 +324,10 @@ class Backend:
 
     def _initialOrbitDetermination(self, observations, linkage_members, threads=NUM_THREADS, chunk_size=10, **kwargs):
         """
-        Given observations and 
+        Given observations and
 
         THIS FUNCTION SHOULD BE DEFINED BY THE USER.
-        
+
         """
         err = (
             "This backend does not have initial orbit propagation implemented."
@@ -344,11 +344,11 @@ class Backend:
         """
         Run orbit determination on the input observations. These observations
         must at least contain the following columns:
-        
+
         obj_id : Object ID
         mjd_utc : Observation time in MJD UTC.
-        RA_deg : Topocentric Right Ascension in decimal degrees. 
-        Dec_deg : Topocentric Declination in decimal degrees. 
+        RA_deg : Topocentric Right Ascension in decimal degrees.
+        Dec_deg : Topocentric Declination in decimal degrees.
         sigma_RA_deg : 1-sigma uncertainty in RA.
         sigma_Dec_deg : 1-sigma uncertainty in Dec.
         observatory_code : MPC observatory code.
@@ -362,7 +362,7 @@ class Backend:
         if USE_RAY:
             if not ray.is_initialized():
                 ray.init(address="auto")
-        
+
             od = []
             for o,  b in zip(observations_split, backend_duplicated):
                 od.append(orbitDetermination_worker.remote(o, b))
@@ -372,16 +372,16 @@ class Backend:
             p = mp.Pool(
                 processes=threads,
                 initializer=_init_worker,
-            ) 
-            
+            )
+
             od_orbits_dfs = p.starmap(
-                orbitDetermination_worker, 
+                orbitDetermination_worker,
                 zip(
                     observations_split,
                     backend_duplicated,
-                ) 
+                )
             )
-            p.close()  
+            p.close()
 
         od_orbits = pd.concat(od_orbits_dfs)
         od_orbits.reset_index(
