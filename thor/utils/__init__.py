@@ -6,3 +6,4 @@ from .mpc import *
 from .ades import *
 from .linkages import *
 from .logging import *
+from .multiprocessing import *
