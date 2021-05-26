@@ -13,12 +13,13 @@ from functools import partial
 from ..config import Config
 from ..utils import identifySubsetLinkages
 from ..utils import sortLinkages
+from ..utils import yieldChunks
+from ..utils import calcChunkSize
 from ..backend import _init_worker
 from ..backend import MJOLNIR
 from ..backend import PYOORB
 from .gauss import gaussIOD
 from .residuals import calcResiduals
-from .ephemeris import generateEphemeris
 
 USE_RAY = Config.USE_RAY
 NUM_THREADS = Config.NUM_THREADS
@@ -116,7 +117,7 @@ def selectObservations(
     return obs_ids[selected_index]
 
 def iod_worker(
-        observations,
+        observations_list,
         observation_selection_method="combinations",
         min_obs=6,
         min_arc_length=1.0,
@@ -128,32 +129,46 @@ def iod_worker(
         backend="PYOORB",
         backend_kwargs={}
     ):
-    assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
+    iod_orbits_dfs = []
+    iod_orbit_members_dfs = []
+    for observations in observations_list:
+        assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
 
-    time_start = time.time()
-    linkage_id = observations[linkage_id_col].unique()[0]
-    logger.debug(f"Finding initial orbit for linkage {linkage_id}...")
+        time_start = time.time()
+        linkage_id = observations[linkage_id_col].unique()[0]
+        logger.debug(f"Finding initial orbit for linkage {linkage_id}...")
 
-    iod_orbit, iod_orbit_members = iod(
-        observations,
-        observation_selection_method=observation_selection_method,
-        min_obs=min_obs,
-        min_arc_length=min_arc_length,
-        rchi2_threshold=rchi2_threshold,
-        contamination_percentage=contamination_percentage,
-        iterate=iterate,
-        light_time=light_time,
-        backend=backend,
-        backend_kwargs=backend_kwargs
+        iod_orbit, iod_orbit_members = iod(
+            observations,
+            observation_selection_method=observation_selection_method,
+            min_obs=min_obs,
+            min_arc_length=min_arc_length,
+            rchi2_threshold=rchi2_threshold,
+            contamination_percentage=contamination_percentage,
+            iterate=iterate,
+            light_time=light_time,
+            backend=backend,
+            backend_kwargs=backend_kwargs
+        )
+        if len(iod_orbit) > 0:
+            iod_orbit.insert(1, linkage_id_col, linkage_id)
+
+        time_end = time.time()
+        duration = time_end - time_start
+        logger.debug(f"IOD for linkage {linkage_id} completed in {duration:.3f}s.")
+
+        iod_orbits_dfs.append(iod_orbit)
+        iod_orbit_members_dfs.append(iod_orbit_members)
+
+    iod_orbits = pd.concat(
+        iod_orbits_dfs,
+        ignore_index=True
     )
-    if len(iod_orbit) > 0:
-        iod_orbit.insert(1, linkage_id_col, linkage_id)
-
-    time_end = time.time()
-    duration = time_end - time_start
-    logger.debug(f"IOD for linkage {linkage_id} completed in {duration:.3f}s.")
-
-    return iod_orbit, iod_orbit_members
+    iod_orbit_members = pd.concat(
+        iod_orbit_members_dfs,
+        ignore_index=True
+    )
+    return iod_orbits, iod_orbit_members
 
 if USE_RAY:
     import ray
@@ -517,6 +532,7 @@ def initialOrbitDetermination(
         linkage_id_col="cluster_id",
         identify_subsets=True,
         threads=NUM_THREADS,
+        chunk_size=1,
         backend="PYOORB",
         backend_kwargs={}
     ):
@@ -566,7 +582,9 @@ def initialOrbitDetermination(
     linkage_id_col : str, optional
         Name of linkage_id column in the linkage_members dataframe.
     threads : int, optional
-        Number of threads to use for multiprocessing.
+        Number of threads to use for multiprocessing. Applies only when ray is not enabled.
+    chunk_size : int, optional
+        Maximum number of linkages to distribute to each thread or ray worker available.
     backend : {'MJOLNIR', 'PYOORB'}, optional
         Which backend to use for ephemeris generation.
     backend_kwargs : dict, optional
@@ -641,11 +659,23 @@ def initialOrbitDetermination(
 
         if threads > 1:
 
+            num_linkages = linkage_members[linkage_id_col].nunique()
+
             if USE_RAY:
+                # Determine the number of linkages to send to each CPU in the ray cluster
+                # Each separate remote function has an associated overhead,
+                # so for processes that take ~1ms it is often best performance-wise
+                # to bunch these tasks so that they will take longer. Doing so
+                # reduces the effect of overhead on total run time.
+                num_workers = int(ray.cluster_resources()["CPU"])
+
+                # Send up to chunk_size linkages to each IOD worker for processing
+                chunk_size_ = calcChunkSize(num_linkages, num_workers, chunk_size, min_chunk_size=1)
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers.")
 
                 iod_orbits_oids = []
                 iod_orbit_members_oids = []
-                for observations_i in observations_split:
+                for observations_i in yieldChunks(observations_split, chunk_size_):
 
                     iod_orbits_oid, iod_orbit_members_oid = iod_worker.remote(
                             observations_i,
@@ -667,6 +697,10 @@ def initialOrbitDetermination(
                 iod_orbit_members_dfs = ray.get(iod_orbit_members_oids)
 
             else:
+                chunk_size_ = calcChunkSize(num_linkages, threads, chunk_size, min_chunk_size=1)
+
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {threads} workers.")
+
                 results = p.starmap(
                     partial(
                         iod_worker,
@@ -681,9 +715,7 @@ def initialOrbitDetermination(
                         backend=backend,
                         backend_kwargs=backend_kwargs
                     ),
-                    zip(
-                        observations_split,
-                    )
+                    zip(yieldChunks(observations_split, chunk_size_)),
                 )
                 p.close()
 
@@ -693,7 +725,7 @@ def initialOrbitDetermination(
 
         else:
 
-            for observations_i in observations_split:
+            for observations_i in yieldChunks(observations_split, chunk_size):
                 iod_orbits_df, iod_orbit_members_df = iod_worker(
                     observations_i,
                     observation_selection_method=observation_selection_method,
