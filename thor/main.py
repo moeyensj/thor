@@ -516,16 +516,23 @@ def clusterAndLink(
             if not ray.is_initialized():
                 ray.init(address="auto")
 
+            # Put all arrays (which can be large) in ray's
+            # local object store ahead of time
+            obs_ids_oid = ray.put(obs_ids)
+            theta_x_oid = ray.put(theta_x)
+            theta_y_oid = ray.put(theta_y)
+            dt_oid = ray.put(dt)
+
             p = []
             for vxi, vyi in zip(vxx, vyy):
                 p.append(
                     clusterVelocity_worker.remote(
                         vxi,
                         vyi,
-                        obs_ids=obs_ids,
-                        x=theta_x,
-                        y=theta_y,
-                        dt=dt,
+                        obs_ids=obs_ids_oid,
+                        x=theta_x_oid,
+                        y=theta_y_oid,
+                        dt=dt_oid,
                         eps=eps,
                         min_samples=min_samples,
                         min_arc_length=min_arc_length,
@@ -1050,6 +1057,10 @@ def runTHOR(
         logging_level=logger.info
     ):
     logger.setLevel(logging_level)
+
+    # Connect to ray cluster if enabled
+    if USE_RAY and not ray.is_initialized():
+        ray.init(address="auto")
 
     # Build the configuration directory which stores
     # the run parameters
