@@ -76,11 +76,8 @@ def generateEphemeris(
     )
     ephemeris.sort_values(
         by=["orbit_id", "observatory_code", "mjd_utc"],
-        inplace=True
-    )
-    ephemeris.reset_index(
         inplace=True,
-        drop=True
+        ignore_index=True
     )
     return ephemeris
 
