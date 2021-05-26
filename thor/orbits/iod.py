@@ -130,6 +130,10 @@ def iod_worker(
     ):
     assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
 
+    time_start = time.time()
+    linkage_id = observations[linkage_id_col].unique()[0]
+    logger.debug(f"Finding initial orbit for linkage {linkage_id}...")
+
     iod_orbit, iod_orbit_members = iod(
         observations,
         observation_selection_method=observation_selection_method,
@@ -143,13 +147,18 @@ def iod_worker(
         backend_kwargs=backend_kwargs
     )
     if len(iod_orbit) > 0:
-        iod_orbit.insert(1, linkage_id_col, observations[linkage_id_col].unique()[0])
+        iod_orbit.insert(1, linkage_id_col, linkage_id)
+
+    time_end = time.time()
+    duration = time_end - time_start
+    logger.debug(f"IOD for linkage {linkage_id} completed in {duration:.3f}s.")
 
     return iod_orbit, iod_orbit_members
 
 if USE_RAY:
     import ray
     iod_worker = ray.remote(iod_worker)
+    iod_worker = iod_worker.options(num_returns=2)
 
 def iod(
         observations,
@@ -348,7 +357,6 @@ def iod(
             threads=1,
         )
 
-
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
         orbit_ids = iod_orbits.ids
@@ -384,6 +392,7 @@ def iod(
 
             # If the total reduced chi2 is less than the threshold accept the orbit
             elif rchi2 <= rchi2_threshold:
+                logger.debug("Potential solution orbit has been found.")
                 orbit_sol = iod_orbits[i:i+1]
                 obs_ids_sol = ids
                 chi2_total_sol = chi2_total
@@ -401,6 +410,7 @@ def iod(
             # observations is skewing the sum total of the residuals and chi2
             elif num_outliers > 0:
 
+                logger.debug("Attempting to identify possible outliers.")
                 for o in range(num_outliers):
                     # Select i highest observations that contribute to
                     # chi2 (and thereby the residuals)
@@ -408,6 +418,7 @@ def iod(
 
                     # Grab the obs_ids for these outliers
                     obs_id_outlier = obs_ids_all[~mask][remove]
+                    logger.debug("Possible outlier(s): {}".format(obs_id_outlier))
 
                     # Subtract the outlier's chi2 contribution
                     # from the total chi2
@@ -632,10 +643,11 @@ def initialOrbitDetermination(
 
             if USE_RAY:
 
-                p = []
+                iod_orbits_oids = []
+                iod_orbit_members_oids = []
                 for observations_i in observations_split:
-                    p.append(
-                        iod_worker.remote(
+
+                    iod_orbits_oid, iod_orbit_members_oid = iod_worker.remote(
                             observations_i,
                             observation_selection_method=observation_selection_method,
                             rchi2_threshold=rchi2_threshold,
@@ -647,13 +659,12 @@ def initialOrbitDetermination(
                             linkage_id_col=linkage_id_col,
                             backend=backend,
                             backend_kwargs=backend_kwargs
-                        )
                     )
+                    iod_orbits_oids.append(iod_orbits_oid)
+                    iod_orbit_members_oids.append(iod_orbit_members_oid)
 
-                results = ray.get(p)
-                results = list(zip(*results))
-                iod_orbits_dfs = results[0]
-                iod_orbit_members_dfs = results[1]
+                iod_orbits_dfs = ray.get(iod_orbits_oids)
+                iod_orbit_members_dfs = ray.get(iod_orbit_members_oids)
 
             else:
                 results = p.starmap(
@@ -703,7 +714,6 @@ def initialOrbitDetermination(
             iod_orbits_dfs,
             ignore_index=True
         )
-
         iod_orbit_members = pd.concat(
             iod_orbit_members_dfs,
             ignore_index=True

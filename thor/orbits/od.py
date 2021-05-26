@@ -60,6 +60,8 @@ def od_worker(
         )
         raise ValueError(err)
 
+    time_start = time.time()
+    logger.debug(f"Differentially correcting orbit {orbit.ids[0]}...")
     od_orbit, od_orbit_members = od(
         orbit,
         observations,
@@ -75,12 +77,15 @@ def od_worker(
         backend=backend,
         backend_kwargs=backend_kwargs,
     )
-
+    time_end = time.time()
+    duration = time_end - time_start
+    logger.debug(f"OD for orbit {orbit.ids[0]} completed in {duration:.3f}s.")
     return od_orbit, od_orbit_members
 
 if USE_RAY:
     import ray
     od_worker = ray.remote(od_worker)
+    od_worker = od_worker.options(num_returns=2)
 
 def od(
         orbit,
@@ -449,7 +454,7 @@ def od(
 
         elif num_outliers > 0 and outliers_tried <= num_outliers and iterations > max_iter_i and not solution_found:
 
-            logger.debug("Attemping to identify possible outliers.")
+            logger.debug("Attempting to identify possible outliers.")
             # Previous fits have failed, lets reset the current best fit orbit back to its original
             # state and re-run fitting, this time removing outliers
             orbit_prev = orbit_prev_
@@ -576,7 +581,7 @@ def differentialCorrection(
         backend_kwargs={}
     ):
     """
-    Differentially correct (via finite/central differencing) time.
+    Differentially correct (via finite/central differencing).
 
     Parameters
     ----------
@@ -593,9 +598,19 @@ def differentialCorrection(
             observations
         )
 
+        start = time.time()
+        logger.debug("Merging observations on linkage members...")
         linked_observations = orbit_members_[orbit_members_[["orbit_id", "obs_id"]]["orbit_id"].isin(orbits_["orbit_id"].values)].merge(observations, on="obs_id", how="left")
+        duration = time.time() - start
+        logger.debug(f"Merging completed in {duration:.3f}s.")
+
+        start = time.time()
+        logger.debug("Grouping observations by orbit ID...")
         grouped_observations = linked_observations.groupby(by=["orbit_id"])
+        logger.debug("Splitting grouped observations by orbit ID...")
         observations_split = [grouped_observations.get_group(g).reset_index(drop=True) for g in grouped_observations.groups]
+        duration = time.time() - start
+        logger.debug(f"Grouping and splitting completed in {duration:.3f}s.")
 
         orbits_initial = Orbits.from_df(orbits_)
         orbits_split = orbits_initial.split(1)
@@ -606,31 +621,30 @@ def differentialCorrection(
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
-                p = []
+                od_orbits_oids = []
+                od_orbit_members_oids = []
                 for orbits_i, observations_i in zip(orbits_split, observations_split):
 
-                    p.append(
-                        od_worker.remote(
-                            orbits_i,
-                            observations_i,
-                            rchi2_threshold=rchi2_threshold,
-                            min_obs=min_obs,
-                            min_arc_length=min_arc_length,
-                            contamination_percentage=contamination_percentage,
-                            delta=delta,
-                            max_iter=max_iter,
-                            method=method,
-                            fit_epoch=fit_epoch,
-                            test_orbit=test_orbit,
-                            backend=backend,
-                            backend_kwargs=backend_kwargs,
-                        )
+                    od_orbits_oid, od_orbit_members_oid = od_worker.remote(
+                        orbits_i,
+                        observations_i,
+                        rchi2_threshold=rchi2_threshold,
+                        min_obs=min_obs,
+                        min_arc_length=min_arc_length,
+                        contamination_percentage=contamination_percentage,
+                        delta=delta,
+                        max_iter=max_iter,
+                        method=method,
+                        fit_epoch=fit_epoch,
+                        test_orbit=test_orbit,
+                        backend=backend,
+                        backend_kwargs=backend_kwargs,
                     )
+                    od_orbits_oids.append(od_orbits_oid)
+                    od_orbit_members_oids.append(od_orbit_members_oid)
 
-                results = ray.get(p)
-                results = list(zip(*results))
-                od_orbits_dfs = results[0]
-                od_orbit_members_dfs = results[1]
+                od_orbits_dfs = ray.get(od_orbits_oids)
+                od_orbit_members_dfs = ray.get(od_orbit_members_oids)
 
             else:
                 p = mp.Pool(
