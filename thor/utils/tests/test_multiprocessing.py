@@ -146,6 +146,109 @@ def test_yieldChunks_series():
     np.testing.assert_array_equal(chunk.values, desired)
     return
 
+def test_yieldChunks_series_offsetIndex():
+    # Create series of data
+    indexable = pd.Series(np.arange(0, 15, 1))
+    # Offset the index and make sure chunking is done independent of
+    # the values of the index
+    indexable.index = np.arange(0, 150, 10)
+
+    # Set chunk_size to 10
+    chunk_size = 10
+    generator = yieldChunks(indexable, chunk_size)
+
+    # First iteration should yield 0 through 9
+    chunk = next(generator)
+    desired = np.arange(0, 10, 1)
+    np.testing.assert_array_equal(chunk.values, desired)
+
+    # Second iteration should yield 10 through 15
+    chunk = next(generator)
+    desired = np.arange(10, 15, 1)
+    np.testing.assert_array_equal(chunk.values, desired)
+
+    # Set chunk_size to 5
+    chunk_size = 5
+    generator = yieldChunks(indexable, chunk_size)
+
+    # First iteration should yield 0 through 4
+    chunk = next(generator)
+    desired = np.arange(0, 5, 1)
+    np.testing.assert_array_equal(chunk.values, desired)
+
+    # Second iteration should yield 5 through 9
+    chunk = next(generator)
+    desired = np.arange(5, 10, 1)
+    np.testing.assert_array_equal(chunk.values, desired)
+
+    # Third iteration should yield 10 through 14
+    chunk = next(generator)
+    desired = np.arange(10, 15, 1)
+    np.testing.assert_array_equal(chunk.values, desired)
+
+    # Set chunk_size to 20
+    chunk_size = 20
+    generator = yieldChunks(indexable, chunk_size)
+
+    # First iteration should yield 0 through 14
+    chunk = next(generator)
+    desired = np.arange(0, 15, 1)
+    np.testing.assert_array_equal(chunk.values, desired)
+    return
+
+def test_yieldChunks_dataframe_offsetIndex():
+    # Create dataframe of data
+    data = {
+        "x" : np.arange(0, 15, 1)
+    }
+    indexable = pd.DataFrame(data)
+    # Offset the index and make sure chunking is done independent of
+    # the values of the index
+    indexable.index = np.arange(0, 150, 10)
+
+    # Set chunk_size to 10
+    chunk_size = 10
+    generator = yieldChunks(indexable, chunk_size)
+
+    # First iteration should yield 0 through 9
+    chunk = next(generator)
+    desired = np.arange(0, 10, 1)
+    np.testing.assert_array_equal(chunk["x"].values, desired)
+
+    # Second iteration should yield 10 through 15
+    chunk = next(generator)
+    desired = np.arange(10, 15, 1)
+    np.testing.assert_array_equal(chunk["x"].values, desired)
+
+    # Set chunk_size to 5
+    chunk_size = 5
+    generator = yieldChunks(indexable, chunk_size)
+
+    # First iteration should yield 0 through 4
+    chunk = next(generator)
+    desired = np.arange(0, 5, 1)
+    np.testing.assert_array_equal(chunk["x"].values, desired)
+
+    # Second iteration should yield 5 through 9
+    chunk = next(generator)
+    desired = np.arange(5, 10, 1)
+    np.testing.assert_array_equal(chunk["x"].values, desired)
+
+    # Third iteration should yield 10 through 14
+    chunk = next(generator)
+    desired = np.arange(10, 15, 1)
+    np.testing.assert_array_equal(chunk["x"].values, desired)
+
+    # Set chunk_size to 20
+    chunk_size = 20
+    generator = yieldChunks(indexable, chunk_size)
+
+    # First iteration should yield 0 through 14
+    chunk = next(generator)
+    desired = np.arange(0, 15, 1)
+    np.testing.assert_array_equal(chunk["x"].values, desired)
+    return
+
 def test_yieldChunks_dataframe():
     # Create dataframe of data
     data = {
