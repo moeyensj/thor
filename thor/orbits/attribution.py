@@ -1,5 +1,4 @@
 import time
-import uuid
 import logging
 import numpy as np
 import pandas as pd
@@ -10,10 +9,11 @@ from sklearn.neighbors import BallTree
 
 from ..config import Config
 from ..backend import _init_worker
+from ..utils import yieldChunks
+from ..utils import calcChunkSize
 from ..utils import verifyLinkages
 from ..utils import mergeLinkages
 from ..utils import sortLinkages
-from ..utils import identifySubsetLinkages
 from ..utils import removeDuplicateObservations
 from .orbits import Orbits
 from .ephemeris import generateEphemeris
@@ -179,30 +179,36 @@ def attributeObservations(
     logger.info("Running observation attribution...")
     time_start = time.time()
 
-    # If multi-threading is desired, set up the appropriate pool
+    num_orbits = len(orbits)
+
+    attribution_dfs = []
     if threads > 1:
         if USE_RAY:
             if not ray.is_initialized():
                 ray.init(address="auto")
-        else:
-            p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
-            )
 
-    orbits_split = orbits.split(orbits_chunk_size)
-    attribution_dfs = []
-    for chunk in range(0, len(observations), observations_chunk_size):
-        obs_chunk = observations.iloc[chunk:chunk + observations_chunk_size]
+            # Determine the number of orbits to send to each CPU in the ray cluster
+            # Each separate remote function has an associated overhead,
+            # so for processes that take ~1ms it is often best performance-wise
+            # to bunch these tasks so that they will take longer. Doing so
+            # reduces the effect of overhead on total run time.
+            num_workers = int(ray.cluster_resources()["CPU"])
 
-        if threads > 1:
-            if USE_RAY:
-                p = []
+            # Send up to orbits_chunk_size orbits to each OD worker for processing
+            chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
+            orbits_split = orbits.split(chunk_size_)
+
+            obs_oids = []
+            for observations_c in yieldChunks(observations, observations_chunk_size):
+                obs_oids.append(ray.put(observations_c))
+
+            p = []
+            for obs_oid in obs_oids:
                 for orbit_i in orbits_split:
                     p.append(
                         attribution_worker.remote(
                             orbit_i,
-                            obs_chunk,
+                            obs_oid,
                             eps=eps,
                             include_probabilistic=include_probabilistic,
                             backend=backend,
@@ -212,10 +218,20 @@ def attributeObservations(
 
                 attribution_dfs_i = ray.get(p)
                 attribution_dfs += attribution_dfs_i
+        else:
+            p = mp.Pool(
+                processes=threads,
+                initializer=_init_worker,
+            )
+            num_workers = threads
 
-            else:
+            # Send up to orbits_chunk_size orbits to each OD worker for processing
+            chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
+            orbits_split = orbits.split(chunk_size_)
 
-                obs = [obs_chunk for i in range(len(orbits_split))]
+            for observations_c in yieldChunks(observations, observations_chunk_size):
+
+                obs = [observations_c for i in range(len(orbits_split))]
                 attribution_dfs_i = p.starmap(
                     partial(
                         attribution_worker,
@@ -231,11 +247,14 @@ def attributeObservations(
                 )
                 attribution_dfs += attribution_dfs_i
 
-        else:
-            for orbit_i in orbits_split:
+            p.close()
+
+    else:
+        for observations_c in yieldChunks(observations, observations_chunk_size):
+            for orbit_c in orbits.split(orbits_chunk_size):
                 attribution_df_i = attribution_worker(
-                    orbit_i,
-                    obs_chunk,
+                    orbit_c,
+                    observations_c,
                     eps=eps,
                     include_probabilistic=include_probabilistic,
                     backend=backend,
@@ -246,11 +265,8 @@ def attributeObservations(
     attributions = pd.concat(attribution_dfs)
     attributions.sort_values(
         by=["orbit_id", "mjd_utc", "distance"],
-        inplace=True
-    )
-    attributions.reset_index(
         inplace=True,
-        drop=True
+        ignore_index=True
     )
 
     time_end = time.time()
@@ -259,11 +275,6 @@ def attributeObservations(
         attributions["orbit_id"].nunique()
     ))
     logger.info("Attribution completed in {:.3f} seconds.".format(time_end - time_start))
-
-    if threads > 1:
-        if not USE_RAY:
-            p.close()
-
     return attributions
 
 def mergeAndExtendOrbits(
@@ -366,10 +377,15 @@ def mergeAndExtendOrbits(
                 filter_cols=["num_obs", "arc_length"],
                 ascending=[False, False]
             )
-
             if len(merged_orbits) > 0:
-                orbits_iter = pd.concat([orbits_iter, merged_orbits])
-                orbit_members_iter = pd.concat([orbit_members_iter, merged_orbit_members])
+                orbits_iter = pd.concat(
+                    [orbits_iter, merged_orbits],
+                    ignore_index=True
+                )
+                orbit_members_iter = pd.concat(
+                    [orbit_members_iter, merged_orbit_members],
+                    ignore_index=True
+                )
 
             orbits_iter, orbit_members_iter = sortLinkages(
                 orbits_iter,
@@ -392,6 +408,7 @@ def mergeAndExtendOrbits(
                 method=method,
                 max_iter=max_iter,
                 threads=threads,
+                chunk_size=orbits_chunk_size,
                 fit_epoch=False,
                 backend=backend,
                 backend_kwargs=backend_kwargs,

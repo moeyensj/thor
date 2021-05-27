@@ -1,5 +1,3 @@
-import os
-import sys
 import time
 import uuid
 import logging
@@ -584,7 +582,7 @@ def initialOrbitDetermination(
     threads : int, optional
         Number of threads to use for multiprocessing. Applies only when ray is not enabled.
     chunk_size : int, optional
-        Maximum number of linkages to distribute to each thread or ray worker available.
+        Maximum number of linkages to distribute to each available thread or ray worker.
     backend : {'MJOLNIR', 'PYOORB'}, optional
         Which backend to use for ephemeris generation.
     backend_kwargs : dict, optional
@@ -698,7 +696,6 @@ def initialOrbitDetermination(
 
             else:
                 chunk_size_ = calcChunkSize(num_linkages, threads, chunk_size, min_chunk_size=1)
-
                 logger.info(f"Distributing linkages in chunks of {chunk_size_} to {threads} workers.")
 
                 results = p.starmap(
