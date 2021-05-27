@@ -26,7 +26,7 @@ from .utils import identifySubsetLinkages
 
 USE_RAY = Config.USE_RAY
 USE_GPU = Config.USE_GPU
-NUM_THREADS = Config.NUM_THREADS
+NUM_JOBS = Config.NUM_JOBS
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
@@ -192,7 +192,7 @@ def rangeAndShift(
         observations,
         orbit,
         cell_area=10,
-        threads=NUM_THREADS,
+        num_jobs=NUM_JOBS,
         backend="PYOORB",
         backend_kwargs={},
     ):
@@ -292,7 +292,7 @@ def rangeAndShift(
     ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
     ephemeris_split = [ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups]
 
-    if threads > 1:
+    if num_jobs > 1:
 
         if USE_RAY:
             if not ray.is_initialized():
@@ -311,7 +311,7 @@ def rangeAndShift(
 
         else:
             p = mp.Pool(
-                processes=threads,
+                processes=num_jobs,
                 initializer=_init_worker,
             )
 
@@ -368,7 +368,7 @@ def clusterAndLink(
         min_samples=5,
         min_arc_length=1.0,
         identify_subsets=False,
-        threads=NUM_THREADS,
+        num_jobs=NUM_JOBS,
         alg="dbscan"
     ):
     """
@@ -405,8 +405,8 @@ def clusterAndLink(
         Values of velocities in y at which to cluster
         and link.
         [Default = None]
-    threads : int, optional
-        Number of threads to use.
+    num_jobs : int, optional
+        Number of num_jobs to use.
         [Default = 12]
     eps : float, optional
         The maximum distance between two samples for them to be considered
@@ -510,7 +510,7 @@ def clusterAndLink(
     logger.info("Minimum samples: {}".format(min_samples))
 
     possible_clusters = []
-    if threads > 1 and not USE_GPU:
+    if num_jobs > 1 and not USE_GPU:
 
         if USE_RAY:
             if not ray.is_initialized():
@@ -543,7 +543,7 @@ def clusterAndLink(
 
         else:
 
-            p = mp.Pool(threads, _init_worker)
+            p = mp.Pool(num_jobs, _init_worker)
             possible_clusters = p.starmap(
                 partial(
                     clusterVelocity_worker,

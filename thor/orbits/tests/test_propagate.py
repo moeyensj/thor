@@ -54,7 +54,7 @@ def test_propagateOrbits():
         t1,
         backend="MJOLNIR",
         backend_kwargs={},
-        threads=1,
+        num_jobs=1,
         chunk_size=1
     )
     states_mjolnir = states_mjolnir[["x", "y", "z", "vx", "vy", "vz"]].values
@@ -65,7 +65,7 @@ def test_propagateOrbits():
         t1,
         backend="PYOORB",
         backend_kwargs={"dynamical_model" : "2"},
-        threads=1,
+        num_jobs=1,
         chunk_size=1
     )
     states_pyoorb = states_pyoorb[["x", "y", "z", "vx", "vy", "vz"]].values

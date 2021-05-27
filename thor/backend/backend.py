@@ -10,7 +10,7 @@ from ..config import Config
 from ..orbit import TestOrbit
 
 USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
+NUM_JOBS = Config.NUM_JOBS
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -123,7 +123,7 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def propagateOrbits(self, orbits, t1, threads=NUM_THREADS, chunk_size=100):
+    def propagateOrbits(self, orbits, t1, num_jobs=NUM_JOBS, chunk_size=100):
         """
         Propagate each orbit in orbits to each time in t1.
 
@@ -133,8 +133,8 @@ class Backend:
             Orbits to propagate.
         t1 : `~astropy.time.core.Time`
             Times to which to propagate each orbit.
-        threads : int, optional
-            Number of processes to launch.
+        num_jobs : int, optional
+            Number of jobs to launch.
         chunk_size : int, optional
             Number of orbits to send to each process.
 
@@ -147,7 +147,7 @@ class Backend:
                 x, y, z, vx, vy, vz : Orbit as cartesian state vector with units
                 of au and au per day.
         """
-        if threads > 1:
+        if num_jobs > 1:
             orbits_split = orbits.split(chunk_size)
             t1_duplicated = [copy.deepcopy(t1) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
@@ -163,7 +163,7 @@ class Backend:
 
             else:
                 p = mp.Pool(
-                    processes=threads,
+                    processes=num_jobs,
                     initializer=_init_worker,
                 )
 
@@ -203,7 +203,7 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def generateEphemeris(self, orbits, observers, test_orbit=None, threads=NUM_THREADS, chunk_size=100):
+    def generateEphemeris(self, orbits, observers, test_orbit=None, num_jobs=NUM_JOBS, chunk_size=100):
         """
         Generate ephemerides for each orbit in orbits as observed by each observer
         in observers.
@@ -216,8 +216,8 @@ class Backend:
             A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values.
         test_orbit : `~thor.orbits.orbits.Orbits`
             Test orbit to use to generate projected coordinates.
-        threads : int, optional
-            Number of processes to launch.
+        num_jobs : int, optional
+            Number of jobs to launch.
         chunk_size : int, optional
             Number of orbits to send to each process.
 
@@ -231,7 +231,7 @@ class Backend:
                 RA : Right Ascension in decimal degrees.
                 Dec : Declination in decimal degrees.
         """
-        if threads > 1:
+        if num_jobs > 1:
             orbits_split = orbits.split(chunk_size)
             observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
@@ -247,7 +247,7 @@ class Backend:
 
             else:
                 p = mp.Pool(
-                    processes=threads,
+                    processes=num_jobs,
                     initializer=_init_worker,
                 )
 
@@ -284,7 +284,7 @@ class Backend:
             test_orbit_ephemeris_grouped = test_orbit_ephemeris.groupby(by=["observatory_code", "mjd_utc"])
             test_orbit_ephemeris_split = [test_orbit_ephemeris_grouped.get_group(g) for g in test_orbit_ephemeris_grouped.groups]
 
-            if threads > 1:
+            if num_jobs > 1:
 
                 if USE_RAY:
 
@@ -295,7 +295,7 @@ class Backend:
 
                 else:
                     p = mp.Pool(
-                        processes=threads,
+                        processes=num_jobs,
                         initializer=_init_worker,
                     )
 
@@ -322,7 +322,7 @@ class Backend:
 
         return ephemeris
 
-    def _initialOrbitDetermination(self, observations, linkage_members, threads=NUM_THREADS, chunk_size=10, **kwargs):
+    def _initialOrbitDetermination(self, observations, linkage_members, num_jobs=NUM_JOBS, chunk_size=10, **kwargs):
         """
         Given observations and
 
@@ -340,7 +340,7 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def orbitDetermination(self, observations, threads=NUM_THREADS, chunk_size=10, **kwargs):
+    def orbitDetermination(self, observations, num_jobs=NUM_JOBS, chunk_size=10, **kwargs):
         """
         Run orbit determination on the input observations. These observations
         must at least contain the following columns:
@@ -370,7 +370,7 @@ class Backend:
 
         else:
             p = mp.Pool(
-                processes=threads,
+                processes=num_jobs,
                 initializer=_init_worker,
             )
 

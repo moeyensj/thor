@@ -17,7 +17,7 @@ def generateEphemeris(
         backend="MJOLNIR",
         backend_kwargs={},
         test_orbit=None,
-        threads=Config.NUM_THREADS,
+        num_jobs=Config.NUM_JOBS,
         chunk_size=1
     ):
     """
@@ -71,7 +71,7 @@ def generateEphemeris(
         orbits,
         observers,
         test_orbit=test_orbit,
-        threads=threads,
+        num_jobs=num_jobs,
         chunk_size=chunk_size
     )
     ephemeris.sort_values(

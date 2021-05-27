@@ -43,7 +43,7 @@ def test_rangeAndShift():
             orbit,
             cell_area=0.1,
             backend="PYOORB",
-            threads=1
+            num_jobs=1
         )
         analyis_projected_observations = projected_observations.merge(preprocessed_associations, how="left", on="obs_id")
         observations_mask = (analyis_projected_observations["obj_id"].isin([orbit.ids[0]]))
@@ -90,7 +90,7 @@ def test_clusterAndLink():
             orbit,
             cell_area=0.1,
             backend="PYOORB",
-            threads=1
+            num_jobs=1
         )
         analyis_projected_observations = projected_observations.merge(preprocessed_associations, how="left", on="obs_id")
         observations_mask = (analyis_projected_observations["obj_id"].isin([orbit.ids[0]]))
@@ -104,7 +104,7 @@ def test_clusterAndLink():
             min_samples=5,
             min_arc_length=1.0,
             identify_subsets=False,
-            threads=1,
+            num_jobs=1,
         )
         analyis_cluster_members = cluster_members.merge(preprocessed_associations, how="left", on="obs_id")
 

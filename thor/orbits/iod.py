@@ -20,7 +20,7 @@ from .gauss import gaussIOD
 from .residuals import calcResiduals
 
 USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
+NUM_JOBS = Config.NUM_JOBS
 
 logger = logging.getLogger(__name__)
 
@@ -367,7 +367,7 @@ def iod(
         ephemeris = backend.generateEphemeris(
             iod_orbits,
             observers,
-            threads=1,
+            num_jobs=1,
         )
 
         # For each unique initial orbit calculate residuals and chi-squared
@@ -529,7 +529,7 @@ def initialOrbitDetermination(
         light_time=True,
         linkage_id_col="cluster_id",
         identify_subsets=True,
-        threads=NUM_THREADS,
+        num_jobs=NUM_JOBS,
         chunk_size=1,
         backend="PYOORB",
         backend_kwargs={}
@@ -579,8 +579,8 @@ def initialOrbitDetermination(
         Correct preliminary orbit for light travel time.
     linkage_id_col : str, optional
         Name of linkage_id column in the linkage_members dataframe.
-    threads : int, optional
-        Number of threads to use for multiprocessing. Applies only when ray is not enabled.
+    num_jobs : int, optional
+        Number of num_jobs to use for multiprocessing. Applies only when ray is not enabled.
     chunk_size : int, optional
         Maximum number of linkages to distribute to each available thread or ray worker.
     backend : {'MJOLNIR', 'PYOORB'}, optional
@@ -623,12 +623,12 @@ def initialOrbitDetermination(
 
     if len(observations) > 0 and len(linkage_members) > 0:
 
-        if threads > 1:
+        if num_jobs > 1:
             if USE_RAY and not ray.is_initialized():
                 ray.init(address="auto")
             else:
                 p = mp.Pool(
-                    processes=threads,
+                    processes=num_jobs,
                     initializer=_init_worker,
                 )
 
@@ -655,7 +655,7 @@ def initialOrbitDetermination(
         duration = time.time() - start
         logger.debug(f"Grouping and splitting completed in {duration:.3f}s.")
 
-        if threads > 1:
+        if num_jobs > 1:
 
             num_linkages = linkage_members[linkage_id_col].nunique()
 
@@ -695,8 +695,8 @@ def initialOrbitDetermination(
                 iod_orbit_members_dfs = ray.get(iod_orbit_members_oids)
 
             else:
-                chunk_size_ = calcChunkSize(num_linkages, threads, chunk_size, min_chunk_size=1)
-                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {threads} workers.")
+                chunk_size_ = calcChunkSize(num_linkages, num_jobs, chunk_size, min_chunk_size=1)
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_jobs} workers.")
 
                 results = p.starmap(
                     partial(

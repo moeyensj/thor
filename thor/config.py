@@ -26,14 +26,14 @@ class Config:
     CONTAMINATION_PERCENTAGE = 20
     BACKEND = "PYOORB"
     BACKEND_KWARGS = {}
-    NUM_THREADS = 60
+    NUM_JOBS = 60
 
     USE_RAY = False
     USE_GPU = False
 
     RANGE_SHIFT_CONFIG = {
         "cell_area" : 1000,
-        "threads" : NUM_THREADS,
+        "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
     }
@@ -48,7 +48,7 @@ class Config:
         "eps" : 5/3600,
         "min_samples" : MIN_OBS,
         "min_arc_length" : MIN_ARC_LENGTH,
-        "threads" : NUM_THREADS,
+        "num_jobs" : NUM_JOBS,
         "alg" : "dbscan"
     }
 
@@ -62,7 +62,7 @@ class Config:
         "light_time" : True,
         "linkage_id_col" : "cluster_id",
         "identify_subsets" : True,
-        "threads" : NUM_THREADS,
+        "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
     }
@@ -77,7 +77,7 @@ class Config:
         "method" : "central",
         "fit_epoch" : False,
         "test_orbit" : None,
-        "threads" : NUM_THREADS,
+        "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
     }
@@ -94,7 +94,7 @@ class Config:
         "fit_epoch" : False,
         "orbits_chunk_size" : 1,
         "observations_chunk_size" : 100000,
-        "threads" : NUM_THREADS,
+        "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
     }

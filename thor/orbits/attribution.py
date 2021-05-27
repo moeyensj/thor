@@ -21,7 +21,7 @@ from .residuals import calcResiduals
 from .od import differentialCorrection
 
 USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
+NUM_JOBS = Config.NUM_JOBS
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def attribution_worker(
         observers,
         backend=backend,
         backend_kwargs=backend_kwargs,
-        threads=1,
+        num_jobs=1,
         chunk_size=1
     )
 
@@ -172,7 +172,7 @@ def attributeObservations(
         include_probabilistic=True,
         orbits_chunk_size=10,
         observations_chunk_size=100000,
-        threads=NUM_THREADS,
+        num_jobs=NUM_JOBS,
         backend="PYOORB",
         backend_kwargs={}
     ):
@@ -182,7 +182,7 @@ def attributeObservations(
     num_orbits = len(orbits)
 
     attribution_dfs = []
-    if threads > 1:
+    if num_jobs > 1:
         if USE_RAY:
             if not ray.is_initialized():
                 ray.init(address="auto")
@@ -220,10 +220,10 @@ def attributeObservations(
                 attribution_dfs += attribution_dfs_i
         else:
             p = mp.Pool(
-                processes=threads,
+                processes=num_jobs,
                 initializer=_init_worker,
             )
-            num_workers = threads
+            num_workers = num_jobs
 
             # Send up to orbits_chunk_size orbits to each OD worker for processing
             chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
@@ -292,7 +292,7 @@ def mergeAndExtendOrbits(
         fit_epoch=False,
         orbits_chunk_size=10,
         observations_chunk_size=100000,
-        threads=60,
+        num_jobs=60,
         backend="PYOORB",
         backend_kwargs={}
     ):
@@ -337,7 +337,7 @@ def mergeAndExtendOrbits(
                 observations_iter,
                 eps=eps,
                 include_probabilistic=True,
-                threads=threads,
+                num_jobs=num_jobs,
                 orbits_chunk_size=orbits_chunk_size,
                 observations_chunk_size=observations_chunk_size,
                 backend=backend,
@@ -407,7 +407,7 @@ def mergeAndExtendOrbits(
                 delta=delta,
                 method=method,
                 max_iter=max_iter,
-                threads=threads,
+                num_jobs=num_jobs,
                 chunk_size=orbits_chunk_size,
                 fit_epoch=False,
                 backend=backend,

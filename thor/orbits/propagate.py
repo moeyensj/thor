@@ -15,7 +15,7 @@ def propagateOrbits(
         t1,
         backend="MJOLNIR",
         backend_kwargs={},
-        threads=Config.NUM_THREADS,
+        num_jobs=Config.NUM_JOBS,
         chunk_size=1
     ):
     """
@@ -63,7 +63,7 @@ def propagateOrbits(
     propagated = backend.propagateOrbits(
         orbits,
         t1,
-        threads=threads,
+        num_jobs=num_jobs,
         chunk_size=chunk_size
     )
     return propagated

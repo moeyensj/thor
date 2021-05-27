@@ -22,7 +22,7 @@ from .orbits import Orbits
 from .residuals import calcResiduals
 
 USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
+NUM_JOBS = Config.NUM_JOBS
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -180,7 +180,7 @@ def od(
             orbit_prev_,
             observers,
             test_orbit=test_orbit,
-            threads=1
+            num_jobs=1
         )
         residuals_prev_, stats_prev_ = calcResiduals(
             coords,
@@ -252,7 +252,7 @@ def od(
             orbit_prev,
             observers,
             test_orbit=test_orbit,
-            threads=1
+            num_jobs=1
         )
         coords_nom = ephemeris_nom[observables].values[ids_mask]
 
@@ -291,7 +291,7 @@ def od(
                 orbit_iter_p,
                 observers,
                 test_orbit=test_orbit,
-                threads=1
+                num_jobs=1
             )
             coords_mod_p = ephemeris_mod_p[observables].values
 
@@ -310,7 +310,7 @@ def od(
                     orbit_iter_n,
                     observers,
                     test_orbit=test_orbit,
-                    threads=1
+                    num_jobs=1
                 )
                 coords_mod_n = ephemeris_mod_n[observables].values
 
@@ -421,7 +421,7 @@ def od(
             orbit_iter,
             observers,
             test_orbit=test_orbit,
-            threads=1
+            num_jobs=1
         )
         coords_iter = ephemeris_iter[observables].values
 
@@ -592,7 +592,7 @@ def differentialCorrection(
         method="central",
         fit_epoch=False,
         test_orbit=None,
-        threads=60,
+        num_jobs=60,
         chunk_size=10,
         backend="PYOORB",
         backend_kwargs={}
@@ -635,7 +635,7 @@ def differentialCorrection(
         orbits_split = orbits_initial.split(1)
         num_orbits = len(orbits)
 
-        if threads > 1:
+        if num_jobs > 1:
 
             if USE_RAY:
                 if not ray.is_initialized():
@@ -678,11 +678,11 @@ def differentialCorrection(
                 od_orbit_members_dfs = ray.get(od_orbit_members_oids)
 
             else:
-                chunk_size_ = calcChunkSize(num_orbits, threads, chunk_size, min_chunk_size=1)
-                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {threads} workers.")
+                chunk_size_ = calcChunkSize(num_orbits, num_jobs, chunk_size, min_chunk_size=1)
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_jobs} workers.")
 
                 p = mp.Pool(
-                    processes=threads,
+                    processes=num_jobs,
                     initializer=_init_worker,
                 )
                 results = p.starmap(
