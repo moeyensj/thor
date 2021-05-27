@@ -11,7 +11,8 @@ from functools import partial
 from astropy.time import Time
 
 from ..config import Config
-from ..utils import setupLogger
+from ..utils import yieldChunks
+from ..utils import calcChunkSize
 from ..utils import verifyLinkages
 from ..utils import sortLinkages
 from ..backend import _init_worker
@@ -35,8 +36,8 @@ __all__ = [
 ]
 
 def od_worker(
-        orbit,
-        observations,
+        orbits_list,
+        observations_list,
         rchi2_threshold=100,
         min_obs=5,
         min_arc_length=1.0,
@@ -49,38 +50,53 @@ def od_worker(
         backend="PYOORB",
         backend_kwargs={},
     ):
-    try:
-        assert orbit.ids[0] == observations["orbit_id"].unique()[0]
-        assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
-        assert len(np.unique(observations["mjd_utc"].values)) == len(observations["mjd_utc"].values)
-    except:
-        err = (
-            "Invalid observations and orbit have been passed to the OD code.\n"
-            "Orbit ID: {}".format(orbit.ids[0])
-        )
-        raise ValueError(err)
+    od_orbits_dfs = []
+    od_orbit_members_dfs = []
+    for orbit, observations in zip(orbits_list, observations_list):
+        try:
+            assert orbit.ids[0] == observations["orbit_id"].unique()[0]
+            assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
+            assert len(np.unique(observations["mjd_utc"].values)) == len(observations["mjd_utc"].values)
+        except:
+            err = (
+                "Invalid observations and orbit have been passed to the OD code.\n"
+                "Orbit ID: {}".format(orbit.ids[0])
+            )
+            raise ValueError(err)
 
-    time_start = time.time()
-    logger.debug(f"Differentially correcting orbit {orbit.ids[0]}...")
-    od_orbit, od_orbit_members = od(
-        orbit,
-        observations,
-        rchi2_threshold=rchi2_threshold,
-        min_obs=min_obs,
-        min_arc_length=min_arc_length,
-        contamination_percentage=contamination_percentage,
-        delta=delta,
-        max_iter=max_iter,
-        method=method,
-        fit_epoch=fit_epoch,
-        test_orbit=test_orbit,
-        backend=backend,
-        backend_kwargs=backend_kwargs,
+        time_start = time.time()
+        logger.debug(f"Differentially correcting orbit {orbit.ids[0]}...")
+        od_orbit, od_orbit_members = od(
+            orbit,
+            observations,
+            rchi2_threshold=rchi2_threshold,
+            min_obs=min_obs,
+            min_arc_length=min_arc_length,
+            contamination_percentage=contamination_percentage,
+            delta=delta,
+            max_iter=max_iter,
+            method=method,
+            fit_epoch=fit_epoch,
+            test_orbit=test_orbit,
+            backend=backend,
+            backend_kwargs=backend_kwargs,
+        )
+        time_end = time.time()
+        duration = time_end - time_start
+        logger.debug(f"OD for orbit {orbit.ids[0]} completed in {duration:.3f}s.")
+
+        od_orbits_dfs.append(od_orbit)
+        od_orbit_members_dfs.append(od_orbit_members)
+
+    od_orbits = pd.concat(
+        od_orbits_dfs,
+        ignore_index=True
     )
-    time_end = time.time()
-    duration = time_end - time_start
-    logger.debug(f"OD for orbit {orbit.ids[0]} completed in {duration:.3f}s.")
-    return od_orbit, od_orbit_members
+    od_orbit_members = pd.concat(
+        od_orbit_members_dfs,
+        ignore_index=True
+    )
+    return od_orbits, od_orbit_members
 
 if USE_RAY:
     import ray
@@ -577,6 +593,7 @@ def differentialCorrection(
         fit_epoch=False,
         test_orbit=None,
         threads=60,
+        chunk_size=10,
         backend="PYOORB",
         backend_kwargs={}
     ):
@@ -585,6 +602,8 @@ def differentialCorrection(
 
     Parameters
     ----------
+    chunk_size : int, optional
+        Maximum number of linkages to distribute to each available thread or ray worker.
     """
     logger.info("Running differential correction...")
 
@@ -614,6 +633,7 @@ def differentialCorrection(
 
         orbits_initial = Orbits.from_df(orbits_)
         orbits_split = orbits_initial.split(1)
+        num_orbits = len(orbits)
 
         if threads > 1:
 
@@ -621,9 +641,20 @@ def differentialCorrection(
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
+                # Determine the number of orbits to send to each CPU in the ray cluster
+                # Each separate remote function has an associated overhead,
+                # so for processes that take ~1ms it is often best performance-wise
+                # to bunch these tasks so that they will take longer. Doing so
+                # reduces the effect of overhead on total run time.
+                num_workers = int(ray.cluster_resources()["CPU"])
+
+                # Send up to chunk_size orbits to each OD worker for processing
+                chunk_size_ = calcChunkSize(num_orbits, num_workers, chunk_size, min_chunk_size=1)
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers.")
+
                 od_orbits_oids = []
                 od_orbit_members_oids = []
-                for orbits_i, observations_i in zip(orbits_split, observations_split):
+                for orbits_i, observations_i in zip(yieldChunks(orbits_split, chunk_size_), yieldChunks(observations_split, chunk_size_)):
 
                     od_orbits_oid, od_orbit_members_oid = od_worker.remote(
                         orbits_i,
@@ -647,11 +678,13 @@ def differentialCorrection(
                 od_orbit_members_dfs = ray.get(od_orbit_members_oids)
 
             else:
+                chunk_size_ = calcChunkSize(num_orbits, threads, chunk_size, min_chunk_size=1)
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {threads} workers.")
+
                 p = mp.Pool(
                     processes=threads,
                     initializer=_init_worker,
                 )
-
                 results = p.starmap(
                     partial(
                         od_worker,
@@ -668,8 +701,8 @@ def differentialCorrection(
                         backend_kwargs=backend_kwargs,
                     ),
                     zip(
-                        orbits_split,
-                        observations_split,
+                        yieldChunks(orbits_split, chunk_size_),
+                        yieldChunks(observations_split, chunk_size_)
                     )
                 )
                 p.close()
@@ -682,7 +715,7 @@ def differentialCorrection(
 
             od_orbits_dfs = []
             od_orbit_members_dfs = []
-            for i, (orbits_i, observations_i) in enumerate(zip(orbits_split, observations_split)):
+            for orbits_i, observations_i in zip(yieldChunks(orbits_split, chunk_size), yieldChunks(observations_split, chunk_size)):
 
                 od_orbits_df, od_orbit_members_df = od_worker(
                     orbits_i,
@@ -702,16 +735,13 @@ def differentialCorrection(
                 od_orbits_dfs.append(od_orbits_df)
                 od_orbit_members_dfs.append(od_orbit_members_df)
 
-        od_orbits = pd.concat(od_orbits_dfs)
-        od_orbits.reset_index(
-            inplace=True,
-            drop=True
+        od_orbits = pd.concat(
+            od_orbits_dfs,
+            ignore_index=True
         )
-
-        od_orbit_members = pd.concat(od_orbit_members_dfs)
-        od_orbit_members.reset_index(
-            inplace=True,
-            drop=True
+        od_orbit_members = pd.concat(
+            od_orbit_members_dfs,
+            ignore_index=True
         )
 
         for col in ["num_obs"]:
