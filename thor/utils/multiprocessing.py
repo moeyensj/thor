@@ -1,29 +1,39 @@
 import numpy as np
+import pandas as pd
 
 __all__ = [
     "yieldChunks",
     "calcChunkSize"
 ]
 
-def yieldChunks(l, chunk_size):
+def yieldChunks(indexable, chunk_size):
     """
     Generator that yields chunks of size chunk_size.
 
     Parameters
     ----------
-    l : list (N)
-        List or list-like object that needs to be divided into
-        chunks
+    indexable : list, `~numpy.ndarray`, `~pandas.DataFrame`, `~pandas.Series` (N)
+        Indexable object that needs to be divided into
+        chunks.
     chunk_size : int
         Size of each chunk.
 
     Yields
     ------
-    chunk : list (<=chunk_size)
-        Chunk of input list
+    chunk : indexable (<=chunk_size)
+        Chunks of indexable
     """
-    for c in range(0, len(l), chunk_size):
-        yield l[c : c + chunk_size]
+    if isinstance(indexable, list) or isinstance(indexable, np.ndarray):
+        for c in range(0, len(indexable), chunk_size):
+            yield indexable[c : c + chunk_size]
+    elif isinstance(indexable, pd.DataFrame) or isinstance(indexable, pd.Series):
+        for c in range(0, len(indexable), chunk_size):
+            yield indexable.iloc[c : c + chunk_size]
+    else:
+        err = (
+            "Indexable should be one of {list, `~numpy.ndarray`, `~pandas.DataFrame`, `~pandas.Series`}"
+        )
+        raise ValueError(err)
 
 def calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=1):
     """
