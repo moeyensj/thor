@@ -1,10 +1,27 @@
+import signal
 import numpy as np
 import pandas as pd
 
 __all__ = [
+    "Timeout",
     "yieldChunks",
-    "calcChunkSize"
+    "calcChunkSize",
+    "_initWorker",
+    "_checkParallelBackend"
 ]
+
+class Timeout:
+    ### Taken from https://stackoverflow.com/a/22348885
+    def __init__(self, seconds=30, error_message='Timeout'):
+        self.seconds = seconds
+        self.error_message = error_message
+    def handle_timeout(self, signum, frame):
+        raise TimeoutError(self.error_message)
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.seconds)
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
 
 def yieldChunks(indexable, chunk_size):
     """
@@ -64,3 +81,32 @@ def calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=1):
     # Make sure this number does not exceed the maximum chunk size
     chunk_size = np.minimum(c, max_chunk_size)
     return chunk_size
+
+def _initWorker():
+    """
+    Tell multiprocessing worker to ignore signals, will only
+    listen to parent process.
+    """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    return
+
+def _checkParallelBackend(backend):
+    """
+    Check if backend is a supported parallelization backend.
+
+    Parameters
+    ----------
+    backend : str
+        Name of backend. Should be one of {'ray', 'mp'}.
+
+    Raises
+    ------
+    ValueError : If backend is not one of {'ray', 'mp'}.
+    """
+    backends = ["ray", "mp"]
+    if backend not in backends:
+        err = (
+            "parallel_backend should be one of {'ray', 'mp'}"
+        )
+        raise ValueError(err)
+    return
