@@ -1,8 +1,9 @@
 import numba
 import numpy as np
 
-from .config import Config
-USE_GPU = Config.USE_GPU
+# Disable GPU until the GPU-accelerated clustering codes
+# are better tested and implemented
+USE_GPU = False
 
 if USE_GPU:
     import cudf
@@ -197,7 +198,7 @@ def _hotspot_multilabel(points, eps, min_samples):
     return final_labels
 
 
-@numba.njit(parallel=True)
+@numba.njit(parallel=False)
 def _adjust_labels(labels, new_minimum):
     """
     Given a bunch of integer labels, adjust the labels to start at new_minimum.
@@ -248,7 +249,7 @@ def _make_points_nonzero(points):
     return points - points.min()
 
 
-@numba.njit(parallel=True)
+@numba.njit(parallel=False)
 def _quantize_points(points, eps):
     """Quantize points to be scaled in units of eps."""
     return (points / eps).astype(np.int32)
