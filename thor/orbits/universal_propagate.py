@@ -22,7 +22,7 @@ __all__ = [
 MU = c.MU
 
 
-@jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True)
+@jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
 def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate universal anomaly chi using Newton-Raphson.
@@ -82,7 +82,7 @@ def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
 
     return chi
 
-@jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True, cache=True)
 def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     Propagate orbits using the universal anomaly formalism.

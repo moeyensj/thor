@@ -16,7 +16,7 @@ __all__ = ["_convertCartesianToKeplerian",
 
 MU = c.MU
 
-@jit(["f8[:,:](f8[:,:], f8)"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8)"], nopython=True, cache=True)
 def _convertCartesianToKeplerian(elements_cart, mu=MU):
     """
     Convert cartesian orbital elements to Keplerian orbital elements.
@@ -103,7 +103,7 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
 
     return np.array(elements_kepler)
 
-@jit(["f8[:,:](f8[:,:], f8, i8, f8)"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8, i8, f8)"], nopython=True, cache=True)
 def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15):
     """
     Convert Keplerian orbital elements to cartesian orbital elements.

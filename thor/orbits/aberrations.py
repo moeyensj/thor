@@ -19,7 +19,7 @@ __all__ = [
 MU = c.MU
 C = c.C
 
-@jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True)
+@jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True, cache=True)
 def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
     """
     When generating ephemeris, orbits need to be backwards propagated to the time
@@ -90,7 +90,7 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
 
     return corrected_orbits, lts
 
-@jit(["f8[:,:](f8[:,:], f8[:,:])"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8[:,:])"], nopython=True, cache=True)
 def addStellarAberration(orbits, observer_states):
     """
     The motion of the observer in an inertial frame will cause an object
