@@ -1,7 +1,6 @@
 import os
 import time
 import copy
-import uuid
 import logging
 import numpy as np
 import pandas as pd
@@ -10,19 +9,16 @@ from scipy.linalg import solve
 from functools import partial
 from astropy.time import Time
 
-from ..config import Config
+from ..utils import _initWorker
+from ..utils import _checkParallel
 from ..utils import yieldChunks
 from ..utils import calcChunkSize
 from ..utils import verifyLinkages
 from ..utils import sortLinkages
-from ..backend import _init_worker
 from ..backend import PYOORB
 from ..backend import MJOLNIR
 from .orbits import Orbits
 from .residuals import calcResiduals
-
-USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -97,11 +93,6 @@ def od_worker(
         ignore_index=True
     )
     return od_orbits, od_orbit_members
-
-if USE_RAY:
-    import ray
-    od_worker = ray.remote(od_worker)
-    od_worker = od_worker.options(num_returns=2)
 
 def od(
         orbit,
@@ -180,7 +171,7 @@ def od(
             orbit_prev_,
             observers,
             test_orbit=test_orbit,
-            threads=1
+            num_jobs=1
         )
         residuals_prev_, stats_prev_ = calcResiduals(
             coords,
@@ -252,7 +243,7 @@ def od(
             orbit_prev,
             observers,
             test_orbit=test_orbit,
-            threads=1
+            num_jobs=1
         )
         coords_nom = ephemeris_nom[observables].values[ids_mask]
 
@@ -291,7 +282,7 @@ def od(
                 orbit_iter_p,
                 observers,
                 test_orbit=test_orbit,
-                threads=1
+                num_jobs=1
             )
             coords_mod_p = ephemeris_mod_p[observables].values
 
@@ -310,7 +301,7 @@ def od(
                     orbit_iter_n,
                     observers,
                     test_orbit=test_orbit,
-                    threads=1
+                    num_jobs=1
                 )
                 coords_mod_n = ephemeris_mod_n[observables].values
 
@@ -421,7 +412,7 @@ def od(
             orbit_iter,
             observers,
             test_orbit=test_orbit,
-            threads=1
+            num_jobs=1
         )
         coords_iter = ephemeris_iter[observables].values
 
@@ -592,10 +583,11 @@ def differentialCorrection(
         method="central",
         fit_epoch=False,
         test_orbit=None,
-        threads=60,
-        chunk_size=10,
         backend="PYOORB",
-        backend_kwargs={}
+        backend_kwargs={},
+        chunk_size=10,
+        num_jobs=60,
+        parallel_backend="mp"
     ):
     """
     Differentially correct (via finite/central differencing).
@@ -603,7 +595,12 @@ def differentialCorrection(
     Parameters
     ----------
     chunk_size : int, optional
-        Maximum number of linkages to distribute to each available thread or ray worker.
+        Number of orbits to send to each job.
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
     """
     logger.info("Running differential correction...")
 
@@ -635,18 +632,20 @@ def differentialCorrection(
         orbits_split = orbits_initial.split(1)
         num_orbits = len(orbits)
 
-        if threads > 1:
 
-            if USE_RAY:
+        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+        if num_workers > 1:
+
+            if parallel_backend == "ray":
+                import ray
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
-                # Determine the number of orbits to send to each CPU in the ray cluster
-                # Each separate remote function has an associated overhead,
-                # so for processes that take ~1ms it is often best performance-wise
-                # to bunch these tasks so that they will take longer. Doing so
-                # reduces the effect of overhead on total run time.
-                num_workers = int(ray.cluster_resources()["CPU"])
+                od_worker_ray = ray.remote(od_worker)
+                od_worker_ray = od_worker_ray.options(
+                    num_returns=2,
+                    num_cpus=1
+                )
 
                 # Send up to chunk_size orbits to each OD worker for processing
                 chunk_size_ = calcChunkSize(num_orbits, num_workers, chunk_size, min_chunk_size=1)
@@ -663,7 +662,7 @@ def differentialCorrection(
                 od_orbit_members_oids = []
                 for orbits_oid, observations_oid in zip(orbit_oids, observation_oids):
 
-                    od_orbits_oid, od_orbit_members_oid = od_worker.remote(
+                    od_orbits_oid, od_orbit_members_oid = od_worker_ray.remote(
                         orbits_oid,
                         observations_oid,
                         rchi2_threshold=rchi2_threshold,
@@ -684,13 +683,14 @@ def differentialCorrection(
                 od_orbits_dfs = ray.get(od_orbits_oids)
                 od_orbit_members_dfs = ray.get(od_orbit_members_oids)
 
-            else:
-                chunk_size_ = calcChunkSize(num_orbits, threads, chunk_size, min_chunk_size=1)
-                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {threads} workers.")
+            else: # parallel_backend == "mp"
+
+                chunk_size_ = calcChunkSize(num_orbits, num_workers, chunk_size, min_chunk_size=1)
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} workers.")
 
                 p = mp.Pool(
-                    processes=threads,
-                    initializer=_init_worker,
+                    processes=num_workers,
+                    initializer=_initWorker,
                 )
                 results = p.starmap(
                     partial(

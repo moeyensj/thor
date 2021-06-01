@@ -1,8 +1,6 @@
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
-from ..config import Config
 from .helpers import _setAxes
 
 __all__ = ["plotCell"]
@@ -10,8 +8,7 @@ __all__ = ["plotCell"]
 def plotCell(
         cell,
         coordinate_system="equatorial_angular",
-        scatter_kwargs={"s":0.05},
-        column_mapping=Config.COLUMN_MAPPING
+        scatter_kwargs={"s":0.05}
     ):
     """
     Plot cell. Needs cell's observations to be loaded.
@@ -26,9 +23,6 @@ def plotCell(
     scatter_kwargs : dict, optional
         Dictionary of additional keyword arguments to pass to ax.scatter.
         [Default = {'s': 0.05}]
-    column_mapping : dict, optional
-        Column name mapping of observations to internally used column names.
-        [Default = `~thor.Config.COLUMN_MAPPING`]
 
     Returns
     -------
@@ -43,11 +37,11 @@ def plotCell(
     ax.set_aspect("equal")
 
     if coordinate_system == "equatorial_angular":
-        x = cell.observations[column_mapping["RA_deg"]].values,
-        y = cell.observations[column_mapping["Dec_deg"]].values
+        x = cell.observations["RA_deg"].values,
+        y = cell.observations["Dec_deg"].values
     elif coordinate_system == "ecliptic_angular":
-        x = cell.observations[column_mapping["lon_deg"]].values,
-        y = cell.observations[column_mapping["lat_deg"]].values
+        x = cell.observations["lon_deg"].values,
+        y = cell.observations["lat_deg"].values
     else:
         raise ValueError("coordinate_system should be one of 'equatorial_angular' or 'ecliptic_angular'")
 

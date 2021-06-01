@@ -289,7 +289,7 @@ def createTestDataset(
         orbits,
         observers,
         backend="PYOORB",
-        threads=1
+        num_jobs=1
     )
     observations = ephemeris.sort_values(
         by=["mjd_utc", "observatory_code"],

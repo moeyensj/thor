@@ -7,8 +7,8 @@ from astropy.time import Time
 from functools import partial
 from sklearn.neighbors import BallTree
 
-from ..config import Config
-from ..backend import _init_worker
+from ..utils import _initWorker
+from ..utils import _checkParallel
 from ..utils import yieldChunks
 from ..utils import calcChunkSize
 from ..utils import verifyLinkages
@@ -19,9 +19,6 @@ from .orbits import Orbits
 from .ephemeris import generateEphemeris
 from .residuals import calcResiduals
 from .od import differentialCorrection
-
-USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +52,7 @@ def attribution_worker(
         observers,
         backend=backend,
         backend_kwargs=backend_kwargs,
-        threads=1,
+        num_jobs=1,
         chunk_size=1
     )
 
@@ -161,20 +158,17 @@ def attribution_worker(
 
     return attributions
 
-if USE_RAY:
-    import ray
-    attribution_worker = ray.remote(attribution_worker)
-
 def attributeObservations(
         orbits,
         observations,
         eps=5/3600,
         include_probabilistic=True,
+        backend="PYOORB",
+        backend_kwargs={},
         orbits_chunk_size=10,
         observations_chunk_size=100000,
-        threads=NUM_THREADS,
-        backend="PYOORB",
-        backend_kwargs={}
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     logger.info("Running observation attribution...")
     time_start = time.time()
@@ -182,17 +176,20 @@ def attributeObservations(
     num_orbits = len(orbits)
 
     attribution_dfs = []
-    if threads > 1:
-        if USE_RAY:
+
+    parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+    if num_workers > 1:
+
+        if parallel_backend == "ray":
+            import ray
             if not ray.is_initialized():
                 ray.init(address="auto")
 
-            # Determine the number of orbits to send to each CPU in the ray cluster
-            # Each separate remote function has an associated overhead,
-            # so for processes that take ~1ms it is often best performance-wise
-            # to bunch these tasks so that they will take longer. Doing so
-            # reduces the effect of overhead on total run time.
-            num_workers = int(ray.cluster_resources()["CPU"])
+            attribution_worker_ray = ray.remote(attribution_worker)
+            attribution_worker_ray = attribution_worker_ray.options(
+                num_returns=1,
+                num_cpus=1
+            )
 
             # Send up to orbits_chunk_size orbits to each OD worker for processing
             chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
@@ -206,7 +203,7 @@ def attributeObservations(
             for obs_oid in obs_oids:
                 for orbit_i in orbits_split:
                     p.append(
-                        attribution_worker.remote(
+                        attribution_worker_ray.remote(
                             orbit_i,
                             obs_oid,
                             eps=eps,
@@ -218,12 +215,12 @@ def attributeObservations(
 
                 attribution_dfs_i = ray.get(p)
                 attribution_dfs += attribution_dfs_i
-        else:
+
+        else: # parallel_backend == "mp"
             p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
+                processes=num_workers,
+                initializer=_initWorker,
             )
-            num_workers = threads
 
             # Send up to orbits_chunk_size orbits to each OD worker for processing
             chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
@@ -290,11 +287,12 @@ def mergeAndExtendOrbits(
         max_iter=20,
         method="central",
         fit_epoch=False,
+        backend="PYOORB",
+        backend_kwargs={},
         orbits_chunk_size=10,
         observations_chunk_size=100000,
-        threads=60,
-        backend="PYOORB",
-        backend_kwargs={}
+        num_jobs=60,
+        parallel_backend="mp"
     ):
     """
     Attempt to extend an orbit's observational arc by running
@@ -305,14 +303,18 @@ def mergeAndExtendOrbits(
 
     Parameters
     ----------
-
-
-
-
+    orbit_chunk_size : int, optional
+        Number of orbits to send to each job.
+    observations_chunk_size : int, optional
+        Number of observations to process per batch.
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
     """
-    logger.info("Running orbit extension and merging...")
-
     time_start = time.time()
+    logger.info("Running orbit extension and merging...")
 
     orbits_iter, orbit_members_iter = verifyLinkages(
         orbits,
@@ -337,11 +339,12 @@ def mergeAndExtendOrbits(
                 observations_iter,
                 eps=eps,
                 include_probabilistic=True,
-                threads=threads,
-                orbits_chunk_size=orbits_chunk_size,
-                observations_chunk_size=observations_chunk_size,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
+                orbits_chunk_size=orbits_chunk_size,
+                observations_chunk_size=observations_chunk_size,
+                num_jobs=num_jobs,
+                parallel_backend=parallel_backend
             )
 
             assert np.all(np.isin(orbit_members_iter["obs_id"].unique(), observations_iter["obs_id"].unique()))
@@ -407,11 +410,12 @@ def mergeAndExtendOrbits(
                 delta=delta,
                 method=method,
                 max_iter=max_iter,
-                threads=threads,
-                chunk_size=orbits_chunk_size,
                 fit_epoch=False,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
+                chunk_size=orbits_chunk_size,
+                num_jobs=num_jobs,
+                parallel_backend=parallel_backend
             )
             orbit_members_iter = orbit_members_iter[orbit_members_iter["outlier"] == 0]
             orbit_members_iter.reset_index(

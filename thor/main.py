@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import uuid
 import yaml
@@ -12,21 +11,18 @@ from functools import partial
 from astropy.time import Time
 
 from .config import Config
-from .clusters import USE_GPU, find_clusters, filter_clusters_by_length
+from .config import Configuration
+from .clusters import find_clusters, filter_clusters_by_length
 from .cell import Cell
 from .orbit import TestOrbit
 from .orbits import Orbits
-from .observatories import getObserverState
 from .orbits import generateEphemeris
 from .orbits import initialOrbitDetermination
 from .orbits import differentialCorrection
 from .orbits import mergeAndExtendOrbits
-from .backend import _init_worker
-from .utils import identifySubsetLinkages
-
-USE_RAY = Config.USE_RAY
-USE_GPU = Config.USE_GPU
-NUM_THREADS = Config.NUM_THREADS
+from .observatories import getObserverState
+from .utils import _initWorker
+from .utils import _checkParallel
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
@@ -92,7 +88,7 @@ def clusterVelocity(
         vx,
         vy,
         eps=0.005,
-        min_samples=5,
+        min_obs=5,
         min_arc_length=1.0,
         alg="hotspot_2d",
     ):
@@ -118,7 +114,7 @@ def clusterVelocity(
         as in the same neighborhood.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 0.005]
-    min_samples : int, optional
+    min_obs : int, optional
         The number of samples (or total weight) in a neighborhood for a
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -138,9 +134,9 @@ def clusterVelocity(
 
     X = np.stack((xx, yy), 1)
 
-    clusters = find_clusters(X, eps, min_samples, alg=alg)
+    clusters = find_clusters(X, eps, min_obs, alg=alg)
     clusters = filter_clusters_by_length(
-        clusters, dt, min_samples, min_arc_length,
+        clusters, dt, min_obs, min_arc_length,
     )
 
     cluster_ids = []
@@ -161,7 +157,7 @@ def clusterVelocity_worker(
         y=None,
         dt=None,
         eps=None,
-        min_samples=None,
+        min_obs=None,
         min_arc_length=None,
         alg=None
     ):
@@ -177,24 +173,20 @@ def clusterVelocity_worker(
         vx,
         vy,
         eps=eps,
-        min_samples=min_samples,
+        min_obs=min_obs,
         min_arc_length=min_arc_length,
         alg=alg
     )
     return cluster_ids
 
-if USE_RAY:
-    import ray
-    rangeAndShift_worker = ray.remote(rangeAndShift_worker)
-    clusterVelocity_worker = ray.remote(clusterVelocity_worker)
-
 def rangeAndShift(
         observations,
         orbit,
         cell_area=10,
-        threads=NUM_THREADS,
         backend="PYOORB",
         backend_kwargs={},
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     """
     Propagate the orbit to all observation times in observations. At each epoch gather a circular region of observations of size cell_area
@@ -224,6 +216,11 @@ def rangeAndShift(
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
         backend.
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
 
     Returns
     -------
@@ -251,7 +248,10 @@ def rangeAndShift(
         orbit,
         observers,
         backend=backend,
-        backend_kwargs=backend_kwargs
+        backend_kwargs=backend_kwargs,
+        chunk_size=1,
+        num_jobs=1,
+        parallel_backend=parallel_backend
     )
     if backend == "FINDORB":
 
@@ -292,16 +292,23 @@ def rangeAndShift(
     ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
     ephemeris_split = [ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups]
 
-    if threads > 1:
-
-        if USE_RAY:
+    parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+    if parallel:
+        if parallel_backend == "ray":
+            import ray
             if not ray.is_initialized():
                 ray.init(address="auto")
+
+            rangeAndShift_worker_ray = ray.remote(rangeAndShift_worker)
+            rangeAndShift_worker_ray = rangeAndShift_worker_ray.options(
+                num_returns=1,
+                num_cpus=1
+            )
 
             p = []
             for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
                 p.append(
-                    rangeAndShift_worker.remote(
+                    rangeAndShift_worker_ray.remote(
                         observations_i,
                         ephemeris_i,
                         cell_area=cell_area
@@ -309,12 +316,11 @@ def rangeAndShift(
                 )
             projected_dfs = ray.get(p)
 
-        else:
+        else: # parallel_backend == "mp"
             p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
+                processes=num_workers,
+                initializer=_initWorker,
             )
-
             projected_dfs = p.starmap(
                 partial(
                     rangeAndShift_worker,
@@ -365,11 +371,11 @@ def clusterAndLink(
         vx_values=None,
         vy_values=None,
         eps=0.005,
-        min_samples=5,
+        min_obs=5,
         min_arc_length=1.0,
-        identify_subsets=False,
-        threads=NUM_THREADS,
-        alg="dbscan"
+        alg="dbscan",
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     """
     Cluster and link correctly projected (after ranging and shifting)
@@ -405,21 +411,23 @@ def clusterAndLink(
         Values of velocities in y at which to cluster
         and link.
         [Default = None]
-    threads : int, optional
-        Number of threads to use.
-        [Default = 12]
     eps : float, optional
         The maximum distance between two samples for them to be considered
         as in the same neighborhood.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 0.005]
-    min_samples : int, optional
+    min_obs : int, optional
         The number of samples (or total weight) in a neighborhood for a
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 5]
     alg: str
         Algorithm to use. Can be "dbscan" or "hotspot_2d".
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
 
     Returns
     -------
@@ -434,7 +442,7 @@ def clusterAndLink(
 
     alg="dbscan" uses the DBSCAN algorithm of Ester et. al. It's relatively slow
     but works with high accuracy; it is certain to find all clusters with at
-    least min_samples points that are separated by at most eps.
+    least min_obs points that are separated by at most eps.
 
     alg="hotspot_2d" is much faster (perhaps 10-20x faster) than dbscan, but it
     may miss some clusters, particularly when points are spaced a distance of 'eps'
@@ -507,14 +515,21 @@ def clusterAndLink(
     else:
         logger.debug("Velocity grid size: {}".format(vx_bins))
     logger.info("Max sample distance: {}".format(eps))
-    logger.info("Minimum samples: {}".format(min_samples))
+    logger.info("Minimum samples: {}".format(min_obs))
 
     possible_clusters = []
-    if threads > 1 and not USE_GPU:
-
-        if USE_RAY:
+    parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+    if parallel:
+        if parallel_backend == "ray":
+            import ray
             if not ray.is_initialized():
                 ray.init(address="auto")
+
+            clusterVelocity_worker_ray = ray.remote(clusterVelocity_worker)
+            clusterVelocity_worker_ray = clusterVelocity_worker_ray.options(
+                num_returns=1,
+                num_cpus=1
+            )
 
             # Put all arrays (which can be large) in ray's
             # local object store ahead of time
@@ -526,7 +541,7 @@ def clusterAndLink(
             p = []
             for vxi, vyi in zip(vxx, vyy):
                 p.append(
-                    clusterVelocity_worker.remote(
+                    clusterVelocity_worker_ray.remote(
                         vxi,
                         vyi,
                         obs_ids=obs_ids_oid,
@@ -534,16 +549,19 @@ def clusterAndLink(
                         y=theta_y_oid,
                         dt=dt_oid,
                         eps=eps,
-                        min_samples=min_samples,
+                        min_obs=min_obs,
                         min_arc_length=min_arc_length,
                         alg=alg
                     )
                 )
             possible_clusters = ray.get(p)
 
-        else:
+        else: # parallel_backend == "mp"
 
-            p = mp.Pool(threads, _init_worker)
+            p = mp.Pool(
+                processes=num_workers,
+                initializer=_initWorker
+            )
             possible_clusters = p.starmap(
                 partial(
                     clusterVelocity_worker,
@@ -552,13 +570,14 @@ def clusterAndLink(
                     y=theta_y,
                     dt=dt,
                     eps=eps,
-                    min_samples=min_samples,
+                    min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     alg=alg
                 ),
                 zip(vxx, vyy)
             )
             p.close()
+
     else:
         possible_clusters = []
         for vxi, vyi in zip(vxx, vyy):
@@ -571,7 +590,7 @@ def clusterAndLink(
                     vxi,
                     vyi,
                     eps=eps,
-                    min_samples=min_samples,
+                    min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     alg=alg
                 )
@@ -669,16 +688,6 @@ def clusterAndLink(
 
     time_end_restr = time.time()
     logger.info("Restructuring completed in {:.3f} seconds.".format(time_end_restr - time_start_restr))
-
-    if identify_subsets == True:
-        logger.info("Identifying subsets...")
-        clusters, cluster_members = identifySubsetLinkages(
-            clusters,
-            cluster_members,
-            linkage_id_col="cluster_id"
-        )
-        logger.info("Done. {} subset clusters identified.".format(len(clusters[~clusters["subset_of"].isna()])))
-
     logger.info("Found {} clusters.".format(len(clusters)))
     logger.info("Clustering and restructuring completed in {:.3f} seconds.".format(time_end_restr - time_start_cluster))
 
@@ -699,13 +708,14 @@ def runTHOROrbit(
     logger = logging.getLogger("thor")
     logger.setLevel(logging_level)
 
-    RUN_CONFIG = {
-        "RANGE_SHIFT_CONFIG" : range_shift_config,
-        "CLUSTER_LINK_CONFIG" : cluster_link_config,
-        "IOD_CONFIG" : iod_config,
-        "OD_CONFIG" : od_config,
-        "ODP_CONFIG" : odp_config
-    }
+    # Build the configuration class which stores the run parameters
+    config = Configuration(
+        range_shift_config=range_shift_config,
+        cluster_link_config=cluster_link_config,
+        iod_config=iod_config,
+        od_config=od_config,
+        odp_config=odp_config
+    )
     status = {
         "rangeAndShift" : False,
         "clusterAndLink" : False,
@@ -768,10 +778,8 @@ def runTHOROrbit(
             else:
                 logger.info("Previous configuration file found. Comparing settings...")
 
-                config_file_prev = open(config_file, "r")
-                config_prev = yaml.load(config_file_prev, Loader=yaml.FullLoader)
-
-                if config_prev != RUN_CONFIG:
+                config_prev = Configuration.fromYaml(config_file)
+                if config_prev != config:
                     logger.warning("Previous configuration does not match current configuration. Processing will not continue from previous state.")
                 else:
                     config_eq = True
@@ -803,8 +811,7 @@ def runTHOROrbit(
                     logger.info("Previous status file found.")
 
         if save_config:
-            with open(config_file, "w") as config_out:
-                yaml.safe_dump(RUN_CONFIG, config_out)
+            config.toYaml(config_file)
             logger.debug("Saved config.yml.")
 
         if save_orbit:
@@ -1059,20 +1066,33 @@ def runTHOR(
     logger.setLevel(logging_level)
 
     # Connect to ray cluster if enabled
-    if USE_RAY and not ray.is_initialized():
-        ray.init(address="auto")
+    enable_ray = False
+    configs = [
+        range_shift_config,
+        cluster_link_config,
+        iod_config,
+        od_config,
+        odp_config
+    ]
+    for conf in configs:
+        if conf["parallel_backend"] == "ray":
+            enable_ray = True
 
-    # Build the configuration directory which stores
-    # the run parameters
-    RUN_CONFIG = {
-        "RANGE_SHIFT_CONFIG" : range_shift_config,
-        "CLUSTER_LINK_CONFIG" : cluster_link_config,
-        "IOD_CONFIG" : iod_config,
-        "OD_CONFIG" : od_config,
-        "ODP_CONFIG" : odp_config
-    }
+    if enable_ray:
+        import ray
+        if not ray.is_initialized():
+            ray.init(address="auto")
+
+    # Build the configuration class which stores the run parameters
+    config = Configuration(
+        range_shift_config=range_shift_config,
+        cluster_link_config=cluster_link_config,
+        iod_config=iod_config,
+        od_config=od_config,
+        odp_config=odp_config
+    )
+
     orbits_completed = []
-
     continue_ = False
     if_exists_ = if_exists
     if out_dir is not None:
@@ -1117,11 +1137,8 @@ def runTHOR(
             else:
                 logger.info("Previous configuration file found. Comparing settings...")
 
-                config_file_prev = open(config_file, "r")
-                config_prev = yaml.load(config_file_prev, Loader=yaml.FullLoader)
-                config_file_prev.close()
-
-                if config_prev != RUN_CONFIG:
+                config_prev = Configuration.fromYaml(config_file)
+                if config_prev != config:
                     logger.warning("Previous configuration does not match current configuration. Processing will not continue from previous state.")
                     if_exists_ = "erase"
                 else:
@@ -1170,8 +1187,7 @@ def runTHOR(
                 pass
 
         if save_config:
-            with open(config_file, "w") as config_out:
-                yaml.safe_dump(RUN_CONFIG, config_out)
+            config.toYaml(config_file)
             logger.debug("Saved config.yml.")
 
         if save_orbits:

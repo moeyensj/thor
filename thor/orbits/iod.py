@@ -8,19 +8,16 @@ from astropy.time import Time
 from itertools import combinations
 from functools import partial
 
-from ..config import Config
-from ..utils import identifySubsetLinkages
-from ..utils import sortLinkages
+from ..utils import _initWorker
+from ..utils import _checkParallel
 from ..utils import yieldChunks
 from ..utils import calcChunkSize
-from ..backend import _init_worker
+from ..utils import sortLinkages
+from ..utils import identifySubsetLinkages
 from ..backend import MJOLNIR
 from ..backend import PYOORB
 from .gauss import gaussIOD
 from .residuals import calcResiduals
-
-USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +62,6 @@ def selectObservations(
 
     indexes = np.arange(0, len(obs_ids))
     times = observations["mjd_utc"].values
-    selected = np.array([])
 
     if method == "first+middle+last":
         selected_times = np.percentile(times,
@@ -167,11 +163,6 @@ def iod_worker(
         ignore_index=True
     )
     return iod_orbits, iod_orbit_members
-
-if USE_RAY:
-    import ray
-    iod_worker = ray.remote(iod_worker)
-    iod_worker = iod_worker.options(num_returns=2)
 
 def iod(
         observations,
@@ -367,7 +358,7 @@ def iod(
         ephemeris = backend.generateEphemeris(
             iod_orbits,
             observers,
-            threads=1,
+            num_jobs=1,
         )
 
         # For each unique initial orbit calculate residuals and chi-squared
@@ -524,15 +515,16 @@ def initialOrbitDetermination(
         min_arc_length=1.0,
         contamination_percentage=20.0,
         rchi2_threshold=10**3,
-        observation_selection_method='combinations',
+        observation_selection_method="combinations",
         iterate=False,
         light_time=True,
         linkage_id_col="cluster_id",
         identify_subsets=True,
-        threads=NUM_THREADS,
-        chunk_size=10,
         backend="PYOORB",
-        backend_kwargs={}
+        backend_kwargs={},
+        chunk_size=1,
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     """
     Run initial orbit determination on linkages found in observations.
@@ -579,15 +571,18 @@ def initialOrbitDetermination(
         Correct preliminary orbit for light travel time.
     linkage_id_col : str, optional
         Name of linkage_id column in the linkage_members dataframe.
-    threads : int, optional
-        Number of threads to use for multiprocessing. Applies only when ray is not enabled.
-    chunk_size : int, optional
-        Maximum number of linkages to distribute to each available thread or ray worker.
     backend : {'MJOLNIR', 'PYOORB'}, optional
         Which backend to use for ephemeris generation.
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
         backend.
+    chunk_size : int, optional
+        Number of linkages to send to each job.
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
 
     Returns
     -------
@@ -623,15 +618,6 @@ def initialOrbitDetermination(
 
     if len(observations) > 0 and len(linkage_members) > 0:
 
-        if threads > 1:
-            if USE_RAY and not ray.is_initialized():
-                ray.init(address="auto")
-            else:
-                p = mp.Pool(
-                    processes=threads,
-                    initializer=_init_worker,
-                )
-
         iod_orbits_dfs = []
         iod_orbit_members_dfs = []
 
@@ -655,17 +641,24 @@ def initialOrbitDetermination(
         duration = time.time() - start
         logger.debug(f"Grouping and splitting completed in {duration:.3f}s.")
 
-        if threads > 1:
 
+        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+        if parallel:
+
+            # The number of linkages that need to be fit for an initial orbit
             num_linkages = linkage_members[linkage_id_col].nunique()
 
-            if USE_RAY:
-                # Determine the number of linkages to send to each CPU in the ray cluster
-                # Each separate remote function has an associated overhead,
-                # so for processes that take ~1ms it is often best performance-wise
-                # to bunch these tasks so that they will take longer. Doing so
-                # reduces the effect of overhead on total run time.
-                num_workers = int(ray.cluster_resources()["CPU"])
+            if parallel_backend == "ray":
+
+                import ray
+                if not ray.is_initialized():
+                    ray.init(address="auto")
+
+                iod_worker_ray = ray.remote(iod_worker)
+                iod_worker_ray = iod_worker_ray.options(
+                    num_returns=2,
+                    num_cpus=1
+                )
 
                 # Send up to chunk_size linkages to each IOD worker for processing
                 chunk_size_ = calcChunkSize(num_linkages, num_workers, chunk_size, min_chunk_size=1)
@@ -680,7 +673,7 @@ def initialOrbitDetermination(
                 iod_orbit_members_oids = []
                 for observations_oid in observation_oids:
 
-                    iod_orbits_oid, iod_orbit_members_oid = iod_worker.remote(
+                    iod_orbits_oid, iod_orbit_members_oid = iod_worker_ray.remote(
                             observations_oid,
                             observation_selection_method=observation_selection_method,
                             rchi2_threshold=rchi2_threshold,
@@ -699,9 +692,15 @@ def initialOrbitDetermination(
                 iod_orbits_dfs = ray.get(iod_orbits_oids)
                 iod_orbit_members_dfs = ray.get(iod_orbit_members_oids)
 
-            else:
-                chunk_size_ = calcChunkSize(num_linkages, threads, chunk_size, min_chunk_size=1)
-                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {threads} workers.")
+            else: # parallel_backend == "mp"
+
+                chunk_size_ = calcChunkSize(num_linkages, num_workers, chunk_size, min_chunk_size=1)
+                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} workers.")
+
+                p = mp.Pool(
+                    processes=num_workers,
+                    initializer=_initWorker,
+                )
 
                 results = p.starmap(
                     partial(

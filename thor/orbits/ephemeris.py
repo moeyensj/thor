@@ -1,7 +1,5 @@
 import warnings
-import pandas as pd
 
-from ..config import Config
 from ..backend import Backend
 from ..backend import PYOORB
 from ..backend import FINDORB
@@ -17,8 +15,9 @@ def generateEphemeris(
         backend="MJOLNIR",
         backend_kwargs={},
         test_orbit=None,
-        threads=Config.NUM_THREADS,
-        chunk_size=1
+        chunk_size=1,
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     """
     Generate ephemeris for the orbits and the given observatories.
@@ -40,6 +39,13 @@ def generateEphemeris(
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
         backend.
+    chunk_size : int, optional
+        Number of orbits to send to each job.
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
 
     Returns
     -------
@@ -71,13 +77,9 @@ def generateEphemeris(
         orbits,
         observers,
         test_orbit=test_orbit,
-        threads=threads,
-        chunk_size=chunk_size
-    )
-    ephemeris.sort_values(
-        by=["orbit_id", "observatory_code", "mjd_utc"],
-        inplace=True,
-        ignore_index=True
+        chunk_size=chunk_size,
+        num_jobs=num_jobs,
+        parallel_backend=parallel_backend
     )
     return ephemeris
 

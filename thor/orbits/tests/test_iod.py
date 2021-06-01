@@ -42,7 +42,7 @@ def createOrbitDeterminationDataset(
         orbits,
         observers,
         backend="PYOORB",
-        threads=4
+        num_jobs=1
     )
     # Mark observations of "real" orbits as obsXXXXXXXXX
     observations["obs_id"] = ["obs{:08d}".format(i) for i in range(len(observations))]
@@ -148,7 +148,7 @@ def test_initialOrbitDetermination_outlier_rejection():
         light_time=True,
         linkage_id_col='linkage_id',
         identify_subsets=False,
-        threads=4,
+        num_jobs=1,
         backend='PYOORB',
         backend_kwargs={}
     )

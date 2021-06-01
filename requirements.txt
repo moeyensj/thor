@@ -6,7 +6,7 @@ astropy
 astroquery
 scipy
 scikit-learn
-pyyaml
+pyyaml>=5.1
 openorb
 spiceypy
 matplotlib

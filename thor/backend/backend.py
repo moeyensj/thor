@@ -1,16 +1,13 @@
 import os
-import time
 import copy
-import signal
 import logging
 import pandas as pd
 import multiprocessing as mp
 
-from ..config import Config
 from ..orbit import TestOrbit
-
-USE_RAY = Config.USE_RAY
-NUM_THREADS = Config.NUM_THREADS
+from ..utils import Timeout
+from ..utils import _initWorker
+from ..utils import _checkParallel
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -18,31 +15,10 @@ os.environ["MKL_NUM_THREADS"] = "1"
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "_init_worker",
     "Backend"
 ]
+
 TIMEOUT = 30
-
-class Timeout:
-    ### Taken from https://stackoverflow.com/a/22348885
-    def __init__(self, seconds=TIMEOUT, error_message='Timeout'):
-        self.seconds = seconds
-        self.error_message = error_message
-    def handle_timeout(self, signum, frame):
-        raise TimeoutError(self.error_message)
-    def __enter__(self):
-        signal.signal(signal.SIGALRM, self.handle_timeout)
-        signal.alarm(self.seconds)
-    def __exit__(self, type, value, traceback):
-        signal.alarm(0)
-
-def _init_worker():
-    """
-    Tell multiprocessing worker to ignore signals, will only
-    listen to parent process.
-    """
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    return
 
 def propagation_worker(orbits, t1, backend):
     with Timeout(seconds=TIMEOUT):
@@ -67,7 +43,7 @@ def orbitDetermination_worker(observations, backend):
         try:
             orbits = backend._orbitDetermination(observations)
         except TimeoutError:
-            logger.CRITICAL("Orbit determination timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            logger.CRITICAL("Orbit determination timed out on observations (showing first 5): {}".format(observations["obs_id"].values[:5]))
             orbits = pd.DataFrame()
     return orbits
 
@@ -93,13 +69,6 @@ def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
 
     return ephemeris
 
-if USE_RAY:
-    import ray
-    propagation_worker = ray.remote(propagation_worker)
-    ephemeris_worker = ray.remote(ephemeris_worker)
-    orbitDetermination_worker = ray.remote(orbitDetermination_worker)
-    projectEphemeris_worker = ray.remote(projectEphemeris_worker)
-
 class Backend:
 
     def __init__(self, name="Backend", **kwargs):
@@ -123,7 +92,14 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def propagateOrbits(self, orbits, t1, threads=NUM_THREADS, chunk_size=100):
+    def propagateOrbits(
+            self,
+            orbits,
+            t1,
+            chunk_size=100,
+            num_jobs=1,
+            parallel_backend="mp"
+        ):
         """
         Propagate each orbit in orbits to each time in t1.
 
@@ -133,10 +109,13 @@ class Backend:
             Orbits to propagate.
         t1 : `~astropy.time.core.Time`
             Times to which to propagate each orbit.
-        threads : int, optional
-            Number of processes to launch.
         chunk_size : int, optional
-            Number of orbits to send to each process.
+            Number of orbits to send to each job.
+        num_jobs : int, optional
+            Number of jobs to launch.
+        parallel_backend : str, optional
+            Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+            module ('mp').
 
         Returns
         -------
@@ -147,24 +126,33 @@ class Backend:
                 x, y, z, vx, vy, vz : Orbit as cartesian state vector with units
                 of au and au per day.
         """
-        if threads > 1:
+        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+        if parallel:
             orbits_split = orbits.split(chunk_size)
             t1_duplicated = [copy.deepcopy(t1) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
-            if USE_RAY:
+
+            if parallel_backend == "ray":
+                import ray
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
+                propagation_worker_ray = ray.remote(propagation_worker)
+                propagation_worker_ray.options(
+                    num_returns=1,
+                    num_cpus=1
+                )
+
                 p = []
                 for o, t, b in zip(orbits_split, t1_duplicated, backend_duplicated):
-                    p.append(propagation_worker.remote(o, t, b))
+                    p.append(propagation_worker_ray.remote(o, t, b))
                 propagated_dfs = ray.get(p)
 
-            else:
+            else: # parallel_backend == "mp"
                 p = mp.Pool(
-                    processes=threads,
-                    initializer=_init_worker,
+                    processes=num_workers,
+                    initializer=_initWorker,
                 )
 
                 propagated_dfs = p.starmap(
@@ -203,7 +191,15 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def generateEphemeris(self, orbits, observers, test_orbit=None, threads=NUM_THREADS, chunk_size=100):
+    def generateEphemeris(
+            self,
+            orbits,
+            observers,
+            test_orbit=None,
+            chunk_size=100,
+            num_jobs=1,
+            parallel_backend="mp"
+        ):
         """
         Generate ephemerides for each orbit in orbits as observed by each observer
         in observers.
@@ -216,10 +212,13 @@ class Backend:
             A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values.
         test_orbit : `~thor.orbits.orbits.Orbits`
             Test orbit to use to generate projected coordinates.
-        threads : int, optional
-            Number of processes to launch.
         chunk_size : int, optional
-            Number of orbits to send to each process.
+            Number of orbits to send to each job.
+        num_jobs : int, optional
+            Number of jobs to launch.
+        parallel_backend : str, optional
+            Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+            module ('mp').
 
         Returns
         -------
@@ -231,24 +230,32 @@ class Backend:
                 RA : Right Ascension in decimal degrees.
                 Dec : Declination in decimal degrees.
         """
-        if threads > 1:
+        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+        if parallel:
             orbits_split = orbits.split(chunk_size)
             observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
-            if USE_RAY:
+            if parallel_backend == "ray":
+                import ray
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
+                ephemeris_worker_ray = ray.remote(ephemeris_worker)
+                ephemeris_worker_ray.options(
+                    num_returns=1,
+                    num_cpus=1
+                )
+
                 p = []
                 for o, t, b in zip(orbits_split, observers_duplicated, backend_duplicated):
-                    p.append(ephemeris_worker.remote(o, t, b))
+                    p.append(ephemeris_worker_ray.remote(o, t, b))
                 ephemeris_dfs = ray.get(p)
 
-            else:
+            else: # parallel_backend == "mp"
                 p = mp.Pool(
-                    processes=threads,
-                    initializer=_init_worker,
+                    processes=num_workers,
+                    initializer=_initWorker,
                 )
 
                 ephemeris_dfs = p.starmap(
@@ -284,19 +291,25 @@ class Backend:
             test_orbit_ephemeris_grouped = test_orbit_ephemeris.groupby(by=["observatory_code", "mjd_utc"])
             test_orbit_ephemeris_split = [test_orbit_ephemeris_grouped.get_group(g) for g in test_orbit_ephemeris_grouped.groups]
 
-            if threads > 1:
+            if num_jobs > 1:
 
-                if USE_RAY:
+                if parallel_backend == "ray":
+
+                    projectEphemeris_worker_ray = ray.remote(projectEphemeris_worker)
+                    projectEphemeris_worker_ray = projectEphemeris_worker_ray.options(
+                        num_returns=1,
+                        num_cpus=1
+                    )
 
                     p = []
                     for e, te in zip(ephemeris_split, test_orbit_ephemeris_split):
-                        p.append(projectEphemeris_worker.remote(e, te))
+                        p.append(projectEphemeris_worker_ray.remote(e, te))
                     ephemeris_dfs = ray.get(p)
 
-                else:
+                else: # parallel_backend == "mp"
                     p = mp.Pool(
-                        processes=threads,
-                        initializer=_init_worker,
+                        processes=num_workers,
+                        initializer=_initWorker,
                     )
 
                     ephemeris_dfs = p.starmap(
@@ -320,19 +333,12 @@ class Backend:
                 inplace=True
             )
 
-        return ephemeris
-
-    def _initialOrbitDetermination(self, observations, linkage_members, threads=NUM_THREADS, chunk_size=10, **kwargs):
-        """
-        Given observations and
-
-        THIS FUNCTION SHOULD BE DEFINED BY THE USER.
-
-        """
-        err = (
-            "This backend does not have initial orbit propagation implemented."
+        ephemeris.sort_values(
+            by=["orbit_id", "observatory_code", "mjd_utc"],
+            inplace=True,
+            ignore_index=True
         )
-        raise NotImplementedError(err)
+        return ephemeris
 
     def _orbitDetermination(self):
         err = (
@@ -340,7 +346,13 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def orbitDetermination(self, observations, threads=NUM_THREADS, chunk_size=10, **kwargs):
+    def orbitDetermination(
+            self,
+            observations,
+            chunk_size=10,
+            num_jobs=1,
+            parallel_backend="mp"
+        ):
         """
         Run orbit determination on the input observations. These observations
         must at least contain the following columns:
@@ -353,25 +365,39 @@ class Backend:
         sigma_Dec_deg : 1-sigma uncertainty in Dec.
         observatory_code : MPC observatory code.
 
-
+        Parameters
+        ----------
+        num_jobs : int, optional
+            Number of jobs to launch.
+        parallel_backend : str, optional
+            Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+            module ('mp').
         """
         unique_objs = observations["obj_id"].unique()
         observations_split = [observations[observations["obj_id"].isin(unique_objs[i:i+chunk_size])].copy() for i in range(0, len(unique_objs), chunk_size)]
         backend_duplicated = [copy.deepcopy(self) for i in range(len(observations_split))]
 
-        if USE_RAY:
+        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+        if parallel_backend == "ray":
+            import ray
             if not ray.is_initialized():
                 ray.init(address="auto")
 
+            orbitDetermination_worker_ray = ray.remote(orbitDetermination_worker)
+            orbitDetermination_worker_ray = orbitDetermination_worker_ray.options(
+                num_returns=1,
+                num_cpus=1
+            )
+
             od = []
             for o,  b in zip(observations_split, backend_duplicated):
-                od.append(orbitDetermination_worker.remote(o, b))
+                od.append(orbitDetermination_worker_ray.remote(o, b))
             od_orbits_dfs = ray.get(od)
 
-        else:
+        else: # parallel_backend == "mp"
             p = mp.Pool(
-                processes=threads,
-                initializer=_init_worker,
+                processes=num_workers,
+                initializer=_initWorker,
             )
 
             od_orbits_dfs = p.starmap(
@@ -383,12 +409,8 @@ class Backend:
             )
             p.close()
 
-        od_orbits = pd.concat(od_orbits_dfs)
-        od_orbits.reset_index(
-            drop=True,
-            inplace=True
-        )
-        return od_orbits, residuals
+        od_orbits = pd.concat(od_orbits_dfs, ignore_index=True)
+        return od_orbits
 
     def _getObserverState(self, observers, origin="heliocenter"):
         err = (
