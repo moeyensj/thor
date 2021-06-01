@@ -11,6 +11,7 @@ from functools import partial
 from astropy.time import Time
 
 from .config import Config
+from .config import Configuration
 from .clusters import find_clusters, filter_clusters_by_length
 from .cell import Cell
 from .orbit import TestOrbit
@@ -707,13 +708,14 @@ def runTHOROrbit(
     logger = logging.getLogger("thor")
     logger.setLevel(logging_level)
 
-    RUN_CONFIG = {
-        "RANGE_SHIFT_CONFIG" : range_shift_config,
-        "CLUSTER_LINK_CONFIG" : cluster_link_config,
-        "IOD_CONFIG" : iod_config,
-        "OD_CONFIG" : od_config,
-        "ODP_CONFIG" : odp_config
-    }
+    # Build the configuration class which stores the run parameters
+    config = Configuration(
+        range_shift_config=range_shift_config,
+        cluster_link_config=cluster_link_config,
+        iod_config=iod_config,
+        od_config=od_config,
+        odp_config=odp_config
+    )
     status = {
         "rangeAndShift" : False,
         "clusterAndLink" : False,
@@ -776,10 +778,8 @@ def runTHOROrbit(
             else:
                 logger.info("Previous configuration file found. Comparing settings...")
 
-                config_file_prev = open(config_file, "r")
-                config_prev = yaml.load(config_file_prev, Loader=yaml.FullLoader)
-
-                if config_prev != RUN_CONFIG:
+                config_prev = Configuration.fromYaml(config_file)
+                if config_prev != config:
                     logger.warning("Previous configuration does not match current configuration. Processing will not continue from previous state.")
                 else:
                     config_eq = True
@@ -811,8 +811,7 @@ def runTHOROrbit(
                     logger.info("Previous status file found.")
 
         if save_config:
-            with open(config_file, "w") as config_out:
-                yaml.safe_dump(RUN_CONFIG, config_out)
+            config.toYaml(config_file)
             logger.debug("Saved config.yml.")
 
         if save_orbit:
@@ -1084,17 +1083,16 @@ def runTHOR(
         if not ray.is_initialized():
             ray.init(address="auto")
 
-    # Build the configuration directory which stores
-    # the run parameters
-    RUN_CONFIG = {
-        "RANGE_SHIFT_CONFIG" : range_shift_config,
-        "CLUSTER_LINK_CONFIG" : cluster_link_config,
-        "IOD_CONFIG" : iod_config,
-        "OD_CONFIG" : od_config,
-        "ODP_CONFIG" : odp_config
-    }
-    orbits_completed = []
+    # Build the configuration class which stores the run parameters
+    config = Configuration(
+        range_shift_config=range_shift_config,
+        cluster_link_config=cluster_link_config,
+        iod_config=iod_config,
+        od_config=od_config,
+        odp_config=odp_config
+    )
 
+    orbits_completed = []
     continue_ = False
     if_exists_ = if_exists
     if out_dir is not None:
@@ -1139,11 +1137,8 @@ def runTHOR(
             else:
                 logger.info("Previous configuration file found. Comparing settings...")
 
-                config_file_prev = open(config_file, "r")
-                config_prev = yaml.load(config_file_prev, Loader=yaml.FullLoader)
-                config_file_prev.close()
-
-                if config_prev != RUN_CONFIG:
+                config_prev = Configuration.fromYaml(config_file)
+                if config_prev != config:
                     logger.warning("Previous configuration does not match current configuration. Processing will not continue from previous state.")
                     if_exists_ = "erase"
                 else:
@@ -1192,8 +1187,7 @@ def runTHOR(
                 pass
 
         if save_config:
-            with open(config_file, "w") as config_out:
-                yaml.safe_dump(RUN_CONFIG, config_out)
+            config.toYaml(config_file)
             logger.debug("Saved config.yml.")
 
         if save_orbits:

@@ -1,4 +1,3 @@
-import yaml
 import logging
 import argparse
 import pandas as pd
@@ -36,9 +35,7 @@ if __name__ == "__main__":
     if not isinstance(args.config, str):
         config = Config
     else:
-        config_file = open(args.config, "r")
-        config = yaml.load(config_file, Loader=yaml.FullLoader)
-        config_file.close()
+        config = Config.fromYaml(args.config)
 
     # Read observations
     preprocessed_observations = pd.read_csv(

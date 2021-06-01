@@ -39,7 +39,7 @@ DEFAULT_CLUSTER_LINK_CONFIG = {
     "min_obs" : MIN_OBS,
     "min_arc_length" : MIN_ARC_LENGTH,
     "num_jobs" : NUM_JOBS,
-    "alg" : "dbscan",
+    "alg" : "hotspot_2d",
     "parallel_backend" : PARALLEL_BACKEND
 }
 
