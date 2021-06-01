@@ -1,14 +1,18 @@
 import signal
+import logging
 import numpy as np
 import pandas as pd
+import multiprocessing as mp
 
 __all__ = [
     "Timeout",
     "yieldChunks",
     "calcChunkSize",
     "_initWorker",
-    "_checkParallelBackend"
+    "_checkParallel"
 ]
+
+logger = logging.getLogger(__name__)
 
 class Timeout:
     ### Taken from https://stackoverflow.com/a/22348885
@@ -90,23 +94,58 @@ def _initWorker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     return
 
-def _checkParallelBackend(backend):
+def _checkParallel(num_jobs, parallel_backend):
     """
-    Check if backend is a supported parallelization backend.
+    Helper function to determine how many workers (jobs) should be submitted.
+    If the parallelization backend is Python's multiprocessing ('mp') and num_jobs
+    is either "auto" or None, then mp.cpu_count() will be used to determine the number
+    of jobs. If num_jobs is not "auto" or None, then that number will be used instead.
+    If the parallelization backend is ray, then the number of resources on the cluster will
+    determine the number of workers, and num_jobs is ignored.
 
     Parameters
     ----------
-    backend : str
+    num_jobs : {None, "auto", int}
+        Number of jobs to launch.
+    parallel_backend : str
         Name of backend. Should be one of {'ray', 'mp'}.
+
+    Returns
+    -------
+    enable_parallel : bool
+        True if parallelization should be used (true for cases where num_jobs > 1).
+    num_workers : int
+        The number of workers to use.
 
     Raises
     ------
-    ValueError : If backend is not one of {'ray', 'mp'}.
+    ValueError : If parallel_backend is not one of {'ray', 'mp'}.
     """
-    backends = ["ray", "mp"]
-    if backend not in backends:
-        err = (
-            "parallel_backend should be one of {'ray', 'mp'}"
-        )
-        raise ValueError(err)
-    return
+    if isinstance(num_jobs, str) or (num_jobs is None) or (num_jobs > 1):
+
+        # Check that pareallel_backend is one of the support types
+        backends = ["ray", "mp"]
+        if parallel_backend not in backends:
+            err = (
+                "parallel_backend should be one of {'ray', 'mp'}"
+            )
+            raise ValueError(err)
+
+        enable_parallel = True
+        if parallel_backend == "ray":
+            import ray
+            if not num_jobs == "auto" or num_jobs is not None:
+                logger.warning("This process is running with the ray parallelization backend: num_jobs parameter will be ignored.")
+
+            num_workers = int(ray.cluster_resources()["CPU"])
+
+        else:
+            if num_jobs == "auto" or num_jobs is None:
+                num_workers = mp.cpu_count()
+            else:
+                num_workers = num_jobs
+    else:
+        num_workers = 1
+        enable_parallel = False
+
+    return enable_parallel, num_workers
