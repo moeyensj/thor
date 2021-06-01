@@ -664,12 +664,17 @@ def initialOrbitDetermination(
                 chunk_size_ = calcChunkSize(num_linkages, num_workers, chunk_size, min_chunk_size=1)
                 logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers.")
 
+                # Put the observations into ray's local object storage ("plasma")
+                observation_oids = []
+                for observations_i in yieldChunks(observations_split, chunk_size_):
+                    observation_oids.append(ray.put(observations_i))
+
                 iod_orbits_oids = []
                 iod_orbit_members_oids = []
-                for observations_i in yieldChunks(observations_split, chunk_size_):
+                for observations_oid in observation_oids:
 
-                    iod_orbits_oid, iod_orbit_members_oid = iod_worker_ray.remote(
-                            observations_i,
+                    iod_orbits_oid, iod_orbit_members_oid = iod_worker.remote(
+                            observations_oid,
                             observation_selection_method=observation_selection_method,
                             rchi2_threshold=rchi2_threshold,
                             min_obs=min_obs,

@@ -651,13 +651,20 @@ def differentialCorrection(
                 chunk_size_ = calcChunkSize(num_orbits, num_workers, chunk_size, min_chunk_size=1)
                 logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers.")
 
+                # Put the observations and orbits into ray's local object storage ("plasma")
+                orbit_oids = []
+                observation_oids = []
+                for orbits_i, observations_i in zip(yieldChunks(orbits_split, chunk_size_), yieldChunks(observations_split, chunk_size_)):
+                    orbit_oids.append(ray.put(orbits_i))
+                    observation_oids.append(ray.put(observations_i))
+
                 od_orbits_oids = []
                 od_orbit_members_oids = []
-                for orbits_i, observations_i in zip(yieldChunks(orbits_split, chunk_size_), yieldChunks(observations_split, chunk_size_)):
+                for orbits_oid, observations_oid in zip(orbit_oids, observation_oids):
 
-                    od_orbits_oid, od_orbit_members_oid = od_worker_ray.remote(
-                        orbits_i,
-                        observations_i,
+                    od_orbits_oid, od_orbit_members_oid = od_worker.remote(
+                        orbits_oid,
+                        observations_oid,
                         rchi2_threshold=rchi2_threshold,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
