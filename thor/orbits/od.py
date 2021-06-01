@@ -662,7 +662,7 @@ def differentialCorrection(
                 od_orbit_members_oids = []
                 for orbits_oid, observations_oid in zip(orbit_oids, observation_oids):
 
-                    od_orbits_oid, od_orbit_members_oid = od_worker.remote(
+                    od_orbits_oid, od_orbit_members_oid = od_worker_ray.remote(
                         orbits_oid,
                         observations_oid,
                         rchi2_threshold=rchi2_threshold,

@@ -673,7 +673,7 @@ def initialOrbitDetermination(
                 iod_orbit_members_oids = []
                 for observations_oid in observation_oids:
 
-                    iod_orbits_oid, iod_orbit_members_oid = iod_worker.remote(
+                    iod_orbits_oid, iod_orbit_members_oid = iod_worker_ray.remote(
                             observations_oid,
                             observation_selection_method=observation_selection_method,
                             rchi2_threshold=rchi2_threshold,
