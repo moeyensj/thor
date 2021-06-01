@@ -87,7 +87,7 @@ def clusterVelocity(
         vx,
         vy,
         eps=0.005,
-        min_samples=5,
+        min_obs=5,
         min_arc_length=1.0,
         alg="hotspot_2d",
     ):
@@ -113,7 +113,7 @@ def clusterVelocity(
         as in the same neighborhood.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 0.005]
-    min_samples : int, optional
+    min_obs : int, optional
         The number of samples (or total weight) in a neighborhood for a
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -133,9 +133,9 @@ def clusterVelocity(
 
     X = np.stack((xx, yy), 1)
 
-    clusters = find_clusters(X, eps, min_samples, alg=alg)
+    clusters = find_clusters(X, eps, min_obs, alg=alg)
     clusters = filter_clusters_by_length(
-        clusters, dt, min_samples, min_arc_length,
+        clusters, dt, min_obs, min_arc_length,
     )
 
     cluster_ids = []
@@ -156,7 +156,7 @@ def clusterVelocity_worker(
         y=None,
         dt=None,
         eps=None,
-        min_samples=None,
+        min_obs=None,
         min_arc_length=None,
         alg=None
     ):
@@ -172,7 +172,7 @@ def clusterVelocity_worker(
         vx,
         vy,
         eps=eps,
-        min_samples=min_samples,
+        min_obs=min_obs,
         min_arc_length=min_arc_length,
         alg=alg
     )
@@ -370,7 +370,7 @@ def clusterAndLink(
         vx_values=None,
         vy_values=None,
         eps=0.005,
-        min_samples=5,
+        min_obs=5,
         min_arc_length=1.0,
         alg="dbscan",
         num_jobs=1,
@@ -415,7 +415,7 @@ def clusterAndLink(
         as in the same neighborhood.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
         [Default = 0.005]
-    min_samples : int, optional
+    min_obs : int, optional
         The number of samples (or total weight) in a neighborhood for a
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -441,7 +441,7 @@ def clusterAndLink(
 
     alg="dbscan" uses the DBSCAN algorithm of Ester et. al. It's relatively slow
     but works with high accuracy; it is certain to find all clusters with at
-    least min_samples points that are separated by at most eps.
+    least min_obs points that are separated by at most eps.
 
     alg="hotspot_2d" is much faster (perhaps 10-20x faster) than dbscan, but it
     may miss some clusters, particularly when points are spaced a distance of 'eps'
@@ -514,7 +514,7 @@ def clusterAndLink(
     else:
         logger.debug("Velocity grid size: {}".format(vx_bins))
     logger.info("Max sample distance: {}".format(eps))
-    logger.info("Minimum samples: {}".format(min_samples))
+    logger.info("Minimum samples: {}".format(min_obs))
 
     possible_clusters = []
     parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
@@ -548,7 +548,7 @@ def clusterAndLink(
                         y=theta_y_oid,
                         dt=dt_oid,
                         eps=eps,
-                        min_samples=min_samples,
+                        min_obs=min_obs,
                         min_arc_length=min_arc_length,
                         alg=alg
                     )
@@ -569,7 +569,7 @@ def clusterAndLink(
                     y=theta_y,
                     dt=dt,
                     eps=eps,
-                    min_samples=min_samples,
+                    min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     alg=alg
                 ),
@@ -589,7 +589,7 @@ def clusterAndLink(
                     vxi,
                     vyi,
                     eps=eps,
-                    min_samples=min_samples,
+                    min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     alg=alg
                 )

@@ -101,7 +101,7 @@ def test_clusterAndLink():
             vx_values=[0],
             vy_values=[0],
             eps=1/3600,
-            min_samples=5,
+            min_obs=5,
             min_arc_length=1.0,
             num_jobs=1,
         )

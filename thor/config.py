@@ -45,7 +45,7 @@ class Config:
         "vx_values" : None,
         "vy_values" : None,
         "eps" : 5/3600,
-        "min_samples" : MIN_OBS,
+        "min_obs" : MIN_OBS,
         "min_arc_length" : MIN_ARC_LENGTH,
         "num_jobs" : NUM_JOBS,
         "alg" : "dbscan",
