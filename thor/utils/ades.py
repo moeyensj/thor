@@ -2,8 +2,6 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from ..config import Config
-
 __all__ = [
     "writeADESHeader",
     "writeToADES"
@@ -63,13 +61,13 @@ def writeADESHeader(
 
     # Add observatory [required]
     header += ["# observatory"]
-    header += ["! mpcCode {}".format(observatory_code)]
+    header += [f"! mpcCode {observatory_code}"]
     if observatory_name is not None:
-        header += ["! name {}".format(observatory_name)]
+        header += [f"! name {observatory_name}"]
 
     # Add submitter [required]
     header += ["# submitter"]
-    header += ["! name {}".format(submitter)]
+    header += [f"! name {submitter}"]
 
     if submitter_institution is not None:
         header += ["! institution {}".format(submitter_institution)]
@@ -77,10 +75,10 @@ def writeADESHeader(
     # Add telescope details [required]
     header += ["# telescope"]
     if telescope_name is not None:
-        header += ["! name {}".format(telescope_name)]
-    header += ["! aperture 8.4"]
-    header += ["! design {}".format(telescope_design)]
-    header += ["! detector {}".format("CCD")]
+        header += [f"! name {telescope_name}"]
+    header += [f"! aperture {telescope_aperture}"]
+    header += [f"! design {telescope_design}"]
+    header += [f"! detector {telescope_detector}"]
 
     # Add observer details
     header += ["# observers"]
@@ -90,7 +88,7 @@ def writeADESHeader(
         )
         raise ValueError(err)
     for name in observers:
-        header += ["! name {}".format(name)]
+        header += [f"! name {name}"]
 
     # Add measurer details
     header += ["# measurers"]
@@ -100,7 +98,7 @@ def writeADESHeader(
         )
         raise ValueError(err)
     for name in measurers:
-        header += ["! name {}".format(name)]
+        header += [f"! name {name}"]
 
     # Add comment
     if comment is not None:
@@ -115,13 +113,16 @@ def writeToADES(
         file_out,
         mjd_scale="utc",
         seconds_precision=9,
-        observatory_code=Config.ADES_METADATA["observatory_code"],
-        submitter=Config.ADES_METADATA["submitter"],
-        telescope_design=Config.ADES_METADATA["telescope_design"],
-        telescope_aperture=Config.ADES_METADATA["telescope_aperture"],
-        telescope_detector=Config.ADES_METADATA["telescope_detector"],
-        observers=Config.ADES_METADATA["observers"],
-        measurers=Config.ADES_METADATA["measurers"],
+        observatory_code="I11",
+        submitter="D. iRAC",
+        telescope_design="Reflector",
+        telescope_aperture="8.4",
+        telescope_detector= "CCD",
+        observers=["D. iRAC"],
+        measurers=["D. iRAC"],
+        observatory_name="Vera C. Rubin Observatory",
+        submitter_institution=None,
+        telescope_name=None,
         comment=None
     ):
     """
@@ -170,6 +171,9 @@ def writeToADES(
         telescope_detector,
         observers,
         measurers,
+        observatory_name=observatory_name,
+        submitter_institution=submitter_institution,
+        telescope_name=telescope_name,
         comment=comment
     )
 

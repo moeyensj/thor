@@ -14,7 +14,6 @@ def plotObservations(
         dataframe,
         color_by_object=False,
         use_plotly=True,
-        column_mapping=Config.COLUMN_MAPPING
     ):
     """
     Plot observations in 2D.
@@ -29,9 +28,6 @@ def plotObservations(
     use_plotly : bool, optional
         Use plotly instead of matplotlib?
         [Default = True]
-    column_mapping : dict, optional
-        Column name mapping of observations to internally used column names.
-        [Default = `~thor.Config.COLUMN_MAPPING`]
 
     Returns
     -------
@@ -48,23 +44,23 @@ def plotObservations(
                 obj = dataframe[dataframe[column_mapping["name"]] == name]
                 if name == "NS":
                     trace = plotly.graph_objs.Scatter(
-                        x=obj[column_mapping["RA_deg"]],
-                        y=obj[column_mapping["Dec_deg"]],
+                        x=obj["RA_deg"],
+                        y=obj["Dec_deg"],
                         name=name,
                         mode="markers",
                         marker=dict(size=2))
                 else:
                     trace = plotly.graph_objs.Scatter(
-                        x=obj[column_mapping["RA_deg"]],
-                        y=obj[column_mapping["Dec_deg"]],
+                        x=obj["RA_deg"],
+                        y=obj["Dec_deg"],
                         name=name,
                         mode="markers",
                         marker=dict(size=2))
                 data.append(trace)
         else:
             trace = plotly.graph_objs.Scatter(
-                x=dataframe[column_mapping["RA_deg"]],
-                y=dataframe[column_mapping["Dec_deg"]],
+                x=dataframe["RA_deg"],
+                y=dataframe["Dec_deg"],
                 mode="markers",
                 text=dataframe[column_mapping["name"]],
                 marker=dict(size=2)
@@ -98,7 +94,7 @@ def plotObservations(
         else:
             c = "blue"
 
-        dataframe.plot(x=column_mapping["RA_deg"], y=column_mapping["Dec_deg"], kind="scatter", c=c, s=0.5, ax=ax)
+        dataframe.plot(x="RA_deg", y="Dec_deg", kind="scatter", c=c, s=0.5, ax=ax)
         _setAxes(ax, "equatorialAngular")
 
 
@@ -112,7 +108,6 @@ def plotObservations(
 def plotObservations3D(
         dataframe,
         color_by_object=False,
-        column_mapping=Config.COLUMN_MAPPING
     ):
     """
     Plot observations in 3D.
@@ -124,9 +119,6 @@ def plotObservations3D(
     color_by_object : bool, optional
         Color each unique object separately.
         [Default = False]
-    column_mapping : dict, optional
-        Column name mapping of observations to internally used column names.
-        [Default = `~thor.Config.COLUMN_MAPPING`]
 
     Returns
     -------
@@ -141,18 +133,18 @@ def plotObservations3D(
 
             if name == "NS":
                  trace = plotly.graph_objs.Scatter3d(
-                    x=obj[column_mapping["RA_deg"]],
-                    y=obj[column_mapping["Dec_deg"]],
-                    z=obj[column_mapping["exp_mjd"]] - dataframe[column_mapping["exp_mjd"]].min(),
+                    x=obj["RA_deg"],
+                    y=obj["Dec_deg"],
+                    z=obj["mjd_utc"] - dataframe["mjd_utc"].min(),
                     name=name,
                     mode="markers",
                     marker=dict(size=2)
                 )
             else:
                 trace = plotly.graph_objs.Scatter3d(
-                    x=obj[column_mapping["RA_deg"]],
-                    y=obj[column_mapping["Dec_deg"]],
-                    z=obj[column_mapping["exp_mjd"]] - dataframe[column_mapping["exp_mjd"]].min(),
+                    x=obj["RA_deg"],
+                    y=obj["Dec_deg"],
+                    z=obj["mjd_utc"] - dataframe["mjd_utc"].min(),
                     name=name,
                     mode="lines+markers",
                     marker=dict(size=2,
@@ -161,9 +153,9 @@ def plotObservations3D(
             data.append(trace)
     else:
         trace = plotly.graph_objs.Scatter3d(
-            x=dataframe[column_mapping["RA_deg"]],
-            y=dataframe[column_mapping["Dec_deg"]],
-            z=dataframe[column_mapping["exp_mjd"]] - dataframe[column_mapping["exp_mjd"]].min(),
+            x=dataframe["RA_deg"],
+            y=dataframe["Dec_deg"],
+            z=dataframe["mjd_utc"] - dataframe["mjd_utc"].min(),
             mode="markers",
             marker=dict(size=2)
             )
