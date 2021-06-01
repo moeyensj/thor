@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import uuid
 import yaml
@@ -12,21 +11,17 @@ from functools import partial
 from astropy.time import Time
 
 from .config import Config
-from .clusters import USE_GPU, find_clusters, filter_clusters_by_length
+from .clusters import find_clusters, filter_clusters_by_length
 from .cell import Cell
 from .orbit import TestOrbit
 from .orbits import Orbits
-from .observatories import getObserverState
 from .orbits import generateEphemeris
 from .orbits import initialOrbitDetermination
 from .orbits import differentialCorrection
 from .orbits import mergeAndExtendOrbits
-from .backend import _init_worker
-from .utils import identifySubsetLinkages
-
-USE_RAY = Config.USE_RAY
-USE_GPU = Config.USE_GPU
-NUM_JOBS = Config.NUM_JOBS
+from .observatories import getObserverState
+from .utils import _initWorker
+from .utils import _checkParallel
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
@@ -183,18 +178,14 @@ def clusterVelocity_worker(
     )
     return cluster_ids
 
-if USE_RAY:
-    import ray
-    rangeAndShift_worker = ray.remote(rangeAndShift_worker)
-    clusterVelocity_worker = ray.remote(clusterVelocity_worker)
-
 def rangeAndShift(
         observations,
         orbit,
         cell_area=10,
-        num_jobs=NUM_JOBS,
         backend="PYOORB",
         backend_kwargs={},
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     """
     Propagate the orbit to all observation times in observations. At each epoch gather a circular region of observations of size cell_area
@@ -224,6 +215,11 @@ def rangeAndShift(
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
         backend.
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
 
     Returns
     -------
@@ -251,7 +247,10 @@ def rangeAndShift(
         orbit,
         observers,
         backend=backend,
-        backend_kwargs=backend_kwargs
+        backend_kwargs=backend_kwargs,
+        chunk_size=1,
+        num_jobs=1,
+        parallel_backend=parallel_backend
     )
     if backend == "FINDORB":
 
@@ -292,16 +291,23 @@ def rangeAndShift(
     ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
     ephemeris_split = [ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups]
 
-    if num_jobs > 1:
-
-        if USE_RAY:
+    parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+    if parallel:
+        if parallel_backend == "ray":
+            import ray
             if not ray.is_initialized():
                 ray.init(address="auto")
+
+            rangeAndShift_worker_ray = ray.remote(rangeAndShift_worker)
+            rangeAndShift_worker_ray = rangeAndShift_worker_ray.options(
+                num_returns=1,
+                num_cpus=1
+            )
 
             p = []
             for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
                 p.append(
-                    rangeAndShift_worker.remote(
+                    rangeAndShift_worker_ray.remote(
                         observations_i,
                         ephemeris_i,
                         cell_area=cell_area
@@ -309,12 +315,11 @@ def rangeAndShift(
                 )
             projected_dfs = ray.get(p)
 
-        else:
+        else: # parallel_backend == "mp"
             p = mp.Pool(
-                processes=num_jobs,
-                initializer=_init_worker,
+                processes=num_workers,
+                initializer=_initWorker,
             )
-
             projected_dfs = p.starmap(
                 partial(
                     rangeAndShift_worker,
@@ -367,9 +372,9 @@ def clusterAndLink(
         eps=0.005,
         min_samples=5,
         min_arc_length=1.0,
-        identify_subsets=False,
-        num_jobs=NUM_JOBS,
-        alg="dbscan"
+        alg="dbscan",
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     """
     Cluster and link correctly projected (after ranging and shifting)
@@ -405,9 +410,6 @@ def clusterAndLink(
         Values of velocities in y at which to cluster
         and link.
         [Default = None]
-    num_jobs : int, optional
-        Number of num_jobs to use.
-        [Default = 12]
     eps : float, optional
         The maximum distance between two samples for them to be considered
         as in the same neighborhood.
@@ -420,6 +422,11 @@ def clusterAndLink(
         [Default = 5]
     alg: str
         Algorithm to use. Can be "dbscan" or "hotspot_2d".
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
 
     Returns
     -------
@@ -510,11 +517,18 @@ def clusterAndLink(
     logger.info("Minimum samples: {}".format(min_samples))
 
     possible_clusters = []
-    if num_jobs > 1 and not USE_GPU:
-
-        if USE_RAY:
+    parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+    if parallel:
+        if parallel_backend == "ray":
+            import ray
             if not ray.is_initialized():
                 ray.init(address="auto")
+
+            clusterVelocity_worker_ray = ray.remote(clusterVelocity_worker)
+            clusterVelocity_worker_ray = clusterVelocity_worker_ray.options(
+                num_returns=1,
+                num_cpus=1
+            )
 
             # Put all arrays (which can be large) in ray's
             # local object store ahead of time
@@ -526,7 +540,7 @@ def clusterAndLink(
             p = []
             for vxi, vyi in zip(vxx, vyy):
                 p.append(
-                    clusterVelocity_worker.remote(
+                    clusterVelocity_worker_ray.remote(
                         vxi,
                         vyi,
                         obs_ids=obs_ids_oid,
@@ -541,9 +555,12 @@ def clusterAndLink(
                 )
             possible_clusters = ray.get(p)
 
-        else:
+        else: # parallel_backend == "mp"
 
-            p = mp.Pool(num_jobs, _init_worker)
+            p = mp.Pool(
+                processes=num_workers,
+                initializer=_initWorker
+            )
             possible_clusters = p.starmap(
                 partial(
                     clusterVelocity_worker,
@@ -559,6 +576,7 @@ def clusterAndLink(
                 zip(vxx, vyy)
             )
             p.close()
+
     else:
         possible_clusters = []
         for vxi, vyi in zip(vxx, vyy):
@@ -669,16 +687,6 @@ def clusterAndLink(
 
     time_end_restr = time.time()
     logger.info("Restructuring completed in {:.3f} seconds.".format(time_end_restr - time_start_restr))
-
-    if identify_subsets == True:
-        logger.info("Identifying subsets...")
-        clusters, cluster_members = identifySubsetLinkages(
-            clusters,
-            cluster_members,
-            linkage_id_col="cluster_id"
-        )
-        logger.info("Done. {} subset clusters identified.".format(len(clusters[~clusters["subset_of"].isna()])))
-
     logger.info("Found {} clusters.".format(len(clusters)))
     logger.info("Clustering and restructuring completed in {:.3f} seconds.".format(time_end_restr - time_start_cluster))
 
@@ -1059,8 +1067,22 @@ def runTHOR(
     logger.setLevel(logging_level)
 
     # Connect to ray cluster if enabled
-    if USE_RAY and not ray.is_initialized():
-        ray.init(address="auto")
+    enable_ray = False
+    configs = [
+        range_shift_config,
+        cluster_link_config,
+        iod_config,
+        od_config,
+        odp_config
+    ]
+    for conf in configs:
+        if conf["parallel_backend"] == "ray":
+            enable_ray = True
+
+    if enable_ray:
+        import ray
+        if not ray.is_initialized():
+            ray.init(address="auto")
 
     # Build the configuration directory which stores
     # the run parameters

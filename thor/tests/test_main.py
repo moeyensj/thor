@@ -103,7 +103,6 @@ def test_clusterAndLink():
             eps=1/3600,
             min_samples=5,
             min_arc_length=1.0,
-            identify_subsets=False,
             num_jobs=1,
         )
         analyis_cluster_members = cluster_members.merge(preprocessed_associations, how="left", on="obs_id")

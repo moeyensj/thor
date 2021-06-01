@@ -26,16 +26,15 @@ class Config:
     CONTAMINATION_PERCENTAGE = 20
     BACKEND = "PYOORB"
     BACKEND_KWARGS = {}
-    NUM_JOBS = 60
-
-    USE_RAY = False
-    USE_GPU = False
+    NUM_JOBS = "auto"
+    PARALLEL_BACKEND = "mp"
 
     RANGE_SHIFT_CONFIG = {
         "cell_area" : 1000,
         "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
+        "parallel_backend" : PARALLEL_BACKEND
     }
 
     CLUSTER_LINK_CONFIG = {
@@ -49,7 +48,8 @@ class Config:
         "min_samples" : MIN_OBS,
         "min_arc_length" : MIN_ARC_LENGTH,
         "num_jobs" : NUM_JOBS,
-        "alg" : "dbscan"
+        "alg" : "dbscan",
+        "parallel_backend" : PARALLEL_BACKEND
     }
 
     IOD_CONFIG = {
@@ -65,6 +65,7 @@ class Config:
         "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
+        "parallel_backend" : PARALLEL_BACKEND
     }
 
     OD_CONFIG = {
@@ -80,6 +81,7 @@ class Config:
         "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
+        "parallel_backend" : PARALLEL_BACKEND
     }
 
     ODP_CONFIG = {
@@ -97,6 +99,7 @@ class Config:
         "num_jobs" : NUM_JOBS,
         "backend" : BACKEND,
         "backend_kwargs" : BACKEND_KWARGS,
+        "parallel_backend" : PARALLEL_BACKEND
     }
 
     ADES_METADATA = {

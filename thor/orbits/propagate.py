@@ -1,7 +1,7 @@
-import pandas as pd
+import warnings
 
-from ..config import Config
 from ..utils import _checkTime
+from ..backend import Backend
 from ..backend import PYOORB
 from ..backend import FINDORB
 from ..backend import MJOLNIR
@@ -15,8 +15,9 @@ def propagateOrbits(
         t1,
         backend="MJOLNIR",
         backend_kwargs={},
-        num_jobs=Config.NUM_JOBS,
-        chunk_size=1
+        chunk_size=1,
+        num_jobs=1,
+        parallel_backend="mp"
     ):
     """
     Propagate orbits using desired backend.
@@ -36,6 +37,13 @@ def propagateOrbits(
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
         backend.
+    chunk_size : int, optional
+        Number of orbits to send to each job.
+    num_jobs : int, optional
+        Number of jobs to launch.
+    parallel_backend : str, optional
+        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
+        module ('mp').
 
     Returns
     -------
@@ -54,6 +62,12 @@ def propagateOrbits(
     elif backend == "FINDORB":
         backend = FINDORB(**backend_kwargs)
 
+    elif isinstance(backend, Backend):
+        backend = backend
+
+        if len(backend_kwargs) > 0:
+            warnings.warn("backend_kwargs will be ignored since a instantiated backend class has been given.")
+
     else:
         err = (
             "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB'"
@@ -63,7 +77,8 @@ def propagateOrbits(
     propagated = backend.propagateOrbits(
         orbits,
         t1,
+        chunk_size=chunk_size,
         num_jobs=num_jobs,
-        chunk_size=chunk_size
+        parallel_backend=parallel_backend
     )
     return propagated
