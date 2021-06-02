@@ -1,11 +1,11 @@
+import time
 import uuid
-import warnings
+import logging
 import numpy as np
 import pandas as pd
 
 __all__ = [
     "sortLinkages",
-    "verifyLinkages",
     "generateCombinations",
     "identifySubsetLinkages",
     "mergeLinkages",
@@ -13,58 +13,53 @@ __all__ = [
     "removeDuplicateObservations"
 ]
 
+logger = logging.getLogger(__name__)
+
 def sortLinkages(
         linkages,
         linkage_members,
         observations,
         linkage_id_col="orbit_id"
     ):
-    linkages_sorted = linkages.copy()
-    linkage_members_sorted = linkage_members.copy()
+    """
+    Check that linkages and linkage_members have their linkage IDs in the same order. If not,
+    sort both by linkage ID. Second, check that linkage_members is additionally sorted by
+    mjd_utc. If linkage_members does not contain the mjd_utc column, then observations will be merged
+    to retrieve the observation time.
 
-    linkages_sorted.sort_values(
-        by=[linkage_id_col],
-        inplace=True
-    )
-    linkage_members_sorted = linkage_members_sorted.merge(
-        observations[["obs_id", "mjd_utc"]],
-        on="obs_id",
-        how="left",
-    )
-    linkage_members_sorted.sort_values(
-        by=[linkage_id_col, "mjd_utc", "obs_id"],
-        inplace=True
-    )
-    linkage_members_sorted.drop(
-        columns=["mjd_utc"],
-        inplace=True
-    )
-    for df in [linkages_sorted, linkage_members_sorted]:
-        df.reset_index(
-            inplace=True,
-            drop=True
-        )
+    Parameters
+    ----------
+    linkages : `~pandas.DataFrame`
+        DataFrame containing at least a linkage ID column (linkage_id_col). Each unique linkage should
+        be only present once.
+    linkage_members : `~pandas.DataFrame`
+        DataFrame containing at least a linkage ID column (linkage_id_col) and an observation ID column ('obs_id'). The observation ID
+        column is used to merge on observations so that the observation time can be retrieved.
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations with at least an observation ID column ('obs_id') and a observation time
+        column ('mjd_utc').
+    linkage_id_col : str
+        Name of the linkage ID column.
 
-    return linkages_sorted, linkage_members_sorted
-
-def verifyLinkages(
-        linkages,
-        linkage_members,
-        observations,
-        linkage_id_col="orbit_id"
-    ):
+    Returns
+    -------
+    linkages : `~pandas.DataFrame`
+        Linkages sorted by linkage IDs.
+    linkage_members : `~pandas.DataFrame`
+        Linkages sorted by linkage IDs and observation times.
+    """
+    time_start = time.time()
+    logger.debug("Verifying linkages...")
 
     linkages_verified = linkages.copy()
     linkage_members_verified = linkage_members.copy()
 
     reset_index = False
-    if not np.all(linkages_verified[linkage_id_col].values == linkage_members_verified[linkage_id_col].unique()):
-        warning = (
-            "Linkages and linkage_members dataframes are not equally sorted by linkage ID.\n"
-            "Sorting..."
-        )
-        warnings.warn(warning)
-
+    id_sorted = np.all(linkages_verified[linkage_id_col].values == linkage_members_verified[linkage_id_col].unique())
+    if not id_sorted:
+        logger.debug(f"Linkages and linkage_members dataframes are not equally sorted by {linkage_id_col}. Sorting...")
+        # Sort by linkage_id
+        sort_start = time.time()
         linkages_verified.sort_values(
             by=[linkage_id_col],
             inplace=True
@@ -73,33 +68,58 @@ def verifyLinkages(
             by=[linkage_id_col],
             inplace=True
         )
+        sort_end = time.time()
+        duration = sort_end - sort_start
+        logger.debug(f"Sorting completed in {duration:.3f}s.")
         reset_index = True
 
-    linkage_members_verified = linkage_members_verified.merge(observations[["obs_id", "mjd_utc"]],
-        on="obs_id",
-        how="left"
-    )
-    if not np.all(linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])[["orbit_id", "obs_id"]].values == linkage_members_verified[["orbit_id", "obs_id"]].values):
-        warning = (
-            "Linkage_members is not sorted by {} and mjd_utc.\n"
-            "Sorting..."
-        )
-        warnings.warn(warning.format(linkage_id_col))
+    time_present = True
+    if "mjd_utc" not in linkage_members_verified.columns:
+        logger.debug("Observation time column ('mjd_utc') is not in linkage_members, merging with observations...")
 
+        # Merge with observations to get the observation time for each observation in linkage_members
+        merge_start = time.time()
+        linkage_members_verified = linkage_members_verified.merge(observations[["obs_id", "mjd_utc"]],
+            on="obs_id",
+            how="left"
+        )
+        merge_end = time.time()
+        duration = merge_end - merge_start
+        logger.debug(f"Merging completed in {duration:.3f}s.")
+        time_present = False
+
+    time_sorted = np.all(linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])[["orbit_id", "obs_id"]].values == linkage_members_verified[["orbit_id", "obs_id"]].values)
+    if not time_sorted:
+        logger.debug(f"Linkage_members is not sorted by {linkage_id_col} and mjd_utc. Sorting...")
+
+        # Sort by linkage_id, mjd_utc, and finally obs_id
+        sort_start = time.time()
         linkage_members_verified.sort_values(
             by=[linkage_id_col, "mjd_utc", "obs_id"],
             inplace=True
         )
+        sort_end = time.time()
+        duration = sort_end - sort_start
+        logger.debug(f"Sorting completed in {duration:.3f}s.")
         reset_index = True
 
-    if reset_index == True:
+    if reset_index:
         for df in [linkages_verified, linkage_members_verified]:
             df.reset_index(
                 inplace=True,
                 drop=True
             )
 
-    return linkages_verified, linkage_members_verified[[linkage_id_col, "obs_id"]]
+    if not time_present:
+        linkage_members_verified.drop(
+            columns=["mjd_utc"],
+            inplace=True
+        )
+
+    time_end = time.time()
+    duration = time_end - time_start
+    logger.debug(f"Linkages verified in {duration:.3f}s.")
+    return linkages_verified, linkage_members_verified
 
 
 def generateCombinations(

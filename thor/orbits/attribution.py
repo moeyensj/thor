@@ -11,7 +11,6 @@ from ..utils import _initWorker
 from ..utils import _checkParallel
 from ..utils import yieldChunks
 from ..utils import calcChunkSize
-from ..utils import verifyLinkages
 from ..utils import mergeLinkages
 from ..utils import sortLinkages
 from ..utils import removeDuplicateObservations
@@ -316,7 +315,7 @@ def mergeAndExtendOrbits(
     time_start = time.time()
     logger.info("Running orbit extension and merging...")
 
-    orbits_iter, orbit_members_iter = verifyLinkages(
+    orbits_iter, orbit_members_iter = sortLinkages(
         orbits,
         orbit_members,
         observations,

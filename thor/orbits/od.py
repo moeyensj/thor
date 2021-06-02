@@ -13,7 +13,6 @@ from ..utils import _initWorker
 from ..utils import _checkParallel
 from ..utils import yieldChunks
 from ..utils import calcChunkSize
-from ..utils import verifyLinkages
 from ..utils import sortLinkages
 from ..backend import PYOORB
 from ..backend import MJOLNIR
@@ -608,7 +607,7 @@ def differentialCorrection(
 
     if len(orbits) > 0 and len(orbit_members) > 0:
 
-        orbits_, orbit_members_ = verifyLinkages(
+        orbits_, orbit_members_ = sortLinkages(
             orbits,
             orbit_members,
             observations
