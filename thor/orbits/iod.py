@@ -322,6 +322,7 @@ def iod(
         observations,
         method=observation_selection_method,
     )
+    obs_ids = obs_ids[:(3 * (num_outliers + 1))]
 
     if len(obs_ids) == 0:
         processable = False
