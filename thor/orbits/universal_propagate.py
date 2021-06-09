@@ -21,7 +21,6 @@ __all__ = [
 
 MU = c.MU
 
-
 @jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
 def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     """
@@ -115,6 +114,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     new_orbits = []
     num_orbits = orbits.shape[0]
+    sqrt_mu = np.sqrt(mu)
 
     for i in range(num_orbits):
         for j, t in enumerate(t1):
@@ -125,7 +125,6 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
             v = orbits[i, 3:]
             v_mag = np.linalg.norm(v)
             r_mag = np.linalg.norm(r)
-            sqrt_mu = np.sqrt(mu)
             chi2 = chi**2
 
             alpha = -v_mag**2 / mu + 2 / r_mag
