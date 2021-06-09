@@ -166,11 +166,9 @@ def od(
         # such that the chi2 improves
         orbit_prev_ = copy.deepcopy(orbit)
 
-        ephemeris_prev_ = backend.generateEphemeris(
+        ephemeris_prev_ = backend._generateEphemeris(
             orbit_prev_,
-            observers,
-            test_orbit=test_orbit,
-            num_jobs=1
+            observers
         )
         residuals_prev_, stats_prev_ = calcResiduals(
             coords,
@@ -238,11 +236,9 @@ def od(
         ATWb = np.zeros((num_params, 1, num_obs))
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_nom = backend.generateEphemeris(
+        ephemeris_nom = backend._generateEphemeris(
             orbit_prev,
-            observers,
-            test_orbit=test_orbit,
-            num_jobs=1
+            observers
         )
         coords_nom = ephemeris_nom[observables].values[ids_mask]
 
@@ -277,11 +273,9 @@ def od(
             )
 
             # Calculate the modified ephemerides
-            ephemeris_mod_p = backend.generateEphemeris(
+            ephemeris_mod_p = backend._generateEphemeris(
                 orbit_iter_p,
-                observers,
-                test_orbit=test_orbit,
-                num_jobs=1
+                observers
             )
             coords_mod_p = ephemeris_mod_p[observables].values
 
@@ -296,11 +290,9 @@ def od(
                 )
 
                 # Calculate the modified ephemerides
-                ephemeris_mod_n = backend.generateEphemeris(
+                ephemeris_mod_n = backend._generateEphemeris(
                     orbit_iter_n,
-                    observers,
-                    test_orbit=test_orbit,
-                    num_jobs=1
+                    observers
                 )
                 coords_mod_n = ephemeris_mod_n[observables].values
 
@@ -407,11 +399,9 @@ def od(
             continue
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_iter = backend.generateEphemeris(
+        ephemeris_iter = backend._generateEphemeris(
             orbit_iter,
-            observers,
-            test_orbit=test_orbit,
-            num_jobs=1
+            observers
         )
         coords_iter = ephemeris_iter[observables].values
 
