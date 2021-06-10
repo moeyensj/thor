@@ -189,7 +189,6 @@ def od(
         orbit_prev = orbit_prev_
         ephemeris_prev = ephemeris_prev_
         residuals_prev = residuals_prev_
-        stats_prev = stats_prev_
         num_obs = num_obs_
         chi2_prev = chi2_prev_
         chi2_total_prev = chi2_total_prev_
@@ -430,10 +429,8 @@ def od(
                 logger.debug("Potential improvement orbit has been found.")
             orbit_prev = orbit_iter
             residuals_prev = residuals
-            stats_prev = stats
             chi2_prev = chi2_iter
             chi2_total_prev = chi2_total_iter
-            delta_rchi2 = rchi2_iter - rchi2_prev
             rchi2_prev = rchi2_iter
 
             if rchi2_prev <= rchi2_prev_:
@@ -452,7 +449,6 @@ def od(
             orbit_prev = orbit_prev_
             ephemeris_prev = ephemeris_prev_
             residuals_prev = residuals_prev_
-            stats_prev = stats_prev_
             num_obs = num_obs_
             chi2_prev = chi2_prev_
             chi2_total_prev = chi2_total_prev_
