@@ -120,6 +120,12 @@ def od(
         )
         raise ValueError(err)
 
+    if method not in ["central", "finite"]:
+        err = (
+            "method should be one of 'central' or 'finite'."
+        )
+        raise ValueError(err)
+
     observables = ["RA_deg", "Dec_deg"]
 
     obs_ids_all = observations["obs_id"].values
