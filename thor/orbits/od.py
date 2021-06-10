@@ -148,9 +148,6 @@ def od(
     # forces at least one succesful iteration to have been taken.)
     first_solution = True
 
-    # Force differential corrector to iterate max_iter per allowable set of observations
-    force_iter = False
-
     num_obs = len(observations)
     if num_obs < min_obs:
         logger.debug("This orbit has fewer than {} observations.".format(min_obs))
@@ -202,15 +199,22 @@ def od(
         DELTA_DECREASE_FACTOR = 100
 
         max_iter_i = max_iter
+        max_iter_outliers = max_iter * (num_outliers + 1)
 
     while not converged and processable:
-        # Never exceed max_iter times the maximum number of possible
-        # outliers iterations
-        if iterations == (max_iter * (num_outliers + 1)):
-            break
+        iterations += 1
 
-        if iterations == max_iter_i and (solution_found or (num_outliers == outliers_tried)):
+        # We add 1 here because the iterations are counted as they start, not
+        # as they finish. There are a lot of 'continue' statements down below that
+        # will exit the current iteration if something fails which makes accounting for
+        # iterations at the start of an iteration easier.
+        if iterations ==  max_iter_outliers + 1:
+            logger.debug(f"Maximum number of iterations completed.")
             break
+        if iterations == max_iter_i + 1 and (solution_found or (num_outliers == outliers_tried)):
+            logger.debug(f"Maximum number of iterations completed.")
+            break
+        logger.debug(f"Starting iteration number: {iterations}/{max_iter_outliers}")
 
         # Make sure delta is well bounded
         if delta_prev < 1e-14:
@@ -327,11 +331,9 @@ def od(
 
         if (ATWA_condition > 1e15) or (ATWb_condition > 1e15):
             delta_prev /= DELTA_DECREASE_FACTOR
-            iterations += 1
             continue
         if np.any(np.isnan(ATWA)) or np.any(np.isnan(ATWb)):
             delta_prev *= DELTA_INCREASE_FACTOR
-            iterations += 1
             continue
         else:
             try:
@@ -340,12 +342,10 @@ def od(
                     ATWb,
                 ).T
                 covariance_matrix = np.linalg.inv(ATWA)
-
                 variances = np.diag(covariance_matrix)
                 if np.any(variances <= 0) or np.any(np.isnan(variances)):
                     delta_prev /= DELTA_DECREASE_FACTOR
-                    iterations += 1
-                    logger.debug("Variances are negative, 0.0 or NaN. Discarding solution.")
+                    logger.debug("Variances are negative, 0.0, or NaN. Discarding solution.")
                     continue
 
                 r_variances = variances[0:3]
@@ -353,19 +353,16 @@ def od(
                 r = np.linalg.norm(orbit_prev.cartesian[0, :3])
                 if (r_sigma / r) > 1:
                     delta_prev /= DELTA_DECREASE_FACTOR
-                    iterations += 1
                     logger.debug("Covariance matrix is largely unconstrained. Discarding solution.")
                     continue
 
                 if np.any(np.isnan(covariance_matrix)):
                     delta_prev *= DELTA_INCREASE_FACTOR
-                    iterations += 1
                     logger.debug("Covariance matrix contains NaNs. Discarding solution.")
                     continue
 
             except np.linalg.LinAlgError:
                 delta_prev *= DELTA_INCREASE_FACTOR
-                iterations += 1
                 continue
 
         if num_params == 6:
@@ -376,12 +373,11 @@ def od(
             d_time = delta_state[0, 6]
 
         if np.linalg.norm(d_state[:3]) < 1e-16:
+            logger.debug("Change in state is less than 1e-16 au, discarding solution.")
             delta_prev *= DELTA_DECREASE_FACTOR
-            iterations += 1
             continue
         if np.linalg.norm(d_state[:3]) > 100:
             delta_prev /= DELTA_DECREASE_FACTOR
-            iterations += 1
             logger.debug("Change in state is more than 100 au, discarding solution.")
             continue
 
@@ -394,7 +390,6 @@ def od(
         )
         if np.linalg.norm(orbit_iter.cartesian[0, 3:]) > 1:
             delta_prev *= DELTA_INCREASE_FACTOR
-            iterations += 1
             logger.debug("Orbit is moving extraordinarily fast, discarding solution.")
             continue
 
@@ -416,16 +411,15 @@ def od(
         rchi2_iter = chi2_total_iter / (2 * num_obs - num_params)
         arc_length = times_all[ids_mask].max() -  times_all[ids_mask].min()
 
-        iterations += 1
-        logger.debug("Current r-chi2: {}, Previous r-chi2: {}, Max Iterations: {}, Outliers Tried: {}".format(rchi2_iter, rchi2_prev, max_iter_i, outliers_tried))
         # If the new orbit has lower residuals than the previous,
         # accept the orbit and continue iterating until max iterations has been
         # reached. Once max iterations have been reached and the orbit still has not converged
         # to an acceptable solution, try removing an observation as an outlier and iterate again.
-        if ((rchi2_iter < rchi2_prev) or first_solution) and iterations <= max_iter_i and arc_length >= min_arc_length:
+        if ((rchi2_iter < rchi2_prev) or first_solution) and arc_length >= min_arc_length:
 
             if first_solution:
                 logger.debug("Storing first successful differential correction iteration for these observations.")
+                first_solution = False
             else:
                 logger.debug("Potential improvement orbit has been found.")
             orbit_prev = orbit_iter
@@ -442,11 +436,7 @@ def od(
             if rchi2_prev <= rchi2_threshold:
                 logger.debug("Potential solution orbit has been found.")
                 solution_found = True
-
-                if (iterations % max_iter) > 1 and not force_iter:
-                    converged = True
-
-            first_solution = False
+                converged = True
 
         elif num_outliers > 0 and outliers_tried <= num_outliers and iterations > max_iter_i and not solution_found:
 
@@ -486,6 +476,8 @@ def od(
             #logger.debug("Orbit did not improve since previous iteration, decrease delta and continue.")
             #delta_prev /= DELTA_DECREASE_FACTOR
             pass
+
+        logger.debug("Current r-chi2: {}, Previous r-chi2: {}, Max Iterations: {}, Outliers Tried: {}".format(rchi2_iter, rchi2_prev, max_iter_i, outliers_tried))
 
     logger.debug("Solution found: {}".format(solution_found))
     logger.debug("First solution: {}".format(first_solution))
