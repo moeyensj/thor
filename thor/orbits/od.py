@@ -227,7 +227,7 @@ def od(
             pass
 
         delta_iter = delta_prev
-        logger.debug("Starting iteration {} with delta {}.".format(iterations + 1, delta_iter))
+        logger.debug(f"Starting iteration {iterations} with delta {delta_iter}.")
 
         # Initialize the partials derivatives matrix
         if num_obs > 6 and fit_epoch:
@@ -244,7 +244,7 @@ def od(
             orbit_prev,
             observers
         )
-        coords_nom = ephemeris_nom[observables].values[ids_mask]
+        coords_nom = ephemeris_nom[observables].values
 
         # Modify each component of the state by a small delta
         d = np.zeros((1, 7))
