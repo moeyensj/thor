@@ -115,9 +115,12 @@ class TestOrbit:
         logger.debug("Performing gnomonic projection...")
         gnomonic_coords = cartesianToGnomonic(coords_cart_rotated)
 
-        observations["obj_x"] = x_a[:, 0]
-        observations["obj_y"] = x_a[:, 1]
-        observations["obj_z"] = x_a[:, 2]
+        observations["obj_x'"] = x_a[:, 0]
+        observations["obj_y'"] = x_a[:, 1]
+        observations["obj_z'"] = x_a[:, 2]
+        observations["obj_x''"] = coords_cart_rotated[:, 0]
+        observations["obj_y''"] = coords_cart_rotated[:, 1]
+        observations["obj_z''"] = coords_cart_rotated[:, 2]
         observations["theta_x_deg"] = np.degrees(gnomonic_coords[:, 0])
         observations["theta_y_deg"] = np.degrees(gnomonic_coords[:, 1])
         observations["test_obj_x"] = self.cartesian[0]
@@ -126,6 +129,15 @@ class TestOrbit:
         observations["test_obj_vx"] = self.cartesian[3]
         observations["test_obj_vy"] = self.cartesian[4]
         observations["test_obj_vz"] = self.cartesian[5]
+
+        coords_rot_test = self.M @ self.cartesian[:3].T
+        coords_rot_testv = self.M @ self.cartesian[3:].T
+        observations["test_obj_x''"] = coords_rot_test[0]
+        observations["test_obj_y''"] = coords_rot_test[1]
+        observations["test_obj_z''"] = coords_rot_test[2]
+        observations["test_obj_vx''"] = coords_rot_testv[0]
+        observations["test_obj_vy''"] = coords_rot_testv[1]
+        observations["test_obj_vz''"] = coords_rot_testv[2]
         return
 
     def applyToEphemeris(self, ephemeris):
@@ -202,10 +214,14 @@ def calcDelta(r, x_e, n_ae):
     delta : `~numpy.ndarray` (N)
         Distance from topocenter to asteroid in units of r.
     """
-    delta = np.zeros((len(x_e)))
+    N = len(x_e)
+    delta = np.zeros(N)
     rsq = r**2
-    for i, (n_ae_i, x_e_i) in enumerate(zip(n_ae, x_e)):
-        delta[i] = - np.dot(n_ae_i, x_e_i) + np.sqrt(np.dot(n_ae_i, x_e_i)**2 + rsq - np.linalg.norm(x_e_i)**2)
+    for i in range(N):
+        n_ae_i = np.ascontiguousarray(n_ae[i])
+        x_e_i = np.ascontiguousarray(x_e[i])
+        ndotxe = np.dot(n_ae_i, x_e_i)
+        delta[i] = - ndotxe + np.sqrt(ndotxe**2 + rsq - np.linalg.norm(x_e_i)**2)
     return delta
 
 @jit("f8[:,:](f8[:], f8[:,:])", nopython=True, cache=True)
@@ -292,11 +308,12 @@ def calcR1(n_hat):
     R1 : `~numpy.matrix` (3, 3)
         Rotation matrix.
     """
+    n_hat_ = np.ascontiguousarray(n_hat)
     # Find the rotation axis v
-    v = np.cross(n_hat, Z_AXIS)
+    v = np.cross(n_hat_, Z_AXIS)
     # Calculate the cosine of the rotation angle, equivalent to the cosine of the
     # inclination
-    c = np.dot(n_hat, Z_AXIS)
+    c = np.dot(n_hat_, Z_AXIS)
     # Compute the skew-symmetric cross-product of the rotation axis vector v
     vp = np.array([[0, -v[2], v[1]],
                    [v[2], 0, -v[0]],
