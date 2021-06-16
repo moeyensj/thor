@@ -1,15 +1,8 @@
-import warnings
 import numpy as np
 from numba import jit
-from numba.core.errors import NumbaPerformanceWarning
 
 from ..constants import Constants as c
 from .universal_propagate import propagateUniversal
-
-# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
-# involves slicing numpy arrays along their second dimension which is unsupported
-# in numba's nopython mode. Lets ignore the warning so we don't scare users.
-warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = [
     "addLightTime",
