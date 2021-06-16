@@ -1,18 +1,8 @@
-import warnings
 import numpy as np
 from numba import jit
-from numba.core.errors import NumbaPerformanceWarning
 
 from ..constants import Constants as c
-from ..coordinates import transformCoordinates
-from ..utils import _checkTime
 from .stumpff import calcStumpff
-from .state import shiftOrbitsOrigin
-
-# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
-# involves slicing numpy arrays along their second dimension which is unsupported
-# in numba's nopython mode. Lets ignore the warning so we don't scare users.
-warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = [
     "calcChi",
@@ -47,8 +37,8 @@ def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     chi : float
         Universal anomaly.
     """
-    r = orbit[:3]
-    v = orbit[3:]
+    r = np.ascontiguousarray(orbit[:3])
+    v = np.ascontiguousarray(orbit[3:])
     v_mag = np.linalg.norm(v)
     r_mag = np.linalg.norm(r)
     rv_mag = np.dot(r, v) / r_mag
