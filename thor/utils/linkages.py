@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 
 __all__ = [
-    "sortLinkages",
     "generateCombinations",
+    "sortLinkages",
     "identifySubsetLinkages",
     "mergeLinkages",
     "removeDuplicateLinkages",
@@ -14,6 +14,28 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+def generateCombinations(
+        x,
+        idx=None,
+        ct=None,
+        reps=None
+    ):
+    # Magic from the wizard himself: Mario Juric
+    # recursively generate all combinations of idx, assuming
+    # ct is the list of repeat counts of idx
+    if x is not None:
+        # initialization; find indices of where the repetitions are
+        _, idx, ct = np.unique(x, return_counts=True, return_index=True)
+        reps = np.nonzero(ct > 1)[0]
+    if len(reps) == 0:
+        yield idx
+        return
+    i = reps[0]
+    idx = idx.copy()
+    for _ in range(ct[i]):
+        yield from generateCombinations(None, idx, ct, reps[1:])
+        idx[i] += 1
 
 def sortLinkages(
         linkages,
@@ -88,7 +110,8 @@ def sortLinkages(
         logger.debug(f"Merging completed in {duration:.3f}s.")
         time_present = False
 
-    time_sorted = np.all(linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])[["orbit_id", "obs_id"]].values == linkage_members_verified[["orbit_id", "obs_id"]].values)
+    linkage_members_verified_ = linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])
+    time_sorted = np.all(linkage_members_verified_[[linkage_id_col, "obs_id"]].values == linkage_members_verified[[linkage_id_col, "obs_id"]].values)
     if not time_sorted:
         logger.debug(f"Linkage_members is not sorted by {linkage_id_col} and mjd_utc. Sorting...")
 
@@ -120,29 +143,6 @@ def sortLinkages(
     duration = time_end - time_start
     logger.debug(f"Linkages verified in {duration:.3f}s.")
     return linkages_verified, linkage_members_verified
-
-
-def generateCombinations(
-        x,
-        idx=None,
-        ct=None,
-        reps=None
-    ):
-    # Magic from the wizard himself: Mario Juric
-    # recursively generate all combinations of idx, assuming
-    # ct is the list of repeat counts of idx
-    if x is not None:
-        # initialization; find indices of where the repetitions are
-        _, idx, ct = np.unique(x, return_counts=True, return_index=True)
-        reps = np.nonzero(ct > 1)[0]
-    if len(reps) == 0:
-        yield idx
-        return
-    i = reps[0]
-    idx = idx.copy()
-    for _ in range(ct[i]):
-        yield from generateCombinations(None, idx, ct, reps[1:])
-        idx[i] += 1
 
 def identifySubsetLinkages(
         all_linkages,
