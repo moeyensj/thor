@@ -20,3 +20,4 @@ setuptools>=45
 wheel
 setuptools_scm>=6.0
 click
+pika
