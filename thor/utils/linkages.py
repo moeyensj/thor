@@ -10,7 +10,8 @@ __all__ = [
     "identifySubsetLinkages",
     "mergeLinkages",
     "removeDuplicateLinkages",
-    "removeDuplicateObservations"
+    "removeDuplicateObservations",
+    "calcDeltas"
 ]
 
 logger = logging.getLogger(__name__)
@@ -459,3 +460,68 @@ def removeDuplicateObservations(
         drop=True
     )
     return linkages_, linkage_members_
+
+def calcDeltas(
+        linkage_members,
+        observations,
+        groupby_cols=["orbit_id", "night_id"],
+        delta_cols=["mjd_utc", "RA_deg", "Dec_deg", "mag"]
+    ):
+    """
+    Calculate deltas for the desired columns. For example, if groupby columns are given to be orbit_id and night id, then
+    the linkages are grouped first by orbit_id then night_id, and then the difference in quantities are calculated for
+    each column in delta_cols. This can be used to calculate the nightly time difference in observations per linkage, or the
+    amount of motion a linkage has between observations, etc...
+
+    Parameters
+    ----------
+    linkage_members : `~pandas.DataFrame`
+        DataFrame containing at least a linkage ID column (linkage_id_col) and an observation ID column ('obs_id'). The observation ID
+        column is used to merge on observations so that the columns from the observations dataframe can be retrieved if necessary.
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations with at least an observation ID column ('obs_id').
+    groupby_cols : list
+        Columns by which to group the linkages and calculate deltas.
+    delta_cols : list
+        Columns for which to calculate deltas.
+
+    Returns
+    -------
+    linkage_members : `~pandas.DataFrame`
+        Copy of the linkage_members dataframe with the delta columns added.
+    """
+    linkage_members_ = linkage_members.copy()
+
+    # Check to see if each column on which a delta should be
+    # calculated is in linkage_members, if not look for it
+    # in observations
+    cols = []
+    for col in delta_cols + groupby_cols:
+        if col not in linkage_members_.columns:
+            if col not in observations.columns:
+                err = (
+                    f"{col} could not be found in either linkage_members or observations."
+                )
+                raise ValueError(err)
+
+            cols.append(col)
+
+    if len(cols) > 0:
+        linkage_members_ = linkage_members_.merge(
+            observations[["obs_id"] + cols],
+            on="obs_id",
+            how="left"
+        )
+
+    nightly = linkage_members_.groupby(
+        by=groupby_cols
+    )
+
+    deltas = nightly[delta_cols].diff()
+    deltas.rename(
+        columns={c : f"d{c}" for c in delta_cols},
+        inplace=True
+    )
+    linkage_members_ = linkage_members_.join(deltas)
+
+    return linkage_members_

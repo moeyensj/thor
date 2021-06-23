@@ -1,7 +1,9 @@
+import pytest
 import numpy as np
 import pandas as pd
 
 from ..linkages import sortLinkages
+from ..linkages import calcDeltas
 
 ### Create test data set
 linkage_ids = ["a", "b", "c"]
@@ -9,13 +11,12 @@ linkage_lengths = [4, 5, 6]
 
 linkage_members_ids = []
 for i, lid in enumerate(linkage_ids):
-    linkage_members_ids += [i for j in range(linkage_lengths[i])]
+    linkage_members_ids += [lid for j in range(linkage_lengths[i])]
 obs_ids = [f"o{i:04d}" for i in range(len(linkage_members_ids))]
 
 times = []
 for i in range(len(linkage_ids)):
     times += [np.arange(59000, 59000 + linkage_lengths[i])]
-
 times = np.concatenate(times)
 
 LINKAGES = pd.DataFrame({
@@ -96,3 +97,45 @@ def test_sortLinkages_timeMissing():
     pd.testing.assert_frame_equal(LINKAGES, linkages_sorted)
     pd.testing.assert_frame_equal(LINKAGE_MEMBERS[["linkage_id", "obs_id"]], linkage_members_sorted)
 
+def test_calcDeltas():
+
+    # Calculate deltas for the time column and make sure they match the input dataset
+    linkages_members_ = calcDeltas(
+        LINKAGE_MEMBERS,
+        OBSERVATIONS,
+        groupby_cols=["linkage_id"],
+        delta_cols=["mjd_utc"]
+    )
+
+    assert "dmjd_utc" in linkages_members_.columns
+    assert linkages_members_[linkages_members_["linkage_id"] == "a"]["dmjd_utc"].sum() == 3
+    assert linkages_members_[linkages_members_["linkage_id"] == "b"]["dmjd_utc"].sum() == 4
+    assert linkages_members_[linkages_members_["linkage_id"] == "c"]["dmjd_utc"].sum() == 5
+
+def test_calcDeltas_columnInObservations():
+
+    # Calculate deltas for the time column and make sure they match the input dataset, but
+    # this time remove the column from linkage_members so that calcDeltas looks for it
+    # in observations
+    linkages_members_ = calcDeltas(
+        LINKAGE_MEMBERS[["linkage_id", "obs_id"]],
+        OBSERVATIONS,
+        groupby_cols=["linkage_id"],
+        delta_cols=["mjd_utc"]
+    )
+
+    assert "dmjd_utc" in linkages_members_.columns
+    assert linkages_members_[linkages_members_["linkage_id"] == "a"]["dmjd_utc"].sum() == 3
+    assert linkages_members_[linkages_members_["linkage_id"] == "b"]["dmjd_utc"].sum() == 4
+    assert linkages_members_[linkages_members_["linkage_id"] == "c"]["dmjd_utc"].sum() == 5
+
+def test_calcDeltas_missingColumn():
+
+    # Calculate deltas for the time column and make sure they match the input dataset
+    with pytest.raises(ValueError):
+        linkages_members_ = calcDeltas(
+            LINKAGE_MEMBERS[["linkage_id", "obs_id"]],
+            OBSERVATIONS[["obs_id"]],
+            groupby_cols=["linkage_id"],
+            delta_cols=["mjd_utc"]
+        )
