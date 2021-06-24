@@ -1,6 +1,7 @@
 import copy
 import yaml
 import logging
+import io
 
 __all__ = [
     "_handleUserConfig",
@@ -282,6 +283,12 @@ class Configuration:
             yaml.dump(self._conf, config_out, sort_keys=False)
         return
 
+    def toYamlString(self):
+        """
+        Save configuration to a YAML string.
+        """
+        return yaml.dump(self._conf, stream=None, sort_keys=False)
+
     @classmethod
     def fromYaml(cls, file_name):
         """
@@ -303,5 +310,26 @@ class Configuration:
             **conf
         )
         return config
+
+    @classmethod
+    def fromYamlString(cls, s):
+        """
+        Read configuration from a YAML string.
+
+        Parameters
+        ----------
+        s : str
+            The string containing YAML data.
+        """
+        conf_in = yaml.load(io.StringIO(s), Loader=yaml.FullLoader)
+        conf = {}
+        for key, values in conf_in.items():
+            conf[key.lower()] = values
+
+        config = Configuration(
+            **conf
+        )
+        return config
+
 
 Config = Configuration()
