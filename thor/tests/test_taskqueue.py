@@ -84,10 +84,11 @@ def orbits():
     yield Orbits.from_csv(os.path.join(DATA_DIR, "orbits.csv"))
 
 
+test_config = config.Configuration(cluster_link_config={"vx_bins": 10, "vy_bins": 10})
+
+
 @integration_test
 def test_queue_roundtrip(queue_connection, google_storage_bucket, observations, orbits):
-
-    test_config = config.Configuration()
     job_id = str(uuid.uuid1())
     tasks.upload_job_inputs(google_storage_bucket, job_id, test_config, observations)
     task = tasks.Task.create(
@@ -163,7 +164,6 @@ def test_client_roundtrip(
     queue_connection, google_storage_bucket, orbits, observations
 ):
     taskqueue_client = client.Client(google_storage_bucket, queue_connection)
-    test_config = config.Configuration()
 
     # trim down to 3 orbits
     orbits = Orbits.from_df(orbits.to_df()[:3])
