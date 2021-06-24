@@ -14,6 +14,7 @@ from thor import config
 from thor.orbits import Orbits
 from thor.taskqueue import tasks
 from thor.taskqueue import queue
+from thor.testing import integration_test
 
 RUN_INTEGRATION_TESTS = "THOR_INTEGRATION_TEST" in os.environ
 
@@ -68,8 +69,7 @@ def orbits():
     yield Orbits.from_csv(os.path.join(DATA_DIR, "orbits.csv"))
 
 
-@pytest.mark.skipif(not RUN_INTEGRATION_TESTS,
-                    reason="integration_tests not enabled")
+@integration_test
 def test_queue_roundtrip(queue_connection, google_storage_bucket, observations, orbits):
 
     test_config = config.Configuration()
