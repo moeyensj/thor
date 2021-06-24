@@ -1,13 +1,16 @@
 import io
+import os
 import json
 import logging
 import uuid
 import socket
+import posixpath
+import traceback
 
 import pika
 import pandas as pd
 
-from google.cloud.storage.bucket import Bucket
+from google.cloud.storage.bucket import Bucket, Blob
 from google.cloud.storage.client import Client as GCSClient
 
 from thor.config import Config
@@ -18,12 +21,14 @@ logger = logging.getLogger("thor")
 
 
 class Task:
-    def __init__(self,
-                 job_id: str,
-                 task_id: str,
-                 bucket: str,
-                 channel: pika.channel.Channel,
-                 delivery_tag: int):
+    def __init__(
+        self,
+        job_id: str,
+        task_id: str,
+        bucket: str,
+        channel: pika.channel.Channel,
+        delivery_tag: int,
+    ):
 
         self.job_id = job_id
         self.task_id = task_id
@@ -51,18 +56,20 @@ class Task:
             task_id=new_task_id(orbits),
             bucket=bucket.name,
             channel=None,
-            delivery_tag=-1
+            delivery_tag=-1,
         )
         upload_task_inputs(bucket, tp, orbits)
         set_task_status(bucket, job_id, tp.task_id, "requested")
         return tp
 
     @classmethod
-    def from_msg(cls,
-                 channel: pika.channel.Channel,
-                 method: pika.amqp_object.Method,
-                 properties: pika.amqp_object.Properties,
-                 body: bytes) -> "Task":
+    def from_msg(
+        cls,
+        channel: pika.channel.Channel,
+        method: pika.amqp_object.Method,
+        properties: pika.amqp_object.Properties,
+        body: bytes,
+    ) -> "Task":
         data = json.loads(body.decode("utf8"))
         return Task(
             job_id=data["job_id"],
@@ -87,31 +94,56 @@ class Task:
         set_task_status(bucket, self.job_id, self.task_id, "in_progress")
 
     def mark_success(self, bucket: Bucket, result_directory):
+        logger.info("marking task %s as a success", self.task_id)
         # Store the results for the publisher
-        self._upload_results(result_directory)
+        self._upload_results(bucket, result_directory)
         # Mark the message as successfully handled
         self._channel.basic_ack(delivery_tag=self._delivery_tag)
         set_task_status(bucket, self.job_id, self.task_id, "succeeded")
 
     def mark_failure(self, bucket: Bucket, result_directory, exception):
+        logger.error(
+            "marking task %s as a failure, reason: %s", self.task_id, exception
+        )
         # store the failed results
-        self._upload_failure(result_directory, exception)
+        self._upload_failure(bucket, result_directory, exception)
         # Mark the message as unsuccessfully attempted
         self._channel.basic_nack(
-            delivery_tag=self._delivery_tag,
-            requeue=False,
+            delivery_tag=self._delivery_tag, requeue=False,
         )
         set_task_status(bucket, self.job_id, self.task_id, "failed")
 
-    def _upload_results(self, result_directory):
-        raise NotImplementedError()
+    def _upload_results(self, bucket: Bucket, result_directory: str):
+        # Task-wide directory in the bucket where results go
+        output_blobdir = _task_output_path(self.job_id, self.task_id)
+        for (dirpath, _, filenames) in os.walk(result_directory):
+            # Trim off the result_directory prefix from dirpath.
+            relative_dir = os.path.relpath(dirpath, result_directory)
+            for filename in filenames:
+                # filepath is the path of the file locally
+                filepath = os.path.join(dirpath, filename)
+                # blobpath is the path that we want to use remotely.
+                blobpath = posixpath.join(output_blobdir, relative_dir, filename,)
+                logger.debug("uploading %s to %s", filepath, blobpath)
+                bucket.blob(blobpath).upload_from_filename(filepath)
 
-    def _upload_failure(self, result_directory, exception):
+    def _upload_failure(
+        self, bucket: Bucket, result_directory: str, exception: Exception
+    ):
+        output_blobdir = _task_output_path(self.job_id, self.task_id)
+        exception_string = traceback.format_exception(
+            etype=type(exception), value=exception, tb=exception.__traceback__,
+        )
+        blobpath = posixpath.join(output_blobdir, "error_message.txt")
+        logger.error("uploading exception trace to %s", blobpath)
+        bucket.blob(blobpath).upload_from_string(exception_string)
+        self._upload_results(self.bucket, result_directory)
+
         raise NotImplementedError()
 
 
 # Generated randomly:
-_task_id_namespace = uuid.UUID('b3f9427b-8ee5-4c79-a3a1-875c6947777b')
+_task_id_namespace = uuid.UUID("b3f9427b-8ee5-4c79-a3a1-875c6947777b")
 
 
 def new_task_id(orbits: Orbits) -> str:
@@ -132,13 +164,11 @@ def download_task_inputs(bucket: Bucket, task: Task):
     cfg_bytes = bucket.blob(cfg_path).download_as_string()
     config = Config.fromYamlString(cfg_bytes.decode("utf8"))
 
-    obs_path = _job_input_path(task.job_id,  "observations.csv")
+    obs_path = _job_input_path(task.job_id, "observations.csv")
     logger.info("downloading task input %s", obs_path)
     obs_bytes = bucket.blob(obs_path).download_as_string()
     observations = pd.read_csv(
-        io.BytesIO(obs_bytes),
-        index_col=False,
-        dtype={"obs_id": str},
+        io.BytesIO(obs_bytes), index_col=False, dtype={"obs_id": str},
     )
 
     orbit_path = _task_input_path(task.job_id, task.task_id, "orbit.csv")

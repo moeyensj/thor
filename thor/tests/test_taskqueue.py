@@ -8,8 +8,10 @@ import pandas as pd
 import pandas.testing as pd_testing
 import pika
 import uuid
+import logging
 
 from google.cloud.storage import Client as GCSClient
+import google.cloud.exceptions
 
 from thor import config
 from thor.orbits import Orbits
@@ -30,6 +32,8 @@ _RABBIT_PASSWORD = os.environ.get("RABBIT_PASSWORD", None)
 DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "testing", "data",
 )
+
+logger = logging.getLogger("thor")
 
 
 @pytest.fixture()
@@ -57,7 +61,11 @@ def queue_connection(request):
 def google_storage_bucket(request):
     client = GCSClient()
     bucket_name = f"test_bucket__{request.function.__name__}"
-    bucket = client.create_bucket(bucket_name)
+    try:
+        bucket = client.create_bucket(bucket_name)
+    except google.cloud.exceptions.Conflict:
+        logger.warning("bucket %s already exists; tests may be unpredictable", bucket_name)
+        bucket = client.bucket(bucket_name)
     yield bucket
     bucket.delete(force=True, client=client)
 
@@ -161,9 +169,6 @@ def test_client_roundtrip(
     orbits = Orbits.from_df(orbits.to_df()[:3])
     n_task = 3
 
-    # and 1000 observations
-    observations = observations[:1000]
-
     manifest = taskqueue_client.launch_job(test_config, observations, orbits)
     assert len(manifest.task_ids) == n_task
 
@@ -190,12 +195,9 @@ def test_client_roundtrip(
     assert statuses[received_tasks[1].task_id]["state"] == "in_progress"
     assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
 
-    # Handle the other tasks.
+    # Handle another task.
     taskqueue_client.handle_task(received_tasks[1])
-    taskqueue_client.handle_task(received_tasks[2])
-
-    # Everything should be succeeded.
     statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
-    assert all(
-        s["state"] == "succeeded" for s in statuses.values()
-    ), "all tasks should have succeeded"
+    assert statuses[received_tasks[0].task_id]["state"] == "succeeded"
+    assert statuses[received_tasks[1].task_id]["state"] == "succeeded"
+    assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
