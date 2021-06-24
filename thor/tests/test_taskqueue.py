@@ -95,3 +95,17 @@ def test_queue_roundtrip(queue_connection, google_storage_bucket, observations, 
     assert have_orb == orbits
 
     # have.mark_success()
+
+
+def test_new_task_id_single_orbit(orbits):
+    single_orbit = orbits.split(1)[0]
+    have = tasks.new_task_id(single_orbit)
+    assert have == single_orbit.ids[0]
+
+
+def test_new_task_id_multiple_orbits(orbits):
+    have = tasks.new_task_id(orbits)
+    have_uuid = uuid.UUID(have)
+    # We don't actually care very much that its UUID version 3, but this is a
+    # convenient assertion to be sure it was parsed properly.
+    assert have_uuid.version == 3
