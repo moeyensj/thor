@@ -73,17 +73,47 @@ def main():
     job_id = str(uuid.uuid1())
     logger.info("Generated Job ID: %s", job_id)
     tasks.upload_job_inputs(bucket, job_id, config, preprocessed_observations)
+
     launched_tasks = []
+    task_id_to_orbit_id = {}
     for orbit in test_orbits.split(1):
         task = tasks.Task.create(job_id, config, preprocessed_observations, orbit)
         logger.info("Created Task (id=%s) for orbit %s", task.task_id, orbit.ids[0])
+
         q.publish(task)
+
         launched_tasks.append(task)
+        task_id_to_orbit_id[task.task_id] = orbit.ids[0]
+
+    logger.info("Launched %d tasks", len(launched_tasks))
     q.close()
 
     while True:
+        counts_by_state = {
+            "launched": 0,
+            "in_progress": 0,
+            "succeeded": 0,
+            "failed": 0,
+        }
         for t in launched_tasks:
-            time.sleep(5)
+            status = tasks.get_status(bucket, job_id, t.task_id)
+            orbit_id = task_id_to_orbit_id[t.task_id]
+            state = status["state"]
+            worker = status["worker"]
+            print(f"{orbit_id}\t{state}\t{worker}")
+
+            counts_by_state[state] += 1
+            time.sleep(0.05)
+
+        print("counts:")
+        print(f"  launched:  {counts_by_state['launched']}")
+        print(f"  in_progress:  {counts_by_state['in_progress']}")
+        print(f"  succeeded:  {counts_by_state['succeeded']}")
+        print(f"  failed:  {counts_by_state['failed']}")
+
+        if counts_by_state["launched"] == 0 and counts_by_state["in_progress"] == 0:
+            return
+        time.sleep(10)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import uuid
+import socket
 
 import pika
 import pandas as pd
@@ -52,6 +53,7 @@ class Task:
             delivery_tag=-1
         )
         upload_task_inputs(bucket, tp, orbits)
+        set_status_blob(bucket, job_id, tp.task_id, "requested")
         return tp
 
     @classmethod
@@ -81,13 +83,17 @@ class Task:
         bucket = client.bucket(self.bucket)
         return download_task_inputs(bucket, self)
 
-    def success(self, result_directory):
+    def mark_in_progress(self, client: GCSClient):
+        self.set_status_blob(client, "in_progress")
+
+    def mark_success(self, result_directory):
         # Store the results for the publisher
         self._upload_results(result_directory)
         # Mark the message as successfully handled
         self._channel.basic_ack(delivery_tag=self._delivery_tag)
+        self.set_status_blob(client, "succeeded")
 
-    def failure(self, result_directory, exception):
+    def mark_failure(self, result_directory, exception):
         # store the failed results
         self._upload_failure(result_directory, exception)
         # Mark the message as unsuccessfully attempted
@@ -95,6 +101,7 @@ class Task:
             delivery_tag=self._delivery_tag,
             requeue=False,
         )
+        self.set_status_blob(client, "failed")
 
     def _upload_results(self, result_directory):
         raise NotImplementedError()
@@ -168,3 +175,26 @@ def _task_input_path(job_id: str, task_id: str, name: str):
 
 def _task_output_path(job_id: str, task_id: str):
     return f"thor_jobs/v1/job-{job_id}/tasks/task-{task_id}/outputs"
+
+
+def _task_status_path(job_id: str, task_id: str):
+    return f"thor_jobs/v1/job-{job_id}/tasks/task-{task_id}/status"
+
+
+_LOCAL_FQDN = socket.getfqdn()
+
+
+def set_status(bucket, job_id, task_id, status_msg, worker=_LOCAL_FQDN):
+    status_obj = {
+        "state": status_msg,
+        "worker": worker,
+    }
+    status_str = json.dumps(status_obj)
+    blob_path = _task_status_path(job_id, task_id)
+    bucket.blob(blob_path).upload_from_string(status_str)
+
+
+def get_status(bucket, job_id, task_id):
+    blob_path = _task_status_path(job_id, task_id)
+    status_str = bucket.blob(blob_path).download_as_string()
+    return json.loads(status_str)
