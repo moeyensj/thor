@@ -53,7 +53,7 @@ class Task:
             delivery_tag=-1
         )
         upload_task_inputs(bucket, tp, orbits)
-        set_status_blob(bucket, job_id, tp.task_id, "requested")
+        set_status(bucket, job_id, tp.task_id, "requested")
         return tp
 
     @classmethod
