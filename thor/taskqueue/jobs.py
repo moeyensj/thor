@@ -1,6 +1,11 @@
 import datetime
 import json
-from typing import AnyStr
+from typing import AnyStr, Sequence
+
+from google.cloud.storage import Bucket
+
+from thor.orbits import Orbits
+from thor.taskqueue.tasks import Task
 
 
 class JobManifest:
@@ -69,3 +74,39 @@ class JobManifest:
             as_dict["creation_time"]
         )
         return cls(**as_dict)
+
+
+def upload_job_manifest(bucket: Bucket, manifest: JobManifest):
+    """
+    Upload a JobManifest to a bucket. It gets stored in
+    BUCKET/thor_jobs/v1/job-{job_id}/manifest.json
+
+    Parameters
+    ----------
+    bucket : google.cloud.storage.Bucket
+        The GCS bucket where job data is stored.
+    manifest : thor.taskqueue.JobManifest
+        The manifest to upload.
+    """
+    path = f"thor_jobs/v1/job-{manifest.job_id}/manifest.json"
+    bucket.blob(path).upload_from_string(manifest.to_str())
+
+
+def download_job_manifest(bucket: Bucket, job_id: str) -> JobManifest:
+    """
+    Download the JobManifest associated with job_id in given bucket.
+
+    Parameters
+    ----------
+    bucket : google.cloud.storage.Bucket
+        The GCS bucket where job data is stored.
+    job_id : str
+        The ID of the job.
+
+    Returns
+    -------
+    JobManifest
+    """
+    path = f"thor_jobs/v1/job-{job_id}/manifest.json"
+    as_str = bucket.blob(path).download_as_string()
+    return JobManifest.from_str(as_str)
