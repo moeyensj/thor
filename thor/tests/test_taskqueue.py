@@ -14,6 +14,7 @@ from thor import config
 from thor.orbits import Orbits
 from thor.taskqueue import tasks
 from thor.taskqueue import queue
+from thor.taskqueue import jobs
 from thor.testing import integration_test
 
 RUN_INTEGRATION_TESTS = "THOR_INTEGRATION_TEST" in os.environ
@@ -109,3 +110,18 @@ def test_new_task_id_multiple_orbits(orbits):
     # We don't actually care very much that its UUID version 3, but this is a
     # convenient assertion to be sure it was parsed properly.
     assert have_uuid.version == 3
+
+
+def test_job_manifest_roundtrip():
+    manifest = jobs.JobManifest.create("job_id")
+    manifest.append("o1", "t1")
+    manifest.append("o2", "t2")
+    manifest.append("o3", "t3")
+
+    as_str = manifest.to_str()
+    have = jobs.JobManifest.from_str(as_str)
+
+    assert have.job_id == manifest.job_id
+    assert have.creation_time == manifest.creation_time
+    assert have.orbit_ids == manifest.orbit_ids
+    assert have.task_ids == manifest.task_ids
