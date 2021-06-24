@@ -322,6 +322,7 @@ def iod(
         observations,
         method=observation_selection_method,
     )
+    obs_ids = obs_ids[:(3 * (num_outliers + 1))]
 
     if len(obs_ids) == 0:
         processable = False
@@ -355,10 +356,9 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = backend.generateEphemeris(
+        ephemeris = backend._generateEphemeris(
             iod_orbits,
-            observers,
-            num_jobs=1,
+            observers
         )
 
         # For each unique initial orbit calculate residuals and chi-squared

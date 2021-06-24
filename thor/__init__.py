@@ -7,7 +7,6 @@ from .backend import *
 from .utils import *
 from .coordinates import *
 from .projections import *
-from .vectors import *
 from .orbit import *
 from .cell import *
 from .plotting import *

@@ -1,18 +1,8 @@
-import warnings
 import numpy as np
 from numba import jit
-from numba.core.errors import NumbaPerformanceWarning
 
 from ..constants import Constants as c
-from ..coordinates import transformCoordinates
-from ..utils import _checkTime
 from .stumpff import calcStumpff
-from .state import shiftOrbitsOrigin
-
-# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
-# involves slicing numpy arrays along their second dimension which is unsupported
-# in numba's nopython mode. Lets ignore the warning so we don't scare users.
-warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = [
     "calcChi",
@@ -21,8 +11,7 @@ __all__ = [
 
 MU = c.MU
 
-
-@jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True)
+@jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
 def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate universal anomaly chi using Newton-Raphson.
@@ -48,8 +37,8 @@ def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     chi : float
         Universal anomaly.
     """
-    r = orbit[:3]
-    v = orbit[3:]
+    r = np.ascontiguousarray(orbit[:3])
+    v = np.ascontiguousarray(orbit[3:])
     v_mag = np.linalg.norm(v)
     r_mag = np.linalg.norm(r)
     rv_mag = np.dot(r, v) / r_mag
@@ -82,7 +71,7 @@ def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
 
     return chi
 
-@jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True, cache=True)
 def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     Propagate orbits using the universal anomaly formalism.
@@ -115,6 +104,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     new_orbits = []
     num_orbits = orbits.shape[0]
+    sqrt_mu = np.sqrt(mu)
 
     for i in range(num_orbits):
         for j, t in enumerate(t1):
@@ -125,7 +115,6 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
             v = orbits[i, 3:]
             v_mag = np.linalg.norm(v)
             r_mag = np.linalg.norm(r)
-            sqrt_mu = np.sqrt(mu)
             chi2 = chi**2
 
             alpha = -v_mag**2 / mu + 2 / r_mag

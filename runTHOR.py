@@ -55,11 +55,11 @@ if __name__ == "__main__":
     test_orbits_, recovered_orbits, recovered_orbit_members = runTHOR(
         preprocessed_observations,
         test_orbits,
-        range_shift_config=config["RANGE_SHIFT_CONFIG"],
-        cluster_link_config=config["CLUSTER_LINK_CONFIG"],
-        iod_config=config["IOD_CONFIG"],
-        od_config=config["OD_CONFIG"],
-        odp_config=config["ODP_CONFIG"],
+        range_shift_config=config.RANGE_SHIFT_CONFIG,
+        cluster_link_config=config.CLUSTER_LINK_CONFIG,
+        iod_config=config.IOD_CONFIG,
+        od_config=config.OD_CONFIG,
+        odp_config=config.ODP_CONFIG,
         out_dir=args.out_dir,
         if_exists="continue",
         logging_level=logging.INFO

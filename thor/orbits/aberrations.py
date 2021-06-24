@@ -1,15 +1,8 @@
-import warnings
 import numpy as np
 from numba import jit
-from numba.core.errors import NumbaPerformanceWarning
 
 from ..constants import Constants as c
 from .universal_propagate import propagateUniversal
-
-# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
-# involves slicing numpy arrays along their second dimension which is unsupported
-# in numba's nopython mode. Lets ignore the warning so we don't scare users.
-warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = [
     "addLightTime",
@@ -19,7 +12,7 @@ __all__ = [
 MU = c.MU
 C = c.C
 
-@jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True)
+@jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True, cache=True)
 def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
     """
     When generating ephemeris, orbits need to be backwards propagated to the time
@@ -90,7 +83,7 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
 
     return corrected_orbits, lts
 
-@jit(["f8[:,:](f8[:,:], f8[:,:])"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8[:,:])"], nopython=True, cache=True)
 def addStellarAberration(orbits, observer_states):
     """
     The motion of the observer in an inertial frame will cause an object
