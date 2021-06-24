@@ -341,11 +341,8 @@ class PYOORB(Backend):
         propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
         propagated.sort_values(
             by=["orbit_id", "epoch_mjd_tdb"],
-            inplace=True
-        )
-        propagated.reset_index(
             inplace=True,
-            drop=True
+            ignore_index=True
         )
 
         if orbits.ids is not None:
@@ -451,7 +448,6 @@ class PYOORB(Backend):
             "TrueAnom"
         ]
 
-
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
             _checkTime(observation_times, "observation_times")
@@ -485,11 +481,8 @@ class PYOORB(Backend):
         ephemeris = pd.concat(ephemeris_dfs)
         ephemeris.sort_values(
             by=["orbit_id", "observatory_code", "mjd_utc"],
-            inplace=True
-        )
-        ephemeris.reset_index(
             inplace=True,
-            drop=True
+            ignore_index=True
         )
 
         if orbits.ids is not None:

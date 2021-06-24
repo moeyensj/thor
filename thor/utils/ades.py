@@ -18,6 +18,7 @@ def writeADESHeader(
         observatory_name=None,
         submitter_institution=None,
         telescope_name=None,
+        telescope_fratio=None,
         comment=None
     ):
     """
@@ -45,6 +46,8 @@ def writeADESHeader(
         Name of submitter's institution.
     telescope_name : str, optional
         Telescope's name.
+    telescope_fratio : str, optional
+        Telescope's focal ratio.
     comment : str
         Additional comment to add to the ADES header.
 
@@ -76,9 +79,11 @@ def writeADESHeader(
     header += ["# telescope"]
     if telescope_name is not None:
         header += [f"! name {telescope_name}"]
-    header += [f"! aperture {telescope_aperture}"]
     header += [f"! design {telescope_design}"]
+    header += [f"! aperture {telescope_aperture}"]
     header += [f"! detector {telescope_detector}"]
+    if telescope_fratio is not None:
+        header += [f"! fRatio {telescope_fratio}"]
 
     # Add observer details
     header += ["# observers"]
@@ -113,6 +118,12 @@ def writeToADES(
         file_out,
         mjd_scale="utc",
         seconds_precision=9,
+        columns_precision={
+            "ra" : 6,
+            "dec" : 6,
+            "mag" : 2,
+            "rmsMag" : 2,
+        },
         observatory_code="I11",
         submitter="D. iRAC",
         telescope_design="Reflector",
@@ -123,6 +134,7 @@ def writeToADES(
         observatory_name="Vera C. Rubin Observatory",
         submitter_institution=None,
         telescope_name=None,
+        telescope_fratio=None,
         comment=None
     ):
     """
@@ -141,6 +153,9 @@ def writeToADES(
         of seconds for the observation times. The ADES format can handle higher
         than ms precision if the observations warrant such accuracy. 0.1 ms precision
         would be expressed as 4 while ms precision would be expressed as 3.
+    columns_precision : dict, optional
+        Dictionary with column names as keys and the precision (in decimals) to which
+        they should be printed in the ADES file.
     observatory_code : str, optional
         MPC-assigned observatory code
     submitter : str, optional
@@ -155,6 +170,10 @@ def writeToADES(
         First initial and last name (J. Smith) of each of the observers.
     measurers : list of str, optional
         First initial and last name (J. Smith) of each of the measurers.
+    telescope_name : str, optional
+        Telescope's name.
+    telescope_fratio : str, optional
+        Telescope's focal ratio.
     comment : str, optional
         Additional comment to add to the ADES header.
 
@@ -174,6 +193,7 @@ def writeToADES(
         observatory_name=observatory_name,
         submitter_institution=submitter_institution,
         telescope_name=telescope_name,
+        telescope_fratio=telescope_fratio,
         comment=comment
     )
 
@@ -227,6 +247,11 @@ def writeToADES(
 
     if "remarks" in observations.columns.values:
         ades["remarks"] = observations["remarks"].values
+
+    for col in columns_precision:
+        if col in ades.keys():
+            prec_col = columns_precision[col]
+            ades[col] = [f"{i:.{prec_col}f}" for i in ades[col]]
 
     # Create dataframe with formated data entries
     ades = pd.DataFrame(ades)

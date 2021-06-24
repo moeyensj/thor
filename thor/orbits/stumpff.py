@@ -5,7 +5,7 @@ __all__ = [
     "calcStumpff"
 ]
 
-@jit("UniTuple(f8, 6)(f8)", nopython=True)
+@jit("UniTuple(f8, 6)(f8)", nopython=True, cache=True)
 def calcStumpff(psi):
     """
     Calculate the first 6 Stumpff functions for universal variable psi.

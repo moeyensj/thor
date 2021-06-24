@@ -1,106 +1,20 @@
+import time
 import uuid
-import warnings
+import logging
 import numpy as np
 import pandas as pd
 
 __all__ = [
-    "sortLinkages",
-    "verifyLinkages",
     "generateCombinations",
+    "sortLinkages",
     "identifySubsetLinkages",
     "mergeLinkages",
     "removeDuplicateLinkages",
-    "removeDuplicateObservations"
+    "removeDuplicateObservations",
+    "calcDeltas"
 ]
 
-def sortLinkages(
-        linkages,
-        linkage_members,
-        observations,
-        linkage_id_col="orbit_id"
-    ):
-    linkages_sorted = linkages.copy()
-    linkage_members_sorted = linkage_members.copy()
-
-    linkages_sorted.sort_values(
-        by=[linkage_id_col],
-        inplace=True
-    )
-    linkage_members_sorted = linkage_members_sorted.merge(
-        observations[["obs_id", "mjd_utc"]],
-        on="obs_id",
-        how="left",
-    )
-    linkage_members_sorted.sort_values(
-        by=[linkage_id_col, "mjd_utc", "obs_id"],
-        inplace=True
-    )
-    linkage_members_sorted.drop(
-        columns=["mjd_utc"],
-        inplace=True
-    )
-    for df in [linkages_sorted, linkage_members_sorted]:
-        df.reset_index(
-            inplace=True,
-            drop=True
-        )
-
-    return linkages_sorted, linkage_members_sorted
-
-def verifyLinkages(
-        linkages,
-        linkage_members,
-        observations,
-        linkage_id_col="orbit_id"
-    ):
-
-    linkages_verified = linkages.copy()
-    linkage_members_verified = linkage_members.copy()
-
-    reset_index = False
-    if not np.all(linkages_verified[linkage_id_col].values == linkage_members_verified[linkage_id_col].unique()):
-        warning = (
-            "Linkages and linkage_members dataframes are not equally sorted by linkage ID.\n"
-            "Sorting..."
-        )
-        warnings.warn(warning)
-
-        linkages_verified.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
-        linkage_members_verified.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
-        reset_index = True
-
-    linkage_members_verified = linkage_members_verified.merge(observations[["obs_id", "mjd_utc"]],
-        on="obs_id",
-        how="left"
-    )
-    if not np.all(linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])[["orbit_id", "obs_id"]].values == linkage_members_verified[["orbit_id", "obs_id"]].values):
-        warning = (
-            "Linkage_members is not sorted by {} and mjd_utc.\n"
-            "Sorting..."
-        )
-        warnings.warn(warning.format(linkage_id_col))
-
-        linkage_members_verified.sort_values(
-            by=[linkage_id_col, "mjd_utc", "obs_id"],
-            inplace=True
-        )
-        reset_index = True
-
-    if reset_index == True:
-        for df in [linkages_verified, linkage_members_verified]:
-            df.reset_index(
-                inplace=True,
-                drop=True
-            )
-
-    return linkages_verified, linkage_members_verified[[linkage_id_col, "obs_id"]]
-
+logger = logging.getLogger(__name__)
 
 def generateCombinations(
         x,
@@ -123,6 +37,113 @@ def generateCombinations(
     for _ in range(ct[i]):
         yield from generateCombinations(None, idx, ct, reps[1:])
         idx[i] += 1
+
+def sortLinkages(
+        linkages,
+        linkage_members,
+        observations,
+        linkage_id_col="orbit_id"
+    ):
+    """
+    Check that linkages and linkage_members have their linkage IDs in the same order. If not,
+    sort both by linkage ID. Second, check that linkage_members is additionally sorted by
+    mjd_utc. If linkage_members does not contain the mjd_utc column, then observations will be merged
+    to retrieve the observation time.
+
+    Parameters
+    ----------
+    linkages : `~pandas.DataFrame`
+        DataFrame containing at least a linkage ID column (linkage_id_col). Each unique linkage should
+        be only present once.
+    linkage_members : `~pandas.DataFrame`
+        DataFrame containing at least a linkage ID column (linkage_id_col) and an observation ID column ('obs_id'). The observation ID
+        column is used to merge on observations so that the observation time can be retrieved.
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations with at least an observation ID column ('obs_id') and a observation time
+        column ('mjd_utc').
+    linkage_id_col : str
+        Name of the linkage ID column.
+
+    Returns
+    -------
+    linkages : `~pandas.DataFrame`
+        Linkages sorted by linkage IDs.
+    linkage_members : `~pandas.DataFrame`
+        Linkages sorted by linkage IDs and observation times.
+    """
+    time_start = time.time()
+    logger.debug("Verifying linkages...")
+
+    linkages_verified = linkages.copy()
+    linkage_members_verified = linkage_members.copy()
+
+    reset_index = False
+    id_sorted = np.all(linkages_verified[linkage_id_col].values == linkage_members_verified[linkage_id_col].unique())
+    if not id_sorted:
+        logger.debug(f"Linkages and linkage_members dataframes are not equally sorted by {linkage_id_col}. Sorting...")
+        # Sort by linkage_id
+        sort_start = time.time()
+        linkages_verified.sort_values(
+            by=[linkage_id_col],
+            inplace=True
+        )
+        linkage_members_verified.sort_values(
+            by=[linkage_id_col],
+            inplace=True
+        )
+        sort_end = time.time()
+        duration = sort_end - sort_start
+        logger.debug(f"Sorting completed in {duration:.3f}s.")
+        reset_index = True
+
+    time_present = True
+    if "mjd_utc" not in linkage_members_verified.columns:
+        logger.debug("Observation time column ('mjd_utc') is not in linkage_members, merging with observations...")
+
+        # Merge with observations to get the observation time for each observation in linkage_members
+        merge_start = time.time()
+        linkage_members_verified = linkage_members_verified.merge(observations[["obs_id", "mjd_utc"]],
+            on="obs_id",
+            how="left"
+        )
+        merge_end = time.time()
+        duration = merge_end - merge_start
+        logger.debug(f"Merging completed in {duration:.3f}s.")
+        time_present = False
+
+    linkage_members_verified_ = linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])
+    time_sorted = np.all(linkage_members_verified_[[linkage_id_col, "obs_id"]].values == linkage_members_verified[[linkage_id_col, "obs_id"]].values)
+    if not time_sorted:
+        logger.debug(f"Linkage_members is not sorted by {linkage_id_col} and mjd_utc. Sorting...")
+
+        # Sort by linkage_id, mjd_utc, and finally obs_id
+        sort_start = time.time()
+        linkage_members_verified.sort_values(
+            by=[linkage_id_col, "mjd_utc", "obs_id"],
+            inplace=True
+        )
+        sort_end = time.time()
+        duration = sort_end - sort_start
+        logger.debug(f"Sorting completed in {duration:.3f}s.")
+        reset_index = True
+
+    if reset_index:
+        for df in [linkages_verified, linkage_members_verified]:
+            df.reset_index(
+                inplace=True,
+                drop=True
+            )
+
+    if not time_present:
+        linkage_members_verified.drop(
+            columns=["mjd_utc"],
+            inplace=True
+        )
+
+    time_end = time.time()
+    duration = time_end - time_start
+    logger.debug(f"Linkages verified in {duration:.3f}s.")
+    return linkages_verified, linkage_members_verified
 
 def identifySubsetLinkages(
         all_linkages,
@@ -439,3 +460,68 @@ def removeDuplicateObservations(
         drop=True
     )
     return linkages_, linkage_members_
+
+def calcDeltas(
+        linkage_members,
+        observations,
+        groupby_cols=["orbit_id", "night_id"],
+        delta_cols=["mjd_utc", "RA_deg", "Dec_deg", "mag"]
+    ):
+    """
+    Calculate deltas for the desired columns. For example, if groupby columns are given to be orbit_id and night id, then
+    the linkages are grouped first by orbit_id then night_id, and then the difference in quantities are calculated for
+    each column in delta_cols. This can be used to calculate the nightly time difference in observations per linkage, or the
+    amount of motion a linkage has between observations, etc...
+
+    Parameters
+    ----------
+    linkage_members : `~pandas.DataFrame`
+        DataFrame containing at least a linkage ID column (linkage_id_col) and an observation ID column ('obs_id'). The observation ID
+        column is used to merge on observations so that the columns from the observations dataframe can be retrieved if necessary.
+    observations : `~pandas.DataFrame`
+        DataFrame containing observations with at least an observation ID column ('obs_id').
+    groupby_cols : list
+        Columns by which to group the linkages and calculate deltas.
+    delta_cols : list
+        Columns for which to calculate deltas.
+
+    Returns
+    -------
+    linkage_members : `~pandas.DataFrame`
+        Copy of the linkage_members dataframe with the delta columns added.
+    """
+    linkage_members_ = linkage_members.copy()
+
+    # Check to see if each column on which a delta should be
+    # calculated is in linkage_members, if not look for it
+    # in observations
+    cols = []
+    for col in delta_cols + groupby_cols:
+        if col not in linkage_members_.columns:
+            if col not in observations.columns:
+                err = (
+                    f"{col} could not be found in either linkage_members or observations."
+                )
+                raise ValueError(err)
+
+            cols.append(col)
+
+    if len(cols) > 0:
+        linkage_members_ = linkage_members_.merge(
+            observations[["obs_id"] + cols],
+            on="obs_id",
+            how="left"
+        )
+
+    nightly = linkage_members_.groupby(
+        by=groupby_cols
+    )
+
+    deltas = nightly[delta_cols].diff()
+    deltas.rename(
+        columns={c : f"d{c}" for c in delta_cols},
+        inplace=True
+    )
+    linkage_members_ = linkage_members_.join(deltas)
+
+    return linkage_members_

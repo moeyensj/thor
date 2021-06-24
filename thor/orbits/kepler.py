@@ -1,22 +1,16 @@
-import warnings
 import numpy as np
 from numba import jit
-from numba.core.errors import NumbaPerformanceWarning
 
 from ..constants import Constants as c
-
-# Numba will warn that numpy dot performs better on contiguous arrays. Fixing this warning
-# involves slicing numpy arrays along their second dimension which is unsupported
-# in numba's nopython mode. Lets ignore the warning so we don't scare users.
-warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
 __all__ = ["_convertCartesianToKeplerian",
            "_convertKeplerianToCartesian",
            "convertOrbitalElements"]
 
 MU = c.MU
+Z_AXIS = np.array([0., 0., 1.])
 
-@jit(["f8[:,:](f8[:,:], f8)"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8)"], nopython=True, cache=True)
 def _convertCartesianToKeplerian(elements_cart, mu=MU):
     """
     Convert cartesian orbital elements to Keplerian orbital elements.
@@ -46,8 +40,8 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
     """
     elements_kepler = []
     for i in range(len(elements_cart)):
-        r = elements_cart[i, :3]
-        v = elements_cart[i, 3:]
+        r = np.ascontiguousarray(elements_cart[i, 0:3])
+        v = np.ascontiguousarray(elements_cart[i, 3:6])
         v_mag = np.linalg.norm(v)
         r_mag = np.linalg.norm(r)
 
@@ -56,7 +50,7 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
         h = np.cross(r, v)
         h_mag = np.linalg.norm(h)
 
-        n = np.cross(np.array([0, 0, 1]), h)
+        n = np.cross(Z_AXIS, h)
         n_mag = np.linalg.norm(n)
 
         e_vec = ((v_mag**2 - mu / r_mag) * r - (np.dot(r, v)) * v) / mu
@@ -103,7 +97,7 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
 
     return np.array(elements_kepler)
 
-@jit(["f8[:,:](f8[:,:], f8, i8, f8)"], nopython=True)
+@jit(["f8[:,:](f8[:,:], f8, i8, f8)"], nopython=True, cache=True)
 def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15):
     """
     Convert Keplerian orbital elements to cartesian orbital elements.

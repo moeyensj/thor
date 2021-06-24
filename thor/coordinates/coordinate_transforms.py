@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 
-@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True)
+@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True, cache=True)
 def _convertCartesianToSpherical(x, y, z, vx, vy, vz):
     """
     Convert spherical coordinates to cartesian coordinates.
@@ -73,7 +73,7 @@ def _convertCartesianToSpherical(x, y, z, vx, vy, vz):
     return rho, lon, lat, vrho, vlon, vlat
 
 
-@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True)
+@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True, cache=True)
 def _convertSphericalToCartesian(rho, lon, lat, vrho, vlon, vlat):
     """
     Convert spherical coordinates to cartesian coordinates.

@@ -387,7 +387,10 @@ class Orbits:
     @staticmethod
     def fromMPCOrbitCatalog(mpcorb):
 
-        orbits = mpcorb[["a_au", "e", "i_deg", "ascNode_deg", "argPeri_deg", "meanAnom_deg"]].values
+
+        cols = ["a_au", "e", "i_deg", "ascNode_deg", "argPeri_deg", "meanAnom_deg"]
+        additional_cols = mpcorb.columns[~mpcorb.columns.isin(["mjd_tt", "designation", "H_mag", "G"])]
+        orbits = mpcorb[cols].values
         epochs = Time(
             mpcorb["mjd_tt"].values,
             scale="tt",
@@ -401,6 +404,7 @@ class Orbits:
             "H" : mpcorb["H_mag"].values,
             "G" : mpcorb["G"].values,
             "orbit_units" : KEPLERIAN_UNITS,
+            "additional_data" : mpcorb[additional_cols]
         }
         return Orbits(*args, **kwargs)
 
