@@ -40,15 +40,17 @@ class JobManifest:
         now = datetime.datetime.now(datetime.timezone.utc)
         return JobManifest(creation_time=now, job_id=job_id, orbit_ids=[], task_ids=[])
 
-    def append(self, orbit_id, task_id):
+    def append(self, orbit: Orbits, task: Task):
         """
-        Add an orbit ID and task ID to the manifest.
+        Add an orbit and task to the manifest.
 
-        The orbit ID should be the orbit being handled in the given task. If the
-        task handles multiple orbits, orbit_id should be a list of orbit IDs.
+        The orbits should be the Orbits being handled in the given task.
         """
-        self.orbit_ids.append(orbit_id)
-        self.task_ids.append(task_id)
+        if len(orbit) == 1:
+            self.orbit_ids.append(orbit.ids[0])
+        else:
+            self.orbit_ids.append(list(orbit.ids))
+        self.task_ids.append(task.task_id)
 
     def to_str(self) -> str:
         """

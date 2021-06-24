@@ -113,11 +113,13 @@ def test_new_task_id_multiple_orbits(orbits):
     assert have_uuid.version == 3
 
 
-def test_job_manifest_serialization_roundtrip():
+def test_job_manifest_serialization_roundtrip(orbits):
     manifest = jobs.JobManifest.create("job_id")
-    manifest.append("o1", "t1")
-    manifest.append("o2", "t2")
-    manifest.append("o3", "t3")
+    for i, orbit in enumerate(orbits.split(1)[:5]):
+        task = tasks.Task(
+            manifest.job_id, f"task-{i}", "test-bucket", None, -1
+        )
+        manifest.append(orbit, task)
 
     as_str = manifest.to_str()
     have = jobs.JobManifest.from_str(as_str)
@@ -129,11 +131,13 @@ def test_job_manifest_serialization_roundtrip():
 
 
 @integration_test
-def test_job_manifest_storage_roundtrip(google_storage_bucket):
+def test_job_manifest_storage_roundtrip(google_storage_bucket, orbits):
     manifest = jobs.JobManifest.create("test_job_id")
-    manifest.append("o1", "t1")
-    manifest.append("o2", "t2")
-    manifest.append("o3", "t3")
+    for i, orbit in enumerate(orbits.split(1)[:5]):
+        task = tasks.Task(
+            manifest.job_id, f"task-{i}", google_storage_bucket.name, None, -1
+        )
+        manifest.append(orbit, task)
 
     jobs.upload_job_manifest(google_storage_bucket, manifest)
 
