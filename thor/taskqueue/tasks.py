@@ -1,6 +1,7 @@
-import json
-import uuid
 import io
+import json
+import logging
+import uuid
 
 import pika
 import pandas as pd
@@ -10,6 +11,9 @@ from google.cloud.storage.client import Client as GCSClient
 
 from thor.config import Config
 from thor.orbits import Orbits
+
+
+logger = logging.getLogger("thor")
 
 
 class Task:
@@ -28,9 +32,9 @@ class Task:
         self._delivery_tag = delivery_tag
 
     @classmethod
-    def create(cls, job_id, bucket, config, observations, orbits):
+    def create(cls, job_id, bucket, orbits):
         """
-        Create a new Task, uploading the inputs to a bucket.
+        Create a new Task to handle a given orbit under a particular job.
 
         Parameters
         ----------
@@ -38,8 +42,6 @@ class Task:
         bucket: google.cloud.storage.bucket.Bucket, a bucket that will hold task
             inputs and outputs
         channel: pika.channel.Channel where the Task will be sent.
-        config: thor.config.Config, a configuration object defining the THOR run
-        observations: pandas.DataFrame, preprocessed observations
         orbits: thor.orbits.Orbits, the orbits to analyze
         """
         tp = cls(
@@ -49,7 +51,7 @@ class Task:
             channel=None,
             delivery_tag=-1
         )
-        upload_task_inputs(bucket, tp, config, observations, orbits)
+        upload_task_inputs(bucket, tp, orbits)
         return tp
 
     @classmethod
@@ -106,52 +108,63 @@ def new_task_id():
 
 
 def download_task_inputs(bucket: Bucket, task: Task):
-    config_bytes = _download_input(task, bucket, "config.yaml")
-    config = Config.fromYamlString(config_bytes.decode("utf8"))
+    cfg_path = _job_input_path(task.job_id, "config.yml")
+    logger.info("downloading task input %s", cfg_path)
+    cfg_bytes = bucket.blob(cfg_path).download_as_string()
+    config = Config.fromYamlString(cfg_bytes.decode("utf8"))
 
-    observations_bytes = _download_input(task, bucket, "observations.csv")
+    obs_path = _job_input_path(task.job_id,  "observations.csv")
+    logger.info("downloading task input %s", obs_path)
+    obs_bytes = bucket.blob(obs_path).download_as_string()
     observations = pd.read_csv(
-        io.BytesIO(observations_bytes),
+        io.BytesIO(obs_bytes),
         index_col=False,
         dtype={"obs_id": str},
     )
 
-    orbits_bytes = _download_input(task, bucket, "orbits.csv")
-    orbits = Orbits.from_csv(io.BytesIO(orbits_bytes))
+    orbit_path = _task_input_path(task.job_id, task.task_id, "orbit.csv")
+    logger.info("downloading task input %s", orbit_path)
+    orbit_bytes = bucket.blob(orbit_path).download_as_string()
+    orbit = Orbits.from_csv(io.BytesIO(orbit_bytes))
 
-    return (config, observations, orbits)
+    return (config, observations, orbit)
 
 
-def upload_task_inputs(bucket: Bucket, task: Task, config, observations, orbits):
-    # Upload Config
-    _upload_input(task, bucket, config.toYamlString(), "config.yaml")
+def upload_job_inputs(bucket, job_id, config, observations):
+    # Upload configuration file
+    cfg_bytes = config.toYamlString()
+    cfg_path = _job_input_path(job_id, "config.yml")
+    logger.info("uploading job input %s", cfg_path)
+    bucket.blob(cfg_path).upload_from_string(cfg_bytes)
 
     # Upload observations
     observations_buf = io.BytesIO()
     observations.to_csv(observations_buf, index=False)
     observations_bytes = observations_buf.getvalue()
-    _upload_input(task, bucket, observations_bytes, "observations.csv")
 
-    # Upload orbits
-    orbits_buf = io.BytesIO()
-    orbits.to_csv(orbits_buf)
-    orbits_bytes = orbits_buf.getvalue()
-    _upload_input(task, bucket, orbits_bytes, "orbits.csv")
+    observations_path = _job_input_path(job_id, "observations.csv")
+    logger.info("uploading job input %s", observations_path)
+    bucket.blob(observations_path).upload_from_string(observations_bytes)
 
 
-def _input_path_prefix(job_id: str, task_id: str):
-    return f"thor_jobs/v1/job-{job_id}/task-{task_id}/inputs"
+def upload_task_inputs(bucket: Bucket, task: Task, orbit):
+    # Upload orbit
+    orbit_buf = io.BytesIO()
+    orbit.to_csv(orbit_buf)
+    orbit_bytes = orbit_buf.getvalue()
+
+    orbit_path = _task_input_path(task.job_id, task.task_id, "orbit.csv")
+    logger.info("uploading task input %s", orbit_path)
+    bucket.blob(orbit_path).upload_from_string(orbit_bytes)
 
 
-def _upload_input(task, bucket, contents, dest):
-    prefix = _input_path_prefix(task.job_id, task.task_id)
-    path = prefix + "/" + dest
-    blob = bucket.blob(path)
-    blob.upload_from_string(contents)
+def _job_input_path(job_id: str, name: str):
+    return f"thor_jobs/v1/job-{job_id}/inputs/{name}"
 
 
-def _download_input(task, bucket, src):
-    prefix = _input_path_prefix(task.job_id, task.task_id)
-    path = prefix + "/" + src
-    blob = bucket.blob(path)
-    return blob.download_as_string()
+def _task_input_path(job_id: str, task_id: str, name: str):
+    return f"thor_jobs/v1/job-{job_id}/tasks/task-{task_id}/inputs/{name}"
+
+
+def _task_output_path(job_id: str, task_id: str):
+    return f"thor_jobs/v1/job-{job_id}/tasks/task-{task_id}/outputs"

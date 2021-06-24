@@ -6,6 +6,7 @@ import os
 import pytest
 import pandas as pd
 import pandas.testing as pd_testing
+import uuid
 
 from google.cloud.storage import Client as GCSClient
 
@@ -72,11 +73,11 @@ def orbits():
 def test_queue_roundtrip(queue_connection, google_storage_bucket, observations, orbits):
 
     test_config = config.Configuration()
+    job_id = str(uuid.uuid1())
+    tasks.upload_job_inputs(google_storage_bucket, job_id, test_config, observations)
     task = tasks.Task.create(
-        job_id="test_job_id",
+        job_id=job_id,
         bucket=google_storage_bucket,
-        config=test_config,
-        observations=observations,
         orbits=orbits,
     )
     queue_connection.publish(task)
