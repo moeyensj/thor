@@ -2,15 +2,11 @@ import logging
 import os
 import tempfile
 import time
-import pandas as pd
 
 from google.cloud.storage.client import Client as GCSClient
 
 from thor import runTHOR
-from thor.orbits import Orbits
-from thor.config import Config
-
-from thorctl import tasks, queue
+from thor.taskqueue import queue
 
 
 def main():
