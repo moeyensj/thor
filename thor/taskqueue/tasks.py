@@ -54,7 +54,7 @@ class Task:
             delivery_tag=-1
         )
         upload_task_inputs(bucket, tp, orbits)
-        set_status(bucket, job_id, tp.task_id, "requested")
+        set_task_status(bucket, job_id, tp.task_id, "requested")
         return tp
 
     @classmethod
@@ -80,21 +80,20 @@ class Task:
         }
         return json.dumps(data).encode("utf8")
 
-    def download_inputs(self, client: GCSClient):
-        bucket = client.bucket(self.bucket)
+    def download_inputs(self, bucket: Bucket):
         return download_task_inputs(bucket, self)
 
-    def mark_in_progress(self, client: GCSClient):
-        self.set_status_blob(client, "in_progress")
+    def mark_in_progress(self, bucket: Bucket):
+        set_task_status(bucket, self.job_id, self.task_id, "in_progress")
 
-    def mark_success(self, result_directory):
+    def mark_success(self, bucket: Bucket, result_directory):
         # Store the results for the publisher
         self._upload_results(result_directory)
         # Mark the message as successfully handled
         self._channel.basic_ack(delivery_tag=self._delivery_tag)
-        self.set_status_blob(client, "succeeded")
+        set_task_status(bucket, self.job_id, self.task_id, "succeeded")
 
-    def mark_failure(self, result_directory, exception):
+    def mark_failure(self, bucket: Bucket, result_directory, exception):
         # store the failed results
         self._upload_failure(result_directory, exception)
         # Mark the message as unsuccessfully attempted
@@ -102,12 +101,12 @@ class Task:
             delivery_tag=self._delivery_tag,
             requeue=False,
         )
-        self.set_status_blob(client, "failed")
+        set_task_status(bucket, self.job_id, self.task_id, "failed")
 
     def _upload_results(self, result_directory):
         raise NotImplementedError()
 
-    def _upload_failure(self, result_directory):
+    def _upload_failure(self, result_directory, exception):
         raise NotImplementedError()
 
 
@@ -197,7 +196,9 @@ def _task_status_path(job_id: str, task_id: str):
 _LOCAL_FQDN = socket.getfqdn()
 
 
-def set_status(bucket, job_id, task_id, status_msg, worker=_LOCAL_FQDN):
+def set_task_status(bucket, job_id, task_id, status_msg, worker=_LOCAL_FQDN):
+    if status_msg == "requested":
+        worker = "None"
     status_obj = {
         "state": status_msg,
         "worker": worker,
@@ -207,7 +208,7 @@ def set_status(bucket, job_id, task_id, status_msg, worker=_LOCAL_FQDN):
     bucket.blob(blob_path).upload_from_string(status_str)
 
 
-def get_status(bucket, job_id, task_id):
+def get_task_status(bucket, job_id, task_id):
     blob_path = _task_status_path(job_id, task_id)
     status_str = bucket.blob(blob_path).download_as_string()
     return json.loads(status_str)

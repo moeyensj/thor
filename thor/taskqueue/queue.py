@@ -5,15 +5,9 @@ from . import tasks
 
 
 class TaskQueueConnection:
-    def __init__(self, host, port, username, password, queue_name: str):
+    def __init__(self, conn_params: pika.ConnectionParameters, queue_name: str):
         self.connection = None
-        self.connection_params = pika.ConnectionParameters(
-            host=host,
-            port=port,
-            credentials=pika.PlainCredentials(
-                username=username, password=password,
-            ),
-        )
+        self.connection_params = conn_params
         self.channel = None
         self.queue_name = queue_name
 

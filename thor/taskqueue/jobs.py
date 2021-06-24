@@ -1,11 +1,12 @@
+from typing import AnyStr, Sequence, Mapping
+
 import datetime
 import json
-from typing import AnyStr, Sequence
 
 from google.cloud.storage import Bucket
 
 from thor.orbits import Orbits
-from thor.taskqueue.tasks import Task
+from thor.taskqueue.tasks import Task, get_task_status
 
 
 class JobManifest:
@@ -112,3 +113,16 @@ def download_job_manifest(bucket: Bucket, job_id: str) -> JobManifest:
     path = f"thor_jobs/v1/job-{job_id}/manifest.json"
     as_str = bucket.blob(path).download_as_string()
     return JobManifest.from_str(as_str)
+
+
+def get_job_statuses(
+    bucket: Bucket, manifest: JobManifest
+) -> Mapping[str, Mapping[str, str]]:
+    """
+    Look up the status of all tasks in the manifest by checking in bucket for
+    task status marker objects.
+    """
+    statuses = {}
+    for task_id in manifest.task_ids:
+        statuses[task_id] = get_task_status(bucket, manifest.job_id, task_id)
+    return statuses

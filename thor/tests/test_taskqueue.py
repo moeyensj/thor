@@ -6,6 +6,7 @@ import os
 import pytest
 import pandas as pd
 import pandas.testing as pd_testing
+import pika
 import uuid
 
 from google.cloud.storage import Client as GCSClient
@@ -15,6 +16,7 @@ from thor.orbits import Orbits
 from thor.taskqueue import tasks
 from thor.taskqueue import queue
 from thor.taskqueue import jobs
+from thor.taskqueue import client
 from thor.testing import integration_test
 
 RUN_INTEGRATION_TESTS = "THOR_INTEGRATION_TEST" in os.environ
@@ -37,13 +39,14 @@ def queue_connection(request):
             "you must set RABBIT_PASSWORD env variable for integration tests",
         )
     queue_name = request.function.__name__
-    conn = queue.TaskQueueConnection(
-        _RABBIT_HOST,
-        _RABBIT_PORT,
-        _RABBIT_USER,
-        _RABBIT_PASSWORD,
-        queue_name,
+    conn_params = pika.ConnectionParameters(
+        host=_RABBIT_HOST,
+        port=_RABBIT_PORT,
+        credentials=pika.PlainCredentials(
+            username=_RABBIT_USER, password=_RABBIT_PASSWORD
+        ),
     )
+    conn = queue.TaskQueueConnection(conn_params, queue_name)
     conn.connect()
     yield conn
     conn.channel.queue_delete(queue_name)
@@ -116,9 +119,7 @@ def test_new_task_id_multiple_orbits(orbits):
 def test_job_manifest_serialization_roundtrip(orbits):
     manifest = jobs.JobManifest.create("job_id")
     for i, orbit in enumerate(orbits.split(1)[:5]):
-        task = tasks.Task(
-            manifest.job_id, f"task-{i}", "test-bucket", None, -1
-        )
+        task = tasks.Task(manifest.job_id, f"task-{i}", "test-bucket", None, -1)
         manifest.append(orbit, task)
 
     as_str = manifest.to_str()
@@ -147,3 +148,54 @@ def test_job_manifest_storage_roundtrip(google_storage_bucket, orbits):
     assert have.creation_time == manifest.creation_time
     assert have.orbit_ids == manifest.orbit_ids
     assert have.task_ids == manifest.task_ids
+
+
+@integration_test
+def test_client_roundtrip(
+    queue_connection, google_storage_bucket, orbits, observations
+):
+    taskqueue_client = client.Client(google_storage_bucket, queue_connection)
+    test_config = config.Configuration()
+
+    # trim down to 3 orbits
+    orbits = Orbits.from_df(orbits.to_df()[:3])
+    n_task = 3
+
+    # and 1000 observations
+    observations = observations[:1000]
+
+    manifest = taskqueue_client.launch_job(test_config, observations, orbits)
+    assert len(manifest.task_ids) == n_task
+
+    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    assert len(statuses) == n_task
+
+    assert all(
+        s["state"] == "requested" for s in statuses.values()
+    ), "all tasks should initially be in 'requested' state"
+
+    received_tasks = list(taskqueue_client.poll_for_tasks(poll_interval=0.5, limit=5))
+    assert len(received_tasks) == n_task
+
+    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    assert all(
+        s["state"] == "in_progress" for s in statuses.values()
+    ), "all tasks should be in 'in_progress' state once received"
+
+    # Handle the first task. It should be marked as succeeded, but others still
+    # in progress.
+    taskqueue_client.handle_task(received_tasks[0])
+    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    assert statuses[received_tasks[0].task_id]["state"] == "succeeded"
+    assert statuses[received_tasks[1].task_id]["state"] == "in_progress"
+    assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
+
+    # Handle the other tasks.
+    taskqueue_client.handle_task(received_tasks[1])
+    taskqueue_client.handle_task(received_tasks[2])
+
+    # Everything should be succeeded.
+    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    assert all(
+        s["state"] == "succeeded" for s in statuses.values()
+    ), "all tasks should have succeeded"
