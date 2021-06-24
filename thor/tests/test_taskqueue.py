@@ -26,8 +26,7 @@ _RABBIT_PASSWORD = os.environ.get("RABBIT_PASSWORD", None)
 
 
 DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "testing", "data",
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "testing", "data",
 )
 
 
@@ -62,7 +61,11 @@ def google_storage_bucket(request):
 
 @pytest.fixture()
 def observations():
-    yield pd.read_csv(os.path.join(DATA_DIR, "observations.csv"), index_col=False, dtype={"obs_id": str})
+    yield pd.read_csv(
+        os.path.join(DATA_DIR, "observations.csv"),
+        index_col=False,
+        dtype={"obs_id": str},
+    )
 
 
 @pytest.fixture()
@@ -77,9 +80,7 @@ def test_queue_roundtrip(queue_connection, google_storage_bucket, observations, 
     job_id = str(uuid.uuid1())
     tasks.upload_job_inputs(google_storage_bucket, job_id, test_config, observations)
     task = tasks.Task.create(
-        job_id=job_id,
-        bucket=google_storage_bucket,
-        orbits=orbits,
+        job_id=job_id, bucket=google_storage_bucket, orbits=orbits,
     )
     queue_connection.publish(task)
     have = queue_connection.receive()
