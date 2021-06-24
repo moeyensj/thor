@@ -45,9 +45,10 @@ class Task:
         channel: pika.channel.Channel where the Task will be sent.
         orbits: thor.orbits.Orbits, the orbits to analyze
         """
+
         tp = cls(
             job_id=job_id,
-            task_id=new_task_id(),
+            task_id=new_task_id(orbits),
             bucket=bucket.name,
             channel=None,
             delivery_tag=-1
@@ -110,8 +111,20 @@ class Task:
         raise NotImplementedError()
 
 
-def new_task_id():
-    return str(uuid.uuid4())
+# Generated randomly:
+_task_id_namespace = uuid.UUID('b3f9427b-8ee5-4c79-a3a1-875c6947777b')
+
+
+def new_task_id(orbits: Orbits) -> str:
+    """
+    Generate an identifier for a task to handle given orbits.
+    """
+
+    if len(orbits) == 1:
+        return orbits.ids[0]
+
+    combined_ids = ".".join(orbits.ids)
+    return str(uuid.uuid3(_task_id_namespace, combined_ids))
 
 
 def download_task_inputs(bucket: Bucket, task: Task):
