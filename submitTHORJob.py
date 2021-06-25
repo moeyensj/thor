@@ -7,18 +7,13 @@ import pika
 from google.cloud.storage import Client as GCSClient
 import google.cloud.exceptions
 
-from thor.taskqueue.client import Client as TaskQueueClient
-from thor.taskqueue.queue import TaskQueueConnection
-from thor.orbits import Orbits
-from thor.config import Config
-
-
 logger = logging.getLogger("thor")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run Tracklet-less Heliocentric Orbit Recovery through a queue"
+        description="Run Tracklet-less Heliocentric Orbit Recovery through a queue",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "preprocessed_observations", type=str, help="Preprocessed observations."
@@ -32,13 +27,13 @@ def parse_args():
     parser.add_argument(
         "queue", type=str, help="name of the queue to submit the job to"
     )
+    parser.add_argument("out_dir", type=str, help="destination path for results")
     parser.add_argument(
         "--config", type=str, default=None,
     )
     parser.add_argument(
         "--create-bucket",
-        type=bool,
-        default=False,
+        action="store_true",
         help="create the bucket if it does not exist already",
     )
     parser.add_argument(
@@ -77,6 +72,18 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # Imports of thor modules are deferred until after argument parsing to avoid
+    # numba JIT time if the arguments are invalid or the user asked for --help.
+    import thor.utils.logging
+
+    thor.utils.logging.setupLogger("thor")
+
+    from thor.taskqueue.client import Client as TaskQueueClient
+    from thor.taskqueue.queue import TaskQueueConnection
+    from thor.orbits import Orbits
+    from thor.config import Config
+
     if not isinstance(args.config, str):
         config = Config
     else:
@@ -101,6 +108,7 @@ def main():
         ),
         args.queue,
     )
+    queue.connect()
 
     # Connect to GCS bucket
     gcs = GCSClient()
@@ -117,6 +125,7 @@ def main():
         config, preprocessed_observations, test_orbits
     )
     taskqueue_client.monitor_job_status(manifest.job_id)
+    taskqueue_client.download_results(manifest, args.out_dir)
 
 
 if __name__ == "__main__":

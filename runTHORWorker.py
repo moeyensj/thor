@@ -4,12 +4,12 @@ import os
 import pika
 from google.cloud.storage.client import Client as GCSClient
 
-from thor.taskqueue.client import Worker
-from thor.taskqueue.queue import TaskQueueConnection
-
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Worker process to run THOR tasks")
+    parser = argparse.ArgumentParser(
+        description="Worker process to run THOR tasks",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("queue", type=str, help="name of the queue to listen to")
     parser.add_argument(
         "--rabbit-host",
@@ -47,6 +47,15 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Imports of thor modules are deferred until after argument parsing to avoid
+    # numba JIT time if the arguments are invalid or the user asked for --help.
+    import thor.utils.logging
+
+    thor.utils.logging.setupLogger("thor")
+
+    from thor.taskqueue.client import Worker
+    from thor.taskqueue.queue import TaskQueueConnection
+
     queue = TaskQueueConnection(
         pika.ConnectionParameters(
             host=args.rabbit_host,
@@ -57,6 +66,7 @@ def main():
         ),
         args.queue,
     )
+    queue.connect()
     gcs = GCSClient()
     worker = Worker(gcs, queue)
     worker.run_worker_loop(args.poll_interval)

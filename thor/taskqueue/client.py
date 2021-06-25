@@ -13,7 +13,12 @@ from thor.main import runTHOROrbit
 from thor.config import Configuration
 from thor.orbits import Orbits
 from thor.taskqueue.queue import TaskQueueConnection
-from thor.taskqueue.tasks import Task, upload_job_inputs, get_task_status
+from thor.taskqueue.tasks import (
+    Task,
+    upload_job_inputs,
+    get_task_status,
+    download_task_outputs,
+)
 from thor.taskqueue.jobs import (
     JobManifest,
     upload_job_manifest,
@@ -67,22 +72,28 @@ class Client:
             tasks_pending = False
             statuses = get_job_statuses(self.bucket, manifest)
             for i, task_id in enumerate(manifest.task_ids):
-                orbit_ids = manifest.orbit_ids[i]
                 status = statuses[task_id]
                 state = status["state"]
                 worker = status["worker"]
-                line = "\t".join((str(orbit_ids), task_id, status, worker))
+                line = "\t".join(("task=" + task_id, "state=" + state, "worker=" + worker))
                 logger.info(line)
 
                 if state not in ("succeeded", "failed"):
                     tasks_pending = True
-            time.sleep(poll_interval)
+            if tasks_pending:
+                time.sleep(poll_interval)
 
     def get_job_manifest(self, job_id):
         return download_job_manifest(self.bucket, job_id)
 
     def get_job_statuses(self, manifest):
         return get_job_statuses(self.bucket, manifest)
+
+    def download_results(self, manifest, path):
+        logger.info("downloading results to %s", path)
+        for task_id in manifest.task_ids:
+            logger.info("downloading results for task=%s", task_id)
+            download_task_outputs(path, self.bucket, manifest.job_id, task_id)
 
 
 class Worker:
@@ -95,18 +106,19 @@ class Worker:
             self.handle_task(task)
 
     def poll_for_tasks(self, poll_interval: float = 5.0, limit: int = -1):
+        logger.info("starting to poll for tasks")
         i = 0
         while True:
             task = self.queue.receive()
             if task is None:
-                logger.debug("no tasks in queue")
+                logger.info("no tasks in queue")
                 time.sleep(poll_interval)
             else:
-                bucket = self.gcs.bucket(task.bucket)
-                task.mark_in_progress(bucket)
                 logger.info(
                     "received task job_id=%s task_id=%s", task.job_id, task.task_id
                 )
+                bucket = self.gcs.bucket(task.bucket)
+                task.mark_in_progress(bucket)
                 yield task
             i += 1
             if limit >= 0:
