@@ -64,7 +64,9 @@ def google_storage_bucket(request):
     try:
         bucket = client.create_bucket(bucket_name)
     except google.cloud.exceptions.Conflict:
-        logger.warning("bucket %s already exists; tests may be unpredictable", bucket_name)
+        logger.warning(
+            "bucket %s already exists; tests may be unpredictable", bucket_name
+        )
         bucket = client.bucket(bucket_name)
     yield bucket
     bucket.delete(force=True, client=client)
@@ -164,6 +166,7 @@ def test_client_roundtrip(
     queue_connection, google_storage_bucket, orbits, observations
 ):
     taskqueue_client = client.Client(google_storage_bucket, queue_connection)
+    taskqueue_worker = client.Worker(GCSClient(), queue_connection)
 
     # trim down to 3 orbits
     orbits = Orbits.from_df(orbits.to_df()[:3])
@@ -172,31 +175,31 @@ def test_client_roundtrip(
     manifest = taskqueue_client.launch_job(test_config, observations, orbits)
     assert len(manifest.task_ids) == n_task
 
-    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    statuses = taskqueue_client.get_job_statuses(manifest)
     assert len(statuses) == n_task
 
     assert all(
         s["state"] == "requested" for s in statuses.values()
     ), "all tasks should initially be in 'requested' state"
 
-    received_tasks = list(taskqueue_client.poll_for_tasks(poll_interval=0.5, limit=5))
+    received_tasks = list(taskqueue_worker.poll_for_tasks(poll_interval=0.5, limit=5))
     assert len(received_tasks) == n_task
 
-    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    statuses = taskqueue_client.get_job_statuses(manifest)
     assert all(
         s["state"] == "in_progress" for s in statuses.values()
     ), "all tasks should be in 'in_progress' state once received"
 
     # Handle the first task. It should be marked as succeeded, but others still
     # in progress.
-    taskqueue_client.handle_task(received_tasks[0])
-    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    taskqueue_worker.handle_task(received_tasks[0])
+    statuses = taskqueue_client.get_job_statuses(manifest)
     assert statuses[received_tasks[0].task_id]["state"] == "succeeded"
     assert statuses[received_tasks[1].task_id]["state"] == "in_progress"
     assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
 
     # Handle another task.
-    taskqueue_client.handle_task(received_tasks[1])
+    taskqueue_worker.handle_task(received_tasks[1])
     statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
     assert statuses[received_tasks[0].task_id]["state"] == "succeeded"
     assert statuses[received_tasks[1].task_id]["state"] == "succeeded"

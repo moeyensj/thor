@@ -7,6 +7,7 @@ import tempfile
 import pandas as pd
 
 from google.cloud.storage import Bucket
+from google.cloud.storage import Client as GCSClient
 
 from thor.main import runTHOROrbit
 from thor.config import Configuration
@@ -17,7 +18,7 @@ from thor.taskqueue.jobs import (
     JobManifest,
     upload_job_manifest,
     download_job_manifest,
-    get_job_statuses
+    get_job_statuses,
 )
 
 
@@ -77,11 +78,23 @@ class Client:
                     tasks_pending = True
             time.sleep(poll_interval)
 
-    def run_worker_loop(self):
+    def get_job_manifest(self, job_id):
+        return download_job_manifest(self.bucket, job_id)
+
+    def get_job_statuses(self, manifest):
+        return get_job_statuses(self.bucket, manifest)
+
+
+class Worker:
+    def __init__(self, gcs: GCSClient, queue: TaskQueueConnection):
+        self.gcs = gcs
+        self.queue = queue
+
+    def run_worker_loop(self, poll_interval: float):
         for task in self.poll_for_tasks():
             self.handle_task(task)
 
-    def poll_for_tasks(self, poll_interval: float = 5.0, limit: int=-1):
+    def poll_for_tasks(self, poll_interval: float = 5.0, limit: int = -1):
         i = 0
         while True:
             task = self.queue.receive()
@@ -89,7 +102,8 @@ class Client:
                 logger.debug("no tasks in queue")
                 time.sleep(poll_interval)
             else:
-                task.mark_in_progress(self.bucket)
+                bucket = self.gcs.bucket(task.bucket)
+                task.mark_in_progress(bucket)
                 logger.info(
                     "received task job_id=%s task_id=%s", task.job_id, task.task_id
                 )
@@ -101,7 +115,8 @@ class Client:
 
     def handle_task(self, task: Task):
         try:
-            config, observations, orbit = task.download_inputs(self.bucket)
+            bucket = self.gcs.bucket(task.bucket)
+            config, observations, orbit = task.download_inputs(bucket)
             logger.debug("downloaded inputs")
 
             out_dir = tempfile.TemporaryDirectory(
@@ -124,7 +139,7 @@ class Client:
                 if_exists="erase",
                 logging_level=logging.INFO,
             )
-            task.mark_success(self.bucket, out_dir)
+            task.mark_success(bucket, out_dir)
             return out_dir
         except Exception as e:
-            task.mark_failure(self.bucket, out_dir, e)
+            task.mark_failure(bucket, out_dir, e)
