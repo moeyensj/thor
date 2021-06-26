@@ -75,7 +75,9 @@ class Client:
                 status = statuses[task_id]
                 state = status["state"]
                 worker = status["worker"]
-                line = "\t".join(("task=" + task_id, "state=" + state, "worker=" + worker))
+                line = "\t".join(
+                    ("task=" + task_id, "state=" + state, "worker=" + worker)
+                )
                 logger.info(line)
 
                 if state not in ("succeeded", "failed"):
@@ -92,8 +94,16 @@ class Client:
     def download_results(self, manifest, path):
         logger.info("downloading results to %s", path)
         for task_id in manifest.task_ids:
-            logger.info("downloading results for task=%s", task_id)
-            download_task_outputs(path, self.bucket, manifest.job_id, task_id)
+            task_status = get_task_status(self.bucket, manifest.job_id, task_id)
+            if task_status["state"] in ("succeeded", "failed"):
+                logger.info("downloading results for task=%s", task_id)
+                download_task_outputs(path, self.bucket, manifest.job_id, task_id)
+            else:
+                logger.info(
+                    "not downloading results for task=%s because it has state=%s",
+                    task_id,
+                    task_status["state"],
+                )
 
 
 class Worker:

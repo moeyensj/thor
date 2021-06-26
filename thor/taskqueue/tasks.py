@@ -210,14 +210,19 @@ def upload_task_inputs(bucket: Bucket, task: Task, orbit):
 def download_task_outputs(
     root_directory: str, bucket: Bucket, job_id: str, task_id: str
 ):
-    prefix = _task_output_path(job_id, task_id) + "/"
-    blobs = bucket.list_blobs(prefix=prefix)
+    job_prefix = _job_path(job_id) + "/"
+    task_prefix = _task_output_path(job_id, task_id) + "/"
+    blobs = bucket.list_blobs(prefix=task_prefix)
     for b in blobs:
-        relative_path = b.name[len(prefix) :]
+        relative_path = b.name[len(job_prefix):]
         local_path = os.path.join(root_directory, relative_path)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         logger.info("downloading %s", local_path)
         b.download_to_filename(local_path)
+
+
+def _job_path(job_id: str) -> str:
+    return f"thor_jobs/v1/job-{job_id}"
 
 
 def _job_input_path(job_id: str, name: str):

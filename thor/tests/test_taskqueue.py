@@ -9,6 +9,7 @@ import pandas.testing as pd_testing
 import pika
 import uuid
 import logging
+import tempfile
 
 from google.cloud.storage import Client as GCSClient
 import google.cloud.exceptions
@@ -198,9 +199,34 @@ def test_client_roundtrip(
     assert statuses[received_tasks[1].task_id]["state"] == "in_progress"
     assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
 
+    # Download results. We should only have results for the first task.
+    with tempfile.TemporaryDirectory(prefix="thor.test_client_roundtrip_1") as outdir:
+        taskqueue_client.download_results(manifest, outdir)
+        _assert_results_downloaded(outdir, received_tasks[0].task_id)
+
     # Handle another task.
     taskqueue_worker.handle_task(received_tasks[1])
     statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
     assert statuses[received_tasks[0].task_id]["state"] == "succeeded"
     assert statuses[received_tasks[1].task_id]["state"] == "succeeded"
     assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
+
+    # Download results. Now we should have results for the first two tasks.
+    with tempfile.TemporaryDirectory(prefix="thor.test_client_roundtrip_2") as outdir:
+        taskqueue_client.download_results(manifest, outdir)
+        _assert_results_downloaded(outdir, received_tasks[0].task_id)
+        _assert_results_downloaded(outdir, received_tasks[1].task_id)
+
+
+def _assert_results_downloaded(dir: str, task_id: str):
+    # There should be a folder for the entire task
+    task_folder_path = os.path.join(dir, "tasks", f"task-{task_id}", "outputs")
+    assert os.path.exists(task_folder_path)
+
+    # There should be a log file in that folder
+    assert os.path.exists(os.path.join(task_folder_path, "thor.log"))
+
+    # There should be a file of recovered orbits, and of recovered orbit
+    # members.
+    assert os.path.exists(os.path.join(task_folder_path, "recovered_orbits.csv"))
+    assert os.path.exists(os.path.join(task_folder_path, "recovered_orbit_members.csv"))
