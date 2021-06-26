@@ -1,3 +1,5 @@
+from typing import Optional
+
 import io
 import os
 import json
@@ -6,6 +8,7 @@ import uuid
 import socket
 import posixpath
 import traceback
+import enum
 
 import pika
 import pandas as pd
@@ -59,7 +62,7 @@ class Task:
             delivery_tag=-1,
         )
         upload_task_inputs(bucket, tp, orbits)
-        set_task_status(bucket, job_id, tp.task_id, "requested")
+        set_task_status(bucket, job_id, tp.task_id, TaskState.REQUESTED, worker=None)
         return tp
 
     @classmethod
@@ -91,7 +94,7 @@ class Task:
         return download_task_inputs(bucket, self)
 
     def mark_in_progress(self, bucket: Bucket):
-        set_task_status(bucket, self.job_id, self.task_id, "in_progress")
+        set_task_status(bucket, self.job_id, self.task_id, TaskState.IN_PROGRESS)
 
     def mark_success(self, bucket: Bucket, result_directory):
         logger.info("marking task %s as a success", self.task_id)
@@ -99,7 +102,7 @@ class Task:
         self._upload_results(bucket, result_directory)
         # Mark the message as successfully handled
         self._channel.basic_ack(delivery_tag=self._delivery_tag)
-        set_task_status(bucket, self.job_id, self.task_id, "succeeded")
+        set_task_status(bucket, self.job_id, self.task_id, TaskState.SUCCEEDED)
 
     def mark_failure(self, bucket: Bucket, result_directory, exception):
         logger.error(
@@ -109,9 +112,10 @@ class Task:
         self._upload_failure(bucket, result_directory, exception)
         # Mark the message as unsuccessfully attempted
         self._channel.basic_nack(
-            delivery_tag=self._delivery_tag, requeue=False,
+            delivery_tag=self._delivery_tag,
+            requeue=False,
         )
-        set_task_status(bucket, self.job_id, self.task_id, "failed")
+        set_task_status(bucket, self.job_id, self.task_id, TaskState.FAILED)
 
     def _upload_results(self, bucket: Bucket, result_directory: str):
         # Task-wide directory in the bucket where results go
@@ -244,19 +248,135 @@ def _task_status_path(job_id: str, task_id: str):
 _LOCAL_FQDN = socket.getfqdn()
 
 
-def set_task_status(bucket, job_id, task_id, status_msg, worker=_LOCAL_FQDN):
-    if status_msg == "requested":
-        worker = "None"
-    status_obj = {
-        "state": status_msg,
-        "worker": worker,
-    }
-    status_str = json.dumps(status_obj)
+class TaskState(enum.Enum):
+    REQUESTED = "requested"
+    IN_PROGRESS = "in_progress"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+    def completed(self) -> bool:
+        """Returns true if the TaskState represents a completed task.
+
+        Returns
+        -------
+        bool
+            Whether the task has finished execution.
+        """
+
+        return self in (TaskState.SUCCEEDED, TaskState.FAILED)
+
+
+class TaskStatus:
+    state: TaskState
+    worker: Optional[str]
+
+    def __init__(self, state: TaskState, worker: Optional[str] = None):
+        """Create a new TaskStatus.
+
+        Parameters
+        ----------
+        state : TaskState
+            The current state of the task.
+        worker : Optional[str]
+            A string identifier for the worker, or None if no worker is handling
+            the task.
+        """
+
+        self.state = state
+        self.worker = worker
+
+    def to_bytes(self) -> bytes:
+        """Encode the TaskStatus as bytes.
+
+        The TaskStatus gets serialized as UTF8-encoded JSON.
+
+        Returns
+        -------
+        bytes
+            The serialized status.
+        """
+
+        data = {
+            "state": str(self.state.value),
+            "worker": self.worker,
+        }
+        return json.dumps(data).encode("utf8")
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "TaskStatus":
+        """
+        Construct a new TaskStatus from bytes.
+
+        Parameters
+        ----------
+        data : bytes
+            The raw serialized bytes of a TaskStatus.
+
+        Returns
+        -------
+        TaskStatus
+            The deserialized TaskStatus.
+        """
+        data = json.loads(data)
+        state = TaskState(data["state"])
+        worker = data["worker"]
+        if worker == "None":
+            worker = None
+        return TaskStatus(state, worker)
+
+
+def set_task_status(
+    bucket: Bucket,
+    job_id: str,
+    task_id: str,
+    state: TaskState,
+    worker: Optional[str] = _LOCAL_FQDN,
+):
+    """Set the status of a task.
+
+    Uploads the JSON serialization of a TaskStatus into a bucket, recording its
+    present state.
+
+    Parameters
+    ----------
+    bucket : Bucket
+        The Google Cloud Storage bucket that hosts the given job and task.
+    job_id : str
+        The ID of the job.
+    task_id : str
+        The ID of the task.
+    state : TaskState
+        The state of the task.
+    worker : Optional[str]
+        An identifier for the worker reporting the state of the task (or None if
+        no worker is handling the task).
+    """
+
+    if state == TaskState.REQUESTED:
+        worker = None
+    status = TaskStatus(state, worker)
     blob_path = _task_status_path(job_id, task_id)
-    bucket.blob(blob_path).upload_from_string(status_str)
+    bucket.blob(blob_path).upload_from_string(status.to_bytes())
 
 
-def get_task_status(bucket, job_id, task_id):
+def get_task_status(bucket: Bucket, job_id: str, task_id: str) -> TaskStatus:
+    """Get the status of a task.
+
+    Parameters
+    ----------
+    bucket : Bucket
+        The Google Cloud Storage bucket that hosts th egiven job and task.
+    job_id : str
+        The ID of the job.
+    task_id : str
+        The ID of the task.
+
+    Returns
+    -------
+    TaskStatus
+        The status of the Task.
+    """
+
     blob_path = _task_status_path(job_id, task_id)
     status_str = bucket.blob(blob_path).download_as_string()
-    return json.loads(status_str)
+    return TaskStatus.from_bytes(status_str)

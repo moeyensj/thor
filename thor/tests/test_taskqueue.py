@@ -180,7 +180,7 @@ def test_client_roundtrip(
     assert len(statuses) == n_task
 
     assert all(
-        s["state"] == "requested" for s in statuses.values()
+        s.state == tasks.TaskState.REQUESTED for s in statuses.values()
     ), "all tasks should initially be in 'requested' state"
 
     received_tasks = list(taskqueue_worker.poll_for_tasks(poll_interval=0.5, limit=5))
@@ -188,16 +188,21 @@ def test_client_roundtrip(
 
     statuses = taskqueue_client.get_job_statuses(manifest)
     assert all(
-        s["state"] == "in_progress" for s in statuses.values()
+        s.state == tasks.TaskState.IN_PROGRESS for s in statuses.values()
     ), "all tasks should be in 'in_progress' state once received"
 
     # Handle the first task. It should be marked as succeeded, but others still
     # in progress.
     taskqueue_worker.handle_task(received_tasks[0])
     statuses = taskqueue_client.get_job_statuses(manifest)
-    assert statuses[received_tasks[0].task_id]["state"] == "succeeded"
-    assert statuses[received_tasks[1].task_id]["state"] == "in_progress"
-    assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
+    task1_state, task2_state, task3_state = (
+        statuses[received_tasks[0].task_id].state,
+        statuses[received_tasks[1].task_id].state,
+        statuses[received_tasks[2].task_id].state,
+    )
+    assert task1_state == tasks.TaskState.SUCCEEDED
+    assert task2_state == tasks.TaskState.IN_PROGRESS
+    assert task3_state == tasks.TaskState.IN_PROGRESS
 
     # Download results. We should only have results for the first task.
     with tempfile.TemporaryDirectory(prefix="thor.test_client_roundtrip_1") as outdir:
@@ -207,9 +212,14 @@ def test_client_roundtrip(
     # Handle another task.
     taskqueue_worker.handle_task(received_tasks[1])
     statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
-    assert statuses[received_tasks[0].task_id]["state"] == "succeeded"
-    assert statuses[received_tasks[1].task_id]["state"] == "succeeded"
-    assert statuses[received_tasks[2].task_id]["state"] == "in_progress"
+    task1_state, task2_state, task3_state = (
+        statuses[received_tasks[0].task_id].state,
+        statuses[received_tasks[1].task_id].state,
+        statuses[received_tasks[2].task_id].state,
+    )
+    assert task1_state == tasks.TaskState.SUCCEEDED
+    assert task2_state == tasks.TaskState.SUCCEEDED
+    assert task3_state == tasks.TaskState.IN_PROGRESS
 
     # Download results. Now we should have results for the first two tasks.
     with tempfile.TemporaryDirectory(prefix="thor.test_client_roundtrip_2") as outdir:

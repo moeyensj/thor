@@ -15,6 +15,7 @@ from thor.orbits import Orbits
 from thor.taskqueue.queue import TaskQueueConnection
 from thor.taskqueue.tasks import (
     Task,
+    TaskState,
     upload_job_inputs,
     get_task_status,
     download_task_outputs,
@@ -73,14 +74,12 @@ class Client:
             statuses = get_job_statuses(self.bucket, manifest)
             for i, task_id in enumerate(manifest.task_ids):
                 status = statuses[task_id]
-                state = status["state"]
-                worker = status["worker"]
                 line = "\t".join(
-                    ("task=" + task_id, "state=" + state, "worker=" + worker)
+                    ("task=" + task_id, "state=" + status.state, "worker=" + status.worker)
                 )
                 logger.info(line)
 
-                if state not in ("succeeded", "failed"):
+                if not status.state.completed():
                     tasks_pending = True
             if tasks_pending:
                 time.sleep(poll_interval)
@@ -95,14 +94,14 @@ class Client:
         logger.info("downloading results to %s", path)
         for task_id in manifest.task_ids:
             task_status = get_task_status(self.bucket, manifest.job_id, task_id)
-            if task_status["state"] in ("succeeded", "failed"):
+            if task_status.state.completed():
                 logger.info("downloading results for task=%s", task_id)
                 download_task_outputs(path, self.bucket, manifest.job_id, task_id)
             else:
                 logger.info(
                     "not downloading results for task=%s because it has state=%s",
                     task_id,
-                    task_status["state"],
+                    task_status.state,
                 )
 
 
