@@ -1,4 +1,4 @@
-from typing import AnyStr, Sequence, Mapping
+from typing import AnyStr, List, Mapping
 
 import datetime
 import json
@@ -6,7 +6,7 @@ import json
 from google.cloud.storage import Bucket
 
 from thor.orbits import Orbits
-from thor.taskqueue.tasks import Task, get_task_status
+from thor.taskqueue.tasks import Task, TaskStatus, get_task_status
 
 
 class JobManifest:
@@ -15,9 +15,27 @@ class JobManifest:
     particular job. This class is serialized into a string and stored in the
     Google Cloud Storage bucket for a job. It can be retrieved to iterate over
     tasks.
+
+    Attributes
+    ----------
+    creation_time : datetime.datetime
+        The time that this JobManifest was created, including time zone.
+    job_id : str
+        A string identifier for the job.
+    task_ids : List[str]
+        A list of the IDs of tasks in the job.
+    orbit_ids : List[str]
+        A list of string IDs of orbits associated with the job's tasks. Each
+        Task is assigned a single Orbit.
     """
 
-    def __init__(self, creation_time, job_id, orbit_ids, task_ids):
+    def __init__(
+        self,
+        creation_time: datetime.datetime,
+        job_id: str,
+        orbit_ids: List[str],
+        task_ids: List[str],
+    ):
         """
         Low-level constructor for a JobManifest.
 
@@ -29,7 +47,7 @@ class JobManifest:
         self.task_ids = task_ids
 
     @classmethod
-    def create(cls, job_id: str):
+    def create(cls, job_id: str) -> "JobManifest":
         """
         Create a new empty JobManifest with the given job ID.
 
@@ -37,26 +55,39 @@ class JobManifest:
         ----------
         job_id : str
             Identifier for the job.
+
+        Returns
+        -------
+        JobManifest
+            The newly created JobManifest.
         """
         now = datetime.datetime.now(datetime.timezone.utc)
         return JobManifest(creation_time=now, job_id=job_id, orbit_ids=[], task_ids=[])
 
     def append(self, orbit: Orbits, task: Task):
-        """
-        Add an orbit and task to the manifest.
+        """Add an Orbit and Task to the Manifest.
 
-        The orbits should be the Orbits being handled in the given task.
+        Parameters
+        ----------
+        orbit : Orbits
+            The orbit that will be handled as part of the task.
+        task : Task
+            The task to be done as part of this job.
         """
-        if len(orbit) == 1:
-            self.orbit_ids.append(orbit.ids[0])
-        else:
-            self.orbit_ids.append(list(orbit.ids))
+
+        assert len(orbit) == 1, "There should be exactly one Orbit per task."
+        self.orbit_ids.append(orbit.ids[0])
         self.task_ids.append(task.task_id)
 
     def to_str(self) -> str:
+        """Serialize the JobManifest as a string.
+
+        Returns
+        -------
+        str
+            JSON serialization of the JobManifest.
         """
-        JSON-serializes the JobManifest as a string.
-        """
+
         return json.dumps(
             {
                 "job_id": self.job_id,
@@ -69,8 +100,18 @@ class JobManifest:
     @classmethod
     def from_str(cls, data: AnyStr) -> "JobManifest":
         """
-        Creates a JobManifest from a string JSON representation, as created by
-        JobManifest.to_str.
+        Deserialize data into a JobManifest.
+
+        Parameters
+        ----------
+        cls :
+        data : AnyStr
+            Serialized JobManifest data, as created with to_str
+
+        Returns
+        -------
+        JobManifest
+            The deserialized JobManifest.
         """
         as_dict = json.loads(data)
         as_dict["creation_time"] = datetime.datetime.fromisoformat(
@@ -115,9 +156,30 @@ def download_job_manifest(bucket: Bucket, job_id: str) -> JobManifest:
     return JobManifest.from_str(as_str)
 
 
-def get_job_statuses(
-    bucket: Bucket, manifest: JobManifest
-) -> Mapping[str, Mapping[str, str]]:
+def get_job_statuses(bucket: Bucket, manifest: JobManifest) -> Mapping[str, TaskStatus]:
+    """Retrieve the status of all tasks in the manifest.
+
+    Task statuses are stored in a bucket, so this does a sequence of remote
+    calls - one for each task in the job - to retrieve status objects.
+
+    Parameters
+    ----------
+    bucket : Bucket
+        The bucket associated with the job.
+    manifest : JobManifest
+        The manifest for the job, listing all tasks.
+
+    Returns
+    -------
+    Mapping[str, TaskStatus]
+        The status of each Task, indexed by Task ID.
+
+    Examples
+    --------
+    FIXME: Add docs.
+
+    """
+
     """
     Look up the status of all tasks in the manifest by checking in bucket for
     task status marker objects.
