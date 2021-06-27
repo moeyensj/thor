@@ -40,17 +40,17 @@ class Client:
     def __init__(
         self, bucket: Bucket, queue: TaskQueueConnection,
     ):
-    """Create a new client.
+        """Create a new client.
 
-    Parameters
-    ----------
-    bucket : Bucket
-        The Google Storage Bucket which will host job inputs, outputs, and
-        status. The bucket should already exist.
-    queue : TaskQueueConnection
-        The queue where new jobs should be placed. The queue connection should
-        already be connected.
-    """
+        Parameters
+        ----------
+        bucket : Bucket
+            The Google Storage Bucket which will host job inputs, outputs, and
+            status. The bucket should already exist.
+        queue : TaskQueueConnection
+            The queue where new jobs should be placed. The queue connection should
+            already be connected.
+        """
         self.bucket = bucket
         self.queue = queue
 

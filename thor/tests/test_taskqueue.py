@@ -176,7 +176,7 @@ def test_client_roundtrip(
     manifest = taskqueue_client.launch_job(test_config, observations, orbits)
     assert len(manifest.task_ids) == n_task
 
-    statuses = taskqueue_client.get_job_statuses(manifest)
+    statuses = taskqueue_client.get_task_statuses(manifest)
     assert len(statuses) == n_task
 
     assert all(
@@ -186,7 +186,7 @@ def test_client_roundtrip(
     received_tasks = list(taskqueue_worker.poll_for_tasks(poll_interval=0.5, limit=5))
     assert len(received_tasks) == n_task
 
-    statuses = taskqueue_client.get_job_statuses(manifest)
+    statuses = taskqueue_client.get_task_statuses(manifest)
     assert all(
         s.state == tasks.TaskState.IN_PROGRESS for s in statuses.values()
     ), "all tasks should be in 'in_progress' state once received"
@@ -194,7 +194,7 @@ def test_client_roundtrip(
     # Handle the first task. It should be marked as succeeded, but others still
     # in progress.
     taskqueue_worker.handle_task(received_tasks[0])
-    statuses = taskqueue_client.get_job_statuses(manifest)
+    statuses = taskqueue_client.get_task_statuses(manifest)
     task1_state, task2_state, task3_state = (
         statuses[received_tasks[0].task_id].state,
         statuses[received_tasks[1].task_id].state,
@@ -211,7 +211,7 @@ def test_client_roundtrip(
 
     # Handle another task.
     taskqueue_worker.handle_task(received_tasks[1])
-    statuses = jobs.get_job_statuses(google_storage_bucket, manifest)
+    statuses = tasks.get_task_statuses(google_storage_bucket, manifest)
     task1_state, task2_state, task3_state = (
         statuses[received_tasks[0].task_id].state,
         statuses[received_tasks[1].task_id].state,
