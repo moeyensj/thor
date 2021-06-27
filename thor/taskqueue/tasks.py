@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Mapping
 
 import io
 import os
@@ -378,7 +378,8 @@ def upload_task_inputs(bucket: Bucket, task: Task, orbit: Orbits):
 def download_task_outputs(
     root_directory: str, bucket: Bucket, job_id: str, task_id: str
 ):
-    """Download all the results from a task execution.
+    """
+    Download all the results from a task execution.
 
     The task may have succeeded or failed; either is fine. Results are
     downloaded into a directory relative to root_directory. They are placed in a
@@ -395,7 +396,6 @@ def download_task_outputs(
         The ID of the job.
     task_id : str
         The ID of the task to get outputs from.
-
     """
 
     job_prefix = _job_path(job_id) + "/"
@@ -582,3 +582,32 @@ def get_task_status(bucket: Bucket, job_id: str, task_id: str) -> TaskStatus:
     blob_path = _task_status_path(job_id, task_id)
     status_str = bucket.blob(blob_path).download_as_string()
     return TaskStatus.from_bytes(status_str)
+
+
+def get_task_statuses(bucket: Bucket, manifest: "JobManifest") -> Mapping[str, TaskStatus]:
+    """Retrieve the status of all tasks in the manifest.
+
+    Task statuses are stored in a bucket, so this does a sequence of remote
+    calls - one for each task in the job - to retrieve status objects.
+
+    Parameters
+    ----------
+    bucket : Bucket
+        The bucket associated with the job.
+    manifest : JobManifest
+        The manifest for the job, listing all tasks.
+
+    Returns
+    -------
+    Mapping[str, TaskStatus]
+        The status of each Task, indexed by Task ID.
+
+    Examples
+    --------
+    FIXME: Add docs.
+
+    """
+    statuses = {}
+    for task_id in manifest.task_ids:
+        statuses[task_id] = get_task_status(bucket, manifest.job_id, task_id)
+    return statuses

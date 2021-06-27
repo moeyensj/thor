@@ -6,7 +6,7 @@ import json
 from google.cloud.storage import Bucket
 
 from thor.orbits import Orbits
-from thor.taskqueue.tasks import Task, TaskStatus, get_task_status
+from thor.taskqueue.tasks import Task
 
 
 class JobManifest:
@@ -154,37 +154,3 @@ def download_job_manifest(bucket: Bucket, job_id: str) -> JobManifest:
     path = f"thor_jobs/v1/job-{job_id}/manifest.json"
     as_str = bucket.blob(path).download_as_string()
     return JobManifest.from_str(as_str)
-
-
-def get_job_statuses(bucket: Bucket, manifest: JobManifest) -> Mapping[str, TaskStatus]:
-    """Retrieve the status of all tasks in the manifest.
-
-    Task statuses are stored in a bucket, so this does a sequence of remote
-    calls - one for each task in the job - to retrieve status objects.
-
-    Parameters
-    ----------
-    bucket : Bucket
-        The bucket associated with the job.
-    manifest : JobManifest
-        The manifest for the job, listing all tasks.
-
-    Returns
-    -------
-    Mapping[str, TaskStatus]
-        The status of each Task, indexed by Task ID.
-
-    Examples
-    --------
-    FIXME: Add docs.
-
-    """
-
-    """
-    Look up the status of all tasks in the manifest by checking in bucket for
-    task status marker objects.
-    """
-    statuses = {}
-    for task_id in manifest.task_ids:
-        statuses[task_id] = get_task_status(bucket, manifest.job_id, task_id)
-    return statuses
