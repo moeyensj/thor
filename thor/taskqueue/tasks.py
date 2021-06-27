@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import io
 import os
@@ -13,10 +13,9 @@ import enum
 import pika
 import pandas as pd
 
-from google.cloud.storage.bucket import Bucket, Blob
-from google.cloud.storage.client import Client as GCSClient
+from google.cloud.storage.bucket import Bucket
 
-from thor.config import Config
+from thor.config import Configuration
 from thor.orbits import Orbits
 
 
@@ -32,7 +31,10 @@ class Task:
         channel: pika.channel.Channel,
         delivery_tag: int,
     ):
-
+        """
+        Low-level constructor for a new task. Callers should prefer the create or
+        from_msg methods.
+        """
         self.job_id = job_id
         self.task_id = task_id
         self.bucket = bucket
@@ -41,7 +43,7 @@ class Task:
         self._delivery_tag = delivery_tag
 
     @classmethod
-    def create(cls, job_id, bucket, orbits):
+    def create(cls, job_id: str, bucket: Bucket, orbits: Orbits) -> "Task":
         """
         Create a new Task to handle a given orbit under a particular job.
 
@@ -52,6 +54,11 @@ class Task:
             inputs and outputs
         channel: pika.channel.Channel where the Task will be sent.
         orbits: thor.orbits.Orbits, the orbits to analyze
+
+        Returns
+        -------
+        Task:
+            The newly created Task.
         """
 
         tp = cls(
@@ -73,6 +80,26 @@ class Task:
         properties: pika.amqp_object.Properties,
         body: bytes,
     ) -> "Task":
+        """
+        Construct a Task from a message off of a task queue.
+
+        Parameters
+        ----------
+        cls :
+        channel : pika.channel.Channel
+            An opened channel to a RabbitMQ task queue.
+        method : pika.amqp_object.Method
+            RabbitMQ Method metadata associated with a message.
+        properties : pika.amqp_object.Properties
+            RabbitMQ Properties metadata associated with an object.
+        body : bytes
+            The payload of the RabbitMQ message.
+
+        Returns
+        -------
+        Task
+            A deserialized Task sourced from the message.
+        """
         data = json.loads(body.decode("utf8"))
         return Task(
             job_id=data["job_id"],
@@ -83,6 +110,14 @@ class Task:
         )
 
     def to_bytes(self) -> bytes:
+        """Serialize the Task into a payload suitable for the task queue.
+
+        Returns
+        -------
+        bytes
+            JSON serialization of the task.
+        """
+
         data = {
             "job_id": self.job_id,
             "task_id": self.task_id,
@@ -90,13 +125,51 @@ class Task:
         }
         return json.dumps(data).encode("utf8")
 
-    def download_inputs(self, bucket: Bucket):
+    def download_inputs(
+        self, bucket: Bucket
+    ) -> Tuple[Configuration, pd.DataFrame, Orbits]:
+        """Download the input data to execute a Task.
+
+        Data are downloaded into memory, not to disk.
+
+        Parameters
+        ----------
+        bucket : Bucket
+            The Google Cloud Storage bucket hosting the job.
+
+        Returns
+        -------
+        Tuple[Configuration, pd.DataFrame, Orbits]
+            All the inputs required to handle a Task.
+        """
+
         return download_task_inputs(bucket, self)
 
     def mark_in_progress(self, bucket: Bucket):
+        """Mark the task as in-progress, handled by the current process.
+
+        Parameters
+        ----------
+        bucket : Bucket
+            The bucket hosting the job.
+        """
+
         set_task_status(bucket, self.job_id, self.task_id, TaskState.IN_PROGRESS)
 
-    def mark_success(self, bucket: Bucket, result_directory):
+    def mark_success(self, bucket: Bucket, result_directory: str):
+        """
+        Mark the task as succesfully completed, handled by the current process, and
+        upload its results.
+
+        Parameters
+        ----------
+        bucket : Bucket
+            The bucket hosting the job.
+        result_directory : str
+            A local directory holding all the results of the execution which
+            should be uploaded to the bucket.
+        """
+
         logger.info("marking task %s as a success", self.task_id)
         # Store the results for the publisher
         self._upload_results(bucket, result_directory)
@@ -104,7 +177,22 @@ class Task:
         self._channel.basic_ack(delivery_tag=self._delivery_tag)
         set_task_status(bucket, self.job_id, self.task_id, TaskState.SUCCEEDED)
 
-    def mark_failure(self, bucket: Bucket, result_directory, exception):
+    def mark_failure(self, bucket: Bucket, result_directory: str, exception: Exception):
+        """Mark the task as having failed.
+
+        The task's status is updated in the bucket. Any intermediate results in
+        result_directory are uploaded to the bucket, as well as an error trace.
+
+        Parameters
+        ----------
+        bucket : Bucket
+            The bucket hosting the job.
+        result_directory : str
+            A local directory holding all the results of the execution.
+        exception : Exception
+            The exception that triggered the failure.
+        """
+
         logger.error(
             "marking task %s as a failure, reason: %s", self.task_id, exception
         )
@@ -127,7 +215,11 @@ class Task:
                 # filepath is the path of the file locally
                 filepath = os.path.join(dirpath, filename)
                 # blobpath is the path that we want to use remotely.
-                blobpath = posixpath.join(output_blobdir, relative_dir, filename,)
+                blobpath = posixpath.join(
+                    output_blobdir,
+                    relative_dir,
+                    filename,
+                )
                 logger.debug("uploading %s to %s", filepath, blobpath)
                 bucket.blob(blobpath).upload_from_filename(filepath)
 
@@ -136,7 +228,9 @@ class Task:
     ):
         output_blobdir = _task_output_path(self.job_id, self.task_id)
         exception_string = traceback.format_exception(
-            etype=type(exception), value=exception, tb=exception.__traceback__,
+            etype=type(exception),
+            value=exception,
+            tb=exception.__traceback__,
         )
         blobpath = posixpath.join(output_blobdir, "error_message.txt")
         logger.error("uploading exception trace to %s", blobpath)
@@ -151,10 +245,19 @@ _task_id_namespace = uuid.UUID("b3f9427b-8ee5-4c79-a3a1-875c6947777b")
 
 
 def new_task_id(orbits: Orbits) -> str:
-    """
-    Generate an identifier for a task to handle given orbits.
-    """
+    """Generate a new ID for a task which handles the given orbits.
 
+    Parameters
+    ----------
+    orbits : Orbits
+        The orbits being handled in the Task.
+
+    Returns
+    -------
+    str
+        The generated ID.
+
+    """
     if len(orbits) == 1:
         return orbits.ids[0]
 
@@ -162,17 +265,40 @@ def new_task_id(orbits: Orbits) -> str:
     return str(uuid.uuid3(_task_id_namespace, combined_ids))
 
 
-def download_task_inputs(bucket: Bucket, task: Task):
+def download_task_inputs(
+    bucket: Bucket, task: Task
+) -> Tuple[Configuration, pd.DataFrame, Orbits]:
+    """Download the data required to process this task.
+
+    All data are downloaded into memory, not onto disk anywhere.
+
+    Parameters
+    ----------
+    bucket : Bucket
+        The bucket hosting the task.
+    task : Task
+        The Task to be performed.
+
+    Returns
+    -------
+    Tuple[Configuration, pd.DataFrame, Orbits]
+        The configuration, observations, and orbits that form the inputs to a
+        runTHOR task.
+
+    """
+
     cfg_path = _job_input_path(task.job_id, "config.yml")
     logger.info("downloading task input %s", cfg_path)
     cfg_bytes = bucket.blob(cfg_path).download_as_string()
-    config = Config.fromYamlString(cfg_bytes.decode("utf8"))
+    config = Configuration().fromYamlString(cfg_bytes.decode("utf8"))
 
     obs_path = _job_input_path(task.job_id, "observations.csv")
     logger.info("downloading task input %s", obs_path)
     obs_bytes = bucket.blob(obs_path).download_as_string()
     observations = pd.read_csv(
-        io.BytesIO(obs_bytes), index_col=False, dtype={"obs_id": str},
+        io.BytesIO(obs_bytes),
+        index_col=False,
+        dtype={"obs_id": str},
     )
 
     orbit_path = _task_input_path(task.job_id, task.task_id, "orbit.csv")
@@ -183,7 +309,27 @@ def download_task_inputs(bucket: Bucket, task: Task):
     return (config, observations, orbit)
 
 
-def upload_job_inputs(bucket, job_id, config, observations):
+def upload_job_inputs(bucket: Bucket, job_id: str, config: Configuration, observations: pd.DataFrame):
+    """Upload all the inputs required to execute a task.
+
+    These inputs are uploaded into the given bucket. This function uploads the
+    inputs that are common to all tasks in a job: the configuration and the
+    observations. The related method upload_task_inputs uploads the inputs that
+    are specific to a single task, namely the orbits.
+
+    Parameters
+    ----------
+    bucket : Bucket
+        The bucket hosting the job.
+    job_id : str
+        The ID of the job.
+    config : Configuration
+        A THOR configuration which the Task executors should use.
+    observations : pd.DataFrame
+        The preprocessed observations which should be used by task executors.
+
+    """
+
     # Upload configuration file
     cfg_bytes = config.toYamlString()
     cfg_path = _job_input_path(job_id, "config.yml")
@@ -200,7 +346,25 @@ def upload_job_inputs(bucket, job_id, config, observations):
     bucket.blob(observations_path).upload_from_string(observations_bytes)
 
 
-def upload_task_inputs(bucket: Bucket, task: Task, orbit):
+def upload_task_inputs(bucket: Bucket, task: Task, orbit: Orbits):
+    """Uploads the inputs required to execute a specific task.
+
+    These inputs are uploaded into the given bucket. The related method
+    upload_job_inputs should also be executed, but just once for all tasks in a
+    job; it uploads the observations and configuration.
+
+    Parameters
+    ----------
+    bucket : Bucket
+        The bucket hosting the task's job.
+    task : Task
+        The Task to be executed.
+    orbit : Orbits
+        The test orbits to use in a THOR run.
+
+    """
+
+
     # Upload orbit
     orbit_buf = io.BytesIO()
     orbit.to_csv(orbit_buf)
@@ -214,11 +378,31 @@ def upload_task_inputs(bucket: Bucket, task: Task, orbit):
 def download_task_outputs(
     root_directory: str, bucket: Bucket, job_id: str, task_id: str
 ):
+    """Download all the results from a task execution.
+
+    The task may have succeeded or failed; either is fine. Results are
+    downloaded into a directory relative to root_directory. They are placed in a
+    subpath tasks/task-{task_id}/outputs. The actual files within that
+    subdirectory come directly from the thor.main.runTHOR function.
+
+    Parameters
+    ----------
+    root_directory : str
+        A local directory where outputs should be placed.
+    bucket : Bucket
+        The bucket hosting the job with outputs.
+    job_id : str
+        The ID of the job.
+    task_id : str
+        The ID of the task to get outputs from.
+
+    """
+
     job_prefix = _job_path(job_id) + "/"
     task_prefix = _task_output_path(job_id, task_id) + "/"
     blobs = bucket.list_blobs(prefix=task_prefix)
     for b in blobs:
-        relative_path = b.name[len(job_prefix):]
+        relative_path = b.name[len(job_prefix) :]
         local_path = os.path.join(root_directory, relative_path)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         logger.info("downloading %s", local_path)
@@ -249,6 +433,12 @@ _LOCAL_FQDN = socket.getfqdn()
 
 
 class TaskState(enum.Enum):
+    """
+    Represents the present state of a single Task. Tasks go from being requested
+    (unhandled by any worker) to in progress (while THOR is running) to
+    succeeded (if execution terminates without error) or failed (if any
+    exception occurred while running THOR).
+    """
     REQUESTED = "requested"
     IN_PROGRESS = "in_progress"
     SUCCEEDED = "succeeded"
@@ -267,6 +457,18 @@ class TaskState(enum.Enum):
 
 
 class TaskStatus:
+    """
+    Represents all status information about a single task.
+
+    Attributes
+    ----------
+    state : TaskState
+        The current state of the task.
+    worker : Optional[str]
+        An identifier for the process which was assigned the task, or None if
+        the task has not been assigned.
+    """
+
     state: TaskState
     worker: Optional[str]
 
