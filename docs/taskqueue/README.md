@@ -21,12 +21,12 @@ bucket.
 
 Here's the same idea in a diagram:
 
-[!High level diagram](./highlevel.svg)
+![High level diagram](./highlevel.svg)
 
 ## Sequence diagram
 
 Here's a sequence diagram which describes the flow in much more detail:
-[!Sequence Diagram](./sequence_diagram.svg)
+![Sequence Diagram](./sequence_diagram.svg)
 
 ## Bucket objects
 
