@@ -8,8 +8,8 @@ architecture of that system.
 
 The general idea is that one program (called the "**Client**") makes a request
 (called a **Job**) for THOR to be executed on some data. It splits this request
-into pieces called **Tasks**, and uploads the data to a Google Cloud **Storage
-Bucket**.
+into pieces called **Tasks** - currently, each Task is a single test orbit - and
+uploads the data to a Google Cloud **Storage Bucket**.
 
 For each Task, the Client puts a message into a RabbitMQ **Queue**.
 
