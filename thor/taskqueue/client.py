@@ -122,7 +122,7 @@ class Client:
         tasks_pending = True
         while tasks_pending:
             tasks_pending = False
-            statuses = self.get_job_statuses(manifest)
+            statuses = self.get_task_statuses(manifest)
             for i, task_id in enumerate(manifest.task_ids):
                 status = statuses[task_id]
                 line = "\t".join(
