@@ -126,7 +126,7 @@ class Client:
             for i, task_id in enumerate(manifest.task_ids):
                 status = statuses[task_id]
                 line = "\t".join(
-                    ("task=" + task_id, "state=" + status.state, "worker=" + status.worker)
+                    ("task=" + task_id, "state=" + str(status.state), "worker=" + str(status.worker))
                 )
                 logger.info(line)
 
