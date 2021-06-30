@@ -389,7 +389,7 @@ class Orbits:
 
 
         cols = ["a_au", "e", "i_deg", "ascNode_deg", "argPeri_deg", "meanAnom_deg"]
-        additional_cols = mpcorb.columns[~mpcorb.columns.isin(["mjd_tt", "designation", "H_mag", "G"])]
+        additional_cols = mpcorb.columns[~mpcorb.columns.isin(cols + ["mjd_tt", "designation", "H_mag", "G"])]
         orbits = mpcorb[cols].values
         epochs = Time(
             mpcorb["mjd_tt"].values,
@@ -439,14 +439,12 @@ class Orbits:
 
             units_index = ["--", "mjd [TDB]"] + orbit_units_str
 
-        if self.orbit_type == "cartesian":
+        if self.cartesian is not None:
             for i in range(6):
                 data[CARTESIAN_COLS[i]] = self.cartesian[:, i]
-        elif self.orbit_type == "keplerian":
+        if self.keplerian is not None:
             for i in range(6):
                 data[KEPLERIAN_COLS[i]] = self.keplerian[:, i]
-        else:
-            pass
 
         if self.covariance is not None:
             data["covariance"] = self.covariance
