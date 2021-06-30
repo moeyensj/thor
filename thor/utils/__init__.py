@@ -7,3 +7,4 @@ from .ades import *
 from .linkages import *
 from .logging import *
 from .multiprocessing import *
+from .patches import *
