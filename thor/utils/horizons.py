@@ -58,10 +58,9 @@ def getHorizonsVectors(
         ).to_pandas()
         dfs.append(vectors)
 
-    vectors = pd.concat(dfs)
-    vectors.reset_index(
-        inplace=True,
-        drop=True
+    vectors = pd.concat(
+        dfs,
+        ignore_index=True
     )
     return vectors
 
@@ -112,10 +111,9 @@ def getHorizonsElements(
         ).to_pandas()
         dfs.append(elements)
 
-    elements = pd.concat(dfs)
-    elements.reset_index(
-        inplace=True,
-        drop=True
+    elements = pd.concat(
+        dfs,
+        ignore_index=True
     )
     return elements
 
@@ -170,11 +168,8 @@ def getHorizonsEphemeris(
     ephemeris = pd.concat(dfs)
     ephemeris.sort_values(
         by=["orbit_id", "observatory_code", "datetime_jd"],
-        inplace=True
-    )
-    ephemeris.reset_index(
         inplace=True,
-        drop=True
+        ignore_index=True
     )
     return ephemeris
 
@@ -236,9 +231,8 @@ def getHorizonsObserverState(
         vectors.loc[:, ["x", "y", "z", "vx", "vy", "vz"]] *= -1
         dfs.append(vectors)
 
-    vectors = pd.concat(dfs)
-    vectors.reset_index(
-        inplace=True,
-        drop=True
+    vectors = pd.concat(
+        dfs,
+        ignore_index=True
     )
     return vectors
