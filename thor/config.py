@@ -1,6 +1,8 @@
 import copy
 import yaml
 import logging
+import io
+import os
 
 __all__ = [
     "_handleUserConfig",
@@ -95,6 +97,15 @@ DEFAULT_ODP_CONFIG = {
     "parallel_backend" : PARALLEL_BACKEND
 }
 
+DEFAULT_TASKQUEUE_CONFIG = {
+    "hostname": "rabbit.c.thor-moeyens-dev.internal",
+    "port": 5672,
+    "username": "thor",
+    "password": None,
+    "queue": "thor_tasks",
+    "bucket": "thor_taskqueue_v1",
+}
+
 def _handleUserConfig(user_dict, default_dict):
     out_dict = copy.deepcopy(user_dict)
     for key, value in default_dict.items():
@@ -111,6 +122,7 @@ class Configuration:
             iod_config=None,
             od_config=None,
             odp_config=None,
+            taskqueue_config=None,
             min_obs=None,
             min_arc_length=None,
             contamination_percentage=None,
@@ -158,6 +170,14 @@ class Configuration:
             self.ODP_CONFIG = _handleUserConfig(
                 odp_config,
                 DEFAULT_ODP_CONFIG
+            )
+
+        if taskqueue_config is None:
+            self.TASKQUEUE_CONFIG = DEFAULT_TASKQUEUE_CONFIG
+        else:
+            self.TASKQUEUE_CONFIG = _handleUserConfig(
+                taskqueue_config,
+                DEFAULT_TASKQUEUE_CONFIG,
             )
 
         self._conf = {}
@@ -244,6 +264,7 @@ class Configuration:
         self._conf["IOD_CONFIG"] = self.IOD_CONFIG
         self._conf["OD_CONFIG"] = self.OD_CONFIG
         self._conf["ODP_CONFIG"] = self.ODP_CONFIG
+        self._conf["TASKQUEUE_CONFIG"] = self.TASKQUEUE_CONFIG
         return
 
     def __eq__(self, other):
@@ -282,6 +303,12 @@ class Configuration:
             yaml.dump(self._conf, config_out, sort_keys=False)
         return
 
+    def toYamlString(self):
+        """
+        Save configuration to a YAML string.
+        """
+        return yaml.dump(self._conf, stream=None, sort_keys=False)
+
     @classmethod
     def fromYaml(cls, file_name):
         """
@@ -303,5 +330,26 @@ class Configuration:
             **conf
         )
         return config
+
+    @classmethod
+    def fromYamlString(cls, s):
+        """
+        Read configuration from a YAML string.
+
+        Parameters
+        ----------
+        s : str
+            The string containing YAML data.
+        """
+        conf_in = yaml.load(io.StringIO(s), Loader=yaml.FullLoader)
+        conf = {}
+        for key, values in conf_in.items():
+            conf[key.lower()] = values
+
+        config = Configuration(
+            **conf
+        )
+        return config
+
 
 Config = Configuration()
