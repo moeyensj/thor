@@ -2,7 +2,7 @@ import numpy as np
 
 from ..constants import Constants as c
 from .stumpff import calcStumpff
-from .universal_propagate import calcChi
+from .chi import calcChi
 
 __all__ = [
     "_calcM",
@@ -135,8 +135,8 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
         # Grab orbit position and velocity vectors
         # These should belong to the state of the object at the time of the second
         # observation after applying Gauss's method the first time
-        r = orbit_iter[:3]
-        v = orbit_iter[3:]
+        r = np.ascontiguousarray(orbit_iter[0:3])
+        v = np.ascontiguousarray(orbit_iter[3:6])
         v_mag = np.linalg.norm(v)
         r_mag = np.linalg.norm(r)
 
@@ -159,12 +159,8 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             # Universal anomaly here is defined in such a way that it satisfies the following
             # differential equation:
             #   d\chi / dt = \sqrt{mu} / r
-            chi = calcChi(orbit_iter, dt, mu=mu, max_iter=1000, tol=tol)
+            chi, c0, c1, c2, c3, c4, c5 = calcChi(r, v, dt, mu=mu, max_iter=100, tol=tol)
             chi2 = chi**2
-
-            # Calculate the values of the Stumpff functions
-            psi = alpha * chi2
-            c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
 
             # Calculate the Lagrange coefficients
             # and the corresponding state vector

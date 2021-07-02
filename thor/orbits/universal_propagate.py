@@ -2,8 +2,8 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .chi import calcChi
-from .stumpff import calcStumpff
+from .lagrange import calcLagrangeCoeffs
+from .lagrange import applyLagrangeCoeffs
 
 __all__ = [
     "propagateUniversal",
@@ -48,29 +48,20 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
 
     for i in range(num_orbits):
         for j, t in enumerate(t1):
+
+            r = np.ascontiguousarray(orbits[i, 0:3])
+            v = np.ascontiguousarray(orbits[i, 3:6])
             dt = t - t0[i]
-            chi = calcChi(orbits[i,:], dt, mu=mu, max_iter=max_iter, tol=tol)
 
-            r = orbits[i, :3]
-            v = orbits[i, 3:]
-            v_mag = np.linalg.norm(v)
-            r_mag = np.linalg.norm(r)
-            chi2 = chi**2
-
-            alpha = -v_mag**2 / mu + 2 / r_mag
-            psi = alpha * chi2
-            c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
-
-            f = 1 - chi**2 / r_mag * c2
-            g = dt - 1 / sqrt_mu * chi**3 * c3
-
-            r_new = f * r + g * v
-            r_new_mag = np.linalg.norm(r_new)
-
-            f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
-            g_dot = 1 - chi2 / r_new_mag * c2
-
-            v_new = f_dot * r + g_dot * v
+            f, g, f_dot, g_dot = calcLagrangeCoeffs(
+                r,
+                v,
+                dt,
+                mu=mu,
+                max_iter=max_iter,
+                tol=tol
+            )
+            r_new, v_new = applyLagrangeCoeffs(r, v, f, g, f_dot, g_dot)
 
             new_orbits.append([i, t, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
 

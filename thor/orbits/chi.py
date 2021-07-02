@@ -10,24 +10,26 @@ __all__ = [
 
 MU = c.MU
 
-@jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
-def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
+@jit(["UniTuple(f8, 7)(f8[:], f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
+def calcChi(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate universal anomaly chi using Newton-Raphson.
 
     Parameters
     ----------
-    orbit : `~numpy.ndarray` (6)
-        Orbital state vector (X_0) with position in units of AU and velocity in units of AU per day.
+    r : `~numpy.ndarray` (3)
+        Position vector in au.
+    v : `~numpy.ndarray` (3)
+        Velocity vector in au per day.
     dt : float
         Time from epoch to which calculate chi in units of decimal days.
-    mu : float, optional
+    mu : float
         Gravitational parameter (GM) of the attracting body in units of
         AU**3 / d**2.
-    max_iter : int, optional
+    max_iter : int
         Maximum number of iterations over which to converge. If number of iterations is
         exceeded, will return the value of the universal anomaly at the last iteration.
-    tol : float, optional
+    tol : float
         Numerical tolerance to which to compute chi using the Newtown-Raphson
         method.
 
@@ -35,9 +37,12 @@ def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
     -------
     chi : float
         Universal anomaly.
+    c0, c1, c2, c3, c4, c5 : 6 x float
+        First six Stumpff functions.
     """
-    r = np.ascontiguousarray(orbit[:3])
-    v = np.ascontiguousarray(orbit[3:])
+    r = np.ascontiguousarray(r)
+    v = np.ascontiguousarray(v)
+
     v_mag = np.linalg.norm(v)
     r_mag = np.linalg.norm(r)
     rv_mag = np.dot(r, v) / r_mag
@@ -68,4 +73,4 @@ def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
         if iterations >= max_iter:
             break
 
-    return chi
+    return chi, c0, c1, c2, c3, c4, c5
