@@ -1,37 +1,20 @@
+import os
 import numpy as np
+import pandas as pd
 from astropy.time import Time
 from astropy import units as u
 
 from ...constants import Constants as c
-from ...utils import getHorizonsVectors
-from ...utils import getHorizonsObserverState
 from ...utils import KERNELS_DE430
 from ...utils import getSPICEKernels
 from ...utils import setupSPICE
 from ...testing import testOrbits
-from ..orbits import Orbits
-from ..ephemeris import generateEphemeris
 from ..gauss import gaussIOD
 
-TARGETS = [
-    "Ivezic",
-]
-EPOCH = 59000.0
-DT = np.arange(0, 30, 1)
-T0 = Time(
-    [EPOCH for i in range(len(TARGETS))],
-    format="mjd",
-    scale="tdb",
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "../../testing/data"
 )
-T1 = Time(
-    EPOCH + DT,
-    format="mjd",
-    scale="tdb"
-)
-OBSERVATORIES = ["I11", "I41", "500"]
-SELECTED_OBS = [
-    [0, 6, -1],
-]
 
 
 def selectBestIOD(iod_orbits, true_orbit):
@@ -65,57 +48,51 @@ def test_gaussIOD():
     getSPICEKernels(KERNELS_DE430)
     setupSPICE(KERNELS_DE430, force=True)
 
-    for target in TARGETS:
-        for observatory in OBSERVATORIES:
-            for selected_obs in SELECTED_OBS:
+    vectors_df = pd.read_csv(
+        os.path.join(DATA_DIR, "vectors.csv")
+    )
+    ephemeris_df = pd.read_csv(
+        os.path.join(DATA_DIR, "ephemeris.csv")
+    )
+    observer_states_df = pd.read_csv(
+        os.path.join(DATA_DIR, "observer_states.csv"),
+        index_col=False
+    )
 
-                observers = {observatory : T1}
+    targets = ephemeris_df["targetname"].unique()
+    observatories = ephemeris_df["observatory_code"].unique()
 
-                # Query Horizons for observatory's state vectors at each T1
-                horizons_observer_states = getHorizonsObserverState(
-                    [observatory],
-                    T1,
-                    origin="heliocenter",
-                    aberrations="geometric"
-                )
-                observer_states = horizons_observer_states[["x", "y", "z", "vx", "vy", "vz"]].values
+    for target in targets:
+        for observatory in ["500"]:
+            for selected_obs in [[23, 29, 35]]:
 
-                # Query Horizons for target's state vectors at each T1
-                horizons_states = getHorizonsVectors(
-                    [target],
-                    T1,
-                    location="@sun",
-                    aberrations="geometric",
+                ephemeris_mask = (
+                    (ephemeris_df["targetname"].isin([target]))
+                    & (ephemeris_df["observatory_code"].isin([observatory]))
                 )
-                horizons_states = horizons_states[["x", "y", "z", "vx", "vy", "vz"]].values
+                ephemeris = ephemeris_df[ephemeris_mask]
 
-                # Generate ephemeris using the 2-body integration
-                MJOLNIR_KWARGS = {
-                    "light_time" : True,
-                    "lt_tol" : 1e-10,
-                    "stellar_aberration" : False,
-                    "mu" : c.MU,
-                    "max_iter" : 1000,
-                    "tol" : 1e-16
-                }
-                orbits = Orbits(
-                    horizons_states[selected_obs[1]:selected_obs[1]+1],
-                    T1[selected_obs[1]:selected_obs[1]+1],
-                    orbit_type="cartesian",
+                coords = ephemeris[["RA", "DEC"]].values
+                observation_times = Time(
+                    ephemeris["mjd_utc"].values,
+                    format="mjd",
+                    scale="utc"
                 )
-                ephemeris = generateEphemeris(
-                    orbits,
-                    observers,
-                    backend="MJOLNIR",
-                    backend_kwargs=MJOLNIR_KWARGS
-                )
-                coords = ephemeris[["RA_deg", "Dec_deg"]].values
-                states = ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values
+
+                vectors_mask = (vectors_df["targetname"].isin([target]))
+                vectors = vectors_df[vectors_mask]
+                vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
+
+                observer_states_mask = (observer_states_df["observatory_code"].isin([observatory]))
+                observer_states = observer_states_df[observer_states_mask]
+                observer_states = observer_states[["x", "y", "z", "vx", "vy", "vz"]].values
+
+                states = ephemeris[["x", "y", "z", "vx", "vy", "vz"]].values
 
                 # Run IOD
                 iod_orbits = gaussIOD(
                     coords[selected_obs, :],
-                    T1.utc.mjd[selected_obs],
+                    observation_times.utc.mjd[selected_obs],
                     observer_states[selected_obs, :3],
                     velocity_method="gibbs",
                     light_time=True,
@@ -134,7 +111,7 @@ def test_gaussIOD():
                 testOrbits(
                     best_iod_orbit,
                     states[selected_obs[1]:selected_obs[1] + 1],
-                    position_tol=(200*u.km),
+                    position_tol=(1000*u.km),
                     velocity_tol=(1*u.mm/u.s),
                     raise_error=False
                 )
