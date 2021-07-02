@@ -188,20 +188,6 @@ def createTestDataset(
             float_format=FLOAT_FORMAT
         )
 
-    # Get ephemerides for each target as observed by the observers
-    ephemeris = getHorizonsEphemeris(targets, observers)
-    ephemeris = ephemeris[["targetname", "observatory_code", "mjd_utc", "RA", "DEC"]]
-    ephemeris.sort_values(
-        by=["targetname", "observatory_code", "mjd_utc"],
-        inplace=True
-    )
-    if out_dir is not None:
-        ephemeris.to_csv(
-            os.path.join(out_dir, "ephemeris.csv"),
-            index=False,
-            float_format=FLOAT_FORMAT
-        )
-
     # Get heliocentric observer states for each observatory
     observer_states = getHorizonsObserverState(
         observers.keys(),
@@ -214,6 +200,11 @@ def createTestDataset(
         format="jd"
     ).utc.mjd
     observer_states = observer_states[["observatory_code", "mjd_utc"] + CARTESIAN_COLS]
+    observer_states.sort_values(
+        by=["observatory_code", "mjd_utc"],
+        inplace=True,
+        ignore_index=True
+    )
 
     if out_dir is not None:
         observer_states.to_csv(
@@ -234,6 +225,11 @@ def createTestDataset(
         format="jd"
     ).utc.mjd
     observer_states_barycentric = observer_states_barycentric[["observatory_code", "mjd_utc"] + CARTESIAN_COLS]
+    observer_states_barycentric.sort_values(
+        by=["observatory_code", "mjd_utc"],
+        inplace=True,
+        ignore_index=True
+    )
     if out_dir is not None:
         observer_states_barycentric.to_csv(
             os.path.join(out_dir, "observer_states_barycentric.csv"),
@@ -241,6 +237,59 @@ def createTestDataset(
             float_format=FLOAT_FORMAT
         )
 
+    # Get aberrated topocentric vectors for each target
+    vectors_topo_aberrated_dfs = []
+    for observatory in observatory_codes:
+        vectors_topo_aberrated = getHorizonsVectors(
+            targets,
+            t1,
+            location=observatory,
+            aberrations="apparent"
+        )
+        vectors_topo_aberrated["observatory_code"] = observatory
+        vectors_topo_aberrated["mjd_utc"] = Time(
+            vectors_topo_aberrated["datetime_jd"].values,
+            scale="tdb",
+            format="jd"
+        ).utc.mjd
+
+        vectors_topo_aberrated.sort_values(
+            by=["targetname", "observatory_code", "mjd_utc"],
+            inplace=True,
+            ignore_index=True
+        )
+
+        # Make vectors heliocentric (but now the heliocentric vectors include the aberrations)
+        for target in vectors_topo_aberrated["targetname"].unique():
+            vectors_topo_aberrated.loc[vectors_topo_aberrated["targetname"].isin([target]), CARTESIAN_COLS] += observer_states[observer_states["observatory_code"].isin([observatory])][CARTESIAN_COLS].values
+
+        vectors_topo_aberrated_dfs.append(vectors_topo_aberrated)
+
+    vectors_topo_aberrated = pd.concat(
+        vectors_topo_aberrated_dfs,
+        ignore_index=True
+    )
+    vectors_topo_aberrated.sort_values(
+        by=["targetname", "observatory_code", "mjd_utc"],
+        inplace=True,
+        ignore_index=True
+    )
+
+    # Get ephemerides for each target as observed by the observers
+    ephemeris = getHorizonsEphemeris(targets, observers)
+    ephemeris = ephemeris[["targetname", "observatory_code", "mjd_utc", "RA", "DEC"]]
+    ephemeris.sort_values(
+        by=["targetname", "observatory_code", "mjd_utc"],
+        inplace=True,
+        ignore_index=True
+    )
+    ephemeris = ephemeris.join(vectors_topo_aberrated[CARTESIAN_COLS])
+    if out_dir is not None:
+        ephemeris.to_csv(
+            os.path.join(out_dir, "ephemeris.csv"),
+            index=False,
+            float_format=FLOAT_FORMAT
+        )
 
     # Limit vectors and ephemerides to elliptical orbits only
     elliptical_vectors = (
