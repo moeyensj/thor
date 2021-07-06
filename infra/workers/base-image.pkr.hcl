@@ -49,6 +49,10 @@ build {
     source      = "thor-worker.service"
     destination = "/tmp/thor-worker.service"
   }
+  provisioner "file" {
+    source      = "start_worker.sh"
+    destination = "/tmp/start_worker.sh"
+  }
   provisioner "shell" {
     # Execute command with sudo
     execute_command = "chmod +x {{ .Path }}; sudo sh -c '{{ .Vars }} {{ .Path }}'"

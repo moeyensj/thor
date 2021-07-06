@@ -54,6 +54,10 @@ RABBIT_PASSWORD=$(gcloud secrets versions access latest \
 echo "RABBIT_PASSWORD=${RABBIT_PASSWORD}" >> /etc/thor/env
 unset RABBIT_PASSWORD
 
+## Install start script
+mv /tmp/start_worker.sh /etc/thor/start_worker.sh
+chmod +x /etc/thor/start_worker.sh
+
 # Put service definition in place - but don't enable it yet, because we don't
 # have an actual queue name.
 mv /tmp/thor-worker.service /etc/systemd/system/thor-worker.service
