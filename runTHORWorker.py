@@ -38,6 +38,15 @@ def parse_args():
         default=5.0,
         help="time in seconds between checking whether there are more tasks available",
     )
+    parser.add_argument(
+        "--idle-shutdown-timeout",
+        type=int,
+        default=60,
+        help=(
+            """maximum idle time in seconds. If negative, continue forever. If this time
+            elapses, the program exits, and on Google Compute Engine it also
+            terminates the running instance."""
+    )
     args = parser.parse_args()
     if args.rabbit_password == "$RABBIT_PASSWORD env var":
         args.rabbit_password = os.environ["RABBIT_PASSWORD"]
@@ -69,7 +78,7 @@ def main():
     queue.connect()
     gcs = GCSClient()
     worker = Worker(gcs, queue)
-    worker.run_worker_loop(args.poll_interval)
+    worker.run_worker_loop(args.poll_interval, args.idle_shutdown_timeout)
 
 
 if __name__ == "__main__":
