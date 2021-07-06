@@ -42,10 +42,9 @@ def parse_args():
         "--idle-shutdown-timeout",
         type=int,
         default=60,
-        help=(
-            """maximum idle time in seconds. If negative, continue forever. If this time
-            elapses, the program exits, and on Google Compute Engine it also
-            terminates the running instance."""
+        help="""maximum idle time in seconds. If negative, continue forever. If this time
+        elapses, the program exits, and on Google Compute Engine it also
+        terminates the running instance.""",
     )
     args = parser.parse_args()
     if args.rabbit_password == "$RABBIT_PASSWORD env var":
