@@ -1,7 +1,12 @@
+from typing import List
+import os
 import logging
 import argparse
+import pika
+
 from .worker_pool import WorkerPoolManager
 from .sshconn import WorkerPoolSSHConnection
+from .autoscaler import Autoscaler
 
 logger = logging.getLogger("thorctl")
 
@@ -15,6 +20,17 @@ def dispatch(parser, args):
         destroy(args.queue)
     elif args.command == "logs":
         logs(args.queue, not args.no_color)
+    elif args.command == "autoscale":
+        autoscale(
+            args.queue,
+            args.max_size,
+            args.machine_type,
+            args.poll_interval,
+            args.rabbit_host,
+            args.rabbit_port,
+            args.rabbit_username,
+            args.rabbit_password,
+        )
     elif args.command is None:
         parser.print_usage()
     else:
@@ -55,6 +71,54 @@ def parse_args():
     logs = subparsers.add_parser("logs", help="stream logs from the workers")
     logs.add_argument("queue", type=str, help="name of the queue")
     logs.add_argument("--no-color", action="store_true", help="do not colorize output")
+
+    autoscale = subparsers.add_parser(
+        "autoscale", help="monitor a queue and automatically scale it up to handle load"
+    )
+    autoscale.add_argument(
+        "queue",
+        action="append",
+        help="name of queue to monitor. Can be specified multiple times.",
+    )
+    autoscale.add_argument(
+        "--max-size",
+        type=int,
+        default=16,
+        help="maximum number of workers to run at once, per queue",
+    )
+    autoscale.add_argument(
+        "--machine-type",
+        type=str,
+        default="e2-standard-8",
+        help="Compute Engine machine type",
+    )
+    autoscale.add_argument(
+        "--poll-interval",
+        type=int,
+        default=5,
+        help="time interval in seconds to check sizes",
+    )
+    autoscale.add_argument(
+        "--rabbit-host",
+        type=str,
+        default="rabbit.c.moeyens-thor-dev.internal",
+        help="hostname of the rabbit broker",
+    )
+    autoscale.add_argument(
+        "--rabbit-port", type=int, default=5672, help="port of the rabbit broker"
+    )
+    autoscale.add_argument(
+        "--rabbit-username",
+        type=str,
+        default="thor",
+        help="username to connect with to the rabbit broker",
+    )
+    autoscale.add_argument(
+        "--rabbit-password",
+        type=str,
+        default="$RABBIT_PASSWORD env var",
+        help="password to connect with to the rabbit broker",
+    )
 
     return parser, parser.parse_args()
 
@@ -101,3 +165,29 @@ def logs(queue_name: str, colorize: bool):
         return
     conn = WorkerPoolSSHConnection(manager)
     conn.stream_logs(colorize)
+
+
+def autoscale(
+    queues: List[str],
+    max_size: int,
+    machine_type: str,
+    poll_interval: int,
+    rabbit_host: str,
+    rabbit_port: int,
+    rabbit_username: str,
+    rabbit_password: str,
+):
+
+    if rabbit_password == "$RABBIT_PASSWORD env var":
+        rabbit_password = os.environ["RABBIT_PASSWORD"]
+
+    rabbit_params = pika.ConnectionParameters(
+        host=rabbit_host,
+        port=rabbit_port,
+        credentials=pika.PlainCredentials(
+            username=rabbit_username,
+            password=rabbit_password,
+        )
+    )
+    scaler = Autoscaler(rabbit_params, queues, max_size, machine_type)
+    scaler.run(poll_interval)

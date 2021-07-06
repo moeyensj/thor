@@ -101,3 +101,11 @@ class TaskQueueConnection:
         if method is None:
             return None
         return Task.from_msg(self.channel, method, properties, body)
+
+    def size(self) -> int:
+        response = self.channel.queue_declare(
+            queue=self.queue_name,
+            passive=True,
+            durable=True,
+        )
+        return response.method.message_count
