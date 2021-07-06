@@ -38,6 +38,10 @@ def preprocessObservations(
             "Dec_sigma_deg" : column name or None,
             "observatory_code" : column name,
             "obj_id" : column name or None,
+            "mag" : optional, column name or None,
+            "mag_sigma" : optional, column name or None,
+            "filter" : optional, column name or None,
+            "astrometric_catalog" : optional, column name or None,
         }
         Description of columns and their assumed values:
             'obs_id' : column name or None
@@ -62,12 +66,22 @@ def preprocessObservations(
                  the 'astrometric_errors' parameter to configure defaults for all observatories
                  or for each observatory individually. If None, THOR will use the 'astrometric_error'
                  parameter to assign errors.
-            'observatory_code' : column_name
+            'observatory_code' : column name
                 The MPC observatory code from which each observation was made. THOR currently
                 only supports ground-based observatories.
-            'obj_id' : column_name or None
+            'obj_id' : column name or None
                 If known, the designation in unpacked or packed form. If unknown, object ID should be
                 set to 'NaN'. If None, THOR will assume no observations have been associated.
+            'mag' : optional, column name or None
+                Observed magnitude. Magnitudes are currently unused by THOR but may be convenient to have
+                for visual inspection of results.
+            'mag_sigma' : optional, column name or None.
+                1-sigma photometric uncertainty in magnitudes.
+            'filter' : optional, column name or None.
+                The bandpass or filter with which the observation was made.
+            'astrometric_catalog' : optional, column name or None.
+                Astrometric catalog with which astrometric measurements were calibrated. Unused by THOR outside of
+                creating ADES files from recoveries and discoveries.
     mjd_scale : str, optional
         Time scale of the input MJD exposure times ("utc", "tdb", etc...)
     attribution : bool, optional
@@ -102,6 +116,14 @@ def preprocessObservations(
         "Dec_sigma_deg",
         "observatory_code",
         "obj_id"
+    ]
+    # Optional columns that can be used for filtering
+    # and ADES file production
+    optional_cols = [
+        "mag",
+        "mag_sigma",
+        "filter",
+        "astrometric_catalog"
     ]
 
     # Check if observation IDs need to be assigned
@@ -149,7 +171,13 @@ def preprocessObservations(
 
 
     # Create a copy of the relevant columns in observations
+    # Add any optional columns that may have been provided by the user
     obs_cols = [column_mapping[c] for c in cols]
+    added_cols = []
+    for c in optional_cols:
+        if c in column_mapping.keys():
+            obs_cols.append(column_mapping[c])
+            added_cols.append(c)
     preprocessed_observations = observations[obs_cols].copy()
 
     # Rename preprocessed observation columns to those expected by THOR
@@ -160,7 +188,8 @@ def preprocessObservations(
         column_mapping_inv.pop(None)
     preprocessed_observations.rename(
         columns=column_mapping_inv,
-        inplace=True)
+        inplace=True
+    )
 
     if use_astrometric_errors:
         if type(astrometric_errors) == list:
@@ -234,15 +263,9 @@ def preprocessObservations(
     # Make sure that the observations are sorted by observation time
     preprocessed_observations.sort_values(
         by=["mjd_utc"],
-        inplace=True
-    )
-
-    # Reset index after sort
-    preprocessed_observations.reset_index(
         inplace=True,
-        drop=True
+        ignore_index=True
     )
-
     # Assign obervation IDs if needed
     if assign_obs_ids:
         preprocessed_observations.loc[:, "obs_id"] = ["obs{:09d}".format(i) for i in range(len(preprocessed_observations))]
@@ -267,15 +290,17 @@ def preprocessObservations(
         "obs_id",
         "obj_id"
     ]].copy()
-    preprocessed_observations = preprocessed_observations[[
+    cols_sorted = [
         "obs_id",
         "mjd_utc",
         "RA_deg",
         "Dec_deg",
         "RA_sigma_deg",
         "Dec_sigma_deg",
-        "observatory_code",
-    ]]
+        "observatory_code"
+    ]
+    cols_sorted += added_cols
+    preprocessed_observations = preprocessed_observations[cols_sorted]
 
     return preprocessed_observations, preprocessed_associations
 
