@@ -23,5 +23,5 @@ pika
 google-cloud-storage
 google-cloud-core==1.3.0
 google-api-python-client
-parallel-ssh
 colorama
+paramiko
