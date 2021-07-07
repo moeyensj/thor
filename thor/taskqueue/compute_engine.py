@@ -46,9 +46,10 @@ def _google_metadata_request(path: str) -> Any:
         response = requests.get("http://metadata.google.internal" + path, timeout=1.0)
         if response.status_code == 503:
             # Indicates metadata server maintenance. Retry.
-            retry_count += 1
             time.sleep(1)
-            continue
+            retry_count += 1
+        else:
+            break
     response.raise_for_status()
     return response.content
 
