@@ -43,7 +43,11 @@ def _google_metadata_request(path: str) -> Any:
     retry_limit = 30
     retry_count = 0
     while retry_count < retry_limit:
-        response = requests.get("http://metadata.google.internal" + path, timeout=1.0)
+        response = requests.get(
+            "http://metadata.google.internal" + path,
+            headers={"Metadata-Flavor": "Google"},
+            timeout=1.0,
+        )
         if response.status_code == 503:
             # Indicates metadata server maintenance. Retry.
             time.sleep(1)
