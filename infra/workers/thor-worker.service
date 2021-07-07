@@ -1,0 +1,12 @@
+[Unit]
+Description=THOR Worker
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/thor
+EnvironmentFile=/etc/thor/env
+ExecStart=/bin/bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate thor_py38 && python /opt/thor/runTHORWorker.py ${THOR_QUEUE}"
+
+[Install]
+WantedBy=multi-user.target
