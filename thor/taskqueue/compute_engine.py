@@ -31,12 +31,12 @@ def terminate_self():
     compute_client = googleapiclient.discovery.build("compute", "v1")
     operation = compute_client.instances().delete(
         project=project, zone=zone, instance=name,
-    )
+    ).execute()
 
     logger.info("Blocking to wait for the delete to complete")
     compute_client.zoneOperations().wait(
         project=project, zone=zone, operation=operation["name"]
-    )
+    ).execute()
 
 
 def _google_metadata_request(path: str) -> Any:
