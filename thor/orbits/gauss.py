@@ -6,8 +6,6 @@ from astropy.time import Time
 from ..constants import Constants as c
 from ..coordinates import transformCoordinates
 from .orbits import Orbits
-from .stumpff import calcStumpff
-from .universal_propagate import calcChi
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
 from .iterators import iterateStateTransition
@@ -18,7 +16,7 @@ __all__ = [
     "_calcB",
     "_calcLambdas",
     "_calcRhos",
-    "_calcFG",
+    "approxLangrangeCoeffs",
     "calcGauss",
     "gaussIOD"
 ]
@@ -26,6 +24,7 @@ __all__ = [
 MU = c.MU
 C = c.C
 
+@jit("f8(f8[:], f8[:], f8[:])", nopython=True, cache=True)
 def _calcV(rho1_hat, rho2_hat, rho3_hat):
     # Vector triple product that gives the area of
     # the "volume of the parallelepiped" or according to
@@ -33,20 +32,24 @@ def _calcV(rho1_hat, rho2_hat, rho3_hat):
     # Note that vector triple product rules apply here.
     return np.dot(np.cross(rho1_hat, rho2_hat), rho3_hat)
 
+@jit("f8(f8[:], f8[:], f8[:], f8[:], f8[:], f8, f8, f8)", nopython=True, cache=True)
 def _calcA(q1, q2, q3, rho1_hat, rho3_hat, t31, t32, t21):
     # Equation 21 from Milani et al. 2008
     return np.linalg.norm(q2)**3 * np.dot(np.cross(rho1_hat, rho3_hat), (t32 * q1 - t31 * q2 + t21 * q3))
 
+@jit("f8(f8[:], f8[:], f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
 def _calcB(q1, q3, rho1_hat, rho3_hat, t31, t32, t21, mu=MU):
     # Equation 19 from Milani et al. 2008
     return mu / 6 * t32 * t21 * np.dot(np.cross(rho1_hat, rho3_hat), ((t31 + t32) * q1 + (t31 + t21) * q3))
 
+@jit("UniTuple(f8, 2)(f8, f8, f8, f8, f8)", nopython=True, cache=True)
 def _calcLambdas(r2_mag, t31, t32, t21, mu=MU):
     # Equations 16 and 17 from Milani et al. 2008
     lambda1 = t32 / t31 * (1 + mu / (6 * r2_mag**3) * (t31**2 - t32**2))
     lambda3 = t21 / t31 * (1 + mu / (6 * r2_mag**3) * (t31**2 - t21**2))
     return lambda1, lambda3
 
+@jit("UniTuple(f8[:], 3)(f8, f8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8)", nopython=True, cache=True)
 def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V):
     # This can be derived by taking a series of scalar products of the coplanarity condition equation
     # with cross products of unit vectors in the direction of the observer, in particular, see Chapter 9 in
@@ -55,18 +58,17 @@ def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V):
     rho1_mag = np.dot(numerator, np.cross(rho2_hat, rho3_hat)) / (lambda1 * V)
     rho2_mag = np.dot(numerator, np.cross(rho1_hat, rho3_hat)) / V
     rho3_mag = np.dot(numerator, np.cross(rho1_hat, rho2_hat)) / (lambda3 * V)
-    rho1 = np.dot(rho1_mag, rho1_hat)
-    rho2 = np.dot(rho2_mag, rho2_hat)
-    rho3 = np.dot(rho3_mag, rho3_hat)
+    rho1 = rho1_mag * rho1_hat
+    rho2 = rho2_mag * rho2_hat
+    rho3 = rho3_mag * rho3_hat
     return rho1, rho2, rho3
 
-def _calcFG(r2_mag, t32, t21, mu=MU):
+@jit("UniTuple(f8, 2)(f8, f8, f8)", nopython=True, cache=True)
+def approxLangrangeCoeffs(r_mag, dt, mu=MU):
     # Calculate the Lagrange coefficients (Gauss f and g series)
-    f1 = 1 - (1 / 2) * mu / r2_mag**3 * (-t21)**2
-    f3 = 1 - (1 / 2) * mu / r2_mag**3 * t32**2
-    g1 = -t21 - (1 / 6) * mu / r2_mag**3 * (-t21)**2
-    g3 = t32 - (1 / 6) * mu / r2_mag**3 * t32**2
-    return f1, g1, f3, g3
+    f = 1 - (1 / 2) * mu / r_mag**3 * dt**2
+    g = dt - (1 / 6) * mu / r_mag**3 * dt**2
+    return f, g
 
 def calcGauss(r1, r2, r3, t1, t2, t3):
     """
@@ -114,11 +116,13 @@ def calcGauss(r1, r2, r3, t1, t2, t3):
     v2 : `~numpy.ndarray` (3)
         Velocity of object at position r2 at time t2 in units of AU per day.
     """
-    t21 = t2 - t1
+    t12 = t1 - t2
     t32 = t3 - t2
     r2_mag = np.linalg.norm(r2)
-    f1, g1, f3, g3 = _calcFG(r2_mag, t32, t21)
-    return (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
+    f1, g1 = approxLangrangeCoeffs(r2_mag, t12)
+    f3, g3 = approxLangrangeCoeffs(r2_mag, t32)
+    v2 = (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
+    return v2
 
 def gaussIOD(coords,
              observation_times,
@@ -197,7 +201,7 @@ def gaussIOD(coords,
     t32 = t3 - t2
 
     A = _calcA(q1, q2, q3, rho1_hat, rho3_hat, t31, t32, t21)
-    B = _calcB(q1, q3, rho1_hat, rho3_hat, t31, t32, t21)
+    B = _calcB(q1, q3, rho1_hat, rho3_hat, t31, t32, t21, mu=mu)
     V = _calcV(rho1_hat, rho2_hat, rho3_hat)
     coseps2 = np.dot(q2, rho2_hat) / q2_mag
     C0 = V * t31 * q2_mag**4 / B
@@ -228,7 +232,7 @@ def gaussIOD(coords,
     orbits = []
     epochs = []
     for r2_mag in r2_mags:
-        lambda1, lambda3 = _calcLambdas(r2_mag, t31, t32, t21)
+        lambda1, lambda3 = _calcLambdas(r2_mag, t31, t32, t21, mu=mu)
         rho1, rho2, rho3 = _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V)
 
         if np.dot(rho2, rho2_hat) < 0:
