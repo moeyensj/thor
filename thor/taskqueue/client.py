@@ -28,6 +28,7 @@ from thor.taskqueue.jobs import (
     upload_job_manifest,
     download_job_manifest,
 )
+from thor.taskqueue import compute_engine
 
 
 logger = logging.getLogger("thor")
@@ -37,6 +38,7 @@ class Client:
     """
     Client is an API client for submitting jobs to a THOR task queue.
     """
+
     def __init__(
         self, bucket: Bucket, queue: TaskQueueConnection,
     ):
@@ -126,7 +128,11 @@ class Client:
             for i, task_id in enumerate(manifest.task_ids):
                 status = statuses[task_id]
                 line = "\t".join(
-                    ("task=" + task_id, "state=" + str(status.state), "worker=" + str(status.worker))
+                    (
+                        "task=" + task_id,
+                        "state=" + str(status.state),
+                        "worker=" + str(status.worker),
+                    )
                 )
                 logger.info(line)
 
@@ -207,6 +213,7 @@ class Worker:
     Represents a handler for tasks in a THOR task queue, executing THOR and
     putting results into a GCS bucket.
     """
+
     def __init__(self, gcs: GCSClient, queue: TaskQueueConnection):
         """Creates a new worker.
 
@@ -226,19 +233,33 @@ class Worker:
         self.gcs = gcs
         self.queue = queue
 
-    def run_worker_loop(self, poll_interval: float):
-        """Block forever, handling new tasks in a loop.
+    def run_worker_loop(self, poll_interval: float, idle_shutdown_timeout: int):
+        """
+        Block forever, handling new tasks in a loop.
 
         Parameters
         ----------
         poll_interval : float
             The time, in seconds, between successive checks for work to be done.
+
+        idle_shutdown_timeout : int
+            If non-negative, terminate the worker and the entire instance if
+            there are no tasks to be done for this many seconds. On Google
+            Compute, this kills the VM. Otherwise, this returns, ending the loop
+            (and probably the process)
         """
 
-        for task in self.poll_for_tasks(poll_interval=poll_interval):
+        for task in self.poll_for_tasks(
+            poll_interval=poll_interval, idle_shutdown_timeout=idle_shutdown_timeout
+        ):
             self.handle_task(task)
 
-    def poll_for_tasks(self, poll_interval: float = 5.0, limit: int = -1) -> Iterator[Task]:
+    def poll_for_tasks(
+        self,
+        poll_interval: float = 5.0,
+        limit: int = -1,
+        idle_shutdown_timeout: int = -1,
+    ) -> Iterator[Task]:
         """
         Blocks forever, checking for new tasks to be done in a loop and yielding
         them whenever they are available.
@@ -256,6 +277,11 @@ class Worker:
         limit : int
             The maximum number of times to check for work. If negative, check
             forever.
+        idle_shutdown_timeout : int
+            If non-negative, terminate the worker and the entire instance if
+            there are no tasks to be done for this many seconds. On Google
+            Compute, this kills the VM. Otherwise, this returns, ending the loop
+            (and probably the process)
 
         Returns
         -------
@@ -265,10 +291,17 @@ class Worker:
 
         logger.info("starting to poll for tasks")
         i = 0
+        last_task_time = time.time()
         while True:
             task = self.queue.receive()
             if task is None:
-                logger.info("no tasks in queue")
+                since_last_task = time.time() - last_task_time
+                logger.info("no tasks in queue (%s since last task)", since_last_task)
+                if 0 <= idle_shutdown_timeout < since_last_task:
+                    logger.info("idle shutdown timeout has elapsed")
+                    self.terminate()
+                    return
+
                 time.sleep(poll_interval)
             else:
                 logger.info(
@@ -277,6 +310,7 @@ class Worker:
                 bucket = self.gcs.bucket(task.bucket)
                 task.mark_in_progress(bucket)
                 yield task
+                last_task_time = time.time()
             i += 1
             if limit >= 0:
                 if i >= limit:
@@ -326,5 +360,18 @@ class Worker:
             task.mark_success(bucket, out_dir)
             return out_dir
         except Exception as e:
-            logger.error("task %s failed", task_id, exc_info=sys.exc_info)
+            logger.error("task %s failed", task.task_id, exc_info=sys.exc_info)
             task.mark_failure(bucket, out_dir, e)
+
+    def terminate(self):
+        # Determine whether we are running on a Google Compute VM.
+        on_google_compute_engine = compute_engine.discover_running_on_compute_engine()
+
+        if on_google_compute_engine:
+            logger.info("detected that process is running on Google Compute Engine")
+
+            compute_engine.terminate_self()
+        else:
+            logger.info(
+                "Google Compute Engine not detected, nothing special to do for termination"
+            )
