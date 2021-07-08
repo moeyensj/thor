@@ -7,4 +7,4 @@ conda activate thor_py38
 
 source /etc/thor/env
 
-thorctl autoscale ${THOR_AUTOSCALE_QUEUES}
+thorctl autoscale ${THOR_AUTOSCALED_QUEUES}
