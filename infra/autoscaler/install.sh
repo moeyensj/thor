@@ -46,6 +46,8 @@ git checkout $THOR_GIT_REF
 mkdir -p /etc/thor
 touch /etc/thor/env
 
+### We don't need any Numba JIT; it just slows down service startup.
+echo "NUMBA_DISABLE_JIT=1" >> /etc/thor/env
 echo "THOR_AUTOSCALED_QUEUES=${THOR_AUTOSCALED_QUEUES}" >> /etc/thor/env
 
 ### Fetch RabbitMQ password
