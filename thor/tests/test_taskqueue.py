@@ -10,9 +10,12 @@ import pika
 import uuid
 import logging
 import tempfile
+import concurrent.futures
 
 from google.cloud.storage import Client as GCSClient
+from google.cloud import pubsub_v1
 import google.cloud.exceptions
+import google.api_core.exceptions
 
 from thor import config
 from thor.orbits import Orbits
@@ -23,6 +26,7 @@ from thor.taskqueue import client
 from thor.testing import integration_test
 
 RUN_INTEGRATION_TESTS = "THOR_INTEGRATION_TEST" in os.environ
+GCP_PROJECT = "moeyens-thor-dev"
 
 _RABBIT_HOST = os.environ.get("RABBIT_HOST", "localhost")
 _RABBIT_PORT = os.environ.get("RABBIT_PORT", 5672)
@@ -74,6 +78,25 @@ def google_storage_bucket(request):
 
 
 @pytest.fixture()
+def google_pubsub_topic(request):
+    topic_name = f"projects/{GCP_PROJECT}/topics/test_topic__{request.function.__name__}"
+    pubsub_client = pubsub_v1.PublisherClient()
+    pubsub_client.create_topic(name=topic_name)
+    yield topic_name
+    pubsub_client.delete_topic(topic=topic_name)
+
+
+@pytest.fixture()
+def google_pubsub_subscription(google_pubsub_topic, request):
+    subscription_name = f"test_subscription__{request.function.__name__}"
+    with pubsub_v1.SubscriberClient() as subscriber:
+        subscription_path = subscriber.subscription_path(GCP_PROJECT, subscription_name)
+        subscriber.create_subscription(name=subscription_path, topic=google_pubsub_topic)
+        yield subscription_path
+        subscriber.delete_subscription(subscription=subscription_path)
+
+
+@pytest.fixture()
 def observations():
     yield pd.read_csv(
         os.path.join(DATA_DIR, "observations.csv"),
@@ -91,7 +114,12 @@ test_config = config.Configuration(cluster_link_config={"vx_bins": 10, "vy_bins"
 
 
 @integration_test
-def test_queue_roundtrip(queue_connection, google_storage_bucket, observations, orbits):
+def test_queue_roundtrip(
+        queue_connection,
+        google_storage_bucket,
+        observations,
+        orbits
+):
     job_id = str(uuid.uuid1())
     tasks.upload_job_inputs(google_storage_bucket, job_id, test_config, observations)
     task = tasks.Task.create(
@@ -164,16 +192,23 @@ def test_job_manifest_storage_roundtrip(google_storage_bucket, orbits):
 
 @integration_test
 def test_client_roundtrip(
-    queue_connection, google_storage_bucket, orbits, observations
+    queue_connection,
+    google_storage_bucket,
+    google_pubsub_topic,
+    google_pubsub_subscription,
+    orbits,
+    observations
 ):
     taskqueue_client = client.Client(google_storage_bucket, queue_connection)
-    taskqueue_worker = client.Worker(GCSClient(), queue_connection)
+    taskqueue_worker = client.Worker(GCSClient(),
+                                     pubsub_v1.PublisherClient(),
+                                     queue_connection)
 
     # trim down to 3 orbits
     orbits = Orbits.from_df(orbits.to_df()[:3])
     n_task = 3
 
-    manifest = taskqueue_client.launch_job(test_config, observations, orbits)
+    manifest = taskqueue_client.launch_job(test_config, observations, orbits, google_pubsub_topic)
     assert len(manifest.task_ids) == n_task
 
     statuses = taskqueue_client.get_task_statuses(manifest)
@@ -227,6 +262,46 @@ def test_client_roundtrip(
         _assert_results_downloaded(outdir, received_tasks[0].task_id)
         _assert_results_downloaded(outdir, received_tasks[1].task_id)
 
+    # The Job isn't done, so nothing should be published claiming it to be
+    # complete yet.
+    with pubsub_v1.SubscriberClient() as subscriber:
+        with pytest.raises(google.api_core.exceptions.DeadlineExceeded):
+            logger.info("polling pubsub topic for job completion announcement")
+            pull_response = subscriber.pull(
+                subscription=google_pubsub_subscription,
+                max_messages=1,
+                timeout=3,
+            )
+
+    # Handle the final task
+    taskqueue_worker.handle_task(received_tasks[2])
+    statuses = tasks.get_task_statuses(google_storage_bucket, manifest)
+    task1_state, task2_state, task3_state = (
+        statuses[received_tasks[0].task_id].state,
+        statuses[received_tasks[1].task_id].state,
+        statuses[received_tasks[2].task_id].state,
+    )
+    assert task1_state == tasks.TaskState.SUCCEEDED
+    assert task2_state == tasks.TaskState.SUCCEEDED
+    assert task3_state == tasks.TaskState.SUCCEEDED
+
+    # The Job is done, so the pubsub topic should have an announcement.
+    with pubsub_v1.SubscriberClient() as subscriber:
+        logger.info("polling pubsub topic for job completion announcement")
+        pull_response = subscriber.pull(
+            subscription=google_pubsub_subscription,
+            max_messages=1,
+            timeout=3,
+        )
+        assert len(pull_response.received_messages) == 1
+
+        msg = pull_response.received_messages[0]
+    announcement_manifest = jobs.JobManifest.from_str(msg.message.data)
+
+    assert announcement_manifest.job_id == manifest.job_id
+    assert announcement_manifest.task_ids == manifest.task_ids
+    assert len(announcement_manifest.incomplete_tasks) == 0
+
 
 def _assert_results_downloaded(dir: str, task_id: str):
     # There should be a folder for the entire task
@@ -240,3 +315,74 @@ def _assert_results_downloaded(dir: str, task_id: str):
     # members.
     assert os.path.exists(os.path.join(task_folder_path, "recovered_orbits.csv"))
     assert os.path.exists(os.path.join(task_folder_path, "recovered_orbit_members.csv"))
+
+
+@integration_test
+def test_job_manifest_updates(google_storage_bucket):
+    # Create a manifest with 2 tasks.
+    job_id = "test-job-id"
+    manifest = jobs.JobManifest.create(job_id)
+
+    orbit1 = mock_orbit("orbit-1")
+    task1 = mock_task("task-1")
+    manifest.append(orbit1, task1)
+
+    orbit2 = mock_orbit("orbit-2")
+    task2 = mock_task("task-2")
+    manifest.append(orbit2, task2)
+
+    jobs.upload_job_manifest(google_storage_bucket, manifest)
+
+    have = jobs.mark_task_done_in_manifest(google_storage_bucket, job_id, task2.task_id)
+
+    assert len(have.incomplete_tasks) == 1
+    assert have.incomplete_tasks[0] == task1.task_id
+
+    have = jobs.mark_task_done_in_manifest(google_storage_bucket, job_id, task1.task_id)
+    assert len(have.incomplete_tasks) == 0
+
+
+@integration_test
+def test_job_manifest_concurrent_updates(google_storage_bucket):
+    # Create a manifest with 10 tasks.
+    job_id = "test-job-id"
+    manifest = jobs.JobManifest.create(job_id)
+
+    n_tasks = 10
+    for i in range(n_tasks):
+        orbit = mock_orbit(f"orbit-{i}")
+        task = mock_task(f"task-{i}")
+        manifest.append(orbit, task)
+
+    # Upload the manifest.
+    jobs.upload_job_manifest(google_storage_bucket, manifest)
+
+    # In 1 thread per task, do a whole bunch of parallel modifications to the
+    # job manifest.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = []
+        for i in range(n_tasks):
+            task_id = manifest.task_ids[i]
+            future = executor.submit(
+                jobs.mark_task_done_in_manifest, google_storage_bucket, job_id, task_id
+            )
+            futures.append(future)
+        for f in concurrent.futures.as_completed(futures):
+            future.result()
+
+    # The Manifest should think all tasks completed.
+    have = jobs.download_job_manifest(google_storage_bucket, job_id)
+    assert len(have.incomplete_tasks) == 0
+
+
+class mock_orbit:
+    def __init__(self, id):
+        self.ids = [id]
+
+    def __len__(self):
+        return 1
+
+
+class mock_task:
+    def __init__(self, id):
+        self.task_id = id

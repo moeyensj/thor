@@ -1,7 +1,7 @@
 import logging
 import sys
 import uuid
-from typing import Sequence, Mapping, Iterator
+from typing import Mapping, Iterator, Optional
 import time
 import tempfile
 
@@ -9,6 +9,7 @@ import pandas as pd
 
 from google.cloud.storage import Bucket
 from google.cloud.storage import Client as GCSClient
+from google.cloud.pubsub_v1 import PublisherClient
 
 from thor.main import runTHOROrbit
 from thor.config import Configuration
@@ -20,6 +21,7 @@ from thor.taskqueue.tasks import (
     TaskState,
     upload_job_inputs,
     get_task_status,
+    set_task_status,
     get_task_statuses,
     download_task_outputs,
 )
@@ -27,6 +29,8 @@ from thor.taskqueue.jobs import (
     JobManifest,
     upload_job_manifest,
     download_job_manifest,
+    mark_task_done_in_manifest,
+    announce_job_done,
 )
 from thor.taskqueue import compute_engine
 
@@ -39,9 +43,7 @@ class Client:
     Client is an API client for submitting jobs to a THOR task queue.
     """
 
-    def __init__(
-        self, bucket: Bucket, queue: TaskQueueConnection,
-    ):
+    def __init__(self, bucket: Bucket, queue: TaskQueueConnection):
         """Create a new client.
 
         Parameters
@@ -57,9 +59,14 @@ class Client:
         self.queue = queue
 
     def launch_job(
-        self, config: Configuration, observations: pd.DataFrame, orbits: Orbits,
+        self,
+        config: Configuration,
+        observations: pd.DataFrame,
+        orbits: Orbits,
+        job_completion_pubsub_topic: Optional[str] = None,
     ) -> JobManifest:
-        """Submit a new job for execution.
+        """
+        Submit a new job for execution.
 
         The job will be handled by the first available worker which is listening
         on the same queue that the Client submitted to.
@@ -73,13 +80,16 @@ class Client:
             thor.main.runTHOR.
         orbits : Orbits
             The test orbits to be used by task executors.
+        job_completion_pubsub_topic : Optional[str]
+            The name of a pubsub topic (in the canonical
+            projects/{project}/topics/{topic} format) which should get an
+            announcement when a launched job completed.
 
         Returns
         -------
         JobManifest
             A manifest document which lists task IDs and the job ID. These
             persistent identifiers can be used to retrieve statuses and results.
-
         """
         logger.info("launching new job")
 
@@ -89,7 +99,7 @@ class Client:
         logger.info("uploading job inputs")
         upload_job_inputs(self.bucket, job_id, config, observations)
 
-        manifest = JobManifest.create(job_id)
+        manifest = JobManifest.create(job_id, job_completion_pubsub_topic)
         for orbit in orbits.split(1):
             task = Task.create(job_id, self.bucket, orbit)
             logger.info("created task (id=%s)", task.task_id)
@@ -214,7 +224,9 @@ class Worker:
     putting results into a GCS bucket.
     """
 
-    def __init__(self, gcs: GCSClient, queue: TaskQueueConnection):
+    def __init__(
+        self, gcs: GCSClient, pubsub_client: PublisherClient, queue: TaskQueueConnection
+    ):
         """Creates a new worker.
 
         The worker's receive loop is not set up automatically. The caller should
@@ -224,6 +236,8 @@ class Worker:
         ----------
         gcs : GCSClient
             A Google Cloud Storage client.
+        pubsub_client : google.cloud.pubsub_v1.PublisherClient
+            A Google Cloud PubSub Publisher client.
         queue : TaskQueueConnection
             A queue to listen to. The queue should be connected before calling
             run_worker_loop.
@@ -231,6 +245,7 @@ class Worker:
         """
 
         self.gcs = gcs
+        self.pubsub_client = pubsub_client
         self.queue = queue
 
     def run_worker_loop(self, poll_interval: float, idle_shutdown_timeout: int):
@@ -308,7 +323,7 @@ class Worker:
                     "received task job_id=%s task_id=%s", task.job_id, task.task_id
                 )
                 bucket = self.gcs.bucket(task.bucket)
-                task.mark_in_progress(bucket)
+                self.mark_in_progress(task, bucket)
                 yield task
                 last_task_time = time.time()
             i += 1
@@ -357,11 +372,83 @@ class Worker:
                 if_exists="erase",
                 logging_level=logging.INFO,
             )
-            task.mark_success(bucket, out_dir)
+            self.mark_task_succeeded(task, bucket, out_dir)
             return out_dir
         except Exception as e:
             logger.error("task %s failed", task.task_id, exc_info=sys.exc_info)
-            task.mark_failure(bucket, out_dir, e)
+            self.mark_task_failed(task, bucket, out_dir, e)
+        finally:
+            updated_manifest = mark_task_done_in_manifest(
+                bucket, task.job_id, task.task_id
+            )
+
+            # If our update reduced the manifest down to zero tasks, then we
+            # were the last task. Announce everything is done.
+            all_tasks_done = len(updated_manifest.incomplete_tasks) == 0
+            if all_tasks_done:
+                announce_job_done(self.pubsub_client, updated_manifest)
+
+    def mark_task_succeeded(self, task: Task, bucket: Bucket, result_dir: str):
+        """
+        Mark a task as succesfully completed, handled by the current process, and
+        upload its results.
+
+        Parameters
+        ----------
+        task : Task
+            The Task which succeeded.
+        bucket : Bucket
+            The bucket hosting the job.
+        result_directory : str
+            A local directory holding all the results of the execution which
+            should be uploaded to the bucket.
+        """
+
+        logger.info("marking task %s as a success", task.task_id)
+        # Store the results for the publisher
+        task._upload_results(bucket, result_dir)
+        # Mark the message as successfully handled
+        self.queue.channel.basic_ack(delivery_tag=task._delivery_tag)
+        set_task_status(bucket, task.job_id, task.task_id, TaskState.SUCCEEDED)
+
+    def mark_task_failed(
+        self, task: Task, bucket: Bucket, result_directory: str, exception: Exception
+    ):
+        """Mark a task as having failed.
+
+        The task's status is updated in the bucket. Any intermediate results in
+        result_directory are uploaded to the bucket, as well as an error trace.
+
+        Parameters
+        ----------
+        task : Task
+            The Task which failed.
+        bucket : Bucket
+            The bucket hosting the job.
+        result_directory : str
+            A local directory holding all the results of the execution.
+        exception : Exception
+            The exception that triggered the failure.
+        """
+
+        logger.error(
+            "marking task %s as a failure, reason: %s", task.task_id, exception
+        )
+        # store the failed results
+        task._upload_failure(bucket, result_directory, exception)
+        # Mark the message as unsuccessfully attempted
+        self.queue.channel.basic_nack(delivery_tag=task._delivery_tag, requeue=False)
+        set_task_status(bucket, task.job_id, task.task_id, TaskState.FAILED)
+
+    def mark_in_progress(self, task: Task, bucket: Bucket):
+        """Mark the task as in-progress, handled by the current process.
+
+        Parameters
+        ----------
+        bucket : Bucket
+            The bucket hosting the job.
+        """
+        set_task_status(bucket, task.job_id, task.task_id, TaskState.IN_PROGRESS)
 
     def terminate(self):
         # Determine whether we are running on a Google Compute VM.

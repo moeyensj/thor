@@ -5,6 +5,7 @@ import os
 
 import pika
 from google.cloud.storage import Client as GCSClient
+from google.cloud.pubsub_v1 import PublisherClient
 import google.cloud.exceptions
 
 logger = logging.getLogger("thor")
@@ -35,6 +36,22 @@ def parse_args():
         "--create-bucket",
         action="store_true",
         help="create the bucket if it does not exist already",
+    )
+    parser.add_argument(
+        "--pubsub_topic",
+        type=str,
+        default=None,
+        help="""
+        (optional) The name of a pubsub topic (in 'projects/{proj}/topics/{topic}' format).
+        When the job is complete, a message will be published to this topic. The
+        message's contents will be JSON serialization of a
+        thor.taskqueue.jobs.JobManifest object.
+        """,
+    )
+    parser.add_argument(
+        "--create-pubsub-topic",
+        action="store_true",
+        help="create the pubsub topic if it does not exist already"
     )
     parser.add_argument(
         "--rabbit-host",
@@ -119,10 +136,31 @@ def main():
             # Bucket already exists.
             pass
     bucket = gcs.bucket(args.bucket)
+
+    # Set up PubSub topic
+    if args.pubsub_topic is not None:
+        # Validate pubsub topic
+        split_topic = args.pubsub_topic.split("/")
+        if len(split_topic) != 4 or split_topic[0] != "projects" or split_topic[2] != "projects":
+            raise ValueError(
+                "--pubsub-topic must match pattern 'projects/{project}/topics/{topic}'"
+            )
+
+        if args.create_pubsub_topic:
+            try:
+                pubsub_client = PublisherClient()
+                pubsub_client.create_topic(name=args.pubsub_topic)
+            except google.cloud.exceptions.Conflict:
+                # Topic already exists.
+                pass
+
     taskqueue_client = TaskQueueClient(bucket, queue)
 
     manifest = taskqueue_client.launch_job(
-        config, preprocessed_observations, test_orbits
+        config=config,
+        observations=preprocessed_observations,
+        orbits=test_orbits
+        job_completion_pubsub_topic=args.pubsub_topic,
     )
     taskqueue_client.monitor_job_status(manifest.job_id)
     taskqueue_client.download_results(manifest, args.out_dir)

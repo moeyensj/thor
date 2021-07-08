@@ -145,66 +145,6 @@ class Task:
 
         return download_task_inputs(bucket, self)
 
-    def mark_in_progress(self, bucket: Bucket):
-        """Mark the task as in-progress, handled by the current process.
-
-        Parameters
-        ----------
-        bucket : Bucket
-            The bucket hosting the job.
-        """
-
-        set_task_status(bucket, self.job_id, self.task_id, TaskState.IN_PROGRESS)
-
-    def mark_success(self, bucket: Bucket, result_directory: str):
-        """
-        Mark the task as succesfully completed, handled by the current process, and
-        upload its results.
-
-        Parameters
-        ----------
-        bucket : Bucket
-            The bucket hosting the job.
-        result_directory : str
-            A local directory holding all the results of the execution which
-            should be uploaded to the bucket.
-        """
-
-        logger.info("marking task %s as a success", self.task_id)
-        # Store the results for the publisher
-        self._upload_results(bucket, result_directory)
-        # Mark the message as successfully handled
-        self._channel.basic_ack(delivery_tag=self._delivery_tag)
-        set_task_status(bucket, self.job_id, self.task_id, TaskState.SUCCEEDED)
-
-    def mark_failure(self, bucket: Bucket, result_directory: str, exception: Exception):
-        """Mark the task as having failed.
-
-        The task's status is updated in the bucket. Any intermediate results in
-        result_directory are uploaded to the bucket, as well as an error trace.
-
-        Parameters
-        ----------
-        bucket : Bucket
-            The bucket hosting the job.
-        result_directory : str
-            A local directory holding all the results of the execution.
-        exception : Exception
-            The exception that triggered the failure.
-        """
-
-        logger.error(
-            "marking task %s as a failure, reason: %s", self.task_id, exception
-        )
-        # store the failed results
-        self._upload_failure(bucket, result_directory, exception)
-        # Mark the message as unsuccessfully attempted
-        self._channel.basic_nack(
-            delivery_tag=self._delivery_tag,
-            requeue=False,
-        )
-        set_task_status(bucket, self.job_id, self.task_id, TaskState.FAILED)
-
     def _upload_results(self, bucket: Bucket, result_directory: str):
         # Task-wide directory in the bucket where results go
         output_blobdir = _task_output_path(self.job_id, self.task_id)

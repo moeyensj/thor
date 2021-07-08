@@ -3,6 +3,7 @@ import os
 
 import pika
 from google.cloud.storage.client import Client as GCSClient
+from google.cloud.pubsub.client import Client as PubsubClient
 
 
 def parse_args():
@@ -76,7 +77,8 @@ def main():
     )
     queue.connect()
     gcs = GCSClient()
-    worker = Worker(gcs, queue)
+    pubsub = PubsubClient()
+    worker = Worker(gcs, pubsub, queue)
     worker.run_worker_loop(args.poll_interval, args.idle_shutdown_timeout)
 
 
