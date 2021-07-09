@@ -31,24 +31,29 @@ def terminate_self():
     compute_client = googleapiclient.discovery.build("compute", "v1")
     operation = compute_client.instances().delete(
         project=project, zone=zone, instance=name,
-    )
+    ).execute()
 
     logger.info("Blocking to wait for the delete to complete")
     compute_client.zoneOperations().wait(
         project=project, zone=zone, operation=operation["name"]
-    )
+    ).execute()
 
 
 def _google_metadata_request(path: str) -> Any:
     retry_limit = 30
     retry_count = 0
     while retry_count < retry_limit:
-        response = requests.get("http://metadata.google.internal" + path, timeout=1.0)
+        response = requests.get(
+            "http://metadata.google.internal" + path,
+            headers={"Metadata-Flavor": "Google"},
+            timeout=1.0,
+        )
         if response.status_code == 503:
             # Indicates metadata server maintenance. Retry.
             retry_count += 1
             time.sleep(1)
             continue
+        break
     response.raise_for_status()
     return response.content
 
@@ -70,7 +75,7 @@ def discover_running_on_compute_engine() -> bool:
         return False
 
 
-def discover_instance_name() -> bytes:
+def discover_instance_name() -> str:
     """
     Query Google Compute Engine metadata to discover the host instance's name.
 
@@ -85,12 +90,12 @@ def discover_instance_name() -> bytes:
     --------
 
     >>> discover_instance_name()
-    b'asgard'
+    'asgard'
     """
-    return _google_metadata_request("/computeMetadata/v1/instance/name")
+    return _google_metadata_request("/computeMetadata/v1/instance/name").decode()
 
 
-def discover_instance_zone() -> bytes:
+def discover_instance_zone() -> str:
     """
     Query Google Compute Engine metadata to discover the host instance's zone.
 
@@ -106,13 +111,13 @@ def discover_instance_zone() -> bytes:
     --------
 
     >>> discover_instance_zone()
-    b'projects/492788363398/zones/us-west1-a'
+    'projects/492788363398/zones/us-west1-a'
     """
-    return _google_metadata_request("/computeMetadata/v1/instance/zone")
+    return _google_metadata_request("/computeMetadata/v1/instance/zone").decode()
 
 
-def discover_project_id() -> bytes:
-    return _google_metadata_request("/computeMetadata/v1/project/project-id")
+def discover_project_id() -> str:
+    return _google_metadata_request("/computeMetadata/v1/project/project-id").decode()
 
 
 def _get_access_token() -> str:
