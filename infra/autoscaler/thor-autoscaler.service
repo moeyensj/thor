@@ -1,0 +1,12 @@
+[Unit]
+Description=THOR Autoscaler
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/thor
+EnvironmentFile=/etc/thor/env
+ExecStart=/etc/thor/start_autoscaler.sh
+
+[Install]
+WantedBy=multi-user.target
