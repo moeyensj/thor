@@ -141,7 +141,7 @@ def main():
     if args.pubsub_topic is not None:
         # Validate pubsub topic
         split_topic = args.pubsub_topic.split("/")
-        if len(split_topic) != 4 or split_topic[0] != "projects" or split_topic[2] != "projects":
+        if len(split_topic) != 4 or split_topic[0] != "projects" or split_topic[2] != "topics":
             raise ValueError(
                 "--pubsub-topic must match pattern 'projects/{project}/topics/{topic}'"
             )
