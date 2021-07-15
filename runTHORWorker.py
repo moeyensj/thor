@@ -3,7 +3,7 @@ import os
 
 import pika
 from google.cloud.storage.client import Client as GCSClient
-from google.cloud.pubsub.client import Client as PubsubClient
+from google.cloud.pubsub_v1 import PublisherClient as PubsubClient
 
 
 def parse_args():
