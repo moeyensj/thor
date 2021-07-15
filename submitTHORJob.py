@@ -159,7 +159,7 @@ def main():
     manifest = taskqueue_client.launch_job(
         config=config,
         observations=preprocessed_observations,
-        orbits=test_orbits
+        orbits=test_orbits,
         job_completion_pubsub_topic=args.pubsub_topic,
     )
     taskqueue_client.monitor_job_status(manifest.job_id)
