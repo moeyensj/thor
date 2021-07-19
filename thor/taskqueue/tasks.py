@@ -227,17 +227,22 @@ class Task:
         self, bucket: Bucket, result_directory: str, exception: Exception
     ):
         output_blobdir = _task_output_path(self.job_id, self.task_id)
-        exception_string = traceback.format_exception(
+        exception_strings = traceback.format_exception(
             etype=type(exception),
             value=exception,
             tb=exception.__traceback__,
         )
+        if len(exception_strings) == 1:
+            exception_string = exception_strings[0]
+        else:
+            exception_string = "Multiple errors:\n"
+            for i, e in enumerate(exception_strings):
+                exception_string += f"begin-exception-{i}:\n{e}\nend-exception-{i}"
+
         blobpath = posixpath.join(output_blobdir, "error_message.txt")
         logger.error("uploading exception trace to %s", blobpath)
         bucket.blob(blobpath).upload_from_string(exception_string)
         self._upload_results(self.bucket, result_directory)
-
-        raise NotImplementedError()
 
 
 # Generated randomly:
