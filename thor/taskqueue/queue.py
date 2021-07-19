@@ -94,6 +94,8 @@ class TaskQueueConnection:
             done, receive will return None.
         """
 
+        # Handle any heartbeats.
+        self.connection.process_data_events()
         method, properties, body = self.channel.basic_get(
             queue=self.queue_name,
             auto_ack=False,
