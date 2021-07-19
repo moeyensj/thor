@@ -1,5 +1,4 @@
 import time
-import uuid
 import logging
 import numpy as np
 import pandas as pd
@@ -8,7 +7,6 @@ __all__ = [
     "generateCombinations",
     "sortLinkages",
     "identifySubsetLinkages",
-    "mergeLinkages",
     "removeDuplicateLinkages",
     "removeDuplicateObservations",
     "calcDeltas"
@@ -219,134 +217,6 @@ def identifySubsetLinkages(linkage_members, linkage_id_col="orbit_id"):
     logger.debug(f"Subset dataframe created in {duration:.3f}s.")
 
     return subsets
-
-def mergeLinkages(
-        linkages,
-        linkage_members,
-        observations,
-        linkage_id_col="orbit_id",
-        filter_cols=["num_obs", "arc_length"],
-        ascending=[False, False]
-    ):
-    """
-    Merge any observations that share observations into one larger linkage. The larger
-    linkage will be given the linkage properties of the linkage that when sorted using
-    filter_cols is first. Linkages that when merged may have different observations occur at the same
-    time will be split into every possible comibination of unique observation IDs and observation times.
-
-    Parameters
-    ----------
-    linkages : `~pandas.DataFrame`
-        DataFrame containing at least the linkage ID.
-    linkage_members : `~pandas.DataFrame`
-        Dataframe containing the linkage ID and the observation ID for each of the linkage's
-        constituent observations. Each observation ID should be in a single row.
-    observations : `~pandas.DataFrame`
-        Observations DataFrame containing at least and observation ID column and a observation time
-        column ('mjd_utc').
-    linkage_id_col : str, optional
-        Linkage ID column name (must be the same in both DataFrames).
-    filter_cols : list, optional
-        List of column names to use to sort the linkages.
-    ascending : list, optional
-        Sort the filter_cols in ascending or descending order.
-
-    Returns
-    -------
-    linkages : `~pandas.DataFrame`
-        DataFrame with merged linkages added.
-    linkage_members : `~pandas.DataFrame`
-        DataFrame with merged linkages added.
-    merged_from : `~pandas.DataFrame`
-        DataFrame with column of newly created linkages, and a column
-        with their constituent linkages.
-    """
-    assert "mjd_utc" not in linkage_members.columns
-
-    obs_id_occurences = linkage_members["obs_id"].value_counts()
-    duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
-    linkage_members_ = linkage_members.merge(observations[["obs_id", "mjd_utc"]], on="obs_id")
-
-    if linkage_id_col == "orbit_id":
-        columns = ["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz"]
-    else:
-        columns = ["cluster_id", "vtheta_x_deg", "vtheta_y_deg"]
-
-    merged_linkages = []
-    merged_linkage_members = []
-    merged_from = []
-    while len(duplicate_obs_ids) > 0:
-
-        duplicate_obs_id = duplicate_obs_ids[0]
-        linkage_ids_i = linkage_members_[linkage_members_["obs_id"].isin([duplicate_obs_id])][linkage_id_col].unique()
-        obs_ids = linkage_members_[linkage_members_[linkage_id_col].isin(linkage_ids_i)]["obs_id"].unique()
-        times = linkage_members_[linkage_members_["obs_id"].isin(obs_ids)].drop_duplicates(subset=["obs_id"])["mjd_utc"].values
-
-        obs_ids = obs_ids[np.argsort(times)]
-        times = times[np.argsort(times)]
-        for combination in generateCombinations(times):
-
-            new_possible_linkages = linkages[linkages[linkage_id_col].isin(linkage_ids_i)].copy()
-            new_linkage = new_possible_linkages.sort_values(
-                by=filter_cols,
-                ascending=ascending
-            )[:1]
-            new_linkage_id = str(uuid.uuid4().hex)
-            new_linkage[linkage_id_col] = new_linkage_id
-
-            new_linkage_members = {
-                linkage_id_col : [new_linkage_id for i in range(len(obs_ids[combination]))],
-                "obs_id" : obs_ids[combination],
-                "mjd_utc" : times[combination]
-            }
-            merged_from_i = {
-                linkage_id_col : [new_linkage_id for i in range(len(linkage_ids_i))],
-                "merged_from" : linkage_ids_i
-            }
-            merged_linkages.append(new_linkage)
-            merged_linkage_members.append(pd.DataFrame(new_linkage_members))
-            merged_from.append(pd.DataFrame(merged_from_i))
-
-        duplicate_obs_ids = np.delete(duplicate_obs_ids, np.isin(duplicate_obs_ids, obs_ids))
-
-    if len(merged_linkages) > 0:
-        merged_linkages = pd.concat(merged_linkages)
-        merged_linkage_members = pd.concat(merged_linkage_members)
-        merged_from = pd.concat(merged_from)
-
-        merged_linkages.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
-        merged_linkage_members.sort_values(
-            by=[linkage_id_col, "mjd_utc"],
-            inplace=True
-        )
-        merged_from.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
-
-        for df in [merged_linkages, merged_linkage_members, merged_from]:
-            df.reset_index(
-                inplace=True,
-                drop=True
-            )
-
-    else:
-
-        merged_linkages = pd.DataFrame(
-            columns=columns
-        )
-
-        merged_linkage_members = pd.DataFrame(
-            columns=[linkage_id_col, "obs_id"]
-        )
-
-        merged_from = pd.DataFrame(
-            columns=[linkage_id_col, "merged_from"]
-        )
-    return merged_linkages[columns], merged_linkage_members[[linkage_id_col, "obs_id"]], merged_from
 
 def removeDuplicateLinkages(
         linkages,
