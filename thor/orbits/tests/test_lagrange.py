@@ -12,7 +12,8 @@ def test_calcLangrangeCoeffs_zerodt():
     v = np.array([0.0002, 0.0002, 0.])
     dt = 0.0
 
-    f, g, f_dot, g_dot = calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16)
+    lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16)
+    f, g, f_dot, g_dot = lagrange_coeffs
     assert f == 1.0
     assert g == 0.0
     assert f_dot == 0.0
