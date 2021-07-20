@@ -11,7 +11,7 @@ __all__ = [
 
 MU = C.MU
 
-@jit("UniTuple(f8, 4)(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
+@jit("Tuple((UniTuple(f8, 4), UniTuple(f8, 6), f8))(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
 def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate the exact Lagrange coefficients given an initial state defined at t0,
@@ -37,14 +37,19 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
 
     Returns
     -------
-    f : float
-        Langrange f coefficient.
-    g : float
-        Langrange g coefficient.
-    f_dot : float
-        Time deriviative of the Langrange f coefficient.
-    g_dot : float
-        Time deriviative of the Langrange g coefficient.
+    lagrange_coeffs : (float x 4)
+        f : float
+            Langrange f coefficient.
+        g : float
+            Langrange g coefficient.
+        f_dot : float
+            Time deriviative of the Langrange f coefficient.
+        g_dot : float
+            Time deriviative of the Langrange g coefficient.
+    stumpff_coeffs : (float x 6)
+        First six Stumpff functions (c0, c1, c2, c3, c4, c5)
+    chi : float
+        Universal anomaly.
     """
     sqrt_mu = np.sqrt(mu)
     chi, c0, c1, c2, c3, c4, c5 = calcChi(
@@ -55,6 +60,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
         max_iter=max_iter,
         tol=tol
     )
+    stumpff_coeffs = (c0, c1, c2, c3, c4, c5)
     chi2 = chi**2
 
     r_mag = np.linalg.norm(r)
@@ -71,7 +77,9 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
     g_dot = 1 - chi2 / r_new_mag * c2
 
-    return f, g, f_dot, g_dot
+    lagrange_coeffs = (f, g, f_dot, g_dot)
+
+    return lagrange_coeffs, stumpff_coeffs, chi
 
 @jit("UniTuple(f8[:], 2)(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
 def applyLagrangeCoeffs(r, v, f, g, f_dot, g_dot):
@@ -84,6 +92,14 @@ def applyLagrangeCoeffs(r, v, f, g, f_dot, g_dot):
         Position vector in au.
     v : `~numpy.ndarray` (3)
         Velocity vector in au per day.
+    f : float
+        Langrange f coefficient.
+    g : float
+        Langrange g coefficient.
+    f_dot : float
+        Time deriviative of the Langrange f coefficient.
+    g_dot : float
+        Time deriviative of the Langrange g coefficient.
 
     Returns
     -------

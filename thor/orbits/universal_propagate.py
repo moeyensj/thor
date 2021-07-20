@@ -44,7 +44,6 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     new_orbits = []
     num_orbits = orbits.shape[0]
-    sqrt_mu = np.sqrt(mu)
 
     for i in range(num_orbits):
         for j, t in enumerate(t1):
@@ -53,7 +52,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
             v = np.ascontiguousarray(orbits[i, 3:6])
             dt = t - t0[i]
 
-            f, g, f_dot, g_dot = calcLagrangeCoeffs(
+            lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
                 r,
                 v,
                 dt,
@@ -61,7 +60,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
                 max_iter=max_iter,
                 tol=tol
             )
-            r_new, v_new = applyLagrangeCoeffs(r, v, f, g, f_dot, g_dot)
+            r_new, v_new = applyLagrangeCoeffs(r, v, *lagrange_coeffs)
 
             new_orbits.append([i, t, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
 
