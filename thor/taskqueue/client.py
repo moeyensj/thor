@@ -300,7 +300,7 @@ class Worker:
                 if 0 <= idle_shutdown_timeout < since_last_task:
                     logger.info("idle shutdown timeout has elapsed")
                     self.terminate()
-                    return
+                    break
 
                 time.sleep(poll_interval)
             else:

@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
+Restart=always
 WorkingDirectory=/opt/thor
 EnvironmentFile=/etc/thor/env
 ExecStart=/etc/thor/start_worker.sh

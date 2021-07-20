@@ -4,7 +4,7 @@
 ## Setup script for building a disk image for the taskqueue worker.
 ##
 
-set -eo pipefail
+set -xeo pipefail
 
 ## Install system dependencies
 add-apt-repository universe  # Required to install jq in Ubuntu 18.04.1

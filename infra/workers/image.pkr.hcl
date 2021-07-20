@@ -47,6 +47,6 @@ build {
     ]
     # Execute command with sudo
     execute_command = "chmod +x {{ .Path }}; sudo sh -c '{{ .Vars }} {{ .Path }}'"
-    script = "configure_worker.sh"
+    script = "./configure_worker.sh"
   }
 }
