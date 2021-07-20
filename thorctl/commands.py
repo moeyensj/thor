@@ -19,7 +19,7 @@ def dispatch(parser, args):
     elif args.command == "destroy":
         destroy(args.queue)
     elif args.command == "logs":
-        logs(args.queue, not args.no_color)
+        logs(args.queue)
     elif args.command == "autoscale":
         autoscale(
             args.queue,
@@ -70,7 +70,6 @@ def parse_args():
 
     logs = subparsers.add_parser("logs", help="stream logs from the workers")
     logs.add_argument("queue", type=str, help="name of the queue")
-    logs.add_argument("--no-color", action="store_true", help="do not colorize output")
 
     autoscale = subparsers.add_parser(
         "autoscale", help="monitor a queue and automatically scale it up to handle load"
@@ -157,14 +156,13 @@ def destroy(queue_name: str):
     manager.terminate_all_workers()
 
 
-def logs(queue_name: str, colorize: bool):
+def logs(queue_name: str):
     manager = WorkerPoolManager(queue_name)
     current_num = manager.current_num_workers()
     if current_num == 0:
-        logger.warning("queue has no workers")
-        return
+        logger.warning("queue has no workers currently")
     conn = WorkerPoolSSHConnection(manager)
-    conn.stream_logs(colorize)
+    conn.stream_logs()
 
 
 def autoscale(
