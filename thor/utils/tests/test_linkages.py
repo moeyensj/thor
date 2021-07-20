@@ -39,6 +39,7 @@ OBSERVATIONS.sort_values(
 )
 
 def test_sortLinkages_timePresent():
+    np.random.seed(42)
 
     # Scramble the linkages dataframe
     len_linkages = len(LINKAGES)
@@ -67,6 +68,7 @@ def test_sortLinkages_timePresent():
     pd.testing.assert_frame_equal(LINKAGE_MEMBERS, linkage_members_sorted)
 
 def test_sortLinkages_timeMissing():
+    np.random.seed(42)
 
     # Scramble the linkages dataframe
     len_linkages = len(LINKAGES)
