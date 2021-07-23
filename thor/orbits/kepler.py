@@ -16,7 +16,7 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
     Convert cartesian orbital elements to Keplerian orbital elements.
 
     Keplerian orbital elements are returned in an array with the following elements:
-        a : semi-major axis [AU]
+        a : semi-major axis [au]
         e : eccentricity
         i : inclination [degrees]
         Omega : longitude of the ascending node [degrees]
@@ -26,16 +26,16 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
     Parameters
     ----------
     elements_cart : `~numpy.ndarray` (N, 6)
-        Cartesian elements in units of AU and AU per day.
+        Cartesian elements in units of au and au per day.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
-        AU**3 / d**2.
+        au**3 / d**2.
 
     Returns
     -------
     elements_kepler : `~numpy.ndarray (N, 8)
         Keplerian elements with angles in degrees and semi-major axis and pericenter distance
-        in AU.
+        in au.
 
     """
     elements_kepler = []
@@ -103,7 +103,7 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
     Convert Keplerian orbital elements to cartesian orbital elements.
 
     Keplerian orbital elements should have following elements:
-        a : semi-major axis [AU]
+        a : semi-major axis [au]
         e : eccentricity [degrees]
         i : inclination [degrees]
         Omega : longitude of the ascending node [degrees]
@@ -114,10 +114,10 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
     ----------
     elements_kepler : `~numpy.ndarray` (N, 6)
         Keplerian elements with angles in degrees and semi-major
-        axis in AU.
+        axis in au.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
-        AU**3 / d**2.
+        au**3 / d**2.
     max_iter : int, optional
         Maximum number of iterations over which to converge. If number of iterations is
         exceeded, will use the value of the relevant anomaly at the last iteration.
@@ -128,7 +128,7 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
     Returns
     -------
     elements_cart : `~numpy.ndarray (N, 6)
-        Cartesian elements in units of AU and AU per day.
+        Cartesian elements in units of au and au per day.
     """
     elements_cart = []
     for i in range(len(elements_kepler)):
@@ -237,14 +237,14 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=
     orbits : `~numpy.ndarray` (6) or (N, 6)
         Array or orbits.
         If 'cartesian':
-            x : x-position [AU]
-            y : y-position [AU]
-            z : z-position [AU]
-            vx : x-velocity [AU per day]
-            vy : y-velocity [AU per day]
-            vz : z-velocity [AU per day]
+            x : x-position [au]
+            y : y-position [au]
+            z : z-position [au]
+            vx : x-velocity [au per day]
+            vy : y-velocity [au per day]
+            vz : z-velocity [au per day]
         If 'keplerian':
-            a : semi-major axis [AU]
+            a : semi-major axis [au]
             e : eccentricity
             i : inclination [degrees]
             Omega : longitude of the ascending node [degrees]
@@ -256,7 +256,7 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=
         Type of orbital elements to convert to (keplerian or cartesian).
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
-        AU**3 / d**2.
+        au**3 / d**2.
     max_iter : int, optional
         Maximum number of iterations over which to converge. If number of iterations is
         exceeded, will use the value of the relevant anomaly at the last iteration.
