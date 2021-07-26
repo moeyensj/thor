@@ -112,9 +112,9 @@ def setupSPICE(
         is_ephemeris_correct = os.environ[var_name] in kernels
 
     if (is_setup or is_ephemeris_correct) and not force:
-        logger.info("SPICE is already enabled.")
+        logger.debug("SPICE is already enabled.")
     else:
-        logger.info("Enabling SPICE...")
+        logger.debug("Enabling SPICE...")
         log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data/log.yaml"))
 
         ephemeris_file = ""
@@ -138,7 +138,7 @@ def setupSPICE(
             raise ValueError(err)
 
         os.environ[var_name] = ephemeris_file
-        logger.info("SPICE enabled.")
+        logger.debug("SPICE enabled.")
     return
 
 def useDE430(func):
