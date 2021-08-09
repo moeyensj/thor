@@ -19,9 +19,3 @@ coveralls
 setuptools>=45
 wheel
 setuptools_scm>=6.0
-pika
-google-cloud-storage
-google-cloud-core==1.3.0
-google-api-python-client
-colorama
-paramiko
