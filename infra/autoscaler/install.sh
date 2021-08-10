@@ -1,10 +1,10 @@
 #!/bin/bash
 
 ##
-## Setup script for building a disk image for the taskqueue worker.
+## Setup script for building a disk image for the taskqueue autoscaler.
 ##
 
-set -xeo pipefail
+set -eo pipefail
 
 ## Install system dependencies
 add-apt-repository universe  # Required to install jq in Ubuntu 18.04.1
@@ -46,7 +46,9 @@ git checkout $THOR_GIT_REF
 mkdir -p /etc/thor
 touch /etc/thor/env
 
-echo "THOR_QUEUE=unset" >> /etc/thor/env
+### We don't need any Numba JIT; it just slows down service startup.
+echo "NUMBA_DISABLE_JIT=1" >> /etc/thor/env
+echo "THOR_AUTOSCALED_QUEUES=${THOR_AUTOSCALED_QUEUES}" >> /etc/thor/env
 
 ### Fetch RabbitMQ password
 RABBIT_PASSWORD=$(gcloud secrets versions access latest \
@@ -55,10 +57,10 @@ echo "RABBIT_PASSWORD=${RABBIT_PASSWORD}" >> /etc/thor/env
 unset RABBIT_PASSWORD
 
 ## Install start script
-mv /tmp/start_worker.sh /etc/thor/start_worker.sh
-chmod +x /etc/thor/start_worker.sh
+mv /tmp/start_autoscaler.sh /etc/thor/start_autoscaler.sh
+chmod +x /etc/thor/start_autoscaler.sh
 
-# Put service definition in place - but don't enable it yet, because we don't
-# have an actual queue name.
-mv /tmp/thor-worker.service /etc/systemd/system/thor-worker.service
+# Put service definition in place and enable it
+mv /tmp/thor-autoscaler.service /etc/systemd/system/thor-autoscaler.service
 systemctl daemon-reload
+systemctl enable thor-autoscaler
