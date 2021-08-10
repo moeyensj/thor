@@ -27,7 +27,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
         Time from epoch to which calculate chi in units of decimal days.
     mu : float
         Gravitational parameter (GM) of the attracting body in units of
-        AU**3 / d**2.
+        au**3 / d**2.
     max_iter : int
         Maximum number of iterations over which to converge. If number of iterations is
         exceeded, will return the value of the universal anomaly at the last iteration.
@@ -50,8 +50,14 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
         First six Stumpff functions (c0, c1, c2, c3, c4, c5)
     chi : float
         Universal anomaly.
+
+    References
+    ----------
+    [1] Danby, J. M. A. (1992). Fundamentals of Celestial Mechanics. 2nd ed.,
+        William-Bell, Inc. ISBN-13: 978-0943396200
+        Notes: of particular interest is Danby's fantastic chapter on universal
+            variables (6.9)
     """
-    sqrt_mu = np.sqrt(mu)
     chi, c0, c1, c2, c3, c4, c5 = calcChi(
         r,
         v,
@@ -64,18 +70,17 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     chi2 = chi**2
 
     r_mag = np.linalg.norm(r)
-    v_mag = np.linalg.norm(v)
 
-    alpha = -v_mag**2 / mu + 2 / r_mag
-
-    f = 1 - chi**2 / r_mag * c2
-    g = dt - 1 / sqrt_mu * chi**3 * c3
+    # Equations 6.9.27 in Danby 1992 [1]
+    f = 1 - (mu / r_mag) * chi2 * c2
+    g = dt - mu * chi**3 * c3
 
     r_new = f * r + g * v
     r_new_mag = np.linalg.norm(r_new)
 
-    f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
-    g_dot = 1 - chi2 / r_new_mag * c2
+    # Equations 6.9.27 in Danby 1992 [1]
+    f_dot = - (mu / (r_mag * r_new_mag)) * chi * c1
+    g_dot = 1 - (mu / r_new_mag) * chi2 * c2
 
     lagrange_coeffs = (f, g, f_dot, g_dot)
 
