@@ -27,7 +27,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
         Time from epoch to which calculate chi in units of decimal days.
     mu : float
         Gravitational parameter (GM) of the attracting body in units of
-        AU**3 / d**2.
+        au**3 / d**2.
     max_iter : int
         Maximum number of iterations over which to converge. If number of iterations is
         exceeded, will return the value of the universal anomaly at the last iteration.
@@ -50,6 +50,11 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
         First six Stumpff functions (c0, c1, c2, c3, c4, c5)
     chi : float
         Universal anomaly.
+
+    References
+    ----------
+    [1] Curtis, H. D. (2014). Orbital Mechanics for Engineering Students. 3rd ed.,
+        Elsevier Ltd. ISBN-13: 978-0080977478
     """
     sqrt_mu = np.sqrt(mu)
     chi, c0, c1, c2, c3, c4, c5 = calcChi(
@@ -66,14 +71,17 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     r_mag = np.linalg.norm(r)
     v_mag = np.linalg.norm(v)
 
+    # Equations 3.48 and 3.50 in Curtis (2014) [1]
     alpha = -v_mag**2 / mu + 2 / r_mag
 
+    # Equations 3.69a and 3.69b in Curtis (2014) [1]
     f = 1 - chi**2 / r_mag * c2
     g = dt - 1 / sqrt_mu * chi**3 * c3
 
     r_new = f * r + g * v
     r_new_mag = np.linalg.norm(r_new)
 
+    # Equations 3.69c and 3.69d in Curtis (2014) [1]
     f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
     g_dot = 1 - chi2 / r_new_mag * c2
 

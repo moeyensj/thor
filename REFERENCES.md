@@ -3,8 +3,7 @@
     Elsevier Ltd. ISBN-13: 978-0080977478
 * Danby, J. M. A. (1992). Fundamentals of Celestial Mechanics. 2nd ed.,  
     William-Bell, Inc. ISBN-13: 978-0943396200  
-    Notes: of particular interest is Danby's fantastic chapter on universal
-        variables (6.9)  
+    Notes: of particular interest is Danby's fantastic chapter on universal variables (6.9)  
 * Goodyear, W. H. (1965). Completely general closed-form solution for coordinates and partial derivative of the two-body problem.  
     The Astronomical Journal, 70, 189. https://doi.org/10.1086/109713  
 * Goodyear, W. H. (1965). Errata: Completely general closed-form solution for coordinates and partial derivative of the two-body problem.  
