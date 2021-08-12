@@ -25,7 +25,7 @@ def propagation_worker(orbits, t1, backend):
         try:
             propagated = backend._propagateOrbits(orbits, t1)
         except TimeoutError:
-            logger.CRITICAL("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            logger.critical("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
             propagated = pd.DataFrame()
     return propagated
 
@@ -34,7 +34,7 @@ def ephemeris_worker(orbits, observers, backend):
         try:
             ephemeris = backend._generateEphemeris(orbits, observers)
         except TimeoutError:
-            logger.CRITICAL("Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            logger.critical("Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
             ephemeris = pd.DataFrame()
     return ephemeris
 
@@ -43,7 +43,7 @@ def orbitDetermination_worker(observations, backend):
         try:
             orbits = backend._orbitDetermination(observations)
         except TimeoutError:
-            logger.CRITICAL("Orbit determination timed out on observations (showing first 5): {}".format(observations["obs_id"].values[:5]))
+            logger.critical("Orbit determination timed out on observations (showing first 5): {}".format(observations["obs_id"].values[:5]))
             orbits = pd.DataFrame()
     return orbits
 
