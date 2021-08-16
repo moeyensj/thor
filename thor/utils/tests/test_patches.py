@@ -1,6 +1,7 @@
 import numpy as np
 
 from ..patches import assignPatchesSquare
+from ..patches import assignPatchesHEALPix
 
 def test_assignPatchesSquare():
 
@@ -25,3 +26,19 @@ def test_assignPatchesSquare():
     # Check that the patch IDs match the expected order
     # (increasing Dec first, then increasing RA)
     np.testing.assert_equal(patch_ids_desired, patch_ids)
+
+def test_assignPatchesHEALPix():
+
+    # Create observations
+    ra =  np.arange(0., 360, 10)
+    dec = np.arange(-90, 90., 10)
+
+    dec, ra = np.meshgrid(dec, ra)
+    dec = dec.flatten()
+    ra = ra.flatten()
+    nside = 32
+
+    # Not really testing for anything other than
+    # that the function call works..
+    patch_ids = assignPatchesHEALPix(ra, dec, nside)
+    assert len(patch_ids) == len(ra)

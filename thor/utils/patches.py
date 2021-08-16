@@ -1,12 +1,19 @@
 import numpy as np
+import healpy as hp
 
 __all__ = [
-    "assignPatchesSquare"
+    "assignPatchesSquare",
+    "assignPatchesHEALPix"
 ]
 
-def assignPatchesSquare(ra, dec, ra_width=15, dec_width=15):
+def assignPatchesSquare(
+        ra: np.ndarray,
+        dec: np.ndarray,
+        ra_width: float = 15.,
+        dec_width: float = 15.,
+    ) -> np.ndarray:
     """
-    Assign a patch ID to each observation where a patch is a square region
+    Assign a patch ID to each coordinate where a patch is a square region
     on the sky plane of ra_width in RA and of dec_width in Dec.
 
     RA must be between 0 and 360 degrees.
@@ -18,9 +25,9 @@ def assignPatchesSquare(ra, dec, ra_width=15, dec_width=15):
 
     Parameters
     ----------
-    ra : `~numpy.ndarrray` (N)
+    ra : `~numpy.ndarray` (N)
         Right Ascension in degrees.
-    dec : `~numpy.ndarrray` (N)
+    dec : `~numpy.ndarray` (N)
         Declination in degrees.
     ra_width : float
         Width of patch in RA in degrees.
@@ -30,7 +37,7 @@ def assignPatchesSquare(ra, dec, ra_width=15, dec_width=15):
     Returns
     -------
     patch_ids : `~numpy.ndarray` (N)
-        The patch ID for each observation.
+        The patch ID for each coordinate.
     """
     ras = np.arange(0, 360 + ra_width, ra_width)
     decs = np.arange(-90, 90 + dec_width, dec_width)
@@ -47,5 +54,38 @@ def assignPatchesSquare(ra, dec, ra_width=15, dec_width=15):
             patch_ids[mask] = patch_id
 
             patch_id += 1
+
+    return patch_ids
+
+def assignPatchesHEALPix(
+        ra: np.ndarray,
+        dec: np.ndarray,
+        nside: int = 1024
+    ) -> np.ndarray:
+    """
+    Assign patches using a HEALPix schema.
+    For details see Górski et al. (2005).
+
+    Parameters
+    ----------
+    ra : `~numpy.ndarray` (N)
+        Right Ascension in degrees.
+    dec : `~numpy.ndarray` (N)
+        Declination in degrees.
+    nside : int
+        HEALPix nside parameter (must be a power of 2).
+
+    Returns
+    -------
+    patch_ids : `~numpy.ndarray` (N)
+        The patch ID for each coordinate.
+
+    References
+    ----------
+    [1] Górski, K. M., Hivon, E., Banday, A. J., Wandelt, B. D., Hansen, F. K., Reinecke, M., & Bartelmann, M. (2005).
+        HEALPix: A Framework for High-Resolution Discretization and Fast Analysis of Data Distributed on the Sphere.
+        The Astrophysical Journal, 622(2), 759. https://doi.org/10.1086/427976
+    """
+    patch_ids = hp.ang2pix(nside, ra, dec, nest=True, lonlat=True)
 
     return patch_ids

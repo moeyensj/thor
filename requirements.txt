@@ -6,6 +6,7 @@ astropy
 astroquery
 scipy
 scikit-learn
+healpy
 pyyaml>=5.1
 openorb
 spiceypy
