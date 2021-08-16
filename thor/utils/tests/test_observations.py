@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from astropy.time import Time
 
-from ..observations import calcLinkingWindow
+from ..observations import calcLinkingWindow, calcNight
 
 def test_calcLinkingWindow():
 
@@ -43,4 +43,61 @@ def test_calcLinkingWindow_raises():
     with pytest.raises(TypeError):
         linking_window = calcLinkingWindow(times.mjd, 10)
 
+    return
+
+def test_calcNight_london():
+    # Lets assume three days of observations were made
+    # somewhere in London with observations occuring
+    # +- 5 hours around midnight
+    dts = np.linspace(-5, 5, 20)
+    dts /= 24.
+    offset = 0/24
+    days = [59001, 59002, 59003]
+    times = np.zeros(len(dts) * len(days))
+    for i, day in enumerate(days):
+        times[i * len(dts): (i+1) * len(dts)] = day + dts + offset
+    observation_times = Time(times, scale="utc", format="mjd")
+
+    night = calcNight(observation_times, offset)
+    assert np.all(night[0:20] == 59000)
+    assert np.all(night[20:40] == 59001)
+    assert np.all(night[40:60] == 59002)
+    return
+
+def test_calcNight_seattle():
+    # Lets assume three days of observations were made
+    # somewhere in Seattle with observations occuring
+    # +- 5 hours around midnight
+    dts = np.linspace(-5, 5, 20)
+    dts /= 24.
+    offset = -7/24
+    days = [59001, 59002, 59003]
+    times = np.zeros(len(dts) * len(days))
+    for i, day in enumerate(days):
+        times[i * len(dts): (i+1) * len(dts)] = day + dts + offset
+    observation_times = Time(times, scale="utc", format="mjd")
+
+    night = calcNight(observation_times, offset)
+    assert np.all(night[0:20] == 59000)
+    assert np.all(night[20:40] == 59001)
+    assert np.all(night[40:60] == 59002)
+    return
+
+def test_calcNight_shanghai():
+    # Lets assume three days of observations were made
+    # somewhere in Shanghai with observations occuring
+    # +- 5 hours around midnight
+    dts = np.linspace(-5, 5, 20)
+    dts /= 24.
+    offset = 8/24
+    days = [59001, 59002, 59003]
+    times = np.zeros(len(dts) * len(days))
+    for i, day in enumerate(days):
+        times[i * len(dts): (i+1) * len(dts)] = day + dts + offset
+    observation_times = Time(times, scale="utc", format="mjd")
+
+    night = calcNight(observation_times, offset)
+    assert np.all(night[0:20] == 59000)
+    assert np.all(night[20:40] == 59001)
+    assert np.all(night[40:60] == 59002)
     return
