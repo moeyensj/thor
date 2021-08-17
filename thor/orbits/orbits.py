@@ -421,12 +421,12 @@ class Orbits:
         if self.num_orbits > 0:
             data = {
                 "orbit_id" : self.ids,
-                "epoch" : self.epochs.tdb.mjd
+                "mjd_tdb" : self.epochs.tdb.mjd
             }
         else:
             data = {
                 "orbit_id" :[],
-                "epoch" : [],
+                "mjd_tdb" : [],
             }
 
         if include_units:
@@ -438,6 +438,8 @@ class Orbits:
                     orbit_units_str.append(str(unit).lower())
 
             units_index = ["--", "mjd [TDB]"] + orbit_units_str
+            data["epoch"] = data["mjd_tdb"]
+            data.pop("mjd_tdb")
 
         if self.cartesian is not None:
             for i in range(6):
@@ -508,7 +510,7 @@ class Orbits:
 
         if len(dataframe_) > 0:
             epochs = Time(
-                dataframe_["epoch"].values,
+                dataframe_["mjd_tdb"].values,
                 format="mjd",
                 scale="tdb"
             )
@@ -524,7 +526,7 @@ class Orbits:
 
         # Assert orbit type is one of two types otherwise
         # raise a value error
-        columns_required = ["orbit_id", "epoch"]
+        columns_required = ["orbit_id", "mjd_tdb"]
         if orbit_type == "cartesian":
             columns_required += CARTESIAN_COLS
             states = dataframe_[CARTESIAN_COLS].values

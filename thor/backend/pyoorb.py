@@ -323,7 +323,7 @@ class PYOORB(Backend):
             format="mjd",
             scale="tt"
         )
-        propagated["epoch_mjd_tdb"] = epochs.tdb.value
+        propagated["mjd_tdb"] = epochs.tdb.value
 
         # Drop PYOORB specific columns (may want to consider this option later on.)
         propagated.drop(
@@ -338,9 +338,9 @@ class PYOORB(Backend):
         )
 
         # Re-order columns and sort
-        propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
+        propagated = propagated[["orbit_id", "mjd_tdb"] + elements]
         propagated.sort_values(
-            by=["orbit_id", "epoch_mjd_tdb"],
+            by=["orbit_id", "mjd_tdb"],
             inplace=True,
             ignore_index=True
         )

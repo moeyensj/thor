@@ -122,7 +122,7 @@ class Backend:
         propagated : `~pandas.DataFrame`
             Propagated orbits with at least the following columns:
                 orbit_id : Input orbit ID.
-                epoch_mjd_tdb : Time at which state is defined in MJD TDB.
+                mjd_tdb : Time at which state is defined in MJD TDB.
                 x, y, z, vx, vy, vz : Orbit as cartesian state vector with units
                 of au and au per day.
         """
