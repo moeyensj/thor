@@ -4,16 +4,18 @@ import pandas as pd
 from astropy.time import Time
 
 __all__ = [
+    "UNKNOWN_ID_REGEX",
     "preprocessObservations",
     "findAverageOrbits",
 ]
+
+UNKNOWN_ID_REGEX = "^u[0-9]{12}$"
 
 def preprocessObservations(
         observations,
         column_mapping,
         astrometric_errors=None,
-        mjd_scale="utc",
-        attribution=False
+        mjd_scale="utc"
     ):
     """
     Create two seperate data frames: one with all observation data needed to run THOR stripped of
@@ -82,6 +84,9 @@ def preprocessObservations(
             'astrometric_catalog' : optional, column name or None.
                 Astrometric catalog with which astrometric measurements were calibrated. Unused by THOR outside of
                 creating ADES files from recoveries and discoveries.
+            'night_id' : optional, column_name or None.
+                ID representing the night on which an observation was made. Useful for filter for observations on
+                single nights rather than using the observation time.
     mjd_scale : str, optional
         Time scale of the input MJD exposure times ("utc", "tdb", etc...)
     attribution : bool, optional
@@ -92,7 +97,8 @@ def preprocessObservations(
     preprocessed_observations : `~pandas.DataFrame`
         DataFrame with observations in the format required by THOR.
     preprocessed_attributions : `~pandas.DataFrame`
-        DataFrame containing truths.
+        DataFrame containing associations, any observations with no known label
+        will be assigned a unique unknown ID with regex pattern "^u[0-9]{12}$".
 
     Raises
     ------
@@ -120,10 +126,14 @@ def preprocessObservations(
     # Optional columns that can be used for filtering
     # and ADES file production
     optional_cols = [
+        # ADES Columns
         "mag",
         "mag_sigma",
         "filter",
-        "astrometric_catalog"
+        "astrometric_catalog",
+
+        # Useful non-ADES columns
+        "night_id"
     ]
 
     # Check if observation IDs need to be assigned
@@ -277,12 +287,15 @@ def preprocessObservations(
 
     # Assign object IDs if needed
     if assign_obj_ids:
-        preprocessed_observations.loc[:, "obj_id"] = "None"
+        # This must match UNKNOWN_ID_REGEX
+        preprocessed_observations.loc[:, "obj_id"] = [f"u{i:012d}" for i in range(len(preprocessed_observations))]
     else:
         if type(preprocessed_observations["obj_id"]) != object:
             warn = ("Object IDs should be of type string, converting...")
             warnings.warn(warn)
-            preprocessed_observations.loc[preprocessed_observations["obj_id"].isna(), "obj_id"] = "None"
+            num_unassociated = len(preprocessed_observations[preprocessed_observations["obj_id"].isna()])
+            # This must match UNKNOWN_ID_REGEX
+            preprocessed_observations.loc[preprocessed_observations["obj_id"].isna(), "obj_id"] = [f"u{i:012d}" for i in range(num_unassociated)]
             preprocessed_observations["obj_id"] = preprocessed_observations["obj_id"].astype(str)
 
     # Split observations into two dataframes (make THOR run only on completely blind observations)
