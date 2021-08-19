@@ -1,4 +1,11 @@
 import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import time
 import uuid
 import yaml
@@ -23,9 +30,6 @@ from .orbits import mergeAndExtendOrbits
 from .observatories import getObserverState
 from .utils import _initWorker
 from .utils import _checkParallel
-
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
 
 logger = logging.getLogger("thor")
 

@@ -1,4 +1,11 @@
 import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import copy
 import logging
 import pandas as pd
@@ -8,9 +15,6 @@ from ..orbit import TestOrbit
 from ..utils import Timeout
 from ..utils import _initWorker
 from ..utils import _checkParallel
-
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
 
 logger = logging.getLogger(__name__)
 
