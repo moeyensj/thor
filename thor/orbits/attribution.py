@@ -448,7 +448,7 @@ def mergeAndExtendOrbits(
         odp_orbits = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "epoch",
+                "mjd_tdb",
                 "x",
                 "y",
                 "z",

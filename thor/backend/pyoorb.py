@@ -292,14 +292,14 @@ class PYOORB(Backend):
             states.append(orbits_pyoorb_i)
 
         # Convert list of new states into a pandas data frame
-        if orbits.orbit_type == "cartesian":
-            elements = ["x", "y", "z", "vx", "vy", "vz"]
-        elif orbits.orbit_type == "keplerian":
-            elements = ["a", "e", "i", "Omega", "omega", "M0"]
-        elif orbits.orbit_type == "cometary":
-            elements = ["q", "e", "i", "Omega", "omega", "T0"]
-        else:
-            raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
+        # These states at the moment will always be return as cartesian
+        # state vectors
+        elements = ["x", "y", "z", "vx", "vy", "vz"]
+        # Other PYOORB state vector representations:
+        #"keplerian":
+        #    elements = ["a", "e", "i", "Omega", "omega", "M0"]
+        #"cometary":
+        #    elements = ["q", "e", "i", "Omega", "omega", "T0"]
 
         # Create pandas data frame
         columns = [

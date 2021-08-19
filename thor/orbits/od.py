@@ -278,7 +278,7 @@ def od(
             orbit_iter_p = Orbits(
                 orbit_prev.cartesian + d[0, :6],
                 orbit_prev.epochs + d[0, 6],
-                orbit_type=orbit_prev.orbit_type
+                orbit_type="cartesian",
             )
 
             # Calculate the modified ephemerides
@@ -295,7 +295,7 @@ def od(
                 orbit_iter_n = Orbits(
                     orbit_prev.cartesian - d[0, :6],
                     orbit_prev.epochs - d[0, 6],
-                    orbit_type=orbit_prev.orbit_type
+                    orbit_type="cartesian",
                 )
 
                 # Calculate the modified ephemerides
@@ -389,7 +389,7 @@ def od(
         orbit_iter = Orbits(
             orbit_prev.cartesian + d_state,
             orbit_prev.epochs + d_time,
-            orbit_type=orbit_prev.orbit_type,
+            orbit_type="cartesian",
             ids=orbit_prev.ids,
             covariance=[covariance_matrix]
         )
@@ -489,7 +489,7 @@ def od(
         od_orbit = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "epoch",
+                "mjd_tdb",
                 "x",
                 "y",
                 "z",
@@ -523,7 +523,7 @@ def od(
         )
 
     else:
-        variances = np.diag(orbit_prev.covariance[0])
+        variances = np.diag(orbit_prev.cartesian_covariance[0])
         r_variances = variances[0:3]
         v_variances = variances[3:6]
 

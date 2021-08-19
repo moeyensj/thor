@@ -460,7 +460,7 @@ def iod(
         orbit = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "epoch",
+                "mjd_tdb",
                 "x",
                 "y",
                 "z",
