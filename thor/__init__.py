@@ -11,7 +11,7 @@ from .orbit import *
 from .cell import *
 from .plotting import *
 from .data_processing import *
-from .filter_candidates import *
+from .filter_orbits import *
 from .main import *
 from .analysis import *
 
