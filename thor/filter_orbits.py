@@ -62,8 +62,12 @@ def filterKnownOrbits(
     known_orbit_observations = labeled_observations[orbit_observations_mask].copy()
 
     # Split into permanent and provisional designations
-    known_orbit_observations.loc[:, "permID"] = ""
-    known_orbit_observations.loc[:, "provID"] = ""
+    if len(known_orbit_observations) > 0:
+        known_orbit_observations.loc[:, "permID"] = ""
+        known_orbit_observations.loc[:, "provID"] = ""
+    else:
+        known_orbit_observations["permID"] = ""
+        known_orbit_observations["provID"] = ""
 
     # Process permanent IDs first
     # TODO : add an equivalent for Comets
