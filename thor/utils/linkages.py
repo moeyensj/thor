@@ -338,7 +338,7 @@ def removeDuplicateObservations(
 
 def calcDeltas(
         linkage_members,
-        observations,
+        observations=None,
         groupby_cols=["orbit_id", "night_id"],
         delta_cols=["mjd_utc", "RA_deg", "Dec_deg", "mag"]
     ):
@@ -373,7 +373,7 @@ def calcDeltas(
     cols = []
     for col in delta_cols + groupby_cols:
         if col not in linkage_members_.columns:
-            if col not in observations.columns:
+            if col not in observations.columns or observations is None:
                 err = (
                     f"{col} could not be found in either linkage_members or observations."
                 )
