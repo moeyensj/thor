@@ -1065,7 +1065,7 @@ def runTHOR(
         odp_config=Config.ODP_CONFIG,
         out_dir=None,
         if_exists="continue",
-        logging_level=logger.info
+        logging_level=logging.INFO
     ):
     logger.setLevel(logging_level)
 
