@@ -299,7 +299,7 @@ class Orbits:
     @property
     def cartesian(self):
         if not isinstance(self._cartesian, np.ndarray):
-            logger.info("Cartesian elements are not defined. Converting Keplerian elements to Cartesian.")
+            logger.debug("Cartesian elements are not defined. Converting Keplerian elements to Cartesian.")
             self._cartesian = convertOrbitalElements(
                 self._keplerian,
                 "keplerian",
@@ -310,7 +310,7 @@ class Orbits:
     @property
     def keplerian(self):
         if not isinstance(self._keplerian, np.ndarray):
-            logger.info("Keplerian elements are not defined. Converting Cartesian elements to Keplerian.")
+            logger.debug("Keplerian elements are not defined. Converting Cartesian elements to Keplerian.")
             self._keplerian = convertOrbitalElements(
                 self._cartesian,
                 "cartesian",
