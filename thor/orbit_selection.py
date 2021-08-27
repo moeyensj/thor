@@ -195,7 +195,10 @@ def findTestOrbits_worker(ephemeris_list: list[pd.DataFrame]) -> pd.DataFrame:
         test_orbits_patch = findTestOrbitsPatch(ephemeris)
         test_orbits_list.append(test_orbits_patch)
 
-    test_orbits = pd.concat(test_orbits_list, ignore_index=True)
+    if len(test_orbits_list) > 0:
+        test_orbits = pd.concat(test_orbits_list, ignore_index=True)
+    else:
+        test_orbits = pd.DataFrame()
     return test_orbits
 
 def selectTestOrbits(
