@@ -938,7 +938,7 @@ def runTHOROrbit(
                 yaml.safe_dump(status, status_out)
             logger.debug("Updated status.yml.")
 
-        iod_orbits = iod_orbits[["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz"]]
+        iod_orbits = iod_orbits[["orbit_id", "mjd_tdb", "x", "y", "z", "vx", "vy", "vz"]]
         iod_orbit_members = iod_orbit_members[iod_orbit_members["outlier"] == 0][["orbit_id", "obs_id"]]
         iod_orbits = iod_orbits[iod_orbits["orbit_id"].isin(iod_orbit_members["orbit_id"].unique())]
         for df in [iod_orbits, iod_orbit_members]:
