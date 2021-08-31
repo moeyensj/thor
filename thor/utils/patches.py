@@ -86,6 +86,6 @@ def assignPatchesHEALPix(
         HEALPix: A Framework for High-Resolution Discretization and Fast Analysis of Data Distributed on the Sphere.
         The Astrophysical Journal, 622(2), 759. https://doi.org/10.1086/427976
     """
-    patch_ids = hp.ang2pix(nside, ra, dec, nest=True, lonlat=True)
+    patch_ids = hp.ang2pix(nside, ra, dec, nest=False, lonlat=True)
 
     return patch_ids
