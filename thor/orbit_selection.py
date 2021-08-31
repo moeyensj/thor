@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from typing import List
 from astropy.time import Time
 
 from .orbits import Orbits
@@ -175,7 +176,7 @@ def findTestOrbitsPatch(ephemeris: pd.DataFrame) -> pd.DataFrame:
 
     return test_orbits_patch
 
-def findTestOrbits_worker(ephemeris_list: list[pd.DataFrame]) -> pd.DataFrame:
+def findTestOrbits_worker(ephemeris_list: List[pd.DataFrame]) -> pd.DataFrame:
     """
     Find test orbits for a given list of patches of ephemerides.
 
