@@ -96,7 +96,7 @@ class MJOLNIR(Backend):
             propagated,
             columns=[
                 "orbit_id",
-                "epoch_mjd_tdb",
+                "mjd_tdb",
                 "x",
                 "y",
                 "z",
@@ -130,11 +130,7 @@ class MJOLNIR(Backend):
             observer_states_list.append(observer_states)
 
         # Concatenate the dataframes
-        observer_states = pd.concat(observer_states_list)
-        observer_states.reset_index(
-            inplace=True,
-            drop=True
-        )
+        observer_states = pd.concat(observer_states_list, ignore_index=True)
 
         ephemeris_dfs = []
         for observatory_code in observer_states["observatory_code"].unique():
@@ -172,12 +168,10 @@ class MJOLNIR(Backend):
         ephemeris = pd.concat(ephemeris_dfs)
         ephemeris.sort_values(
             by=["orbit_id", "observatory_code", "mjd_utc"],
-            inplace=True
-        )
-        ephemeris.reset_index(
             inplace=True,
-            drop=True
+            ignore_index=True
         )
+
         ephemeris = ephemeris[[
             "orbit_id",
             "observatory_code",

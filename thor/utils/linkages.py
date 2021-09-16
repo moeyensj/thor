@@ -1,5 +1,4 @@
 import time
-import uuid
 import logging
 import numpy as np
 import pandas as pd
@@ -8,7 +7,6 @@ __all__ = [
     "generateCombinations",
     "sortLinkages",
     "identifySubsetLinkages",
-    "mergeLinkages",
     "removeDuplicateLinkages",
     "removeDuplicateObservations",
     "calcDeltas"
@@ -145,212 +143,80 @@ def sortLinkages(
     logger.debug(f"Linkages verified in {duration:.3f}s.")
     return linkages_verified, linkage_members_verified
 
-def identifySubsetLinkages(
-        all_linkages,
-        linkage_members,
-        linkage_id_col="orbit_id"
-    ):
+def identifySubsetLinkages(linkage_members, linkage_id_col="orbit_id"):
     """
-    Identify each linkage that is a subset of a larger linkage.
+    Identify subset linkages. A subset is defined as a linkage which contains
+    the a subset of observation IDs of a larger or equally sized linkaged.
+
+    For example, if a linkage B has constituent observations: obs0001, obs0002, obs0003, obs0004.
+    Then a linkage A with constituent observations: obs0001, obs0002, obs0003; is a subset of
+    B. If linkage A and B share exactly the same observations they will be identified as subsets of each
+    other.
 
     Parameters
     ----------
-    all_linkages :
-
-
-
-
-
-    """
-
-
-    linkage_members_merged = linkage_members.copy()
-    all_linkages_merged = all_linkages.copy()
-    all_linkages_merged["subset_of"] = None
-
-    counts = linkage_members["obs_id"].value_counts()
-    duplicate_obs_ids = counts.index[counts.values > 1].values
-
-    subset_linkages = []
-    obs_ids_analyzed = set()
-    i = 0
-    while len(obs_ids_analyzed) != len(duplicate_obs_ids):
-
-        obs_id = duplicate_obs_ids[i]
-
-        if obs_id not in obs_ids_analyzed:
-
-            # Find all linkages that contain this observation (that have not already been identified as a subset)
-            linkage_ids = linkage_members_merged[linkage_members_merged["obs_id"].isin([obs_id])][linkage_id_col].values
-
-            # Count the occurences of these linkages (the number of observations in each linkage)
-            linkage_id_counts = linkage_members_merged[(
-                linkage_members_merged[linkage_id_col].isin(linkage_ids)
-                & (~linkage_members_merged[linkage_id_col].isin(subset_linkages))
-            )][linkage_id_col].value_counts()
-            linkage_ids = linkage_id_counts.index.values
-
-            for linkage_id_i in linkage_ids:
-
-                # Has linkage i already been identified as a subset? If not, see if it has any subset linkages
-                is_subset_i = all_linkages_merged[all_linkages_merged[linkage_id_col].isin([linkage_id_i])]["subset_of"].values[0]
-                if not is_subset_i:
-
-                    # Grab linkage i's observation IDs
-                    obs_ids_i = linkage_members_merged[linkage_members_merged[linkage_id_col].isin([linkage_id_i])]["obs_id"].values
-
-                    for linkage_id_j in linkage_ids[np.where(linkage_ids != linkage_id_i)]:
-
-                        # If this linkage has not already been marked as a subset of another, check to see
-                        # if it is a subset
-                        is_subset_j = all_linkages_merged[all_linkages_merged[linkage_id_col].isin([linkage_id_j])]["subset_of"].values[0]
-                        if not is_subset_j:
-
-                            # Grab linkage j's observation IDs
-                            obs_ids_j = linkage_members_merged[linkage_members_merged[linkage_id_col].isin([linkage_id_j])]["obs_id"].values
-
-                            # If linkage j is a subset of linkage i, flag it as such
-                            if set(obs_ids_j).issubset(set(obs_ids_i)):
-                                all_linkages_merged.loc[all_linkages_merged[linkage_id_col].isin([linkage_id_j]), "subset_of"] = linkage_id_i
-
-                                subset_linkages.append(linkage_id_j)
-                                for j in obs_ids_j:
-                                    obs_ids_analyzed.add(j)
-
-
-            obs_ids_analyzed.add(obs_id)
-
-        i += 1
-
-    return all_linkages_merged, linkage_members_merged
-
-def mergeLinkages(
-        linkages,
-        linkage_members,
-        observations,
-        linkage_id_col="orbit_id",
-        filter_cols=["num_obs", "arc_length"],
-        ascending=[False, False]
-    ):
-    """
-    Merge any observations that share observations into one larger linkage. The larger
-    linkage will be given the linkage properties of the linkage that when sorted using
-    filter_cols is first. Linkages that when merged may have different observations occur at the same
-    time will be split into every possible comibination of unique observation IDs and observation times.
-
-    Parameters
-    ----------
-    linkages : `~pandas.DataFrame`
-        DataFrame containing at least the linkage ID.
     linkage_members : `~pandas.DataFrame`
-        Dataframe containing the linkage ID and the observation ID for each of the linkage's
-        constituent observations. Each observation ID should be in a single row.
-    observations : `~pandas.DataFrame`
-        Observations DataFrame containing at least and observation ID column and a observation time
-        column ('mjd_utc').
-    linkage_id_col : str, optional
-        Linkage ID column name (must be the same in both DataFrames).
-    filter_cols : list, optional
-        List of column names to use to sort the linkages.
-    ascending : list, optional
-        Sort the filter_cols in ascending or descending order.
+        DataFrame containing at least a linkage ID column (linkage_id_col) and an observation ID column ('obs_id').
+    linkage_id_col : str
+        Name of the linkage ID column.
 
     Returns
     -------
-    linkages : `~pandas.DataFrame`
-        DataFrame with merged linkages added.
-    linkage_members : `~pandas.DataFrame`
-        DataFrame with merged linkages added.
-    merged_from : `~pandas.DataFrame`
-        DataFrame with column of newly created linkages, and a column
-        with their constituent linkages.
+    subsets : `~pandas.DataFrame`
+        DataFrame containing a column with the linkage_id and a second column containing the linkages identified
+        as subsets. A linkage with multiple subsets will appear once for every subset linkage found.
     """
-    assert "mjd_utc" not in linkage_members.columns
+    # Create a dictionary keyed on linkage ID with a set of each linkage's observation
+    # ID as values
+    time_start = time.time()
+    linkage_dict = {}
+    for linkage_id in linkage_members[linkage_id_col].unique():
+        obs_ids = linkage_members[linkage_members[linkage_id_col] == linkage_id]["obs_id"].values
+        linkage_dict[linkage_id] = set(obs_ids)
+    time_end = time.time()
+    duration = time_end - time_start
+    logger.debug(f"Linkage dictionary created in {duration:.3f}s.")
 
-    obs_id_occurences = linkage_members["obs_id"].value_counts()
-    duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
-    linkage_members_ = linkage_members.merge(observations[["obs_id", "mjd_utc"]], on="obs_id")
+    time_start = time.time()
+    subset_dict = {}
+    for linkage_id_a in linkage_dict.keys():
+        # Grab linkage A's observations
+        obs_ids_a = linkage_dict[linkage_id_a]
 
-    if linkage_id_col == "orbit_id":
-        columns = ["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz"]
-    else:
-        columns = ["cluster_id", "vtheta_x_deg", "vtheta_y_deg"]
+        for linkage_id_b in linkage_dict.keys():
+            # If linkage A is not linkage B then
+            # check if linkage B is a subset of linkage A
+            if linkage_id_b != linkage_id_a:
 
-    merged_linkages = []
-    merged_linkage_members = []
-    merged_from = []
-    while len(duplicate_obs_ids) > 0:
+                # Grab linkage B's observations
+                obs_ids_b = linkage_dict[linkage_id_b]
+                if obs_ids_b.issubset(obs_ids_a):
 
-        duplicate_obs_id = duplicate_obs_ids[0]
-        linkage_ids_i = linkage_members_[linkage_members_["obs_id"].isin([duplicate_obs_id])][linkage_id_col].unique()
-        obs_ids = linkage_members_[linkage_members_[linkage_id_col].isin(linkage_ids_i)]["obs_id"].unique()
-        times = linkage_members_[linkage_members_["obs_id"].isin(obs_ids)].drop_duplicates(subset=["obs_id"])["mjd_utc"].values
+                    # Linkage B is a subset of Linkage A, so lets
+                    # add this result to the subset dictionary
+                    if linkage_id_a not in subset_dict.keys():
+                        subset_dict[linkage_id_a] = [linkage_id_b]
+                    else:
+                        subset_dict[linkage_id_a].append(linkage_id_b)
+    time_end = time.time()
+    duration = time_end - time_start
+    logger.debug(f"Linkage dictionary scanned for subsets in {duration:.3f}s.")
 
-        obs_ids = obs_ids[np.argsort(times)]
-        times = times[np.argsort(times)]
-        for combination in generateCombinations(times):
+    time_start = time.time()
+    linkage_ids = []
+    subset_linkages = []
+    for linkage_id, subset_ids in subset_dict.items():
+        subset_linkages += subset_ids
+        linkage_ids += [linkage_id for i in range(len(subset_ids))]
+    subsets = pd.DataFrame({
+        "linkage_id" : linkage_ids,
+        "subset_ids" : subset_linkages
+    })
+    time_end = time.time()
+    duration = time_end - time_start
+    logger.debug(f"Subset dataframe created in {duration:.3f}s.")
 
-            new_possible_linkages = linkages[linkages[linkage_id_col].isin(linkage_ids_i)].copy()
-            new_linkage = new_possible_linkages.sort_values(
-                by=filter_cols,
-                ascending=ascending
-            )[:1]
-            new_linkage_id = str(uuid.uuid4().hex)
-            new_linkage[linkage_id_col] = new_linkage_id
-
-            new_linkage_members = {
-                linkage_id_col : [new_linkage_id for i in range(len(obs_ids[combination]))],
-                "obs_id" : obs_ids[combination],
-                "mjd_utc" : times[combination]
-            }
-            merged_from_i = {
-                linkage_id_col : [new_linkage_id for i in range(len(linkage_ids_i))],
-                "merged_from" : linkage_ids_i
-            }
-            merged_linkages.append(new_linkage)
-            merged_linkage_members.append(pd.DataFrame(new_linkage_members))
-            merged_from.append(pd.DataFrame(merged_from_i))
-
-        duplicate_obs_ids = np.delete(duplicate_obs_ids, np.isin(duplicate_obs_ids, obs_ids))
-
-    if len(merged_linkages) > 0:
-        merged_linkages = pd.concat(merged_linkages)
-        merged_linkage_members = pd.concat(merged_linkage_members)
-        merged_from = pd.concat(merged_from)
-
-        merged_linkages.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
-        merged_linkage_members.sort_values(
-            by=[linkage_id_col, "mjd_utc"],
-            inplace=True
-        )
-        merged_from.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
-
-        for df in [merged_linkages, merged_linkage_members, merged_from]:
-            df.reset_index(
-                inplace=True,
-                drop=True
-            )
-
-    else:
-
-        merged_linkages = pd.DataFrame(
-            columns=columns
-        )
-
-        merged_linkage_members = pd.DataFrame(
-            columns=[linkage_id_col, "obs_id"]
-        )
-
-        merged_from = pd.DataFrame(
-            columns=[linkage_id_col, "merged_from"]
-        )
-    return merged_linkages[columns], merged_linkage_members[[linkage_id_col, "obs_id"]], merged_from
+    return subsets
 
 def removeDuplicateLinkages(
         linkages,
@@ -436,6 +302,7 @@ def removeDuplicateObservations(
     linkages_ = linkages.copy()
     linkage_members_ = linkage_members.copy()
 
+    # Sort linkages by the desired columns
     linkages_.sort_values(
         by=filter_cols,
         ascending=ascending,
@@ -443,17 +310,25 @@ def removeDuplicateObservations(
         ignore_index=True
     )
 
+    # Set both dataframe's indices to the linkage ID for
+    # faster querying
     linkages_.set_index(linkage_id_col, inplace=True)
     linkage_members_.set_index(linkage_id_col, inplace=True)
+
+    # Sort linkage members the same way as linkages
     linkage_members_ = linkage_members_.loc[linkages_.index.values]
     linkage_members_.reset_index(inplace=True)
 
+    # Drop all but the first duplicate observation
     linkage_members_ = linkage_members_.drop_duplicates(subset=["obs_id"], keep="first")
+
+    # Make sure that the remaining linkages have enough observations (>= min_obs)
     linkage_occurences = linkage_members_[linkage_id_col].value_counts()
     linkages_to_keep = linkage_occurences.index.values[linkage_occurences.values >= min_obs]
     linkages_ = linkages_[linkages_.index.isin(linkages_to_keep)]
     linkage_members_ = linkage_members_[linkage_members_[linkage_id_col].isin(linkages_to_keep)]
 
+    # Reset indices
     linkages_.reset_index(inplace=True)
     linkage_members_.reset_index(
         inplace=True,
@@ -463,7 +338,7 @@ def removeDuplicateObservations(
 
 def calcDeltas(
         linkage_members,
-        observations,
+        observations=None,
         groupby_cols=["orbit_id", "night_id"],
         delta_cols=["mjd_utc", "RA_deg", "Dec_deg", "mag"]
     ):
@@ -498,7 +373,7 @@ def calcDeltas(
     cols = []
     for col in delta_cols + groupby_cols:
         if col not in linkage_members_.columns:
-            if col not in observations.columns:
+            if col not in observations.columns or observations is None:
                 err = (
                     f"{col} could not be found in either linkage_members or observations."
                 )

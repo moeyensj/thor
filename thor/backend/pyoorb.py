@@ -31,6 +31,7 @@ class PYOORB(Backend):
 
         super().__init__(name="OpenOrb", **kwargs)
 
+        self.setup()
         return
 
     def setup(self):
@@ -38,7 +39,8 @@ class PYOORB(Backend):
         Initialize PYOORB with the designated JPL ephemeris file.
 
         """
-        if "THOR_PYOORB" in os.environ.keys() and os.environ["THOR_PYOORB"] == "True":
+        env_var = f"THOR_PYOORB"
+        if env_var in os.environ.keys() and os.environ[env_var] == "True":
             pass
         else:
             if os.environ.get("OORB_DATA") == None:
@@ -47,7 +49,8 @@ class PYOORB(Backend):
             ephfile = os.path.join(os.getenv('OORB_DATA'), self.ephemeris_file)
             err = oo.pyoorb.oorb_init(ephfile)
             if err == 0:
-                os.environ["THOR_PYOORB"] = "True"
+                os.environ[env_var] = "True"
+                self.__env_var = env_var
                 self.is_setup = True
             else:
                 warnings.warn("PYOORB returned error code: {}".format(err))
@@ -263,9 +266,6 @@ class PYOORB(Backend):
         propagated : `~pandas.DataFrame`
             Orbits at new epochs.
         """
-        if not self.is_setup:
-            self.setup()
-
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configureOrbits(
             orbits.cartesian,
@@ -292,14 +292,14 @@ class PYOORB(Backend):
             states.append(orbits_pyoorb_i)
 
         # Convert list of new states into a pandas data frame
-        if orbits.orbit_type == "cartesian":
-            elements = ["x", "y", "z", "vx", "vy", "vz"]
-        elif orbits.orbit_type == "keplerian":
-            elements = ["a", "e", "i", "Omega", "omega", "M0"]
-        elif orbits.orbit_type == "cometary":
-            elements = ["q", "e", "i", "Omega", "omega", "T0"]
-        else:
-            raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
+        # These states at the moment will always be return as cartesian
+        # state vectors
+        elements = ["x", "y", "z", "vx", "vy", "vz"]
+        # Other PYOORB state vector representations:
+        #"keplerian":
+        #    elements = ["a", "e", "i", "Omega", "omega", "M0"]
+        #"cometary":
+        #    elements = ["q", "e", "i", "Omega", "omega", "T0"]
 
         # Create pandas data frame
         columns = [
@@ -323,7 +323,7 @@ class PYOORB(Backend):
             format="mjd",
             scale="tt"
         )
-        propagated["epoch_mjd_tdb"] = epochs.tdb.value
+        propagated["mjd_tdb"] = epochs.tdb.value
 
         # Drop PYOORB specific columns (may want to consider this option later on.)
         propagated.drop(
@@ -338,9 +338,9 @@ class PYOORB(Backend):
         )
 
         # Re-order columns and sort
-        propagated = propagated[["orbit_id", "epoch_mjd_tdb"] + elements]
+        propagated = propagated[["orbit_id", "mjd_tdb"] + elements]
         propagated.sort_values(
-            by=["orbit_id", "epoch_mjd_tdb"],
+            by=["orbit_id", "mjd_tdb"],
             inplace=True,
             ignore_index=True
         )
@@ -398,9 +398,6 @@ class PYOORB(Backend):
         ephemeris_file : str, optional
             Which JPL ephemeris file to use with PYOORB.
         """
-        if not self.is_setup:
-            self.setup()
-
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configureOrbits(
             orbits.cartesian,

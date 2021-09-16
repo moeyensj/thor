@@ -1,4 +1,11 @@
 import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import copy
 import logging
 import pandas as pd
@@ -8,9 +15,6 @@ from ..orbit import TestOrbit
 from ..utils import Timeout
 from ..utils import _initWorker
 from ..utils import _checkParallel
-
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ def propagation_worker(orbits, t1, backend):
         try:
             propagated = backend._propagateOrbits(orbits, t1)
         except TimeoutError:
-            logger.CRITICAL("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            logger.critical("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
             propagated = pd.DataFrame()
     return propagated
 
@@ -34,7 +38,7 @@ def ephemeris_worker(orbits, observers, backend):
         try:
             ephemeris = backend._generateEphemeris(orbits, observers)
         except TimeoutError:
-            logger.CRITICAL("Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            logger.critical("Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
             ephemeris = pd.DataFrame()
     return ephemeris
 
@@ -43,7 +47,7 @@ def orbitDetermination_worker(observations, backend):
         try:
             orbits = backend._orbitDetermination(observations)
         except TimeoutError:
-            logger.CRITICAL("Orbit determination timed out on observations (showing first 5): {}".format(observations["obs_id"].values[:5]))
+            logger.critical("Orbit determination timed out on observations (showing first 5): {}".format(observations["obs_id"].values[:5]))
             orbits = pd.DataFrame()
     return orbits
 
@@ -122,7 +126,7 @@ class Backend:
         propagated : `~pandas.DataFrame`
             Propagated orbits with at least the following columns:
                 orbit_id : Input orbit ID.
-                epoch_mjd_tdb : Time at which state is defined in MJD TDB.
+                mjd_tdb : Time at which state is defined in MJD TDB.
                 x, y, z, vx, vy, vz : Orbit as cartesian state vector with units
                 of au and au per day.
         """

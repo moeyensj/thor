@@ -1,3 +1,11 @@
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import time
 import logging
 import numpy as np
@@ -11,7 +19,6 @@ from ..utils import _initWorker
 from ..utils import _checkParallel
 from ..utils import yieldChunks
 from ..utils import calcChunkSize
-from ..utils import mergeLinkages
 from ..utils import sortLinkages
 from ..utils import removeDuplicateObservations
 from .orbits import Orbits
@@ -312,10 +319,6 @@ def mergeAndExtendOrbits(
         Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
         module ('mp').
     """
-    # Disable explicit orbit merging for the time being while we figure out
-    # an alternative approach
-    merge = False
-
     time_start = time.time()
     logger.info("Running orbit extension and merging...")
 
@@ -328,7 +331,6 @@ def mergeAndExtendOrbits(
     observations_iter = observations.copy()
 
     iterations = 0
-    num_duplicate_obs_prev = 1e10
     odp_orbits_dfs = []
     odp_orbit_members_dfs = []
 
@@ -373,33 +375,6 @@ def mergeAndExtendOrbits(
                 observations_iter,
             )
 
-            # Create a new orbit for each orbit that shares
-            # observations with another orbit
-            if merge:
-                merged_orbits, merged_orbit_members, merged_from = mergeLinkages(
-                    orbits_iter,
-                    orbit_members_iter,
-                    observations_iter,
-                    linkage_id_col="orbit_id",
-                    filter_cols=["num_obs", "arc_length"],
-                    ascending=[False, False]
-                )
-                if len(merged_orbits) > 0:
-                    orbits_iter = pd.concat(
-                        [orbits_iter, merged_orbits],
-                        ignore_index=True
-                    )
-                    orbit_members_iter = pd.concat(
-                        [orbit_members_iter, merged_orbit_members],
-                        ignore_index=True
-                    )
-
-                orbits_iter, orbit_members_iter = sortLinkages(
-                    orbits_iter,
-                    orbit_members_iter[["orbit_id", "obs_id"]],
-                    observations_iter,
-                )
-
             # Run differential orbit correction on all orbits
             # with the newly added observations to the orbits
             # that had observations attributed to them
@@ -426,17 +401,6 @@ def mergeAndExtendOrbits(
                 inplace=True,
                 drop=True
             )
-
-            if merge:
-                # If orbits were merged before OD, and some of the merged orbits survived OD then remove the orbits
-                # that were used to merge into a larger orbit
-                if (len(merged_orbits) > 0):
-
-                    remaining_merged_orbits = orbits_iter[orbits_iter["orbit_id"].isin(merged_from["orbit_id"].values)]["orbit_id"].values
-                    orbits_to_remove = merged_from[merged_from["orbit_id"].isin(remaining_merged_orbits)]["merged_from"].unique()
-
-                    orbits_iter = orbits_iter[~orbits_iter["orbit_id"].isin(orbits_to_remove)]
-                    orbit_members_iter = orbit_members_iter[orbit_members_iter["orbit_id"].isin(orbits_iter["orbit_id"].values)]
 
             # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
             # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
@@ -492,7 +456,7 @@ def mergeAndExtendOrbits(
         odp_orbits = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "epoch",
+                "mjd_tdb",
                 "x",
                 "y",
                 "z",

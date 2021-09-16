@@ -105,6 +105,11 @@ def addStellarAberration(orbits, observer_states):
     rho_aberrated : `~numpy.ndarray` (N, 3)
         The topocentric position vector for each orbit with
         added stellar aberration.
+
+    References
+    ----------
+    [1] Urban, S. E; Seidelmann, P. K. (2013) Explanatory Supplement to the Astronomical Almanac. 3rd ed.,
+        University Science Books. ISBN-13: 978-1891389856
     """
     topo_states = orbits - observer_states
     rho_aberrated = topo_states[:, :3].copy()
@@ -114,6 +119,7 @@ def addStellarAberration(orbits, observer_states):
         gamma_inv = np.sqrt(1 - np.linalg.norm(beta)**2)
         delta = np.linalg.norm(topo_states[i, :3])
 
+        # Equation 7.40 in Urban & Seidelmann (2013) [1]
         rho = topo_states[i, :3] / delta
         rho_aberrated[i, :] = (gamma_inv * rho + beta + np.dot(rho, beta) * beta / (1 + gamma_inv)) / (1 + np.dot(rho, beta))
         rho_aberrated[i, :] *= delta

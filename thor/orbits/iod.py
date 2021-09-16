@@ -1,3 +1,11 @@
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import time
 import uuid
 import logging
@@ -460,7 +468,7 @@ def iod(
         orbit = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "epoch",
+                "mjd_tdb",
                 "x",
                 "y",
                 "z",
@@ -756,7 +764,7 @@ def initialOrbitDetermination(
         iod_orbits = pd.DataFrame(
             columns=[
                 "orbit_id",
-                "epoch",
+                "mjd_tdb",
                 "x",
                 "y",
                 "z",

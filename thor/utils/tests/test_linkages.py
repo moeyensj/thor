@@ -4,6 +4,7 @@ import pandas as pd
 
 from ..linkages import sortLinkages
 from ..linkages import calcDeltas
+from ..linkages import identifySubsetLinkages
 
 ### Create test data set
 linkage_ids = ["a", "b", "c"]
@@ -38,6 +39,7 @@ OBSERVATIONS.sort_values(
 )
 
 def test_sortLinkages_timePresent():
+    np.random.seed(42)
 
     # Scramble the linkages dataframe
     len_linkages = len(LINKAGES)
@@ -66,6 +68,7 @@ def test_sortLinkages_timePresent():
     pd.testing.assert_frame_equal(LINKAGE_MEMBERS, linkage_members_sorted)
 
 def test_sortLinkages_timeMissing():
+    np.random.seed(42)
 
     # Scramble the linkages dataframe
     len_linkages = len(LINKAGES)
@@ -139,3 +142,73 @@ def test_calcDeltas_missingColumn():
             groupby_cols=["linkage_id"],
             delta_cols=["mjd_utc"]
         )
+
+def test_identifySubsetLinkages_0subsets():
+
+    # No subsets should be found in the default dataset
+    subsets = identifySubsetLinkages(LINKAGE_MEMBERS, linkage_id_col="linkage_id")
+    assert len(subsets) == 0
+
+    return
+
+def test_identifySubsetLinkages_3subsets():
+
+    # Make a copy of the linkage members dataframe
+    # Rename the observations so that A is a subset of B and C, and so that B is a subset of C.
+    linkage_members = LINKAGE_MEMBERS.copy()
+    for linkage_id in LINKAGE_MEMBERS["linkage_id"].unique():
+        num_obs = len(linkage_members[linkage_members["linkage_id"].isin([linkage_id])])
+        linkage_members.loc[linkage_members["linkage_id"].isin([linkage_id]), "obs_id"] = [f"o{i:04d}" for i in range(num_obs)]
+
+    subsets = identifySubsetLinkages(linkage_members, linkage_id_col="linkage_id")
+
+    # Make sure A and B have been identified as subsets of C
+    C_subsets = subsets[subsets["linkage_id"] == "c"]["subset_ids"].values
+    assert "a" in C_subsets
+    assert "b" in C_subsets
+    assert len(C_subsets) == 2
+
+    # Make sure A has been identifed as a subsets of B
+    B_subsets = subsets[subsets["linkage_id"] == "b"]["subset_ids"].values
+    assert "a" in B_subsets
+    assert len(B_subsets) == 1
+
+    # Make sure A has no subsets
+    A_subsets = subsets[subsets["linkage_id"] == "a"]["subset_ids"].values
+    assert len(A_subsets) == 0
+
+    return
+
+def test_identifySubsetLinkages_3duplicates():
+
+    # Make a copy of the linkage members dataframe
+    # Rename the observations so that A is a subset of B and C, and so that B is a subset of C.
+    linkage_members = LINKAGE_MEMBERS.copy()
+    for linkage_id in LINKAGE_MEMBERS["linkage_id"].unique():
+        num_obs = len(linkage_members[linkage_members["linkage_id"].isin([linkage_id])])
+        linkage_members.loc[linkage_members["linkage_id"].isin([linkage_id]), "obs_id"] = [f"o{i:04d}" for i in range(num_obs)]
+
+    # Trim the linkages so that they have exactly the same observations
+    linkage_members = linkage_members[~linkage_members["obs_id"].isin(["o0004", "o0005"])].copy()
+
+    subsets = identifySubsetLinkages(linkage_members, linkage_id_col="linkage_id")
+
+    # Make sure A and B have been identified as subsets of C
+    C_subsets = subsets[subsets["linkage_id"] == "c"]["subset_ids"].values
+    assert "a" in C_subsets
+    assert "b" in C_subsets
+    assert len(C_subsets) == 2
+
+    # Make sure A and C have been identified as subsets of B
+    B_subsets = subsets[subsets["linkage_id"] == "b"]["subset_ids"].values
+    assert "a" in B_subsets
+    assert "c" in B_subsets
+    assert len(B_subsets) == 2
+
+    # Make sure B and C have been identified as subsets of C
+    C_subsets = subsets[subsets["linkage_id"] == "c"]["subset_ids"].values
+    assert "a" in C_subsets
+    assert "b" in C_subsets
+    assert len(C_subsets) == 2
+
+    return

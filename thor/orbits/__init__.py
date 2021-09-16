@@ -1,6 +1,10 @@
 from .kepler import *
 from .state import *
 from .orbits import *
+from .stumpff import *
+from .chi import *
+from .lagrange import *
+from .state_transition import *
 from .universal_propagate import *
 from .aberrations import *
 from .universal_ephemeris import *
@@ -15,3 +19,4 @@ from .residuals import *
 from .attribution import *
 from .iod import *
 from .od import *
+from .tisserand import *

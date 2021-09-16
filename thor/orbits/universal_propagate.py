@@ -2,74 +2,14 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .stumpff import calcStumpff
+from .lagrange import calcLagrangeCoeffs
+from .lagrange import applyLagrangeCoeffs
 
 __all__ = [
-    "calcChi",
     "propagateUniversal",
 ]
 
 MU = c.MU
-
-@jit(["f8(f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
-def calcChi(orbit, dt, mu=MU, max_iter=100, tol=1e-16):
-    """
-    Calculate universal anomaly chi using Newton-Raphson.
-
-    Parameters
-    ----------
-    orbit : `~numpy.ndarray` (6)
-        Orbital state vector (X_0) with position in units of AU and velocity in units of AU per day.
-    dt : float
-        Time from epoch to which calculate chi in units of decimal days.
-    mu : float, optional
-        Gravitational parameter (GM) of the attracting body in units of
-        AU**3 / d**2.
-    max_iter : int, optional
-        Maximum number of iterations over which to converge. If number of iterations is
-        exceeded, will return the value of the universal anomaly at the last iteration.
-    tol : float, optional
-        Numerical tolerance to which to compute chi using the Newtown-Raphson
-        method.
-
-    Returns
-    -------
-    chi : float
-        Universal anomaly.
-    """
-    r = np.ascontiguousarray(orbit[:3])
-    v = np.ascontiguousarray(orbit[3:])
-    v_mag = np.linalg.norm(v)
-    r_mag = np.linalg.norm(r)
-    rv_mag = np.dot(r, v) / r_mag
-    sqrt_mu = np.sqrt(mu)
-
-    alpha = -v_mag**2 / mu + 2 / r_mag
-    chi = np.sqrt(mu) * np.abs(alpha) * dt
-    ratio = 1e10
-
-    iterations = 0
-    while np.abs(ratio) > tol:
-        chi2 = chi**2
-        psi = alpha * chi2
-        c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
-
-        # Newton-Raphson
-        f = (r_mag * rv_mag / sqrt_mu * chi2 * c2
-             + (1 - alpha*r_mag) * chi**3 * c3
-             + r_mag * chi
-             - sqrt_mu * dt)
-        fp = (r_mag * rv_mag / sqrt_mu * chi * (1 - alpha * chi2 * c3)
-              + (1 - alpha * r_mag) * chi2 * c2
-              + r_mag)
-
-        ratio = f / fp
-        chi -= ratio
-        iterations += 1
-        if iterations >= max_iter:
-            break
-
-    return chi
 
 @jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True, cache=True)
 def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
@@ -104,33 +44,23 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     new_orbits = []
     num_orbits = orbits.shape[0]
-    sqrt_mu = np.sqrt(mu)
 
     for i in range(num_orbits):
         for j, t in enumerate(t1):
+
+            r = np.ascontiguousarray(orbits[i, 0:3])
+            v = np.ascontiguousarray(orbits[i, 3:6])
             dt = t - t0[i]
-            chi = calcChi(orbits[i,:], dt, mu=mu, max_iter=max_iter, tol=tol)
 
-            r = orbits[i, :3]
-            v = orbits[i, 3:]
-            v_mag = np.linalg.norm(v)
-            r_mag = np.linalg.norm(r)
-            chi2 = chi**2
-
-            alpha = -v_mag**2 / mu + 2 / r_mag
-            psi = alpha * chi2
-            c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
-
-            f = 1 - chi**2 / r_mag * c2
-            g = dt - 1 / sqrt_mu * chi**3 * c3
-
-            r_new = f * r + g * v
-            r_new_mag = np.linalg.norm(r_new)
-
-            f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
-            g_dot = 1 - chi2 / r_new_mag * c2
-
-            v_new = f_dot * r + g_dot * v
+            lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
+                r,
+                v,
+                dt,
+                mu=mu,
+                max_iter=max_iter,
+                tol=tol
+            )
+            r_new, v_new = applyLagrangeCoeffs(r, v, *lagrange_coeffs)
 
             new_orbits.append([i, t, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
 

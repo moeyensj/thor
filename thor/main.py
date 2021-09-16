@@ -1,4 +1,11 @@
 import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import time
 import uuid
 import yaml
@@ -23,9 +30,6 @@ from .orbits import mergeAndExtendOrbits
 from .observatories import getObserverState
 from .utils import _initWorker
 from .utils import _checkParallel
-
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
 
 logger = logging.getLogger("thor")
 
@@ -451,17 +455,6 @@ def clusterAndLink(
     time_start_cluster = time.time()
     logger.info("Running velocity space clustering...")
 
-    # Extract useful quantities
-    obs_ids = observations["obs_id"].values
-    theta_x = observations["theta_x_deg"].values
-    theta_y = observations["theta_y_deg"].values
-    mjd = observations["mjd_utc"].values
-
-    # Select detections in first exposure
-    first = np.where(mjd == mjd.min())[0]
-    mjd0 = mjd[first][0]
-    dt = mjd - mjd0
-
     if vx_values is None and vx_range is not None:
         vx = np.linspace(*vx_range, num=vx_bins)
     elif vx_values is None and vx_range is None:
@@ -518,83 +511,96 @@ def clusterAndLink(
     logger.info("Minimum samples: {}".format(min_obs))
 
     possible_clusters = []
-    parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
-    if parallel:
-        if parallel_backend == "ray":
-            import ray
-            if not ray.is_initialized():
-                ray.init(address="auto")
+    if len(observations) > 0:
+        # Extract useful quantities
+        obs_ids = observations["obs_id"].values
+        theta_x = observations["theta_x_deg"].values
+        theta_y = observations["theta_y_deg"].values
+        mjd = observations["mjd_utc"].values
 
-            clusterVelocity_worker_ray = ray.remote(clusterVelocity_worker)
-            clusterVelocity_worker_ray = clusterVelocity_worker_ray.options(
-                num_returns=1,
-                num_cpus=1
-            )
+        # Select detections in first exposure
+        first = np.where(mjd == mjd.min())[0]
+        mjd0 = mjd[first][0]
+        dt = mjd - mjd0
 
-            # Put all arrays (which can be large) in ray's
-            # local object store ahead of time
-            obs_ids_oid = ray.put(obs_ids)
-            theta_x_oid = ray.put(theta_x)
-            theta_y_oid = ray.put(theta_y)
-            dt_oid = ray.put(dt)
+        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
+        if parallel:
+            if parallel_backend == "ray":
+                import ray
+                if not ray.is_initialized():
+                    ray.init(address="auto")
 
-            p = []
+                clusterVelocity_worker_ray = ray.remote(clusterVelocity_worker)
+                clusterVelocity_worker_ray = clusterVelocity_worker_ray.options(
+                    num_returns=1,
+                    num_cpus=1
+                )
+
+                # Put all arrays (which can be large) in ray's
+                # local object store ahead of time
+                obs_ids_oid = ray.put(obs_ids)
+                theta_x_oid = ray.put(theta_x)
+                theta_y_oid = ray.put(theta_y)
+                dt_oid = ray.put(dt)
+
+                p = []
+                for vxi, vyi in zip(vxx, vyy):
+                    p.append(
+                        clusterVelocity_worker_ray.remote(
+                            vxi,
+                            vyi,
+                            obs_ids=obs_ids_oid,
+                            x=theta_x_oid,
+                            y=theta_y_oid,
+                            dt=dt_oid,
+                            eps=eps,
+                            min_obs=min_obs,
+                            min_arc_length=min_arc_length,
+                            alg=alg
+                        )
+                    )
+                possible_clusters = ray.get(p)
+
+            else: # parallel_backend == "mp"
+
+                p = mp.Pool(
+                    processes=num_workers,
+                    initializer=_initWorker
+                )
+                possible_clusters = p.starmap(
+                    partial(
+                        clusterVelocity_worker,
+                        obs_ids=obs_ids,
+                        x=theta_x,
+                        y=theta_y,
+                        dt=dt,
+                        eps=eps,
+                        min_obs=min_obs,
+                        min_arc_length=min_arc_length,
+                        alg=alg
+                    ),
+                    zip(vxx, vyy)
+                )
+                p.close()
+
+        else:
+            possible_clusters = []
             for vxi, vyi in zip(vxx, vyy):
-                p.append(
-                    clusterVelocity_worker_ray.remote(
+                possible_clusters.append(
+                    clusterVelocity(
+                        obs_ids,
+                        theta_x,
+                        theta_y,
+                        dt,
                         vxi,
                         vyi,
-                        obs_ids=obs_ids_oid,
-                        x=theta_x_oid,
-                        y=theta_y_oid,
-                        dt=dt_oid,
                         eps=eps,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
                         alg=alg
                     )
                 )
-            possible_clusters = ray.get(p)
 
-        else: # parallel_backend == "mp"
-
-            p = mp.Pool(
-                processes=num_workers,
-                initializer=_initWorker
-            )
-            possible_clusters = p.starmap(
-                partial(
-                    clusterVelocity_worker,
-                    obs_ids=obs_ids,
-                    x=theta_x,
-                    y=theta_y,
-                    dt=dt,
-                    eps=eps,
-                    min_obs=min_obs,
-                    min_arc_length=min_arc_length,
-                    alg=alg
-                ),
-                zip(vxx, vyy)
-            )
-            p.close()
-
-    else:
-        possible_clusters = []
-        for vxi, vyi in zip(vxx, vyy):
-            possible_clusters.append(
-                clusterVelocity(
-                    obs_ids,
-                    theta_x,
-                    theta_y,
-                    dt,
-                    vxi,
-                    vyi,
-                    eps=eps,
-                    min_obs=min_obs,
-                    min_arc_length=min_arc_length,
-                    alg=alg
-                )
-            )
     time_end_cluster = time.time()
     logger.info("Clustering completed in {:.3f} seconds.".format(time_end_cluster - time_start_cluster))
 
@@ -934,7 +940,7 @@ def runTHOROrbit(
                 yaml.safe_dump(status, status_out)
             logger.debug("Updated status.yml.")
 
-        iod_orbits = iod_orbits[["orbit_id", "epoch", "x", "y", "z", "vx", "vy", "vz"]]
+        iod_orbits = iod_orbits[["orbit_id", "mjd_tdb", "x", "y", "z", "vx", "vy", "vz"]]
         iod_orbit_members = iod_orbit_members[iod_orbit_members["outlier"] == 0][["orbit_id", "obs_id"]]
         iod_orbits = iod_orbits[iod_orbits["orbit_id"].isin(iod_orbit_members["orbit_id"].unique())]
         for df in [iod_orbits, iod_orbit_members]:
@@ -1061,8 +1067,9 @@ def runTHOR(
         odp_config=Config.ODP_CONFIG,
         out_dir=None,
         if_exists="continue",
-        logging_level=logger.info
+        logging_level=logging.INFO
     ):
+    logger = logging.getLogger("thor")
     logger.setLevel(logging_level)
 
     # Connect to ray cluster if enabled
