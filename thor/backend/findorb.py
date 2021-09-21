@@ -135,8 +135,11 @@ class FINDORB(Backend):
 
             for i in range(orbits.num_orbits):
 
-                orbit_id = orbits.ids[i]
-                out_dir = os.path.join(temp_dir, "vectors{}".format(orbit_id))
+                # If you give fo a string for a numbered object it will typically append brackets
+                # automatically which makes retrieving the object's orbit a little more tedious so by making sure
+                # the object ID is not numeric we can work around that.
+                orbit_id_i = f"o{i:08d}"
+                out_dir = os.path.join(temp_dir, "vectors{}".format(orbit_id_i))
                 vectors_txt = os.path.join(out_dir, "vectors.txt")
 
                 # Format the state vector into the type understood by find_orb
@@ -149,7 +152,7 @@ class FINDORB(Backend):
                 call = [
                     "fo",
                     "-o",
-                    "o{}".format(orbit_id),
+                    "o{}".format(orbit_id_i),
                     fo_orbit,
                     "-E",
                     "0",
@@ -211,7 +214,6 @@ class FINDORB(Backend):
         return propagated
 
     def _generateEphemeris(self, orbits, observers):
-
         ephemeris_dfs = []
         with tempfile.TemporaryDirectory() as temp_dir:
 
@@ -251,9 +253,11 @@ class FINDORB(Backend):
                 # For each orbit calculate their ephemerides
                 for i in range(orbits.num_orbits):
 
-                    # Set directory variables
-                    orbit_id = "{:09d}".format(i)
-                    out_dir = os.path.join(temp_dir, "ephemeris{}_{}".format(orbit_id, observatory_code))
+                    # If you give fo a string for a numbered object it will typically append brackets
+                    # automatically which makes retrieving the object's orbit a little more tedious so by making sure
+                    # the object ID is not numeric we can work around that.
+                    orbit_id_i = f"o{i:08d}"
+                    out_dir = os.path.join(temp_dir, "ephemeris{}_{}".format(orbit_id_i, observatory_code))
                     ephemeris_txt = os.path.join(out_dir, "ephemeris.txt")
 
                     # Format the state vector into the type understood by find_orb
@@ -268,7 +272,7 @@ class FINDORB(Backend):
                     call = [
                         "fo",
                         "-o",
-                        "o{}".format(orbit_id),
+                        "o{}".format(orbit_id_i),
                         fo_orbit,
                         "-C",
                         "{}".format(observatory_code),
@@ -362,6 +366,7 @@ class FINDORB(Backend):
         _observations = observations.copy()
         _observations.rename(
             columns={
+                "mjd_utc" : "mjd",
                 "RA_deg" : "ra",
                 "Dec_deg" : "dec",
                 "RA_sigma_deg" : "rmsRA",
@@ -392,7 +397,7 @@ class FINDORB(Backend):
             id_present = True
             id_col = "trkSub"
         if not id_present:
-            _observations["trkSub"] = _observations["obj_id"]
+            _observations["trkSub"] = _observations["orbit_id"]
             id_col = "trkSub"
 
         if "mag" not in _observations.columns:
@@ -405,7 +410,7 @@ class FINDORB(Backend):
             _observations.loc[:, "astCat"] = "None"
 
 
-        for i, obj_id in enumerate(_observations[id_col].unique()):
+        for i, orbit_id in enumerate(_observations[id_col].unique()):
 
             with tempfile.TemporaryDirectory() as temp_dir:
 
@@ -417,14 +422,14 @@ class FINDORB(Backend):
                 # If you give fo a string for a numbered object it will typically append brackets
                 # automatically which makes retrieving the object's orbit a little more tedious so by making sure
                 # the object ID is not numeric we can work around that.
-                obj_id_i = "o{:08d}".format(i)
+                orbit_id_i = f"o{i:08d}"
 
-                observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(obj_id_i))
-                out_dir = os.path.join(temp_dir, "od_{}".format(obj_id_i))
+                observations_file = os.path.join(temp_dir, "_observations_{}.psv".format(orbit_id_i))
+                out_dir = os.path.join(temp_dir, "od_{}".format(orbit_id_i))
 
-                mask = _observations[id_col].isin([obj_id])
+                mask = _observations[id_col].isin([orbit_id])
                 object_observations = _observations[mask].copy()
-                object_observations.loc[:, id_col] = obj_id_i
+                object_observations.loc[:, id_col] = orbit_id_i
                 object_observations.reset_index(inplace=True, drop=True)
 
                 writeToADES(
@@ -475,7 +480,7 @@ class FINDORB(Backend):
                     with open(total_json) as f:
                         data = json.load(f)
                         residuals = pd.DataFrame(
-                            data["objects"][obj_id_i]["observations"]["residuals"]
+                            data["objects"][orbit_id_i]["observations"]["residuals"]
                         )
                         residuals.sort_values(
                             by=["JD", "obscode"],
@@ -485,8 +490,7 @@ class FINDORB(Backend):
 
                     residual_dfs.append(residuals)
 
-
-                ids.append(obj_id)
+                ids.append(orbit_id)
                 epochs.append(epoch)
                 orbits.append(state)
                 covariances.append(covariance_matrix)
@@ -523,6 +527,6 @@ class FINDORB(Backend):
             "vz",
             "covariance"
         ]]
-        residuals = pd.concat(residual_dfs, ignore_index=True)
+        od_orbit_members = pd.concat(residual_dfs, ignore_index=True)
 
-        return od_orbits, residuals
+        return od_orbits, od_orbit_members
