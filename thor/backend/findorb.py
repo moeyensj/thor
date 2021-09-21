@@ -34,7 +34,7 @@ class FINDORB(Backend):
             if k not in kwargs:
                 kwargs[k] = FINDORB_CONFIG[k]
 
-        super().__init__(name="FINDORB", **kwargs)
+        super().__init__(name="FindOrb", **kwargs)
 
         return
 
@@ -197,17 +197,13 @@ class FINDORB(Backend):
 
                 propagated_dfs.append(df)
 
-            propagated = pd.concat(propagated_dfs)
-            propagated.reset_index(
-                inplace=True,
-                drop=True
-            )
-            propagated["epoch_mjd_tdb"] = Time(
+            propagated = pd.concat(propagated_dfs, ignore_index=True)
+            propagated["mjd_tdb"] = Time(
                 propagated["jd_tt"].values,
                 scale="tt",
                 format="jd"
             ).tdb.mjd
-            propagated = propagated[["orbit_id", "epoch_mjd_tdb", "x", "y", "z", "vx", "vy", "vz"]]
+            propagated = propagated[["orbit_id", "mjd_tdb", "x", "y", "z", "vx", "vy", "vz"]]
 
             if orbits.ids is not None:
                 propagated["orbit_id"] = orbits.ids[propagated["orbit_id"].values]
@@ -295,7 +291,7 @@ class FINDORB(Backend):
                         env=env,
                         cwd=temp_dir,
                         check=False,
-                        capture_output=False
+                        capture_output=True
                     )
 
                     if (os.path.exists(ephemeris_txt)):
@@ -498,7 +494,7 @@ class FINDORB(Backend):
         orbits = np.vstack(orbits)
 
         od_orbits = pd.DataFrame({
-            "obj_id" : ids,
+            "orbit_id" : ids,
             "jd_tt" : epochs,
             "x" : orbits[:, 0],
             "y" : orbits[:, 1],
@@ -517,7 +513,7 @@ class FINDORB(Backend):
         ).tdb.mjd
 
         od_orbits = od_orbits[[
-            "obj_id",
+            "orbit_id",
             "mjd_tdb",
             "x",
             "y",
@@ -527,11 +523,6 @@ class FINDORB(Backend):
             "vz",
             "covariance"
         ]]
-
-        residuals = pd.concat(residual_dfs)
-        residuals.reset_index(
-            inplace=True,
-            drop=True
-        )
+        residuals = pd.concat(residual_dfs, ignore_index=True)
 
         return od_orbits, residuals
