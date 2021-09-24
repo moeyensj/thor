@@ -13,6 +13,7 @@ SPHERICAL_UNITS = [u.au, u.degree, u.degree, u.au / u.d, u.degree / u.d, u.degre
 
 __all__ = [
     "_ingest_coordinate",
+    "Coordinates",
     "CartesianCoordinates",
     "SphericalCoordinates"
 ]
@@ -68,6 +69,25 @@ def _ingest_coordinate(
     return coords
 
 class Coordinates:
+
+    def __len__(self):
+        return len(self.coords)
+
+    def __delitem__(self, i):
+        if isinstance(i, int):
+            ind = slice(i, i+1)
+        else:
+            ind = i
+
+        for k, v in self.__dict__.items():
+            if isinstance(v, np.ma.masked_array):
+                self.__dict__[k] = np.delete(v, np.s_[ind], axis=0)
+                self.__dict__[k].mask = np.delete(v.mask, np.s_[ind], axis=0)
+            elif isinstance(v, np.ndarray):
+                self.__dict__[k] = np.delete(v, np.s_[ind], axis=0)
+            else:
+                pass
+        return
 
     def to_df(self,
             time_scale: str = "utc",
@@ -178,7 +198,6 @@ class CartesianCoordinates(Coordinates):
             data["frame"] = self.frame
 
         return CartesianCoordinates(**data)
-
 
 class SphericalCoordinates(Coordinates):
 
