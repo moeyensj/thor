@@ -56,7 +56,12 @@ class TestOrbit:
         None
         """
         logger.debug("Calculating vector normal to plane of orbit...")
-        self.n_hat = calcNhat(self.cartesian[:3].reshape(1, -1))[0, :]
+
+        r = self.cartesian[:3]
+        v = self.cartesian[3:]
+        rv = np.cross(r, v)
+        self.n_hat = rv / np.linalg.norm(rv)
+        #self.n_hat = calcNhat(self.cartesian[:3].reshape(1, -1))[0, :]
 
         logger.debug("Calculating R1 rotation matrix...")
         self.R1 = calcR1(self.n_hat)
