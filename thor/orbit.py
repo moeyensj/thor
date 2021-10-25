@@ -56,12 +56,7 @@ class TestOrbit:
         None
         """
         logger.debug("Calculating vector normal to plane of orbit...")
-
-        r = self.cartesian[:3]
-        v = self.cartesian[3:]
-        rv = np.cross(r, v)
-        self.n_hat = rv / np.linalg.norm(rv)
-        #self.n_hat = calcNhat(self.cartesian[:3].reshape(1, -1))[0, :]
+        self.n_hat = calcNhat(self.cartesian.reshape(1, -1))[0]
 
         logger.debug("Calculating R1 rotation matrix...")
         self.R1 = calcR1(self.n_hat)
@@ -272,29 +267,31 @@ def calcXa(x_ae, x_e):
     return x_ae + x_e
 
 @jit("f8[:,:](f8[:,:])", nopython=True, cache=True)
-def calcNhat(x_a):
+def calcNhat(state_vector):
     """
-    Calulate the unit vector normal to the plane of the orbit.
+    Calculate the unit vector normal to the plane of the orbit.
 
     Parameters
     ----------
-    x_a : `~numpy.ndarray` (N, 3)
-        Asteroid position vector in arbitrary units.
+    state_vector : `~numpy.ndarray` (N, 6)
+        Cartesian state vectors in units of au and au p day.
 
     Returns
     -------
     n_hat : `~numpy.ndarray` (N, 3)
         Unit vector normal to plane of orbit.
-
     """
-    n_hat = np.zeros_like(x_a)
-    for i, x_a_i in enumerate(x_a):
-        # Make n_a unit vector
-        n_a = x_a_i / np.linalg.norm(x_a_i)
-        # Find the normal to the plane of the orbit n
-        n = np.cross(n_a, np.cross(Z_AXIS, n_a))
-        # Make n a unit vector
-        n_hat[i] = n / np.linalg.norm(n)
+    # Cross product of r and v is equal to the angular momentum
+    # vector of the orbit (which is always perpendicular to the plane of the
+    # orbit at the epoch)
+    rv = np.cross(state_vector[:, 0:3], state_vector[:, 3:6])
+    # Ideally, using rv = np.linalg.norm(rv, axis=1, keepdims=True) would be cleaner.
+    # However, both the axis and keepdims kwargs are not supported by numba
+    # so reshape and normalize manually.
+    rv_norm = np.zeros((len(rv), 1))
+    for i in range(len(rv)):
+        rv_norm[i] = np.linalg.norm(rv[i])
+    n_hat = rv / rv_norm
     return n_hat
 
 @jit("f8[:,:](f8[:])", nopython=True, cache=True)
