@@ -58,10 +58,10 @@ jobs:
       testRunTitle: 'Python $(python.version)'
     condition: succeededOrFailed()
 
-- job: 'Publish'
+- job: 'Build'
   dependsOn: 'Test'
   pool:
-    vmImage: 'Ubuntu-16.04'
+    vmImage: 'ubuntu-latest'
 
   steps:
   - task: UsePythonVersion@0
