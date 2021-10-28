@@ -90,11 +90,12 @@ def test_CartesianCoordinates_slicing():
 
     coords = CartesianCoordinates(**data)
     for s in [slice(0, N, 1), slice(2, 4, 1), slice(-5, -2, 1)]:
+        print(s)
         # Test coordinate axes for each slice
         for i, c in enumerate(["x", "y", "z", "vx", "vy", "vz"]):
-            np.testing.assert_equal(coords[s].coords[:, i], coords.coords[s, i])
-            np.testing.assert_equal(coords[s].coords.mask[:, i], coords.coords.mask[s, i])
-            np.testing.assert_equal(coords[s].coords.filled()[:, i], coords.coords.filled()[s, i])
+            np.testing.assert_equal(coords[s].values[:, i], coords.values[s, i])
+            np.testing.assert_equal(coords[s].values.mask[:, i], coords.values.mask[s, i])
+            np.testing.assert_equal(coords[s].values.filled()[:, i], coords.values.filled()[s, i])
 
         # Test times (which are astropy time objects)
         np.testing.assert_equal(coords[s].time.value, coords.time[s].value)
@@ -118,9 +119,9 @@ def test_SphericalCoordinates_slicing():
     for s in [slice(0, N, 1), slice(2, 4, 1), slice(-5, -2, 1)]:
         # Test coordinate axes for each slice
         for i, c in enumerate(["rho", "lon", "lat", "vrho", "vlon", "vlat"]):
-            np.testing.assert_equal(coords[s].coords[:, i], coords.coords[s, i])
-            np.testing.assert_equal(coords[s].coords.mask[:, i], coords.coords.mask[s, i])
-            np.testing.assert_equal(coords[s].coords.filled()[:, i], coords.coords.filled()[s, i])
+            np.testing.assert_equal(coords[s].values[:, i], coords.values[s, i])
+            np.testing.assert_equal(coords[s].values.mask[:, i], coords.values.mask[s, i])
+            np.testing.assert_equal(coords[s].values.filled()[:, i], coords.values.filled()[s, i])
 
         # Test times (which are astropy time objects)
         np.testing.assert_equal(coords[s].time.value, coords.time[s].value)
