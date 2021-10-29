@@ -131,17 +131,23 @@ class Coordinates:
 
     def __init__(
             self,
-            values: np.ma.array,
+            coords: np.ma.array,
+            covariance: Optional[np.ma.array],
             time: Optional[Time] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
             names: List[str] = [],
         ):
-        self._values = values
+        self._values = coords
         self._time = time
         self._origin = origin
         self._frame = frame
         self._names = names
+
+        if covariance is not None:
+            self._covariance = _ingest_covariance(coords, covariance)
+        else:
+            self._covariance = None
         return
 
     def __len__(self):
@@ -202,6 +208,10 @@ class Coordinates:
         return self._values
 
     @property
+    def covariance(self):
+        return self._covariance
+
+    @property
     def time(self):
         return self._time
 
@@ -222,7 +232,7 @@ class Coordinates:
             include_frame: bool = False,
             include_origin: bool = False,
             include_masked: bool = False
-        ):
+        ) -> pd.DataFrame:
         """
         Represent coordinates as a `~pandas.DataFrame`.
 
@@ -257,6 +267,9 @@ class Coordinates:
             if not np.isnan(coord.filled()).all() or include_masked:
                 data[name] = coord
 
+        if self.covariance is not None:
+            data["covariance"] = self.covariance
+
         if include_frame:
             data["frame"] = self.frame
 
@@ -277,6 +290,7 @@ class CartesianCoordinates(Coordinates):
             vy: Optional[np.ndarray] = None,
             vz: Optional[np.ndarray] = None,
             time: Optional[Time] = None,
+            covariance: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic"
         ):
@@ -308,7 +322,7 @@ class CartesianCoordinates(Coordinates):
         self._vy = coords[:, 4]
         self._vz = coords[:, 5]
 
-        Coordinates.__init__(self, coords, time, origin, frame, CARTESIAN_COLS)
+        Coordinates.__init__(self, coords, covariance, time, origin, frame, CARTESIAN_COLS)
         return
 
     def __getitem__(self, i):
@@ -339,7 +353,6 @@ class CartesianCoordinates(Coordinates):
     def vz(self):
         return self._vz
 
-
 class SphericalCoordinates(Coordinates):
 
     def __init__(
@@ -351,6 +364,7 @@ class SphericalCoordinates(Coordinates):
             vlon: Optional[np.ndarray] = None,
             vlat: Optional[np.ndarray] = None,
             time: Optional[Time] = None,
+            covariance: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic"
         ):
@@ -383,7 +397,7 @@ class SphericalCoordinates(Coordinates):
         self._vlon = coords[:, 4]
         self._vlat = coords[:, 5]
 
-        Coordinates.__init__(self, coords, time, origin, frame, SPHERICAL_COLS)
+        Coordinates.__init__(self, coords, covariance, time, origin, frame, SPHERICAL_COLS)
         return
 
     def __getitem__(self, i):
