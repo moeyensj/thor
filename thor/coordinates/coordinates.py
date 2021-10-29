@@ -17,14 +17,17 @@ SPHERICAL_UNITS = [u.au, u.degree, u.degree, u.au / u.d, u.degree / u.d, u.degre
 
 __all__ = [
     "_ingest_coordinate",
+    "_ingest_covariance",
     "Coordinates",
     "CartesianCoordinates",
     "SphericalCoordinates"
 ]
 
 def _ingest_coordinate(
-        q: Union[list, np.ndarray], d: int, coords: Optional[np.ma.array] = None
-    ):
+        q: Union[list, np.ndarray],
+        d: int,
+        coords: Optional[np.ma.array] = None
+    ) -> np.ma.array:
     """
     Ingest coordinates along an axis (like the x, y, z) and add them to an existing masked array
     of coordinate measurements if that object already exists. If that object doesn't exist then
@@ -71,6 +74,58 @@ def _ingest_coordinate(
         coords.mask[:, d] = np.where(np.isnan(q_), 1, 0)
 
     return coords
+
+def _ingest_covariance(
+        coords: np.ma.array,
+        covariance: np.ndarray,
+    ) -> np.ma.array:
+    """
+    Ingest a set of covariance matrices.
+
+    Parameters
+    ----------
+    coords : `~numpy.ma.array` (N, 6)
+        Masked array of 6D coordinate measurements with q measurements ingested.
+    covariance : `~numpy.ndarray` (N, <=6, <=6)
+        Covariance matrices for each coordinate. These matrices may have fewer dimensions
+        than 6. If so, additional dimensions will be added for each masked or missing coordinate
+        dimension.
+
+    Returns
+    -------
+    covariance : `~numpy.ma.array` (N, 6, 6)
+        Masked array of covariance matrices.
+
+    Raises
+    ------
+    ValueError
+        If not every coordinate has an associated covariance.
+        If the number of covariance dimensions does not match
+            the number of unmasked or missing coordinate dimensions.
+    """
+    axes = coords.shape[1] - np.sum(coords.mask.all(axis=0))
+    if covariance.shape[0] != len(coords):
+        err = (
+            "Every coordinate in coords should have an associated covariance."
+        )
+        raise ValueError(err)
+
+    if covariance.shape[1] != covariance.shape[2] != axes:
+        err = (
+            f"Coordinates have {axes} defined dimensions, expected covariance matrix\n",
+            f"shapes of (N, {axes}, {axes}."
+        )
+        raise ValueError(err)
+
+    covariance_ = np.ma.zeros((len(coords), 6, 6), fill_value=np.NaN)
+    covariance_.mask = np.zeros_like(covariance_, dtype=bool)
+
+    for n in range(len(coords)):
+        covariance_[n].mask[coords[n].mask, :] = 1
+        covariance_[n].mask[:, coords[n].mask] = 1
+        covariance_[n][~covariance_[n].mask] = covariance[n].flatten()
+
+    return covariance_
 
 class Coordinates:
 
