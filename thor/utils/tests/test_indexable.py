@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+from astropy.time import Time
 
 from ..indexable import Indexable
 
@@ -47,6 +48,18 @@ def test_Indexable_slicing_marray():
 
     return
 
+def test_Indexable_slicing_time():
+
+    times = Time(np.arange(59000, 59010), scale="utc", format="mjd")
+
+    indexable = TestIndexable(times)
+    for s in SLICES:
+        np.testing.assert_equal(indexable[s].values.mjd, indexable.values[s].mjd)
+        assert indexable[s].values.scale == indexable.values[s].scale
+        assert indexable[s].values.format == indexable.values[s].format
+
+    return
+
 def test_Indexable_iteration_array():
 
     array = np.arange(0, 10)
@@ -67,6 +80,16 @@ def test_Indexable_iteration_marray():
     for i, ind in enumerate(indexable):
         np.testing.assert_equal(ind.values.data[0], masked_array.data[i])
         np.testing.assert_equal(ind.values.mask[0], masked_array.mask[i])
+
+    return
+
+def test_Indexable_iteration_time():
+
+    times = Time(np.arange(59000, 59010), scale="utc", format="mjd")
+
+    indexable = TestIndexable(times)
+    for i, ind in enumerate(indexable):
+        np.testing.assert_equal(ind.values.mjd[0], times.mjd[i])
 
     return
 
@@ -105,6 +128,22 @@ def test_Indexable_deletion_marray():
     np.testing.assert_equal(indexable.values.mask, np.array([True, True, True, False, True]))
 
     return
+
+def test_Indexable_deletion_time():
+
+    times = Time(np.arange(59000, 59010), scale="utc", format="mjd")
+
+    indexable = TestIndexable(times)
+    del indexable[5]
+    np.testing.assert_equal(indexable.values.mjd, 59000 + np.array([0, 1, 2, 3, 4, 6, 7, 8, 9]))
+
+    del indexable[-1]
+    np.testing.assert_equal(indexable.values.mjd, 59000 + np.array([0, 1, 2, 3, 4, 6, 7, 8]))
+
+    del indexable[1:4]
+    np.testing.assert_equal(indexable.values.mjd, 59000 + np.array([0, 4, 6, 7, 8]))
+    return
+
 
 def test_Indexable_raises():
     # Tuples are not supported by the Indexable class
