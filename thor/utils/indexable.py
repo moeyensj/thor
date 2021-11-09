@@ -6,9 +6,9 @@ from astropy.time import Time
 class Indexable:
     """
     Class that enables indexing and slicing of itself and its members.
-    If an Indexable sublclass has members that are `~numpy.ndarray`s, `~numpy.ma.core.MaskedArray`s or lists,
-    these members are appropriately sliced and indexed.
-    Any members that are floats, integers or strings are not indexed.
+    If an Indexable sublclass has members that are `~numpy.ndarray`s, `~numpy.ma.core.MaskedArray`s,
+    these members are appropriately sliced and indexed along their first axis.
+    Any members that are lists, floats, integers or strings are not indexed and left unchanged.
     """
     def _handle_index(self, i: Union[int, slice]):
         if isinstance(i, int):
@@ -40,7 +40,7 @@ class Indexable:
         copy = deepcopy(self)
 
         for k, v in self.__dict__.items():
-            if isinstance(v, (np.ndarray, np.ma.masked_array, Time, Indexable, list)):
+            if isinstance(v, (np.ndarray, np.ma.masked_array, Time, Indexable)):
                 copy.__dict__[k] = v[ind]
             elif isinstance(v, (str, int, float)):
                 copy.__dict__[k] = v
@@ -70,8 +70,7 @@ class Indexable:
                 )
             elif isinstance(v, Indexable):
                 del v[ind]
-            elif isinstance(v, (str, int, float)):
-                # Non-array-likes should not be deleted.
+            elif isinstance(v, (int, float, str, list)):
                 self.__dict__[k] = v
             else:
                 err = (

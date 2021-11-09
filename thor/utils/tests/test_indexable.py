@@ -47,16 +47,6 @@ def test_Indexable_slicing_marray():
 
     return
 
-def test_Indexable_slicing_list():
-
-    list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-
-    indexable = TestIndexable(list)
-    for s in SLICES:
-        np.testing.assert_equal(indexable[s].values, indexable.values[s])
-
-    return
-
 def test_Indexable_iteration_array():
 
     array = np.arange(0, 10)
@@ -77,16 +67,6 @@ def test_Indexable_iteration_marray():
     for i, ind in enumerate(indexable):
         np.testing.assert_equal(ind.values.data[0], masked_array.data[i])
         np.testing.assert_equal(ind.values.mask[0], masked_array.mask[i])
-
-    return
-
-def test_Indexable_iteration_list():
-
-    list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-
-    indexable = TestIndexable(list)
-    for i, ind in enumerate(indexable):
-        np.testing.assert_equal(ind.values[0], list[i])
 
     return
 
