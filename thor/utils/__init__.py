@@ -1,3 +1,4 @@
+from .indexable import *
 from .io import *
 from .spice import *
 from .astropy import *
