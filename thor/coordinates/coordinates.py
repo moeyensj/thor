@@ -26,8 +26,8 @@ __all__ = [
 def _ingest_coordinate(
         q: Union[list, np.ndarray],
         d: int,
-        coords: Optional[np.ma.array] = None
-    ) -> np.ma.array:
+        coords: Optional[np.ma.core.MaskedArray] = None
+    ) -> np.ma.core.MaskedArray:
     """
     Ingest coordinates along an axis (like the x, y, z) and add them to an existing masked array
     of coordinate measurements if that object already exists. If that object doesn't exist then
@@ -76,9 +76,9 @@ def _ingest_coordinate(
     return coords
 
 def _ingest_covariance(
-        coords: np.ma.array,
-        covariance: np.ndarray,
-    ) -> np.ma.array:
+        coords: np.ma.core.MaskedArray,
+        covariance: Union[np.ndarray, np.ma.core.MaskedArray],
+    ) -> np.ma.core.MaskedArray:
     """
     Ingest a set of covariance matrices.
 
@@ -86,7 +86,7 @@ def _ingest_covariance(
     ----------
     coords : `~numpy.ma.array` (N, 6)
         Masked array of 6D coordinate measurements with q measurements ingested.
-    covariance : `~numpy.ndarray` (N, <=6, <=6)
+    covariance : `~numpy.ndarray` or `~numpy.ma.array` (N, <=6, <=6)
         Covariance matrices for each coordinate. These matrices may have fewer dimensions
         than 6. If so, additional dimensions will be added for each masked or missing coordinate
         dimension.
@@ -117,6 +117,9 @@ def _ingest_covariance(
         )
         raise ValueError(err)
 
+    if isinstance(covariance, np.ma.core.MaskedArray) and (covariance.shape[1] == covariance.shape[2] == coords.shape[1]):
+        return covariance
+
     covariance_ = np.ma.zeros((len(coords), 6, 6), fill_value=np.NaN)
     covariance_.mask = np.zeros_like(covariance_, dtype=bool)
 
@@ -131,8 +134,8 @@ class Coordinates:
 
     def __init__(
             self,
-            coords: np.ma.array,
-            covariance: Optional[np.ma.array],
+            coords: np.ma.core.MaskedArray,
+            covariance: Optional[np.ma.core.MaskedArray],
             time: Optional[Time] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
