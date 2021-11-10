@@ -42,8 +42,10 @@ class Indexable:
         for k, v in self.__dict__.items():
             if isinstance(v, (np.ndarray, np.ma.masked_array, Time, Indexable)):
                 copy.__dict__[k] = v[ind]
-            elif isinstance(v, (str, int, float)):
+            elif isinstance(v, (str, int, float, list, dict)):
                 copy.__dict__[k] = v
+            elif v is None:
+                pass
             else:
                 err = (
                     f"{type(v)} are not supported."
@@ -70,8 +72,10 @@ class Indexable:
                 )
             elif isinstance(v, Indexable):
                 del v[ind]
-            elif isinstance(v, (int, float, str, list)):
+            elif isinstance(v, (int, float, str, list, dict)):
                 self.__dict__[k] = v
+            elif v is None:
+                pass
             else:
                 err = (
                     f"{type(v)} are not supported."
