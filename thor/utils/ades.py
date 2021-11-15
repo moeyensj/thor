@@ -119,8 +119,8 @@ def writeToADES(
         mjd_scale="utc",
         seconds_precision=9,
         columns_precision={
-            "ra" : 6,
-            "dec" : 6,
+            "ra" : 16,
+            "dec" : 16,
             "mag" : 2,
             "rmsMag" : 2,
         },
