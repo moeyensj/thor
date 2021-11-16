@@ -1,6 +1,6 @@
 import pandas as pd
 from astroquery.jplhorizons import Horizons
-from .astropy import _checkTime
+from .astropy import _check_times
 
 __all__ = [
     "getHorizonsVectors",
@@ -42,7 +42,7 @@ def getHorizonsVectors(
         Dataframe containing the full cartesian state, r, r_rate, delta, delta_rate and light time
         of the object at each time.
     """
-    _checkTime(times, "times")
+    _check_times(times, "times")
     dfs = []
     for obj_id in obj_ids:
         obj = Horizons(
@@ -94,7 +94,7 @@ def getHorizonsElements(
         Dataframe containing the full cartesian state, r, r_rate, delta, delta_rate and light time
         of the object at each time.
     """
-    _checkTime(times, "times")
+    _check_times(times, "times")
     dfs = []
     for obj_id in obj_ids:
         obj = Horizons(
@@ -147,7 +147,7 @@ def getHorizonsEphemeris(
     dfs = []
     for orbit_id, obj_id in enumerate(obj_ids):
         for observatory_code, observation_times in observers.items():
-            _checkTime(observation_times, "observation_times")
+            _check_times(observation_times, "observation_times")
             obj = Horizons(
                 id=obj_id,
                 epochs=observation_times.utc.mjd,
@@ -200,7 +200,7 @@ def getHorizonsObserverState(
         Dataframe containing the full cartesian state, r, r_rate, delta, delta_rate and light time
         of the object at each time.
     """
-    _checkTime(observation_times, "observation_times")
+    _check_times(observation_times, "observation_times")
 
     if origin == "heliocenter":
         origin_horizons = "sun"

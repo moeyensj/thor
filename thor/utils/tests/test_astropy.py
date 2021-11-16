@@ -1,9 +1,8 @@
 import pytest
 import numpy as np
-
 from astropy.time import Time
 
-from ..astropy import _checkTime
+from ..astropy import _check_times
 
 def test__checkTime():
     # Create an array of epochs
@@ -12,7 +11,7 @@ def test__checkTime():
     # Test that an error is raised when times are not
     # an astropy time object
     with pytest.raises(TypeError):
-        _checkTime(times, "test")
+        _check_times(times, "test")
 
     # Test that _checkTime passes when an astropy time object is
     # given as intended

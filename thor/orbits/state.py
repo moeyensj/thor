@@ -4,7 +4,7 @@ import spiceypy as sp
 from ..constants import KM_P_AU
 from ..constants import S_P_DAY
 from ..utils import setupSPICE
-from ..utils import _checkTime
+from ..utils import _check_times
 
 NAIF_MAPPING = {
     "solar system barycenter" : 0,
@@ -78,7 +78,7 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     setupSPICE()
 
     # Check that times is an astropy time object
-    _checkTime(times, "times")
+    _check_times(times, "times")
 
     # Convert MJD epochs in TDB to ET in TDB
     epochs_tdb = times.tdb
@@ -123,7 +123,7 @@ def shiftOrbitsOrigin(orbits, t0, origin_in="heliocenter", origin_out="barycente
     orbits_shifted : `~numpy.ndarray` (N, 6)
         Orbits shifted to the desired output origin.
     """
-    _checkTime(t0, "t0")
+    _check_times(t0, "t0")
 
     orbits_shifted = orbits.copy()
     bary_to_helio = getPerturberState("sun", t0, origin="barycenter")

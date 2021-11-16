@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 from astropy import units as u
-from ..utils import _checkTime
+from ..utils import _check_times
 from ..utils import getHorizonsVectors
 from .kepler import convertOrbitalElements
 
@@ -91,7 +91,7 @@ class Orbits:
 
         # Make sure that the given epoch(s) are an astropy time object
         if len(epochs) > 0:
-            _checkTime(epochs, "epoch")
+            _check_times(epochs, "epoch")
 
         # Make sure that each orbit has a an epoch
         assert len(epochs) == orbits.shape[0]

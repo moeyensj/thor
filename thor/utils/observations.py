@@ -1,7 +1,7 @@
 import numpy as np
 from astropy.time import Time
 
-from .astropy import _checkTime
+from .astropy import _check_times
 
 __all__ = [
     "calcLinkingWindow",
@@ -40,7 +40,7 @@ def calcLinkingWindow(
     window : `~numpy.ndarray` (N)
         The linking window number to which each time was assigned.
     """
-    _checkTime(times, "times")
+    _check_times(times, "times")
     dt = times.mjd - times.mjd.min()
     window = np.floor(dt / length) + 1
     return window.astype(int)
@@ -70,7 +70,7 @@ def calcNight(
     night : `~numpy.ndarray` (N)
         Night on which the observation was made expressed as an integer MJD.
     """
-    _checkTime(times, "times")
+    _check_times(times, "times")
     mjd_utc = times.utc.mjd
     local_mjd = mjd_utc - local_midnight
     # Observations that occur after midnight should be assigned the night value
