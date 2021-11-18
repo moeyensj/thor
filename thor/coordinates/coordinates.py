@@ -1,4 +1,9 @@
 import numpy as np
+from abc import (
+    ABC,
+    abstractmethod,
+    abstractclassmethod,
+)
 from astropy.time import Time
 from astropy import units as u
 from typing import (
@@ -123,7 +128,7 @@ def _ingest_covariance(
 
     return covariance_
 
-class Coordinates(Indexable):
+class Coordinates(ABC, Indexable):
 
     def __init__(
             self,
@@ -177,9 +182,18 @@ class Coordinates(Indexable):
     def names(self):
         return self._names
 
+    @abstractmethod
     def to_cartesian(self):
-        raise NotImplementedError
+        pass
 
-    @classmethod
+    @abstractclassmethod
     def from_cartesian(cls, cartesian):
-        raise NotImplementedError
+        pass
+
+    @abstractmethod
+    def to_df(self):
+        pass
+
+    @abstractclassmethod
+    def from_df(cls, cartesian):
+        pass
