@@ -5,7 +5,7 @@ from numba import jit
 
 from ..constants import Constants as c
 from ..coordinates import transformCoordinates
-from ..utils import _checkTime
+from ..utils import _check_times
 from .state import shiftOrbitsOrigin
 from .universal_propagate import propagateUniversal
 from .aberrations import addLightTime
@@ -111,8 +111,8 @@ def generateEphemerisUniversal(
             z-velocity of the observer at the time of observation.
     """
     # Check that t0 is an astropy.time object
-    _checkTime(t0, "t0")
-    _checkTime(observation_times, "observation_times")
+    _check_times(t0, "t0")
+    _check_times(observation_times, "observation_times")
 
     # Propagate orbits to observer states
     propagated_orbits_helio = propagateUniversal(

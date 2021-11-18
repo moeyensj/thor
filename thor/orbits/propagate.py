@@ -1,6 +1,6 @@
 import warnings
 
-from ..utils import _checkTime
+from ..utils import _check_times
 from ..backend import Backend
 from ..backend import PYOORB
 from ..backend import FINDORB
@@ -51,7 +51,7 @@ def propagateOrbits(
         A DataFrame containing the heliocentric propagated orbits.
     """
     # Check that t1 is an astropy.time objects
-    _checkTime(t1, "t1")
+    _check_times(t1, "t1")
 
     if backend == "MJOLNIR":
         backend = MJOLNIR(**backend_kwargs)
