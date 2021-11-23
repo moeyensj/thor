@@ -1,5 +1,4 @@
 import os
-import uuid
 import json
 import shutil
 import tempfile
@@ -8,7 +7,6 @@ import subprocess
 import numpy as np
 import pandas as pd
 from astropy.time import Time
-from thor.utils import ades
 
 from ..utils import writeToADES
 from .backend import Backend
@@ -16,6 +14,29 @@ from .backend import Backend
 FINDORB_CONFIG = {
     "config_file" : os.path.join(os.path.dirname(__file__), "data", "environ.dat"),
     "remove_files" : True,
+}
+ADES_KWARGS = {
+    "mjd_scale" : "utc",
+    "seconds_precision" : 9,
+    "columns_precision" : {
+        "ra" : 16,
+        "dec" : 16,
+        "mag" : 2,
+        "rmsMag" : 2,
+        "rmsTime" : 2
+    },
+    "observatory_code" : "",
+    "submitter" : "",
+    "telescope_design" : "",
+    "telescope_aperture" : "",
+    "telescope_detector" :  "",
+    "observers" : [""],
+    "measurers" : [""],
+    "observatory_name" : "",
+    "submitter_institution" : None,
+    "telescope_name" : None,
+    "telescope_fratio" : None,
+    "comment" : None
 }
 
 class FINDORB(Backend):
@@ -114,8 +135,28 @@ class FINDORB(Backend):
         return env
 
     def _propagateOrbits(self, orbits, t1, out_dir=None):
+        """
+        Propagate orbits to t1.
 
+        Parameters
+        ----------
+        orbits : `~thor.orbits.orbits.Orbits`
+            Orbits to propagate.
+        t1 : `~astropy.time.core.Time`
+            Times to which to propagate each orbit.
+        out_dir : str, optional
+            Save input and output files to this directory. Will create
+            a sub directory called propagation inside this directory.
+
+        Returns
+        -------
+        propagated : `~pandas.DataFrame`
+            Orbits propagated to t1 (sorted by orbit_ids and t1).
+        process_returns : list
+            List of subprocess CompletedProcess objects.
+        """
         propagated_dfs = []
+        process_returns = []
         with tempfile.TemporaryDirectory() as temp_dir:
 
             # Set this environment's home directory to the temporary directory
@@ -174,6 +215,7 @@ class FINDORB(Backend):
                     check=False,
                     capture_output=True,
                 )
+                process_returns.append(ret)
 
                 if (ret.returncode != 0):
                     warning = (
@@ -222,10 +264,31 @@ class FINDORB(Backend):
             if orbits.ids is not None:
                 propagated["orbit_id"] = orbits.ids[propagated["orbit_id"].values]
 
-        return propagated
+        return propagated, process_returns
 
     def _generateEphemeris(self, orbits, observers, out_dir=None):
+        """
+        Generate ephemerides for each orbit and observer.
+
+        Parameters
+        ----------
+        orbits : `~thor.orbits.orbits.Orbits`
+            Orbits to propagate.
+        observers : dict or `~pandas.DataFrame`
+            A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values.
+        out_dir : str, optional
+            Save input and output files to this directory. Will create
+            a sub directory called ephemeris inside this directory.
+
+        Returns
+        -------
+        ephemeris : `~pandas.DataFrame`
+            Ephemerides for each orbit and observer.
+        process_returns : list
+            List of subprocess CompletedProcess objects.
+        """
         ephemeris_dfs = []
+        process_returns = []
         with tempfile.TemporaryDirectory() as temp_dir:
 
             # Set this environment's home directory to the temporary directory
@@ -311,6 +374,7 @@ class FINDORB(Backend):
                         check=False,
                         capture_output=True
                     )
+                    process_returns.append(ret)
 
                     if (os.path.exists(ephemeris_txt)):
                         ephemeris = pd.read_csv(
@@ -373,15 +437,15 @@ class FINDORB(Backend):
         if orbits.ids is not None:
             ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
 
-        return ephemeris
+        return ephemeris, process_returns
 
-    def _orbitDetermination(self, observations, out_dir=None, ades_kwargs={}):
-
+    def _orbitDetermination(self, observations, out_dir=None, ades_kwargs=ADES_KWARGS):
         ids = []
         epochs = []
         orbits = []
         covariances = []
         residual_dfs = []
+        process_returns = []
 
         # Find_Orb accepts ADES files as inputs for orbit determination so
         # lets convert THOR-like observations into essentially dummy
@@ -491,6 +555,7 @@ class FINDORB(Backend):
                     check=False,
                     capture_output=True
                 )
+                process_returns.append(ret)
 
                 covar_json = os.path.join(out_dir_i, "covar.json")
                 if (os.path.exists(covar_json)) and ret.returncode == 0:
@@ -570,4 +635,4 @@ class FINDORB(Backend):
         ]]
         od_orbit_members = pd.concat(residual_dfs, ignore_index=True)
 
-        return od_orbits, od_orbit_members
+        return od_orbits, od_orbit_members, process_returns
