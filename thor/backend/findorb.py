@@ -179,8 +179,9 @@ class FINDORB(Backend):
                 # If you give fo a string for a numbered object it will typically append brackets
                 # automatically which makes retrieving the object's orbit a little more tedious so by making sure
                 # the object ID is not numeric we can work around that.
-                orbit_id_i = orbits.ids[i].astype(str)
-                out_dir_i = os.path.join(out_dir_, orbit_id_i)
+                orbit_id_i = f"o{i:07}"
+                out_dir_i = os.path.join(out_dir_, orbits.ids[i].astype(str))
+                os.makedirs(out_dir_i, exist_ok=True)
                 vectors_txt = os.path.join(out_dir_i, "vectors.txt")
 
                 # Format the state vector into the type understood by find_orb
@@ -219,11 +220,11 @@ class FINDORB(Backend):
 
                 if (ret.returncode != 0):
                     warning = (
-                        "fo returned a non-zero error code./n",
-                        "Command: /n",
-                        " ".join(call) + "/n",
-                        ret.stdout.decode('utf-8'),
-                        ret.stderr.decode('utf-8')
+                        "fo returned a non-zero error code.\n"
+                        "Command: \n"
+                        " ".join(call) + "\n"
+                        f"{ret.stdout.decode('utf-8')}" + "\n"
+                        f"{ret.stderr.decode('utf-8')}" + "\n"
                     )
                     warnings.warn(warning)
 
@@ -333,8 +334,9 @@ class FINDORB(Backend):
                     # If you give fo a string for a numbered object it will typically append brackets
                     # automatically which makes retrieving the object's orbit a little more tedious so by making sure
                     # the object ID is not numeric we can work around that.
-                    orbit_id_i = orbits.ids[i].astype(str)
-                    out_dir_i = os.path.join(out_dir_, orbit_id_i)
+                    orbit_id_i = f"o{i:07}"
+                    out_dir_i = os.path.join(out_dir_, orbits.ids[i].astype(str))
+                    os.makedirs(out_dir_i, exist_ok=True)
                     ephemeris_txt = os.path.join(out_dir_i, "ephemeris.txt")
 
                     # Format the state vector into the type understood by find_orb
@@ -375,6 +377,16 @@ class FINDORB(Backend):
                         capture_output=True
                     )
                     process_returns.append(ret)
+
+                    if (ret.returncode != 0):
+                        warning = (
+                            "fo returned a non-zero error code.\n"
+                            "Command: \n"
+                            " ".join(call) + "\n"
+                            f"{ret.stdout.decode('utf-8')}" + "\n"
+                            f"{ret.stderr.decode('utf-8')}" + "\n"
+                        )
+                        warnings.warn(warning)
 
                     if (os.path.exists(ephemeris_txt)):
                         ephemeris = pd.read_csv(
@@ -509,7 +521,7 @@ class FINDORB(Backend):
                 # If you give fo a string for a numbered object it will typically append brackets
                 # automatically which makes retrieving the object's orbit a little more tedious so by making sure
                 # the object ID is not numeric we can work around that.
-                orbit_id_short = f"o{i:08d}"
+                orbit_id_short = f"o{i:07d}"
                 if "orbit_id" in _observations.columns:
                     orbit_id_i = orbit_id
                 else:
@@ -556,6 +568,16 @@ class FINDORB(Backend):
                     capture_output=True
                 )
                 process_returns.append(ret)
+
+                if (ret.returncode != 0):
+                    warning = (
+                        "fo returned a non-zero error code.\n"
+                        "Command: \n"
+                        " ".join(call) + "\n"
+                        f"{ret.stdout.decode('utf-8')}" + "\n"
+                        f"{ret.stderr.decode('utf-8')}" + "\n"
+                    )
+                    warnings.warn(warning)
 
                 covar_json = os.path.join(out_dir_i, "covar.json")
                 if (os.path.exists(covar_json)) and ret.returncode == 0:
