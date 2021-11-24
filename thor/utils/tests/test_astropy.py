@@ -4,7 +4,7 @@ from astropy.time import Time
 
 from ..astropy import _check_times
 
-def test__checkTime():
+def test__check_times():
     # Create an array of epochs
     times = np.linspace(59580, 59590, 100)
 
@@ -13,7 +13,7 @@ def test__checkTime():
     with pytest.raises(TypeError):
         _check_times(times, "test")
 
-    # Test that _checkTime passes when an astropy time object is
+    # Test that _check_times passes when an astropy time object is
     # given as intended
     times_astropy = Time(times, format="mjd", scale="utc")
 

@@ -4,7 +4,7 @@ from numba import jit
 
 from .projections import cartesianToGnomonic
 from .coordinates import transformCoordinates
-from .coordinates import _convertSphericalToCartesian
+from .coordinates import _spherical_to_cartesian
 
 X_AXIS = np.array([1., 0., 0.])
 Y_AXIS = np.array([0., 1., 0.])
@@ -186,7 +186,7 @@ def calcNae(coords_ec_ang):
     lon = np.radians(coords_ec_ang[:, 0])
     lat = np.radians(coords_ec_ang[:, 1])
     velocities = np.zeros(len(rho))
-    x, y, z, vx, vy, vz = _convertSphericalToCartesian(rho, lon, lat, velocities, velocities, velocities)
+    x, y, z, vx, vy, vz = _spherical_to_cartesian(rho, lon, lat, velocities, velocities, velocities)
 
     n_ae = np.zeros((N, 3))
     n_ae[:, 0] = x

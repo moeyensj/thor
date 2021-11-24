@@ -6,7 +6,7 @@ import pandas as pd
 from astropy.time import Time
 
 from ..constants import Constants as c
-from ..utils import _checkTime
+from ..utils import _check_times
 from ..orbits import propagateUniversal
 from ..orbits import generateEphemerisUniversal
 from ..orbits import shiftOrbitsOrigin
@@ -117,7 +117,7 @@ class MJOLNIR(Backend):
         observer_states_list = []
         for observatory_code, observation_times in observers.items():
             # Check that the observation times are astropy time objects
-            _checkTime(
+            _check_times(
                 observation_times,
                 "observation_times for observatory {}".format(observatory_code)
             )

@@ -5,7 +5,7 @@ import pyoorb as oo
 import pandas as pd
 from astropy.time import Time
 
-from ..utils import _checkTime
+from ..utils import _check_times
 from .backend import Backend
 
 PYOORB_CONFIG = {
@@ -447,7 +447,7 @@ class PYOORB(Backend):
 
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
-            _checkTime(observation_times, "observation_times")
+            _check_times(observation_times, "observation_times")
 
             # Convert epochs into PYOORB format
             epochs_pyoorb = self._configureEpochs(observation_times.utc.mjd, "UTC")
