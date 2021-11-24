@@ -3,11 +3,16 @@ from astropy.time import Time
 from astropy import units as u
 from typing import Optional
 
+from ..constants import Constants as c
 from .coordinates import Coordinates
 
 __all__ = [
     "CartesianCoordinates"
 ]
+TRANSFORM_EQ2EC = np.zeros((6, 6))
+TRANSFORM_EQ2EC[0:3, 0:3] = c.TRANSFORM_EQ2EC
+TRANSFORM_EQ2EC[3:6, 3:6] = c.TRANSFORM_EQ2EC
+TRANSFORM_EC2EQ = TRANSFORM_EQ2EC.T
 
 CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
 CARTESIAN_UNITS = [u.au, u.au, u.au, u.au / u.d, u.au / u.d, u.au / u.d]
@@ -96,3 +101,59 @@ class CartesianCoordinates(Coordinates):
     @classmethod
     def from_cartesian(cls, cartesian):
         return cartesian
+
+    def _rotate(self, matrix):
+
+        coords = self._coords.dot(matrix.T)
+        coords.mask = self._coords.mask
+        coords.fill_value = np.NaN
+
+        if self._covariances is not None:
+            covariances = np.ma.zeros(self._covariances.shape)
+            for i, cov in enumerate(self._covariances):
+                covariances[i] = matrix @ cov @ matrix.T
+        else:
+            covariances = None
+
+        return coords, covariances
+
+    def to_equatorial(self):
+        if self.frame == "equatorial":
+            return self
+        elif self.frame == "ecliptic":
+            coords, covariances = self._rotate(TRANSFORM_EC2EQ)
+            data = {}
+            data["x"] = coords[:, 0].filled()
+            data["y"] = coords[:, 1].filled()
+            data["z"] = coords[:, 2].filled()
+            data["vx"] = coords[:, 3].filled()
+            data["vy"] = coords[:, 4].filled()
+            data["vz"] = coords[:, 5].filled()
+            data["times"] = self.times
+            data["covariances"] = covariances
+            data["origin"] = self.origin
+            data["frame"] = "ecliptic"
+            return CartesianCoordinates(**data)
+        else:
+            raise ValueError
+
+    def to_ecliptic(self):
+        if self.frame == "equatorial":
+            coords, covariances = self._rotate(TRANSFORM_EQ2EC)
+            data = {}
+            data["x"] = coords[:, 0].filled()
+            data["y"] = coords[:, 1].filled()
+            data["z"] = coords[:, 2].filled()
+            data["vx"] = coords[:, 3].filled()
+            data["vy"] = coords[:, 4].filled()
+            data["vz"] = coords[:, 5].filled()
+            data["times"] = self.times
+            data["covariances"] = covariances
+            data["origin"] = self.origin
+            data["frame"] = "equatorial"
+            return CartesianCoordinates(**data)
+        elif self.frame == "ecliptic":
+            return self
+        else:
+            raise ValueError
+
