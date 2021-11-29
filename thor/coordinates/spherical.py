@@ -259,10 +259,10 @@ class SphericalCoordinates(Coordinates):
             cartesian._vy.filled(),
             cartesian._vz.filled(),
         )
-        lon = np.radians(lon)
-        lat = np.radians(lat)
-        vlon = np.radians(vlon)
-        vlat = np.radians(vlat)
+        lon = np.degrees(lon)
+        lat = np.degrees(lat)
+        vlon = np.degrees(vlon)
+        vlat = np.degrees(vlat)
 
         if cartesian.covariances is not None:
             warnings.warn("Covariance transformations have not been implemented yet.")
