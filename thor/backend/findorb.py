@@ -13,7 +13,6 @@ from .backend import Backend
 
 FINDORB_CONFIG = {
     "config_file" : os.path.join(os.path.dirname(__file__), "data", "environ.dat"),
-    "remove_files" : True,
 }
 ADES_KWARGS = {
     "mjd_scale" : "utc",
@@ -180,7 +179,8 @@ class FINDORB(Backend):
                 # automatically which makes retrieving the object's orbit a little more tedious so by making sure
                 # the object ID is not numeric we can work around that.
                 orbit_id_i = f"o{i:07}"
-                out_dir_i = os.path.join(out_dir_, orbits.ids[i].astype(str))
+                orbit_id_path = "_".join(orbits.ids[i].astype(str).split(" "))
+                out_dir_i = os.path.join(out_dir_, orbit_id_path)
                 os.makedirs(out_dir_i, exist_ok=True)
                 vectors_txt = os.path.join(out_dir_i, "vectors.txt")
 
@@ -244,6 +244,24 @@ class FINDORB(Backend):
                 propagated_dfs.append(df)
 
                 if out_dir is not None:
+
+                    # Write a bash script to the temporary directory
+                    script_out = os.path.join(out_dir_, f"run_{orbit_id_path}.sh")
+                    for i in [9, 11, 13, 14]:
+                        call[i] = f'"{call[i]}"'
+                    call_out = " ".join(call).replace(
+                        out_dir_ + "/",
+                        ""
+                    )
+                    call_out = call_out.replace(
+                        os.path.dirname(self.config_file) + "/",
+                        ""
+                    )
+                    with open(script_out, "w") as file_out:
+                        file_out.write("#!/bin/sh\n")
+                        file_out.write(call_out)
+
+                    # Copy temporary directory to the user defined output directory
                     os.makedirs(out_dir, exist_ok=True)
                     shutil.copytree(
                         temp_dir,
@@ -253,6 +271,12 @@ class FINDORB(Backend):
                         ),
                         dirs_exist_ok=True
                     )
+
+            # Save the configuration file to the user defined output directory (do
+            # it only once as its the same configuration for each call)
+            if out_dir is not None:
+                config_out = os.path.join(out_dir, "propagation", "environ.dat")
+                shutil.copy(self.config_file, config_out)
 
             propagated = pd.concat(propagated_dfs, ignore_index=True)
             propagated["mjd_tdb"] = Time(
@@ -335,7 +359,8 @@ class FINDORB(Backend):
                     # automatically which makes retrieving the object's orbit a little more tedious so by making sure
                     # the object ID is not numeric we can work around that.
                     orbit_id_i = f"o{i:07}"
-                    out_dir_i = os.path.join(out_dir_, orbits.ids[i].astype(str))
+                    orbit_id_path = "_".join(orbits.ids[i].astype(str).split(" "))
+                    out_dir_i = os.path.join(out_dir_, orbit_id_path)
                     os.makedirs(out_dir_i, exist_ok=True)
                     ephemeris_txt = os.path.join(out_dir_i, "ephemeris.txt")
 
@@ -407,7 +432,31 @@ class FINDORB(Backend):
 
                     ephemeris_dfs.append(ephemeris)
 
+                    if out_dir is not None:
+                        # Write a bash script to the temporary directory
+                        script_out = os.path.join(out_dir_, f"run_{orbit_id_path}.sh")
+                        for i in [7, 9, 11, 12, 13, 14, 15, 16]:
+                            call[i] = f'"{call[i]}"'
+                        call_out = " ".join(call).replace(
+                            out_dir_ + "/",
+                            ""
+                        )
+                        call_out = call_out.replace(
+                            os.path.dirname(self.config_file) + "/",
+                            ""
+                        )
+                        with open(script_out, "w") as file_out:
+                            file_out.write("#!/bin/sh\n")
+                            file_out.write(call_out)
+
             if out_dir is not None:
+                # Save the configuration file to the temporary directory (do
+                # it only once as its the same configuration for each call)
+                # This file will be copied with the temporary directory
+                config_out = os.path.join(out_dir_, "environ.dat")
+                shutil.copy(self.config_file, config_out)
+
+                # Copy temporary directory to the user defined output directory
                 os.makedirs(out_dir, exist_ok=True)
                 shutil.copytree(
                     temp_dir,
@@ -523,14 +572,15 @@ class FINDORB(Backend):
                 # the object ID is not numeric we can work around that.
                 orbit_id_short = f"o{i:07d}"
                 if "orbit_id" in _observations.columns:
-                    orbit_id_i = orbit_id
+                    orbit_id_i = "_".join(orbit_id.split(" "))
                 else:
                     orbit_id_i = orbit_id_short
 
-                out_dir_i = os.path.join(temp_dir, "orbit_determination", orbit_id_i)
+                out_dir_ = os.path.join(temp_dir, "orbit_determination")
+                out_dir_i = os.path.join(out_dir_, orbit_id_i)
                 os.makedirs(out_dir_i, exist_ok=True)
 
-                observations_file = os.path.join(temp_dir, "orbit_determination", f"{'_'.join(orbit_id_i.split(' '))}.psv")
+                observations_file = os.path.join(out_dir_, f"observations_{orbit_id_i}.psv")
 
                 mask = _observations[id_col].isin([orbit_id])
                 object_observations = _observations[mask].copy()
@@ -612,6 +662,23 @@ class FINDORB(Backend):
                 covariances.append(covariance_matrix)
 
                 if out_dir is not None:
+                    # Write a bash script to the temporary directory
+                    script_out = os.path.join(out_dir_, f"run_{orbit_id_i}.sh")
+                    for i in [1,3,7]:
+                        call[i] = f'"{call[i]}"'
+                    call_out = " ".join(call).replace(
+                        out_dir_ + "/",
+                        ""
+                    )
+                    call_out = call_out.replace(
+                        os.path.dirname(self.config_file) + "/",
+                        ""
+                    )
+                    with open(script_out, "w") as file_out:
+                        file_out.write("#!/bin/sh\n")
+                        file_out.write(call_out)
+
+                    # Copy temporary directory to the user defined output directory
                     os.makedirs(out_dir, exist_ok=True)
                     shutil.copytree(
                         temp_dir,
@@ -622,6 +689,12 @@ class FINDORB(Backend):
                         ),
                         dirs_exist_ok=True
                     )
+
+        if out_dir is not None:
+            # Save the configuration file to the user defined output directory (do
+            # it only once as its the same configuration for each call)
+            config_out = os.path.join(out_dir, "orbit_determination", "environ.dat")
+            shutil.copy(self.config_file, config_out)
 
         orbits = np.vstack(orbits)
 
