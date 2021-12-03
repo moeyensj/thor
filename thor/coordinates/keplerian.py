@@ -286,7 +286,8 @@ class KeplerianCoordinates(Coordinates):
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
-            frame: str = "ecliptic"
+            frame: str = "ecliptic",
+            mu: float = MU,
         ):
         Coordinates.__init__(self,
             a,
@@ -308,6 +309,7 @@ class KeplerianCoordinates(Coordinates):
         self._raan = self._coords[:, 3]
         self._ap = self._coords[:, 4]
         self._M = self._coords[:, 5]
+        self._mu = mu
 
         return
 
@@ -334,6 +336,10 @@ class KeplerianCoordinates(Coordinates):
     @property
     def M(self):
         return self._M
+
+    @property
+    def mu(self):
+        return self._mu
 
     def to_cartesian(self) -> CartesianCoordinates:
 
@@ -367,7 +373,7 @@ class KeplerianCoordinates(Coordinates):
         return coords
 
     @classmethod
-    def from_cartesian(cls, cartesian: CartesianCoordinates):
+    def from_cartesian(cls, cartesian: CartesianCoordinates, mu=MU):
 
         a, q, e, i, raan, ap, M, nu = _cartesian_to_keplerian(
             cartesian._x.filled(),
@@ -376,7 +382,7 @@ class KeplerianCoordinates(Coordinates):
             cartesian._vx.filled(),
             cartesian._vy.filled(),
             cartesian._vz.filled(),
-            mu=MU
+            mu=mu,
         )
 
         if cartesian.covariances is not None:
@@ -392,7 +398,8 @@ class KeplerianCoordinates(Coordinates):
             times=cartesian.times,
             covariances=None,
             origin=cartesian.origin,
-            frame=cartesian.frame
+            frame=cartesian.frame,
+            mu=mu
         )
 
         return coords
