@@ -1,6 +1,7 @@
 numpy
 numba
 pandas
+jax
 difi
 astropy
 astroquery

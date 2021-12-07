@@ -1,9 +1,13 @@
 import warnings
 import numpy as np
-from numba import jit
+import jax.numpy as jnp
+from jax import config, jit
+from jax.experimental import loops
 from astropy.time import Time
 from astropy import units as u
 from typing import Optional
+
+config.update("jax_enable_x64", True)
 
 from ..constants import Constants as c
 from .coordinates import Coordinates
@@ -20,8 +24,8 @@ KEPLERIAN_COLS = ["a", "e", "i", "raan", "argperi", "M"]
 MU = c.MU
 Z_AXIS = np.array([0., 0., 1.])
 
-@jit(["UniTuple(f8[:], 8)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8)"], nopython=True, cache=False)
-def _cartesian_to_keplerian(x, y, z, vx, vy, vz, mu=MU):
+@jit
+def _cartesian_to_keplerian(coords_cartesian, mu=MU):
     """
     Convert cartesian orbital elements to Keplerian orbital elements.
 
@@ -35,7 +39,7 @@ def _cartesian_to_keplerian(x, y, z, vx, vy, vz, mu=MU):
 
     Parameters
     ----------
-    elements_cart : `~numpy.ndarray` (N, 6)
+    coords_cartesian : `~numpy.ndarray` (N, 6)
         Cartesian elements in units of au and au per day.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
@@ -43,97 +47,88 @@ def _cartesian_to_keplerian(x, y, z, vx, vy, vz, mu=MU):
 
     Returns
     -------
-    elements_kepler : `~numpy.ndarray (N, 8)
+    coords_keplerian : `~numpy.ndarray (N, 8)
         Keplerian elements with angles in degrees and semi-major axis and pericenter distance
         in au.
 
     """
-    N = len(x)
-    a = np.zeros((N), dtype=np.float64)
-    q = np.zeros((N), dtype=np.float64)
-    e = np.zeros((N), dtype=np.float64)
-    i = np.zeros((N), dtype=np.float64)
-    raan = np.zeros((N), dtype=np.float64)
-    ap = np.zeros((N), dtype=np.float64)
-    M = np.zeros((N), dtype=np.float64)
-    nu = np.zeros((N), dtype=np.float64)
+    with loops.Scope() as s:
+        N = len(coords_cartesian)
+        r = coords_cartesian[:, 0:3]
+        v = coords_cartesian[:, 3:6]
 
-    r = np.zeros((N, 3), dtype=np.float64)
-    r[:, 0] = x
-    r[:, 1] = y
-    r[:, 2] = z
-    v = np.zeros((N, 3), dtype=np.float64)
-    v[:, 0] = vx
-    v[:, 1] = vy
-    v[:, 2] = vz
+        s.arr = jnp.zeros_like((N, 8), dtype=jnp.float64)
 
-    for j in range(N):
+        for i in s.range(s.arr.shape[0]):
 
-        r_i = r[j]
-        v_i = v[j]
+            r_i = r[i]
+            v_i = v[i]
 
-        r_mag = np.linalg.norm(r_i)
-        v_mag = np.linalg.norm(v_i)
+            r_mag = jnp.linalg.norm(r_i)
+            v_mag = jnp.linalg.norm(v_i)
 
-        sme = v_mag**2 / 2 - mu / r_mag
+            sme = v_mag**2 / 2 - mu / r_mag
 
-        h = np.cross(r_i, v_i)
-        h_mag = np.linalg.norm(h)
+            h = jnp.cross(r_i, v_i)
+            h_mag = jnp.linalg.norm(h)
 
-        n = np.cross(Z_AXIS, h)
-        n_mag = np.linalg.norm(n)
+            n = jnp.cross(Z_AXIS, h)
+            n_mag = jnp.linalg.norm(n)
 
-        e_vec = ((v_mag**2 - mu / r_mag) * r_i - (np.dot(r_i, v_i)) * v_i) / mu
-        e_i = np.linalg.norm(e_vec)
+            e_vec = ((v_mag**2 - mu / r_mag) * r_i - (jnp.dot(r_i, v_i)) * v_i) / mu
+            e_i = jnp.linalg.norm(e_vec)
 
-        if e_i != 0.0:
-            a_i = mu / (-2 * sme)
-            p_i = a_i * (1 - e_i**2)
-            q_i = a_i * (1 - e_i)
-        else:
-            a_i = np.inf
-            p_i = h_mag**2 / mu
-            q_i = a_i
+            for _ in s.cond_range(e_i != 0.0):
+                a_i = mu / (-2 * sme)
+                p_i = a_i * (1 - e_i**2)
+                q_i = a_i * (1 - e_i)
 
-        i_i = np.arccos(h[2] / h_mag)
+            for _ in s.cond_range(e_i == 0.0):
+                a_i = jnp.inf
+                p_i = h_mag**2 / mu
+                q_i = a_i
 
-        raan_i = np.arccos(n[0] / n_mag)
-        if n[1] < 0:
-            raan_i = 2*np.pi - raan_i
+            i_i = jnp.arccos(h[2] / h_mag)
 
-        ap_i = np.arccos(np.dot(n, e_vec) / (n_mag * e_i))
-        if e_vec[2] < 0:
-            ap_i = 2*np.pi - ap_i
+            raan_i = jnp.arccos(n[0] / n_mag)
+            raan_i = jnp.where(n[1] < 0, 2*jnp.pi - raan_i, raan_i)
 
-        nu_i = np.arccos(np.dot(e_vec, r_i) / (e_i * r_mag))
-        if np.dot(r_i, v_i) < 0:
-            nu_i = 2*np.pi - nu_i
+            ap_i = jnp.arccos(jnp.dot(n, e_vec) / (n_mag * e_i))
+            ap_i = jnp.where(e_vec[2] < 0, 2*jnp.pi - ap_i, ap_i)
 
-        if e_i < 1.0:
-            E = np.arctan2(np.sqrt(1 - e_i**2) * np.sin(nu_i), e_i + np.cos(nu_i))
-            M_i = np.degrees(E - e_i * np.sin(E))
-            if M_i < 0:
-                M_i += 2*np.pi
-        elif e_i == 1.0:
-            raise ValueError("Parabolic orbits not yet implemented!")
-        else:
-            H = np.arcsinh(np.sin(nu_i) * np.sqrt(e_i**2 - 1) / (1 + e_i * np.cos(nu_i)))
-            M_i = e_i * np.sinh(H) - H
+            nu_i = jnp.arccos(jnp.dot(e_vec, r_i) / (e_i * r_mag))
+            nu_i = jnp.where(jnp.dot(r_i, v_i) < 0, 2*jnp.pi - nu_i, nu_i)
 
+            for _ in s.cond_range(e_i < 1.0):
+                E = jnp.arctan2(jnp.sqrt(1 - e_i**2) * jnp.sin(nu_i), e_i + jnp.cos(nu_i))
+                M_i = jnp.degrees(E - e_i * jnp.sin(E))
+                if M_i < 0:
+                    M_i += 2*jnp.pi
 
-        a[j] = a_i
-        q[j] = q_i
-        e[j] = e_i
-        i[j] = i_i
-        raan[j] = raan_i
-        ap[j] = ap_i
-        M[j] = M_i
-        nu[j] = nu_i
+            for _ in s.cond_range(e_i > 1.0):
+                H = jnp.arcsinh(jnp.sin(nu_i) * jnp.sqrt(e_i**2 - 1) / (1 + e_i * jnp.cos(nu_i)))
+                M_i = e_i * jnp.sinh(H) - H
 
-    return a, q, e, i, raan, ap, M, nu
+            s.arr = s.arr.at[i, 0].set(a_i)
+            s.arr = s.arr.at[i, 1].set(q_i)
+            s.arr = s.arr.at[i, 2].set(e_i)
+            s.arr = s.arr.at[i, 3].set(i_i)
+            s.arr = s.arr.at[i, 4].set(raan_i)
+            s.arr = s.arr.at[i, 5].set(ap_i)
+            s.arr = s.arr.at[i, 6].set(M_i)
+            s.arr = s.arr.at[i, 7].set(nu_i)
 
-@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8, i8, f8)"], nopython=True, cache=False)
-def _keplerian_to_cartesian(a, e, i, raan, ap, M, mu=MU, max_iter=100, tol=1e-15):
+        coords_keplerian = s.arr
+
+    return coords_keplerian
+
+@jit
+def _cartesian_to_keplerian6(coords_cartesian, mu=MU):
+    coords_keplerian = _cartesian_to_keplerian(coords_cartesian, mu=mu)
+    return coords_keplerian[:, [0, 2, 3, 4, 5, 6]]
+
+@jit
+def _keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
     """
     Convert Keplerian orbital elements to cartesian orbital elements.
 
@@ -165,113 +160,126 @@ def _keplerian_to_cartesian(a, e, i, raan, ap, M, mu=MU, max_iter=100, tol=1e-15
     elements_cart : `~numpy.ndarray (N, 6)
         Cartesian elements in units of au and au per day.
     """
-    N = len(a)
-    x = np.zeros((N), dtype=np.float64)
-    y = np.zeros((N), dtype=np.float64)
-    z = np.zeros((N), dtype=np.float64)
-    vx = np.zeros((N), dtype=np.float64)
-    vy = np.zeros((N), dtype=np.float64)
-    vz = np.zeros((N), dtype=np.float64)
+    with loops.Scope() as s:
 
-    i_rad = np.radians(i)
-    raan_rad = np.radians(raan)
-    ap_rad = np.radians(ap)
-    M_rad = np.radians(M)
+        a = coords_keplerian[:, 0]
+        e = coords_keplerian[:, 1]
+        i = coords_keplerian[:, 2]
+        raan = coords_keplerian[:, 3]
+        ap = coords_keplerian[:, 4]
+        M = coords_keplerian[:, 5]
 
-    for i in range(N):
-        a_i = a[i]
-        e_i = e[i]
-        i_i = i_rad[i]
-        raan_i = raan_rad[i]
-        ap_i = ap_rad[i]
-        M_i = M_rad[i]
+        i_rad = jnp.radians(i)
+        raan_rad = jnp.radians(raan)
+        ap_rad = jnp.radians(ap)
+        M_rad = jnp.radians(M)
 
-        p_i = a_i * (1 - e_i**2)
+        s.arr = jnp.zeros_like(coords_keplerian, dtype=jnp.float64)
 
-        if e_i < 1.0:
-            iterations = 0
-            ratio = 1e10
-            E = M_i
+        for i in s.range(s.arr.shape[0]):
+            a_i = a[i]
+            e_i = e[i]
+            i_i = i_rad[i]
+            raan_i = raan_rad[i]
+            ap_i = ap_rad[i]
+            M_i = M_rad[i]
 
-            while np.abs(ratio) > tol:
-                f = E - e_i * np.sin(E) - M_i
-                fp = 1 - e_i * np.cos(E)
-                ratio = f / fp
-                E -= ratio
-                iterations += 1
-                if iterations >= max_iter:
-                    break
+            p_i = a_i * (1 - e_i**2)
 
-            nu = 2 * np.arctan2(np.sqrt(1 + e_i) * np.sin(E/2), np.sqrt(1 - e_i) * np.cos(E/2))
+            for _ in s.cond_range(e_i < 1.0):
 
-        elif e_i == 1.0:
-            raise ValueError("Parabolic orbits not yet implemented!")
+                with loops.Scope() as ss:
+                    ratio = 1e10
+                    E_init = M_i
+                    ss.arr = jnp.array([E_init, ratio,], dtype=jnp.float64)
+                    ss.idx = 0
+                    for j in ss.while_range(lambda : (ss.idx < max_iter) & (ss.arr[1] > tol)):
+                        f = ss.arr[0] - e_i * jnp.sin(ss.arr[0]) - M_i
+                        fp = 1 - e_i * jnp.cos(ss.arr[0])
+                        ratio = f / fp
+                        ss.arr = ss.arr.at[0].set(ss.arr[0]-ratio)
+                        ss.arr = ss.arr.at[1].set(jnp.abs(ratio))
+                        ss.idx += 1
 
-        else:
-            iterations = 0
-            ratio = 1e10
-            H = M_i / (e_i - 1)
+                    E = ss.arr[0]
+                    nu_E = 2 * jnp.arctan2(jnp.sqrt(1 + e_i) * jnp.sin(E/2), jnp.sqrt(1 - e_i) * jnp.cos(E/2))
 
-            while np.abs(ratio) > tol:
-                f = M_i - e_i * np.sinh(H) + H
-                fp =  e_i * np.cosh(H) - 1
-                ratio = f / fp
-                H += ratio
-                iterations += 1
-                if iterations >= max_iter:
-                    break
+            for _ in s.cond_range(e_i > 1.0):
 
-            nu = 2 * np.arctan(np.sqrt(e_i + 1) * np.sinh(H / 2) / (np.sqrt(e_i - 1) * np.cosh(H / 2)))
+                with loops.Scope() as ss:
+                    ratio = 1e10
+                    H_init = M_i / (e_i - 1)
+                    ss.arr = jnp.array([H_init, ratio], dtype=jnp.float64)
+                    ss.idx = 0
+                    for j in ss.while_range(lambda : (ss.idx < max_iter) & (ss.arr[1] > tol)):
+                        f = M_i - e_i * jnp.sinh(ss.arr[0]) + ss.arr[0]
+                        fp =  e_i * jnp.cosh(ss.arr[0]) - 1
+                        ratio = f / fp
+                        ss.arr = ss.arr.at[0].set(ss.arr[0]+ratio)
+                        ss.arr = ss.arr.at[1].set(jnp.abs(ratio))
+                        ss.idx += 1
 
-        r_PQW = np.array([
-            p_i * np.cos(nu) / (1 + e_i * np.cos(nu)),
-            p_i * np.sin(nu) / (1 + e_i * np.cos(nu)),
-            0
-        ])
+                    H = ss.arr[0]
+                    nu_H = 2 * jnp.arctan(jnp.sqrt(e_i + 1) * jnp.sinh(H / 2) / (jnp.sqrt(e_i - 1) * jnp.cosh(H / 2)))
 
-        v_PQW = np.array([
-            -np.sqrt(mu/p_i) * np.sin(nu),
-            np.sqrt(mu/p_i) * (e_i + np.cos(nu)),
-            0
-        ])
+            nu = jnp.where(
+                e_i < 1.0, nu_E,
+                jnp.where(e_i > 1.0, nu_H, jnp.nan)
+            )
 
-        cos_raan = np.cos(raan_i)
-        sin_raan = np.sin(raan_i)
-        cos_ap = np.cos(ap_i)
-        sin_ap = np.sin(ap_i)
-        cos_i = np.cos(i_i)
-        sin_i = np.sin(i_i)
+            r_PQW = jnp.array([
+                p_i * jnp.cos(nu) / (1 + e_i * jnp.cos(nu)),
+                p_i * jnp.sin(nu) / (1 + e_i * jnp.cos(nu)),
+                0
+            ])
 
-        P1 = np.array([
-            [cos_ap, -sin_ap, 0.],
-            [sin_ap, cos_ap, 0.],
-            [0., 0., 1.],
-        ])
+            v_PQW = jnp.array([
+                -jnp.sqrt(mu/p_i) * jnp.sin(nu),
+                jnp.sqrt(mu/p_i) * (e_i + jnp.cos(nu)),
+                0
+            ])
 
-        P2 = np.array([
-            [1., 0., 0.],
-            [0., cos_i, -sin_i],
-            [0., sin_i, cos_i],
-        ])
+            cos_raan = jnp.cos(raan_i)
+            sin_raan = jnp.sin(raan_i)
+            cos_ap = jnp.cos(ap_i)
+            sin_ap = jnp.sin(ap_i)
+            cos_i = jnp.cos(i_i)
+            sin_i = jnp.sin(i_i)
 
-        P3 = np.array([
-            [cos_raan, -sin_raan, 0.],
-            [sin_raan, cos_raan, 0.],
-            [0., 0., 1.],
-        ])
+            P1 = jnp.array([
+                [cos_ap, -sin_ap, 0.],
+                [sin_ap, cos_ap, 0.],
+                [0., 0., 1.],
+            ],  dtype=jnp.float64
+            )
 
-        rotation_matrix = P3 @ P2 @ P1
-        r = rotation_matrix @ r_PQW
-        v = rotation_matrix @ v_PQW
+            P2 = jnp.array([
+                [1., 0., 0.],
+                [0., cos_i, -sin_i],
+                [0., sin_i, cos_i],
+            ],  dtype=jnp.float64
+            )
 
-        x[i] = r[0]
-        y[i] = r[1]
-        z[i] = r[2]
-        vx[i] = v[0]
-        vy[i] = v[1]
-        vz[i] = v[2]
+            P3 = jnp.array([
+                [cos_raan, -sin_raan, 0.],
+                [sin_raan, cos_raan, 0.],
+                [0., 0., 1.],
+            ],  dtype=jnp.float64
+            )
 
-    return x, y, z, vx, vy, vz
+            rotation_matrix = P3 @ P2 @ P1
+            r = rotation_matrix @ r_PQW
+            v = rotation_matrix @ v_PQW
+
+            s.arr = s.arr.at[i, 0].set(r[0])
+            s.arr = s.arr.at[i, 1].set(r[1])
+            s.arr = s.arr.at[i, 2].set(r[2])
+            s.arr = s.arr.at[i, 3].set(v[0])
+            s.arr = s.arr.at[i, 4].set(v[1])
+            s.arr = s.arr.at[i, 5].set(v[2])
+
+    coords_cartesian = s.arr
+    return coords_cartesian
 
 class KeplerianCoordinates(Coordinates):
 
@@ -343,28 +351,24 @@ class KeplerianCoordinates(Coordinates):
 
     def to_cartesian(self) -> CartesianCoordinates:
 
-        x, y, z, vx, vy, vz = _keplerian_to_cartesian(
-            self._a.filled(),
-            self._e.filled(),
-            self._i.filled(),
-            self._raan.filled(),
-            self._ap.filled(),
-            self._M.filled(),
+        coords_cartesian = _keplerian_to_cartesian(
+            self.coords.filled(),
             mu=MU,
             max_iter=100,
             tol=1e-15,
         )
+        coords_cartesian = np.array(coords_cartesian)
 
         if self.covariances is not None:
             warnings.warn("Covariance transformations have not been implemented yet.")
 
         coords = CartesianCoordinates(
-            x=x,
-            y=y,
-            z=z,
-            vx=vx,
-            vy=vy,
-            vz=vz,
+            x=coords_cartesian[:, 0],
+            y=coords_cartesian[:, 1],
+            z=coords_cartesian[:, 2],
+            vx=coords_cartesian[:, 3],
+            vy=coords_cartesian[:, 4],
+            vz=coords_cartesian[:, 5],
             covariances=None,
             origin=self.origin,
             frame=self.frame
@@ -375,26 +379,22 @@ class KeplerianCoordinates(Coordinates):
     @classmethod
     def from_cartesian(cls, cartesian: CartesianCoordinates, mu=MU):
 
-        a, q, e, i, raan, ap, M, nu = _cartesian_to_keplerian(
-            cartesian._x.filled(),
-            cartesian._y.filled(),
-            cartesian._z.filled(),
-            cartesian._vx.filled(),
-            cartesian._vy.filled(),
-            cartesian._vz.filled(),
+        coords_keplerian = _cartesian_to_keplerian(
+            cartesian.coords.filled(),
             mu=mu,
         )
+        coords_keplerian = np.array(coords_keplerian)
 
         if cartesian.covariances is not None:
             warnings.warn("Covariance transformations have not been implemented yet.")
 
         coords = cls(
-            a=a,
-            e=e,
-            i=i,
-            raan=raan,
-            ap=ap,
-            M=M,
+            a=coords_keplerian[:, 0],
+            e=coords_keplerian[:, 2],
+            i=coords_keplerian[:, 3],
+            raan=coords_keplerian[:, 4],
+            ap=coords_keplerian[:, 5],
+            M=coords_keplerian[:, 6],
             times=cartesian.times,
             covariances=None,
             origin=cartesian.origin,

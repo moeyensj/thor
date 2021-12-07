@@ -1,9 +1,12 @@
 import warnings
 import numpy as np
-from numba import jit
+import jax.numpy as jnp
+from jax import config, jit
 from astropy.time import Time
 from astropy import units as u
 from typing import Optional
+
+config.update("jax_enable_x64", True)
 
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
@@ -17,9 +20,8 @@ __all__ = [
 SPHERICAL_COLS = ["rho", "lon", "lat", "vrho", "vlon", "vlat"]
 SPHERICAL_UNITS = [u.au, u.degree, u.degree, u.au / u.d, u.degree / u.d, u.degree / u.d]
 
-
-@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True, cache=True)
-def _cartesian_to_spherical(x, y, z, vx, vy, vz):
+@jit
+def _cartesian_to_spherical(coords_cartesian):
     """
     Convert spherical coordinates to cartesian coordinates.
 
@@ -60,26 +62,35 @@ def _cartesian_to_spherical(x, y, z, vx, vy, vz):
         Latitudinal velocity in radians per arbitrary unit of time.
         (same unit of time as the x, y, and z velocities).
     """
-    rho = np.sqrt(x**2 + y**2 + z**2)
-    lon = np.arctan2(y, x)
-    lon = np.where(lon < 0.0, 2 * np.pi + lon, lon)
-    lat = np.arcsin(z / rho)
-    lat = np.where((lat >= 3*np.pi/2) & (lat <= 2*np.pi), lat - 2*np.pi, lat)
+    coords_spherical = jnp.zeros_like(coords_cartesian, dtype=jnp.float64)
+    x = coords_cartesian[:, 0]
+    y = coords_cartesian[:, 1]
+    z = coords_cartesian[:, 2]
+    vx = coords_cartesian[:, 3]
+    vy = coords_cartesian[:, 4]
+    vz = coords_cartesian[:, 5]
 
-    if np.all(vx == 0) & (np.all(vy == 0)) & (np.all(vz == 0)):
-        vrho = np.zeros((len(rho)), dtype=np.float64)
-        vlon = np.zeros((len(lon)), dtype=np.float64)
-        vlat = np.zeros((len(lat)), dtype=np.float64)
-    else:
-        vrho = (x * vx + y * vy + z * vz) / rho
-        vlon = (vy * x - vx * y) / (x**2 + y**2)
-        vlat = (vz - vrho * z / rho) / np.sqrt(x**2 + y**2)
+    rho = jnp.sqrt(x**2 + y**2 + z**2)
+    lon = jnp.arctan2(y, x)
+    lon = jnp.where(lon < 0.0, 2 * jnp.pi + lon, lon)
+    lat = jnp.arcsin(z / rho)
+    lat = jnp.where((lat >= 3*jnp.pi/2) & (lat <= 2*jnp.pi), lat - 2*jnp.pi, lat)
 
-    return rho, lon, lat, vrho, vlon, vlat
+    vrho = (x * vx + y * vy + z * vz) / rho
+    vlon = (vy * x - vx * y) / (x**2 + y**2)
+    vlat = (vz - vrho * z / rho) / jnp.sqrt(x**2 + y**2)
 
+    coords_spherical = coords_spherical.at[:, 0].set(rho)
+    coords_spherical = coords_spherical.at[:, 1].set(jnp.degrees(lon))
+    coords_spherical = coords_spherical.at[:, 2].set(jnp.degrees(lat))
+    coords_spherical = coords_spherical.at[:, 3].set(vrho)
+    coords_spherical = coords_spherical.at[:, 4].set(jnp.degrees(vlon))
+    coords_spherical = coords_spherical.at[:, 5].set(jnp.degrees(vlat))
 
-@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True, cache=True)
-def _spherical_to_cartesian(rho, lon, lat, vrho, vlon, vlat):
+    return coords_spherical
+
+@jit
+def _spherical_to_cartesian(coords_spherical):
     """
     Convert spherical coordinates to cartesian coordinates.
 
@@ -120,25 +131,35 @@ def _spherical_to_cartesian(rho, lon, lat, vrho, vlon, vlat):
         (same unit of time as the rho, lon, and lat velocities,
         for example, radians per day > AU per day).
     """
-    cos_lat = np.cos(lat)
-    sin_lat = np.sin(lat)
-    cos_lon = np.cos(lon)
-    sin_lon = np.sin(lon)
+    coords_cartesian = jnp.zeros_like(coords_spherical, dtype=jnp.float64)
+    rho = coords_spherical[:, 0]
+    lon = jnp.radians(coords_spherical[:, 1])
+    lat = jnp.radians(coords_spherical[:, 2])
+    vrho = coords_spherical[:, 3]
+    vlon = jnp.radians(coords_spherical[:, 4])
+    vlat = jnp.radians(coords_spherical[:, 5])
+
+    cos_lat = jnp.cos(lat)
+    sin_lat = jnp.sin(lat)
+    cos_lon = jnp.cos(lon)
+    sin_lon = jnp.sin(lon)
 
     x = rho * cos_lat * cos_lon
     y = rho * cos_lat * sin_lon
     z = rho * sin_lat
 
-    if np.all(vlon == 0) & (np.all(vlat == 0)) & (np.all(vrho == 0)):
-        vx = np.zeros((len(x)), dtype=np.float64)
-        vy = np.zeros((len(y)), dtype=np.float64)
-        vz = np.zeros((len(z)), dtype=np.float64)
-    else:
-        vx = cos_lat * cos_lon * vrho - rho * cos_lat * sin_lon * vlon - rho * sin_lat * cos_lon * vlat
-        vy = cos_lat * sin_lon * vrho + rho * cos_lat * cos_lon * vlon - rho * sin_lat * sin_lon * vlat
-        vz = sin_lat * vrho + rho * cos_lat * vlat
+    vx = cos_lat * cos_lon * vrho - rho * cos_lat * sin_lon * vlon - rho * sin_lat * cos_lon * vlat
+    vy = cos_lat * sin_lon * vrho + rho * cos_lat * cos_lon * vlon - rho * sin_lat * sin_lon * vlat
+    vz = sin_lat * vrho + rho * cos_lat * vlat
 
-    return x, y, z, vx, vy, vz
+    coords_cartesian = coords_cartesian.at[:, 0].set(x)
+    coords_cartesian = coords_cartesian.at[:, 1].set(y)
+    coords_cartesian = coords_cartesian.at[:, 2].set(z)
+    coords_cartesian = coords_cartesian.at[:, 3].set(vx)
+    coords_cartesian = coords_cartesian.at[:, 4].set(vy)
+    coords_cartesian = coords_cartesian.at[:, 5].set(vz)
+
+    return coords_cartesian
 
 class SphericalCoordinates(Coordinates):
 
@@ -222,25 +243,19 @@ class SphericalCoordinates(Coordinates):
 
     def to_cartesian(self) -> CartesianCoordinates:
 
-        x, y, z, vx, vy, vz = _spherical_to_cartesian(
-            self._rho.filled(),
-            np.radians(self._lon).filled(),
-            np.radians(self._lat).filled(),
-            self._vrho.filled(),
-            np.radians(self._vlon).filled(),
-            np.radians(self._vlat).filled(),
-        )
+        coords_cartesian = _spherical_to_cartesian(self.coords.filled())
+        coords_cartesian = np.array(coords_cartesian)
 
         if self.covariances is not None:
             warnings.warn("Covariance transformations have not been implemented yet.")
 
         coords = CartesianCoordinates(
-            x=x,
-            y=y,
-            z=z,
-            vx=vx,
-            vy=vy,
-            vz=vz,
+            x=coords_cartesian[:, 0],
+            y=coords_cartesian[:, 1],
+            z=coords_cartesian[:, 2],
+            vx=coords_cartesian[:, 3],
+            vy=coords_cartesian[:, 4],
+            vz=coords_cartesian[:, 5],
             times=self.times,
             covariances=None,
             origin=self.origin,
@@ -251,29 +266,19 @@ class SphericalCoordinates(Coordinates):
     @classmethod
     def from_cartesian(cls, cartesian: CartesianCoordinates):
 
-        rho, lon, lat, vrho, vlon, vlat = _cartesian_to_spherical(
-            cartesian._x.filled(),
-            cartesian._y.filled(),
-            cartesian._z.filled(),
-            cartesian._vx.filled(),
-            cartesian._vy.filled(),
-            cartesian._vz.filled(),
-        )
-        lon = np.degrees(lon)
-        lat = np.degrees(lat)
-        vlon = np.degrees(vlon)
-        vlat = np.degrees(vlat)
+        coords_spherical = _cartesian_to_spherical(cartesian.coords.filled())
+        coords_spherical = np.array(coords_spherical)
 
         if cartesian.covariances is not None:
             warnings.warn("Covariance transformations have not been implemented yet.")
 
         coords = cls(
-            rho=rho,
-            lon=lon,
-            lat=lat,
-            vrho=vrho,
-            vlon=vlon,
-            vlat=vlat,
+            rho=coords_spherical[:, 0],
+            lon=coords_spherical[:, 1],
+            lat=coords_spherical[:, 2],
+            vrho=coords_spherical[:, 3],
+            vlon=coords_spherical[:, 4],
+            vlat=coords_spherical[:, 5],
             times=cartesian.times,
             covariances=None,
             origin=cartesian.origin,
