@@ -11,7 +11,11 @@ __all__ = [
     "transform_coordinates",
 ]
 
-def transform_coordinates(coords: Coordinates, representation_out: str, frame_out: str = "ecliptic"):
+def transform_coordinates(
+        coords: Coordinates,
+        representation_out: str,
+        frame_out: str,
+    ) -> Coordinates:
     """
     Transform coordinates between frames ('ecliptic', 'equatorial') and/or representations ('cartesian', 'spherical').
     Coordinates may include only positions or they may also include velocities.

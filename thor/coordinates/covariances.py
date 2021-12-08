@@ -1,6 +1,7 @@
 import numpy as np
 from jax import config, jacfwd
 from scipy.stats import multivariate_normal
+from typing import Callable
 
 config.update("jax_enable_x64", True)
 config.update('jax_platform_name', 'cpu')
@@ -11,7 +12,11 @@ __all__ = [
     "transform_covariances_jacobian",
 ]
 
-def sample_covariance(mean, cov, num_samples=100000):
+def sample_covariance(
+        mean: np.ndarray,
+        cov: np.ndarray,
+        num_samples: int = 100000
+    ) -> np.ndarray:
     """
     Sample a multivariate Gaussian distribution with given
     mean and covariances.
@@ -22,7 +27,7 @@ def sample_covariance(mean, cov, num_samples=100000):
         Multivariate mean of the Gaussian distribution.
     cov : `~numpy.ndarray` (D, D)
         Multivariate variance-covariance matrix of the Gaussian distribution.
-    num_samples : int
+    num_samples : int, optional
         Number of samples to draw from the distribution.
 
     Returns
@@ -38,7 +43,12 @@ def sample_covariance(mean, cov, num_samples=100000):
     samples = normal.rvs(num_samples)
     return samples
 
-def transform_covariances_sampling(coords, covariances, func, num_samples=100000):
+def transform_covariances_sampling(
+        coords: np.ndarray,
+        covariances: np.ndarray,
+        func: Callable,
+        num_samples: int = 100000
+    ) -> np.ndarray:
     """
     Transform covariance matrices by sampling the transformation function.
 
@@ -52,7 +62,7 @@ def transform_covariances_sampling(coords, covariances, func, num_samples=100000
         A function that takes coords (N, D) as input and returns the transformed
         coordinates (N, D). See for example: `thor.coordinates.cartesian_to_spherical`
         or `thor.coordinates.cartesian_to_keplerian`.
-    num_samples : int
+    num_samples : int, optional
         The number of samples to draw.
 
     Returns
@@ -68,7 +78,11 @@ def transform_covariances_sampling(coords, covariances, func, num_samples=100000
 
     return np.stack(covariances_out)
 
-def transform_covariances_jacobian(coords, covariances, _func):
+def transform_covariances_jacobian(
+        coords: np.ndarray,
+        covariances: np.ndarray,
+        _func: Callable,
+    ) -> np.ndarray:
     """
     Transform covariance matrices by calculating the Jacobian of the transformation function
     using `~jax.jacfwd`.

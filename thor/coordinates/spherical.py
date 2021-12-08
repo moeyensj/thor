@@ -40,7 +40,7 @@ def _cartesian_to_spherical(coords_cartesian: Union[np.ndarray, jnp.ndarray]) ->
 
     Returns
     -------
-    coords_spherical : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (6)
+    coords_spherical : `~jax.numpy.ndarray` (6)
         3D Spherical coordinate including time derivatives.
         rho : Radial distance in the same units of x, y, and z.
         lon : Longitude ranging from 0.0 to 360.0 degrees.
@@ -97,7 +97,7 @@ def cartesian_to_spherical(coords_cartesian: Union[np.ndarray, jnp.ndarray]) -> 
 
     Returns
     -------
-    coords_spherical : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (N, 6)
+    coords_spherical : ~jax.numpy.ndarray` (N, 6)
         3D Spherical coordinates including time derivatives.
         rho : Radial distance in the same units of x, y, and z.
         lon : Longitude ranging from 0.0 to 360.0 degrees.
@@ -145,7 +145,7 @@ def _spherical_to_cartesian(coords_spherical: Union[np.ndarray, jnp.ndarray]) ->
 
     Returns
     -------
-    coords_cartesian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (6)
+    coords_cartesian : `~jax.numpy.ndarray` (6)
         3D Cartesian coordinate including time derivatives.
         x : x-position in units of distance.
         y : y-position in units of distance.

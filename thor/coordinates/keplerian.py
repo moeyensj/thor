@@ -4,7 +4,7 @@ from jax import config, jit
 from jax.experimental import loops
 from astropy.time import Time
 from astropy import units as u
-from typing import Optional
+from typing import Optional, Union
 
 config.update("jax_enable_x64", True)
 config.update('jax_platform_name', 'cpu')
@@ -29,31 +29,39 @@ MU = c.MU
 Z_AXIS = np.array([0., 0., 1.])
 
 @jit
-def _cartesian_to_keplerian(coords_cartesian, mu=MU):
+def _cartesian_to_keplerian(
+        coords_cartesian: Union[np.ndarray, jnp.ndarray],
+        mu: float = MU,
+    ) -> jnp.ndarray:
     """
     Convert a single Cartesian coordinate to a Keplerian coordinate.
 
-    Keplerian coordinates are returned in an array with the following elements:
-        a : semi-major axis [au]
-        e : eccentricity
-        i : inclination [degrees]
-        Omega : longitude of the ascending node [degrees]
-        omega : argument of periapsis [degrees]
-        M0 : mean anomaly [degrees]
-
     Parameters
     ----------
-    coords_cartesian : `~numpy.ndarray` (6)
-        Cartesian coordinate in units of au and au per day.
+    coords_cartesian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (6)
+        3D Cartesian coordinate including time derivatives.
+        x : x-position in units of au.
+        y : y-position in units of au.
+        z : z-position in units of au.
+        vx : x-velocity in units of au per day.
+        vy : y-velocity in units of au per day.
+        vz : z-velocity in units of au per day.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
         au**3 / d**2.
 
     Returns
     -------
-    coords_keplerian : `~numpy.ndarray (8)
-        Keplerian coordinate with angles in degrees and semi-major axis and pericenter distance
-        in au.
+    coords_keplerian : `~jax.numpy.ndarray` (8)
+        8D Keplerian coordinate.
+        a : semi-major axis in au.
+        q : periapsis distance in au.
+        e : eccentricity.
+        i : inclination in degrees.
+        raan : Right ascension (longitude) of the ascending node in degrees.
+        ap : argument of periapsis in degrees.
+        M : mean anomaly in degrees.
+        nu : true anomaly in degrees.
     """
     with loops.Scope() as s:
 
@@ -125,61 +133,75 @@ def _cartesian_to_keplerian(coords_cartesian, mu=MU):
     return coords_keplerian
 
 @jit
-def _cartesian_to_keplerian6(coords_cartesian, mu=MU):
+def _cartesian_to_keplerian6(
+        coords_cartesian: Union[np.ndarray, jnp.ndarray],
+        mu: float = MU,
+    ) -> jnp.ndarray:
     """
     Limit conversion of Cartesian coordinates to Keplerian 6 fundamental coordinates.
 
-    Keplerian coordinates are returned in an array with the following elements:
-        a : semi-major axis [au]
-        e : eccentricity
-        i : inclination [degrees]
-        Omega : longitude of the ascending node [degrees]
-        omega : argument of periapsis [degrees]
-        M0 : mean anomaly [degrees]
-
     Parameters
     ----------
-    coords_cartesian : `~numpy.ndarray` (N, 6)
-        Cartesian coordinates in units of au and au per day.
+    coords_cartesian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (6)
+        3D Cartesian coordinate including time derivatives.
+        x : x-position in units of au.
+        y : y-position in units of au.
+        z : z-position in units of au.
+        vx : x-velocity in units of au per day.
+        vy : y-velocity in units of au per day.
+        vz : z-velocity in units of au per day.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
         au**3 / d**2.
 
     Returns
     -------
-    coords_keplerian : `~numpy.ndarray (N, 8)
-        Keplerian coordinates with angles in degrees and semi-major axis and pericenter distance
-        in au.
+    coords_keplerian : `~jax.numpy.ndarray` (8)
+        6D Keplerian coordinate.
+        a : semi-major axis in au.
+        e : eccentricity.
+        i : inclination in degrees.
+        raan : Right ascension (longitude) of the ascending node in degrees.
+        ap : argument of periapsis in degrees.
+        M : mean anomaly in degrees.
     """
     coords_keplerian = _cartesian_to_keplerian(coords_cartesian, mu=mu)
     return coords_keplerian[jnp.array([0, 2, 3, 4, 5, 6])]
 
 @jit
-def cartesian_to_keplerian(coords_cartesian, mu=MU):
+def cartesian_to_keplerian(
+        coords_cartesian: Union[np.ndarray, jnp.ndarray],
+        mu: float = MU,
+    ) -> jnp.ndarray:
     """
     Convert Cartesian coordinates to Keplerian coordinates.
 
-    Keplerian coordinates are returned in an array with the following elements:
-        a : semi-major axis [au]
-        e : eccentricity
-        i : inclination [degrees]
-        Omega : longitude of the ascending node [degrees]
-        omega : argument of periapsis [degrees]
-        M0 : mean anomaly [degrees]
-
     Parameters
     ----------
-    coords_cartesian : `~numpy.ndarray` (N, 6)
-        Cartesian coordinates in units of au and au per day.
+    coords_cartesian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (N, 6)
+        3D Cartesian coordinates including time derivatives.
+        x : x-position in units of au.
+        y : y-position in units of au.
+        z : z-position in units of au.
+        vx : x-velocity in units of au per day.
+        vy : y-velocity in units of au per day.
+        vz : z-velocity in units of au per day.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
         au**3 / d**2.
 
     Returns
     -------
-    coords_keplerian : `~numpy.ndarray (N, 8)
-        Keplerian coordinates with angles in degrees and semi-major axis and pericenter distance
-        in au.
+    coords_keplerian : `~jax.numpy.ndarray` (N, 8)
+        8D Keplerian coordinates.
+        a : semi-major axis in au.
+        q : periapsis distance in au.
+        e : eccentricity.
+        i : inclination in degrees.
+        raan : Right ascension (longitude) of the ascending node in degrees.
+        ap : argument of periapsis in degrees.
+        M : mean anomaly in degrees.
+        nu : true anomaly in degrees.
     """
     with loops.Scope() as s:
         N = len(coords_cartesian)
@@ -198,22 +220,25 @@ def cartesian_to_keplerian(coords_cartesian, mu=MU):
     return coords_keplerian
 
 @jit
-def _keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
+def _keplerian_to_cartesian(
+        coords_keplerian: Union[np.ndarray, jnp.ndarray],
+        mu: float = MU,
+        max_iter: int = 100,
+        tol: float = 1e-15
+    ) -> jnp.ndarray:
     """
     Convert a single Keplerian coordinate to a Cartesian coordinate.
 
-    Keplerian coordinates should have following elements:
-        a : semi-major axis [au]
-        e : eccentricity [degrees]
-        i : inclination [degrees]
-        Omega : longitude of the ascending node [degrees]
-        omega : argument of periapsis [degrees]
-        M0 : mean anomaly [degrees]
-
     Parameters
     ----------
-    coords_keplerian : `~numpy.ndarray` (6)
-        Keplerian coordinate with angles in degrees and semi-major axis in au.
+    coords_keplerian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (6)
+        6D Keplerian coordinate.
+        a : semi-major axis in au.
+        e : eccentricity.
+        i : inclination in degrees.
+        raan : Right ascension (longitude) of the ascending node in degrees.
+        ap : argument of periapsis in degrees.
+        M : mean anomaly in degrees.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
         au**3 / d**2.
@@ -226,8 +251,14 @@ def _keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
 
     Returns
     -------
-    coords_cartesian : `~numpy.ndarray (6)
-        Cartesian coordinate in units of au and au per day.
+    coords_cartesian : `~jax.numpy.ndarray` (6)
+        3D Cartesian coordinate including time derivatives.
+        x : x-position in units of au.
+        y : y-position in units of au.
+        z : z-position in units of au.
+        vx : x-velocity in units of au per day.
+        vy : y-velocity in units of au per day.
+        vz : z-velocity in units of au per day.
     """
     with loops.Scope() as s:
 
@@ -337,22 +368,25 @@ def _keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
     return coords_cartesian
 
 @jit
-def keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
+def keplerian_to_cartesian(
+        coords_keplerian: Union[np.ndarray, jnp.ndarray],
+        mu: float = MU,
+        max_iter: int = 100,
+        tol: float = 1e-15
+    ) -> jnp.ndarray:
     """
     Convert Keplerian coordinates to Cartesian coordinates.
 
-    Keplerian coordinates should have following elements:
-        a : semi-major axis [au]
-        e : eccentricity [degrees]
-        i : inclination [degrees]
-        Omega : longitude of the ascending node [degrees]
-        omega : argument of periapsis [degrees]
-        M0 : mean anomaly [degrees]
-
     Parameters
     ----------
-    coords_keplerian : `~numpy.ndarray` (N, 6)
-        Keplerian coordinates with angles in degrees and semi-major axis in au.
+    coords_keplerian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (N, 6)
+        6D Keplerian coordinate.
+        a : semi-major axis in au.
+        e : eccentricity.
+        i : inclination in degrees.
+        raan : Right ascension (longitude) of the ascending node in degrees.
+        ap : argument of periapsis in degrees.
+        M : mean anomaly in degrees.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
         au**3 / d**2.
@@ -365,8 +399,14 @@ def keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
 
     Returns
     -------
-    coords_cartesian : `~numpy.ndarray (N, 6)
-        Cartesian coordinates in units of au and au per day.
+    coords_cartesian : `~jax.numpy.ndarray` (N, 6)
+        3D Cartesian coordinates including time derivatives.
+        x : x-position in units of au.
+        y : y-position in units of au.
+        z : z-position in units of au.
+        vx : x-velocity in units of au per day.
+        vy : y-velocity in units of au per day.
+        vz : z-velocity in units of au per day.
     """
     with loops.Scope() as s:
         N = len(coords_keplerian)
