@@ -12,6 +12,7 @@ config.update("jax_enable_x64", True)
 from ..constants import Constants as c
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
+from .covariances import transform_covariances_jacobian
 
 __all__ = [
     "_cartesian_to_keplerian",
@@ -432,7 +433,13 @@ class KeplerianCoordinates(Coordinates):
         coords_cartesian = np.array(coords_cartesian)
 
         if self.covariances is not None:
-            warnings.warn("Covariance transformations have not been implemented yet.")
+            covariances_cartesian = transform_covariances_jacobian(
+                self.coords.filled(),
+                self.covariances.filled(),
+                _keplerian_to_cartesian
+            )
+        else:
+            covariances_cartesian = None
 
         coords = CartesianCoordinates(
             x=coords_cartesian[:, 0],
@@ -441,7 +448,7 @@ class KeplerianCoordinates(Coordinates):
             vx=coords_cartesian[:, 3],
             vy=coords_cartesian[:, 4],
             vz=coords_cartesian[:, 5],
-            covariances=None,
+            covariances=covariances_cartesian,
             origin=self.origin,
             frame=self.frame
         )
