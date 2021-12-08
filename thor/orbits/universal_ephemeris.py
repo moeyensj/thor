@@ -4,7 +4,7 @@ from astropy.time import Time
 from numba import jit
 
 from ..constants import Constants as c
-from ..coordinates import transformCoordinates
+from ..coordinates import transform_coordinates
 from ..utils import _check_times
 from .state import shiftOrbitsOrigin
 from .universal_propagate import propagateUniversal
@@ -182,7 +182,7 @@ def generateEphemerisUniversal(
 
     # Convert topocentric to target state to spherical coordinates
     # including velocities
-    state_spherical = transformCoordinates(
+    state_spherical = transform_coordinates(
         delta_state_bary,
         "ecliptic",
         "equatorial",

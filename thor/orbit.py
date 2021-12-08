@@ -3,7 +3,7 @@ import numpy as np
 from numba import jit
 
 from .projections import cartesianToGnomonic
-from .coordinates import transformCoordinates
+from .coordinates import transform_coordinates
 from .coordinates import _spherical_to_cartesian
 
 X_AXIS = np.array([1., 0., 0.])
@@ -88,7 +88,7 @@ class TestOrbit:
         logger.debug("Converting to ecliptic coordinates...")
         coords_eq = observations[["RA_deg", "Dec_deg"]].values
         coords_eq = np.hstack([np.ones((len(coords_eq), 1)), coords_eq])
-        coords_ec = transformCoordinates(coords_eq,
+        coords_ec = transform_coordinates(coords_eq,
             "equatorial",
             "ecliptic",
             representation_in="spherical",

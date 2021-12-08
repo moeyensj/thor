@@ -4,7 +4,7 @@ from numba import jit
 from astropy.time import Time
 
 from ..constants import Constants as c
-from ..coordinates import transformCoordinates
+from ..coordinates import transform_coordinates
 from .orbits import Orbits
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
@@ -173,7 +173,7 @@ def gaussIOD(coords,
         Up to three preliminary orbits (as cartesian state vectors).
     """
     coords = np.array([np.ones(len(coords)), coords[:, 0], coords[:, 1]]).T.copy()
-    rho = transformCoordinates(
+    rho = transform_coordinates(
         coords,
         "equatorial",
         "ecliptic",

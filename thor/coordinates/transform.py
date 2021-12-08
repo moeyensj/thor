@@ -8,10 +8,10 @@ TRANSFORM_EQ2EC = c.TRANSFORM_EQ2EC
 TRANSFORM_EC2EQ = c.TRANSFORM_EC2EQ
 
 __all__ = [
-    "transformCoordinates",
+    "transform_coordinates",
 ]
 
-def transformCoordinates(coords: Coordinates, representation_out: str, frame_out: str = "ecliptic"):
+def transform_coordinates(coords: Coordinates, representation_out: str, frame_out: str = "ecliptic"):
     """
     Transform coordinates between frames ('ecliptic', 'equatorial') and/or representations ('cartesian', 'spherical').
     Coordinates may include only positions or they may also include velocities.
