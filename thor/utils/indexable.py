@@ -23,7 +23,7 @@ class Indexable:
         else:
             raise IndexError("Index should be either an int or a slice.")
 
-        if ind.start >= len(self):
+        if ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
         return ind
