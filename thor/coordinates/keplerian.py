@@ -1,4 +1,3 @@
-import warnings
 import numpy as np
 import jax.numpy as jnp
 from jax import config, jit
@@ -17,6 +16,7 @@ from .covariances import transform_covariances_jacobian
 
 __all__ = [
     "_cartesian_to_keplerian",
+    "_cartesian_to_keplerian6",
     "cartesian_to_keplerian",
     "_keplerian_to_cartesian",
     "keplerian_to_cartesian",
@@ -86,6 +86,7 @@ def _cartesian_to_keplerian(coords_cartesian, mu=MU):
             q2 = a2
 
         a = jnp.where(e != 1.0, a1, a2)
+        p = jnp.where(e != 1.0, p1, p2)
         q = jnp.where(e != 1.0, q1, q2)
 
         i = jnp.arccos(h[2] / h_mag)
@@ -122,6 +123,36 @@ def _cartesian_to_keplerian(coords_cartesian, mu=MU):
         coords_keplerian = s.arr
 
     return coords_keplerian
+
+@jit
+def _cartesian_to_keplerian6(coords_cartesian, mu=MU):
+    """
+    Limit conversion of Cartesian coordinates to Keplerian 6 fundamental coordinates.
+
+    Keplerian coordinates are returned in an array with the following elements:
+        a : semi-major axis [au]
+        e : eccentricity
+        i : inclination [degrees]
+        Omega : longitude of the ascending node [degrees]
+        omega : argument of periapsis [degrees]
+        M0 : mean anomaly [degrees]
+
+    Parameters
+    ----------
+    coords_cartesian : `~numpy.ndarray` (N, 6)
+        Cartesian coordinates in units of au and au per day.
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of
+        au**3 / d**2.
+
+    Returns
+    -------
+    coords_keplerian : `~numpy.ndarray (N, 8)
+        Keplerian coordinates with angles in degrees and semi-major axis and pericenter distance
+        in au.
+    """
+    coords_keplerian = _cartesian_to_keplerian(coords_cartesian, mu=mu)
+    return coords_keplerian[jnp.array([0, 2, 3, 4, 5, 6])]
 
 @jit
 def cartesian_to_keplerian(coords_cartesian, mu=MU):
@@ -466,7 +497,13 @@ class KeplerianCoordinates(Coordinates):
         coords_keplerian = np.array(coords_keplerian)
 
         if cartesian.covariances is not None:
-            warnings.warn("Covariance transformations have not been implemented yet.")
+            covariances_keplerian = transform_covariances_jacobian(
+                cartesian.coords.filled(),
+                cartesian.covariances.filled(),
+                _cartesian_to_keplerian6
+            )
+        else:
+            covariances_keplerian = None
 
         coords = cls(
             a=coords_keplerian[:, 0],
@@ -476,7 +513,7 @@ class KeplerianCoordinates(Coordinates):
             ap=coords_keplerian[:, 5],
             M=coords_keplerian[:, 6],
             times=cartesian.times,
-            covariances=None,
+            covariances=covariances_keplerian,
             origin=cartesian.origin,
             frame=cartesian.frame,
             mu=mu
