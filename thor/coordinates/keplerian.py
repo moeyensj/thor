@@ -75,18 +75,18 @@ def _cartesian_to_keplerian(coords_cartesian, mu=MU):
         e_vec = ((v_mag**2 - mu / r_mag) * r - (jnp.dot(r, v)) * v) / mu
         e = jnp.linalg.norm(e_vec)
 
-        for _ in s.cond_range(e != 0.0):
+        for _ in s.cond_range(e != 1.0):
             a1 = mu / (-2 * sme)
             p1 = a1 * (1 - e**2)
             q1 = a1 * (1 - e)
 
-        for _ in s.cond_range(e == 0.0):
+        for _ in s.cond_range(e == 1.0):
             a2 = jnp.inf
-            p2 = h_mag**2 / mu
+            p2 = -h_mag**2 / mu
             q2 = a2
 
-        a = jnp.where(e != 0.0, a1, a2)
-        q = jnp.where(e != 0.0, q1, q2)
+        a = jnp.where(e != 1.0, a1, a2)
+        q = jnp.where(e != 1.0, q1, q2)
 
         i = jnp.arccos(h[2] / h_mag)
 
