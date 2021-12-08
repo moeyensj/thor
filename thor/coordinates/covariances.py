@@ -1,6 +1,9 @@
-import jax
 import numpy as np
+from jax import config, jacfwd
 from scipy.stats import multivariate_normal
+
+config.update("jax_enable_x64", True)
+config.update('jax_platform_name', 'cpu')
 
 __all__ = [
     "sample_covariance",
@@ -88,7 +91,7 @@ def transform_covariances_jacobian(coords, covariances, _func):
     """
     # Calculate the jacobian function for the input function
     # Do this only once!
-    jacobian_func = jax.jacfwd(_func)
+    jacobian_func = jacfwd(_func)
 
     covariances_out = []
     for coord, covariance in zip(coords, covariances):

@@ -8,6 +8,7 @@ from astropy import units as u
 from typing import Optional
 
 config.update("jax_enable_x64", True)
+config.update('jax_platform_name', 'cpu')
 
 from ..constants import Constants as c
 from .coordinates import Coordinates
