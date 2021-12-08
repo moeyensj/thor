@@ -15,7 +15,9 @@ from .cartesian import CartesianCoordinates
 
 __all__ = [
     "_cartesian_to_keplerian",
+    "cartesian_to_keplerian",
     "_keplerian_to_cartesian",
+    "keplerian_to_cartesian",
     "KeplerianCoordinates"
 ]
 
@@ -27,9 +29,104 @@ Z_AXIS = np.array([0., 0., 1.])
 @jit
 def _cartesian_to_keplerian(coords_cartesian, mu=MU):
     """
-    Convert cartesian orbital elements to Keplerian orbital elements.
+    Convert a single Cartesian coordinate to a Keplerian coordinate.
 
-    Keplerian orbital elements are returned in an array with the following elements:
+    Keplerian coordinates are returned in an array with the following elements:
+        a : semi-major axis [au]
+        e : eccentricity
+        i : inclination [degrees]
+        Omega : longitude of the ascending node [degrees]
+        omega : argument of periapsis [degrees]
+        M0 : mean anomaly [degrees]
+
+    Parameters
+    ----------
+    coords_cartesian : `~numpy.ndarray` (6)
+        Cartesian coordinate in units of au and au per day.
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of
+        au**3 / d**2.
+
+    Returns
+    -------
+    coords_keplerian : `~numpy.ndarray (8)
+        Keplerian coordinate with angles in degrees and semi-major axis and pericenter distance
+        in au.
+    """
+    with loops.Scope() as s:
+
+        s.arr = np.zeros(8, dtype=jnp.float64)
+        r = coords_cartesian[0:3]
+        v = coords_cartesian[3:6]
+
+        r_mag = jnp.linalg.norm(r)
+        v_mag = jnp.linalg.norm(v)
+
+        sme = v_mag**2 / 2 - mu / r_mag
+
+        h = jnp.cross(r, v)
+        h_mag = jnp.linalg.norm(h)
+
+        n = jnp.cross(Z_AXIS, h)
+        n_mag = jnp.linalg.norm(n)
+
+        e_vec = ((v_mag**2 - mu / r_mag) * r - (jnp.dot(r, v)) * v) / mu
+        e = jnp.linalg.norm(e_vec)
+
+        for _ in s.cond_range(e != 0.0):
+            a1 = mu / (-2 * sme)
+            p1 = a1 * (1 - e**2)
+            q1 = a1 * (1 - e)
+
+        for _ in s.cond_range(e == 0.0):
+            a2 = jnp.inf
+            p2 = h_mag**2 / mu
+            q2 = a2
+
+        a = jnp.where(e != 0.0, a1, a2)
+        q = jnp.where(e != 0.0, q1, q2)
+
+        i = jnp.arccos(h[2] / h_mag)
+
+        raan = jnp.arccos(n[0] / n_mag)
+        raan = jnp.where(n[1] < 0, 2*jnp.pi - raan, raan)
+
+        ap = jnp.arccos(jnp.dot(n, e_vec) / (n_mag * e))
+        ap = jnp.where(e_vec[2] < 0, 2*jnp.pi - ap, ap)
+
+        nu = jnp.arccos(jnp.dot(e_vec, r) / (e * r_mag))
+        nu = jnp.where(jnp.dot(r, v) < 0, 2*jnp.pi - nu, nu)
+
+        for _ in s.cond_range(e < 1.0):
+            E = jnp.arctan2(jnp.sqrt(1 - e**2) * jnp.sin(nu), e + jnp.cos(nu))
+            M_E = E - e * jnp.sin(E)
+            M_E = jnp.where(M_E < 0.0, M_E + 2*jnp.pi, M_E)
+
+        for _ in s.cond_range(e > 1.0):
+            H = jnp.arcsinh(jnp.sin(nu) * jnp.sqrt(e**2 - 1) / (1 + e * jnp.cos(nu)))
+            M_H = e * jnp.sinh(H) - H
+
+        M = jnp.where(e < 1.0, M_E, M_H)
+
+        s.arr = s.arr.at[0].set(a)
+        s.arr = s.arr.at[1].set(q)
+        s.arr = s.arr.at[2].set(e)
+        s.arr = s.arr.at[3].set(jnp.degrees(i))
+        s.arr = s.arr.at[4].set(jnp.degrees(raan))
+        s.arr = s.arr.at[5].set(jnp.degrees(ap))
+        s.arr = s.arr.at[6].set(jnp.degrees(M))
+        s.arr = s.arr.at[7].set(jnp.degrees(nu))
+
+        coords_keplerian = s.arr
+
+    return coords_keplerian
+
+@jit
+def cartesian_to_keplerian(coords_cartesian, mu=MU):
+    """
+    Convert Cartesian coordinates to Keplerian coordinates.
+
+    Keplerian coordinates are returned in an array with the following elements:
         a : semi-major axis [au]
         e : eccentricity
         i : inclination [degrees]
@@ -40,7 +137,7 @@ def _cartesian_to_keplerian(coords_cartesian, mu=MU):
     Parameters
     ----------
     coords_cartesian : `~numpy.ndarray` (N, 6)
-        Cartesian elements in units of au and au per day.
+        Cartesian coordinates in units of au and au per day.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
         au**3 / d**2.
@@ -48,91 +145,31 @@ def _cartesian_to_keplerian(coords_cartesian, mu=MU):
     Returns
     -------
     coords_keplerian : `~numpy.ndarray (N, 8)
-        Keplerian elements with angles in degrees and semi-major axis and pericenter distance
+        Keplerian coordinates with angles in degrees and semi-major axis and pericenter distance
         in au.
-
     """
     with loops.Scope() as s:
         N = len(coords_cartesian)
-        r = coords_cartesian[:, 0:3]
-        v = coords_cartesian[:, 3:6]
-
-        s.arr = jnp.zeros_like((N, 8), dtype=jnp.float64)
+        s.arr = jnp.zeros((N, 8), dtype=jnp.float64)
 
         for i in s.range(s.arr.shape[0]):
-
-            r_i = r[i]
-            v_i = v[i]
-
-            r_mag = jnp.linalg.norm(r_i)
-            v_mag = jnp.linalg.norm(v_i)
-
-            sme = v_mag**2 / 2 - mu / r_mag
-
-            h = jnp.cross(r_i, v_i)
-            h_mag = jnp.linalg.norm(h)
-
-            n = jnp.cross(Z_AXIS, h)
-            n_mag = jnp.linalg.norm(n)
-
-            e_vec = ((v_mag**2 - mu / r_mag) * r_i - (jnp.dot(r_i, v_i)) * v_i) / mu
-            e_i = jnp.linalg.norm(e_vec)
-
-            for _ in s.cond_range(e_i != 0.0):
-                a_i = mu / (-2 * sme)
-                p_i = a_i * (1 - e_i**2)
-                q_i = a_i * (1 - e_i)
-
-            for _ in s.cond_range(e_i == 0.0):
-                a_i = jnp.inf
-                p_i = h_mag**2 / mu
-                q_i = a_i
-
-            i_i = jnp.arccos(h[2] / h_mag)
-
-            raan_i = jnp.arccos(n[0] / n_mag)
-            raan_i = jnp.where(n[1] < 0, 2*jnp.pi - raan_i, raan_i)
-
-            ap_i = jnp.arccos(jnp.dot(n, e_vec) / (n_mag * e_i))
-            ap_i = jnp.where(e_vec[2] < 0, 2*jnp.pi - ap_i, ap_i)
-
-            nu_i = jnp.arccos(jnp.dot(e_vec, r_i) / (e_i * r_mag))
-            nu_i = jnp.where(jnp.dot(r_i, v_i) < 0, 2*jnp.pi - nu_i, nu_i)
-
-            for _ in s.cond_range(e_i < 1.0):
-                E = jnp.arctan2(jnp.sqrt(1 - e_i**2) * jnp.sin(nu_i), e_i + jnp.cos(nu_i))
-                M_i = jnp.degrees(E - e_i * jnp.sin(E))
-                if M_i < 0:
-                    M_i += 2*jnp.pi
-
-            for _ in s.cond_range(e_i > 1.0):
-                H = jnp.arcsinh(jnp.sin(nu_i) * jnp.sqrt(e_i**2 - 1) / (1 + e_i * jnp.cos(nu_i)))
-                M_i = e_i * jnp.sinh(H) - H
-
-            s.arr = s.arr.at[i, 0].set(a_i)
-            s.arr = s.arr.at[i, 1].set(q_i)
-            s.arr = s.arr.at[i, 2].set(e_i)
-            s.arr = s.arr.at[i, 3].set(i_i)
-            s.arr = s.arr.at[i, 4].set(raan_i)
-            s.arr = s.arr.at[i, 5].set(ap_i)
-            s.arr = s.arr.at[i, 6].set(M_i)
-            s.arr = s.arr.at[i, 7].set(nu_i)
+            s.arr = s.arr.at[i].set(
+                _cartesian_to_keplerian(
+                    coords_cartesian[i],
+                     mu=mu
+                )
+            )
 
         coords_keplerian = s.arr
 
     return coords_keplerian
 
 @jit
-def _cartesian_to_keplerian6(coords_cartesian, mu=MU):
-    coords_keplerian = _cartesian_to_keplerian(coords_cartesian, mu=mu)
-    return coords_keplerian[:, [0, 2, 3, 4, 5, 6]]
-
-@jit
 def _keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
     """
-    Convert Keplerian orbital elements to cartesian orbital elements.
+    Convert a single Keplerian coordinate to a Cartesian coordinate.
 
-    Keplerian orbital elements should have following elements:
+    Keplerian coordinates should have following elements:
         a : semi-major axis [au]
         e : eccentricity [degrees]
         i : inclination [degrees]
@@ -142,9 +179,8 @@ def _keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
 
     Parameters
     ----------
-    elements_kepler : `~numpy.ndarray` (N, 6)
-        Keplerian elements with angles in degrees and semi-major
-        axis in au.
+    coords_keplerian : `~numpy.ndarray` (6)
+        Keplerian coordinate with angles in degrees and semi-major axis in au.
     mu : float, optional
         Gravitational parameter (GM) of the attracting body in units of
         au**3 / d**2.
@@ -157,128 +193,164 @@ def _keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
 
     Returns
     -------
-    elements_cart : `~numpy.ndarray (N, 6)
-        Cartesian elements in units of au and au per day.
+    coords_cartesian : `~numpy.ndarray (6)
+        Cartesian coordinate in units of au and au per day.
     """
     with loops.Scope() as s:
 
-        a = coords_keplerian[:, 0]
-        e = coords_keplerian[:, 1]
-        i = coords_keplerian[:, 2]
-        raan = coords_keplerian[:, 3]
-        ap = coords_keplerian[:, 4]
-        M = coords_keplerian[:, 5]
+        a = coords_keplerian[0]
+        e = coords_keplerian[1]
+        i = jnp.radians(coords_keplerian[2])
+        raan = jnp.radians(coords_keplerian[3])
+        ap = jnp.radians(coords_keplerian[4])
+        M = jnp.radians(coords_keplerian[5])
+        p = a * (1 - e**2)
 
-        i_rad = jnp.radians(i)
-        raan_rad = jnp.radians(raan)
-        ap_rad = jnp.radians(ap)
-        M_rad = jnp.radians(M)
+        s.arr = jnp.zeros(6, dtype=jnp.float64)
+        for _ in s.cond_range(e < 1.0):
 
-        s.arr = jnp.zeros_like(coords_keplerian, dtype=jnp.float64)
+            with loops.Scope() as ss:
+                ratio = 1e10
+                enit = M
+                ss.arr = jnp.array([enit, ratio,], dtype=jnp.float64)
+                ss.idx = 0
+                for _ in ss.while_range(lambda : (ss.idx < max_iter) & (ss.arr[1] > tol)):
+                    f = ss.arr[0] - e * jnp.sin(ss.arr[0]) - M
+                    fp = 1 - e * jnp.cos(ss.arr[0])
+                    ratio = f / fp
+                    ss.arr = ss.arr.at[0].set(ss.arr[0]-ratio)
+                    ss.arr = ss.arr.at[1].set(jnp.abs(ratio))
+                    ss.idx += 1
+
+                E = ss.arr[0]
+                nu_E = 2 * jnp.arctan2(jnp.sqrt(1 + e) * jnp.sin(E/2), jnp.sqrt(1 - e) * jnp.cos(E/2))
+
+        for _ in s.cond_range(e > 1.0):
+
+            with loops.Scope() as ss:
+                ratio = 1e10
+                H_init = M / (e - 1)
+                ss.arr = jnp.array([H_init, ratio], dtype=jnp.float64)
+                ss.idx = 0
+                for _ in ss.while_range(lambda : (ss.idx < max_iter) & (ss.arr[1] > tol)):
+                    f = M - e * jnp.sinh(ss.arr[0]) + ss.arr[0]
+                    fp =  e * jnp.cosh(ss.arr[0]) - 1
+                    ratio = f / fp
+                    ss.arr = ss.arr.at[0].set(ss.arr[0]+ratio)
+                    ss.arr = ss.arr.at[1].set(jnp.abs(ratio))
+                    ss.idx += 1
+
+                H = ss.arr[0]
+                nu_H = 2 * jnp.arctan(jnp.sqrt(e + 1) * jnp.sinh(H / 2) / (jnp.sqrt(e - 1) * jnp.cosh(H / 2)))
+
+        nu = jnp.where(
+            e < 1.0, nu_E,
+            jnp.where(e > 1.0, nu_H, jnp.nan)
+        )
+
+        r_PQW = jnp.array([
+            p * jnp.cos(nu) / (1 + e * jnp.cos(nu)),
+            p * jnp.sin(nu) / (1 + e * jnp.cos(nu)),
+            0
+        ])
+
+        v_PQW = jnp.array([
+            -jnp.sqrt(mu/p) * jnp.sin(nu),
+            jnp.sqrt(mu/p) * (e + jnp.cos(nu)),
+            0
+        ])
+
+        cos_raan = jnp.cos(raan)
+        sin_raan = jnp.sin(raan)
+        cos_ap = jnp.cos(ap)
+        sin_ap = jnp.sin(ap)
+        cos_i = jnp.cos(i)
+        sin_i = jnp.sin(i)
+
+        P1 = jnp.array([
+            [cos_ap, -sin_ap, 0.],
+            [sin_ap, cos_ap, 0.],
+            [0., 0., 1.],
+        ],  dtype=jnp.float64
+        )
+
+        P2 = jnp.array([
+            [1., 0., 0.],
+            [0., cos_i, -sin_i],
+            [0., sin_i, cos_i],
+        ],  dtype=jnp.float64
+        )
+
+        P3 = jnp.array([
+            [cos_raan, -sin_raan, 0.],
+            [sin_raan, cos_raan, 0.],
+            [0., 0., 1.],
+        ],  dtype=jnp.float64
+        )
+
+        rotation_matrix = P3 @ P2 @ P1
+        r = rotation_matrix @ r_PQW
+        v = rotation_matrix @ v_PQW
+
+        s.arr = s.arr.at[0].set(r[0])
+        s.arr = s.arr.at[1].set(r[1])
+        s.arr = s.arr.at[2].set(r[2])
+        s.arr = s.arr.at[3].set(v[0])
+        s.arr = s.arr.at[4].set(v[1])
+        s.arr = s.arr.at[5].set(v[2])
+
+        coords_cartesian = s.arr
+
+    return coords_cartesian
+
+@jit
+def keplerian_to_cartesian(coords_keplerian, mu=MU, max_iter=100, tol=1e-15):
+    """
+    Convert Keplerian coordinates to Cartesian coordinates.
+
+    Keplerian coordinates should have following elements:
+        a : semi-major axis [au]
+        e : eccentricity [degrees]
+        i : inclination [degrees]
+        Omega : longitude of the ascending node [degrees]
+        omega : argument of periapsis [degrees]
+        M0 : mean anomaly [degrees]
+
+    Parameters
+    ----------
+    coords_keplerian : `~numpy.ndarray` (N, 6)
+        Keplerian coordinates with angles in degrees and semi-major axis in au.
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of
+        au**3 / d**2.
+    max_iter : int, optional
+        Maximum number of iterations over which to converge. If number of iterations is
+        exceeded, will use the value of the relevant anomaly at the last iteration.
+    tol : float, optional
+        Numerical tolerance to which to compute anomalies using the Newtown-Raphson
+        method.
+
+    Returns
+    -------
+    coords_cartesian : `~numpy.ndarray (N, 6)
+        Cartesian coordinates in units of au and au per day.
+    """
+    with loops.Scope() as s:
+        N = len(coords_keplerian)
+        s.arr = jnp.zeros((N, 6), dtype=jnp.float64)
 
         for i in s.range(s.arr.shape[0]):
-            a_i = a[i]
-            e_i = e[i]
-            i_i = i_rad[i]
-            raan_i = raan_rad[i]
-            ap_i = ap_rad[i]
-            M_i = M_rad[i]
-
-            p_i = a_i * (1 - e_i**2)
-
-            for _ in s.cond_range(e_i < 1.0):
-
-                with loops.Scope() as ss:
-                    ratio = 1e10
-                    E_init = M_i
-                    ss.arr = jnp.array([E_init, ratio,], dtype=jnp.float64)
-                    ss.idx = 0
-                    for j in ss.while_range(lambda : (ss.idx < max_iter) & (ss.arr[1] > tol)):
-                        f = ss.arr[0] - e_i * jnp.sin(ss.arr[0]) - M_i
-                        fp = 1 - e_i * jnp.cos(ss.arr[0])
-                        ratio = f / fp
-                        ss.arr = ss.arr.at[0].set(ss.arr[0]-ratio)
-                        ss.arr = ss.arr.at[1].set(jnp.abs(ratio))
-                        ss.idx += 1
-
-                    E = ss.arr[0]
-                    nu_E = 2 * jnp.arctan2(jnp.sqrt(1 + e_i) * jnp.sin(E/2), jnp.sqrt(1 - e_i) * jnp.cos(E/2))
-
-            for _ in s.cond_range(e_i > 1.0):
-
-                with loops.Scope() as ss:
-                    ratio = 1e10
-                    H_init = M_i / (e_i - 1)
-                    ss.arr = jnp.array([H_init, ratio], dtype=jnp.float64)
-                    ss.idx = 0
-                    for j in ss.while_range(lambda : (ss.idx < max_iter) & (ss.arr[1] > tol)):
-                        f = M_i - e_i * jnp.sinh(ss.arr[0]) + ss.arr[0]
-                        fp =  e_i * jnp.cosh(ss.arr[0]) - 1
-                        ratio = f / fp
-                        ss.arr = ss.arr.at[0].set(ss.arr[0]+ratio)
-                        ss.arr = ss.arr.at[1].set(jnp.abs(ratio))
-                        ss.idx += 1
-
-                    H = ss.arr[0]
-                    nu_H = 2 * jnp.arctan(jnp.sqrt(e_i + 1) * jnp.sinh(H / 2) / (jnp.sqrt(e_i - 1) * jnp.cosh(H / 2)))
-
-            nu = jnp.where(
-                e_i < 1.0, nu_E,
-                jnp.where(e_i > 1.0, nu_H, jnp.nan)
+            s.arr = s.arr.at[i].set(
+                _keplerian_to_cartesian(
+                    coords_keplerian[i],
+                    mu=mu,
+                    max_iter=max_iter,
+                    tol=tol
+                )
             )
 
-            r_PQW = jnp.array([
-                p_i * jnp.cos(nu) / (1 + e_i * jnp.cos(nu)),
-                p_i * jnp.sin(nu) / (1 + e_i * jnp.cos(nu)),
-                0
-            ])
+        coords_cartesian = s.arr
 
-            v_PQW = jnp.array([
-                -jnp.sqrt(mu/p_i) * jnp.sin(nu),
-                jnp.sqrt(mu/p_i) * (e_i + jnp.cos(nu)),
-                0
-            ])
-
-            cos_raan = jnp.cos(raan_i)
-            sin_raan = jnp.sin(raan_i)
-            cos_ap = jnp.cos(ap_i)
-            sin_ap = jnp.sin(ap_i)
-            cos_i = jnp.cos(i_i)
-            sin_i = jnp.sin(i_i)
-
-            P1 = jnp.array([
-                [cos_ap, -sin_ap, 0.],
-                [sin_ap, cos_ap, 0.],
-                [0., 0., 1.],
-            ],  dtype=jnp.float64
-            )
-
-            P2 = jnp.array([
-                [1., 0., 0.],
-                [0., cos_i, -sin_i],
-                [0., sin_i, cos_i],
-            ],  dtype=jnp.float64
-            )
-
-            P3 = jnp.array([
-                [cos_raan, -sin_raan, 0.],
-                [sin_raan, cos_raan, 0.],
-                [0., 0., 1.],
-            ],  dtype=jnp.float64
-            )
-
-            rotation_matrix = P3 @ P2 @ P1
-            r = rotation_matrix @ r_PQW
-            v = rotation_matrix @ v_PQW
-
-            s.arr = s.arr.at[i, 0].set(r[0])
-            s.arr = s.arr.at[i, 1].set(r[1])
-            s.arr = s.arr.at[i, 2].set(r[2])
-            s.arr = s.arr.at[i, 3].set(v[0])
-            s.arr = s.arr.at[i, 4].set(v[1])
-            s.arr = s.arr.at[i, 5].set(v[2])
-
-    coords_cartesian = s.arr
     return coords_cartesian
 
 class KeplerianCoordinates(Coordinates):
@@ -351,7 +423,7 @@ class KeplerianCoordinates(Coordinates):
 
     def to_cartesian(self) -> CartesianCoordinates:
 
-        coords_cartesian = _keplerian_to_cartesian(
+        coords_cartesian = keplerian_to_cartesian(
             self.coords.filled(),
             mu=MU,
             max_iter=100,
@@ -379,7 +451,7 @@ class KeplerianCoordinates(Coordinates):
     @classmethod
     def from_cartesian(cls, cartesian: CartesianCoordinates, mu=MU):
 
-        coords_keplerian = _cartesian_to_keplerian(
+        coords_keplerian = cartesian_to_keplerian(
             cartesian.coords.filled(),
             mu=mu,
         )
