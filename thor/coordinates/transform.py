@@ -1,3 +1,5 @@
+from typing import Optional
+
 from ..constants import Constants as c
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
@@ -14,11 +16,10 @@ __all__ = [
 def transform_coordinates(
         coords: Coordinates,
         representation_out: str,
-        frame_out: str,
+        frame_out: Optional[str] = None,
     ) -> Coordinates:
     """
-    Transform coordinates between frames ('ecliptic', 'equatorial') and/or representations ('cartesian', 'spherical').
-    Coordinates may include only positions or they may also include velocities.
+    Transform coordinates between frames ('ecliptic', 'equatorial') and/or representations ('cartesian', 'spherical', 'keplerian').
 
     Parameters
     ----------
@@ -31,7 +32,8 @@ def transform_coordinates(
 
     Returns
     -------
-    coords_out :
+    coords_out : `~thor.coordinates.Coordinates`
+        Coordinates in desired output representation and frame.
 
     Raises
     ------
@@ -59,8 +61,11 @@ def transform_coordinates(
     if coords.frame != "equatorial" and coords.frame != "ecliptic":
         raise ValueError("".join(frame_err).format("frame_in"))
 
-    if frame_out != "equatorial" and frame_out != "ecliptic":
-        raise ValueError("".join(frame_err).format("frame_out"))
+    if frame_out is not None:
+        if frame_out != "equatorial" and frame_out != "ecliptic":
+            raise ValueError("".join(frame_err).format("frame_out"))
+    else:
+        frame_out = coords.frame
 
     # Check that representation_in and representation_out are one of cartesian
     # or spherical, raise errors otherwise
