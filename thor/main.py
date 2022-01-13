@@ -27,7 +27,7 @@ from .orbits import generateEphemeris
 from .orbits import initialOrbitDetermination
 from .orbits import differentialCorrection
 from .orbits import mergeAndExtendOrbits
-from .observatories import getObserverState
+from .observers import getObserverState
 from .utils import _initWorker
 from .utils import _checkParallel
 

@@ -33,7 +33,7 @@ def generateEphemeris(
         Or a data frame with observatory codes, observation times (in UTC), and the observer's heliocentric ecliptic state.
         The expected data frame columns are obs_x, obs_y, obs_y and optionally the velocity columns obs_vx, obs_vy, obs_vz.
         If no velocities are not correctly given, then sky-plane velocities will all be zero.
-        (See: `~thor.observatories.getObserverState`)
+        (See: `~thor.observers.getObserverState`)
     backend : {'MJOLNIR', 'PYOORB'}, optional
         Which backend to use.
     backend_kwargs : dict, optional

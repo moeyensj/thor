@@ -10,7 +10,7 @@ from ..utils import _check_times
 from ..orbits import propagateUniversal
 from ..orbits import generateEphemerisUniversal
 from ..orbits import shiftOrbitsOrigin
-from ..observatories import getObserverState
+from .observers import getObserverState
 from .backend import Backend
 
 MU = c.MU
