@@ -95,6 +95,14 @@ class CartesianCoordinates(Coordinates):
     def vz(self):
         return self._vz
 
+    @property
+    def r(self):
+        return self._coords[:, 0:3]
+
+    @property
+    def v(self):
+        return self._coords[:, 3:6]
+
     def to_cartesian(self):
         return self
 
