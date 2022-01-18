@@ -1,9 +1,5 @@
 import numpy as np
-from abc import (
-    ABC,
-    abstractmethod,
-    abstractclassmethod,
-)
+import pandas as pd
 from astropy.time import Time
 from astropy import units as u
 from typing import (
@@ -11,8 +7,10 @@ from typing import (
     Optional,
     Union
 )
+
 from ..utils import (
-    Indexable
+    Indexable,
+    times_to_df,
 )
 
 __all__ = [
@@ -128,7 +126,7 @@ def _ingest_covariance(
 
     return covariance_
 
-class Coordinates(ABC, Indexable):
+class Coordinates(Indexable):
 
     def __init__(
             self,
@@ -182,18 +180,27 @@ class Coordinates(ABC, Indexable):
     def names(self):
         return self._names
 
-    @abstractmethod
     def to_cartesian(self):
-        pass
+        raise NotImplementedError
 
-    @abstractclassmethod
     def from_cartesian(cls, cartesian):
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
-    def to_df(self):
-        pass
+    def to_df(self, time_scale="utc"):
+        data = {}
+        N, D = self.coords.shape
 
-    @abstractclassmethod
-    def from_df(cls, cartesian):
-        pass
+        if self.times is not None:
+            df = times_to_df(self.times, time_scale=time_scale)
+
+        for i in range(D):
+            col = self.names[i]
+            data[col] = self.coords.filled()[:, i]
+
+        coordinate_type = type(self).__name__
+        coordinate_type = coordinate_type.lower()[:-11]
+        if self.covariances is not None:
+            data[f"{coordinate_type}_covariances"] = [c for c in self.covariances.filled()]
+
+        df = df.join(pd.DataFrame(data))
+        return df
