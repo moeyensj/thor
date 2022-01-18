@@ -170,7 +170,11 @@ class CartesianCoordinates(Coordinates):
             raise ValueError
 
     @classmethod
-    def from_df(cls, df):
+    def from_df(cls,
+            df,
+            coord_cols=CARTESIAN_COLS,
+            covariance_col="cartesian_covariances"
+        ):
         """
         Create a CartesianCoordinates class from a dataframe.
 
@@ -179,13 +183,18 @@ class CartesianCoordinates(Coordinates):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing Cartesian coordinates and optionally their
             times and covariances.
+        coord_cols : list of str
+            List containing the names of the coordinate columns to be ingested. Columns
+            are ingested in the order in which they are declared inside this list.
+        covariance_col : str
+            Name of the column containing covariance matrices.
         """
         data = {}
         data["times"] = times_from_df(df)
-        for c in CARTESIAN_COLS:
+        for c in coord_cols:
             data[c] = df[c]
 
-        if "cartesian_covariances" in df.columns:
-            data["covariances"] = np.stack(df["cartesian_covariances"].values)
+        if covariance_col in df.columns:
+            data["covariances"] = np.stack(df[covariance_col].values)
 
         return cls(**data)

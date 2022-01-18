@@ -567,7 +567,11 @@ class KeplerianCoordinates(Coordinates):
         return coords
 
     @classmethod
-    def from_df(cls, df):
+    def from_df(cls,
+            df,
+            coord_cols=KEPLERIAN_COLS,
+            covariance_col="keplerian_covariances"
+        ):
         """
         Create a KeplerianCoordinates class from a dataframe.
 
@@ -576,13 +580,18 @@ class KeplerianCoordinates(Coordinates):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing Keplerian coordinates and optionally their
             times and covariances.
+        coord_cols : list of str
+            List containing the names of the coordinate columns to be ingested. Columns
+            are ingested in the order in which they are declared inside this list.
+        covariance_col : str
+            Name of the column containing covariance matrices.
         """
         data = {}
         data["times"] = times_from_df(df)
-        for c in KEPLERIAN_COLS:
+        for c in coord_cols:
             data[c] = df[c]
 
-        if "keplerian_covariances" in df.columns:
-            data["covariances"] = np.stack(df["keplerian_covariances"].values)
+        if covariance_col in df.columns:
+            data["covariances"] = np.stack(df[covariance_col].values)
 
         return cls(**data)
