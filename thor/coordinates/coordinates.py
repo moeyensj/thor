@@ -122,7 +122,7 @@ def _ingest_covariance(
     for n in range(len(coords)):
         covariance_[n].mask[coords[n].mask, :] = 1
         covariance_[n].mask[:, coords[n].mask] = 1
-        covariance_[n][~covariance_[n].mask] = covariance[n].flatten()
+        covariance_[n][~covariance_[n].mask] = covariance[n][~covariance_[n].mask].flatten()
 
     return covariance_
 
