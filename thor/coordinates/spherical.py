@@ -4,11 +4,15 @@ from jax.experimental import loops
 from jax import config, jit
 from astropy.time import Time
 from astropy import units as u
-from typing import Optional, Union
-
+from typing import (
+    List,
+    Optional,
+    Union
+)
 config.update("jax_enable_x64", True)
 config.update('jax_platform_name', 'cpu')
 
+from ..utils import times_from_df
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
 from .covariances import transform_covariances_jacobian
@@ -242,7 +246,8 @@ class SphericalCoordinates(Coordinates):
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
-            frame: str = "ecliptic"
+            frame: str = "ecliptic",
+            names: List[str] = SPHERICAL_COLS,
         ):
         """
 
@@ -274,7 +279,7 @@ class SphericalCoordinates(Coordinates):
             times=times,
             origin=origin,
             frame=frame,
-            names=SPHERICAL_COLS
+            names=names
         )
 
         self._rho = self._coords[:, 0]
@@ -333,7 +338,7 @@ class SphericalCoordinates(Coordinates):
             times=self.times,
             covariances=covariances_cartesian,
             origin=self.origin,
-            frame=self.frame
+            frame=self.frame,
         )
         return coords
 
@@ -366,3 +371,24 @@ class SphericalCoordinates(Coordinates):
         )
 
         return coords
+
+    @classmethod
+    def from_df(cls, df):
+        """
+        Create a SphericalCoordinates class from a dataframe.
+
+        Parameters
+        ----------
+        df : `~pandas.DataFrame`
+            Pandas DataFrame containing Keplerian coordinates and optionally their
+            times and covariances.
+        """
+        data = {}
+        data["times"] = times_from_df(df)
+        for c in SPHERICAL_COLS:
+            data[c] = df[c]
+
+        if "spherical_covariances" in df.columns:
+            data["covariances"] = np.stack(df["spherical_covariances"].values)
+
+        return cls(**data)

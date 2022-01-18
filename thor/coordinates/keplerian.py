@@ -4,12 +4,16 @@ from jax import config, jit
 from jax.experimental import loops
 from astropy.time import Time
 from astropy import units as u
-from typing import Optional, Union
-
+from typing import (
+    List,
+    Optional,
+    Union
+)
 config.update("jax_enable_x64", True)
 config.update('jax_platform_name', 'cpu')
 
 from ..constants import Constants as c
+from ..utils import times_from_df
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
 from .covariances import transform_covariances_jacobian
@@ -26,7 +30,7 @@ __all__ = [
 KEPLERIAN_COLS = ["a", "e", "i", "raan", "argperi", "M"]
 
 MU = c.MU
-Z_AXIS = np.array([0., 0., 1.])
+Z_AXIS = jnp.array([0., 0., 1.])
 
 @jit
 def _cartesian_to_keplerian(
@@ -440,6 +444,7 @@ class KeplerianCoordinates(Coordinates):
             covariances: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
+            names: List[str] = KEPLERIAN_COLS,
             mu: float = MU,
         ):
         Coordinates.__init__(self,
@@ -453,7 +458,7 @@ class KeplerianCoordinates(Coordinates):
             times=times,
             origin=origin,
             frame=frame,
-            names=KEPLERIAN_COLS
+            names=names
         )
 
         self._a = self._coords[:, 0]
@@ -561,3 +566,23 @@ class KeplerianCoordinates(Coordinates):
 
         return coords
 
+    @classmethod
+    def from_df(cls, df):
+        """
+        Create a KeplerianCoordinates class from a dataframe.
+
+        Parameters
+        ----------
+        df : `~pandas.DataFrame`
+            Pandas DataFrame containing Keplerian coordinates and optionally their
+            times and covariances.
+        """
+        data = {}
+        data["times"] = times_from_df(df)
+        for c in KEPLERIAN_COLS:
+            data[c] = df[c]
+
+        if "keplerian_covariances" in df.columns:
+            data["covariances"] = np.stack(df["keplerian_covariances"].values)
+
+        return cls(**data)

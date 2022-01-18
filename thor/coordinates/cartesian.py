@@ -1,9 +1,12 @@
 import numpy as np
 from astropy.time import Time
 from astropy import units as u
-from typing import Optional
-
+from typing import (
+    List,
+    Optional
+)
 from ..constants import Constants as c
+from ..utils import times_from_df
 from .coordinates import Coordinates
 
 __all__ = [
@@ -30,7 +33,8 @@ class CartesianCoordinates(Coordinates):
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
-            frame: str = "ecliptic"
+            frame: str = "ecliptic",
+            names: List[str] = CARTESIAN_COLS,
         ):
         """
 
@@ -60,7 +64,7 @@ class CartesianCoordinates(Coordinates):
             times=times,
             origin=origin,
             frame=frame,
-            names=CARTESIAN_COLS
+            names=names
         )
 
         self._x = self._coords[:, 0]
@@ -165,3 +169,23 @@ class CartesianCoordinates(Coordinates):
         else:
             raise ValueError
 
+    @classmethod
+    def from_df(cls, df):
+        """
+        Create a CartesianCoordinates class from a dataframe.
+
+        Parameters
+        ----------
+        df : `~pandas.DataFrame`
+            Pandas DataFrame containing Cartesian coordinates and optionally their
+            times and covariances.
+        """
+        data = {}
+        data["times"] = times_from_df(df)
+        for c in CARTESIAN_COLS:
+            data[c] = df[c]
+
+        if "cartesian_covariances" in df.columns:
+            data["covariances"] = np.stack(df["cartesian_covariances"].values)
+
+        return cls(**data)
