@@ -1,4 +1,5 @@
 import numpy as np
+from copy import deepcopy
 import jax.numpy as jnp
 from jax.experimental import loops
 from jax import config, jit
@@ -375,7 +376,14 @@ class SphericalCoordinates(Coordinates):
     @classmethod
     def from_df(cls,
             df,
-            coord_cols=SPHERICAL_COLS,
+            coord_cols={
+                "rho" : "rho",
+                "lon" : "lon",
+                "lat" : "lat",
+                "vrho" : "vrho",
+                "vlon" : "vlon",
+                "vlat" : "vlat"
+            },
             covariance_col="spherical_covariances"
         ):
         """
@@ -386,18 +394,32 @@ class SphericalCoordinates(Coordinates):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing spherical coordinates and optionally their
             times and covariances.
-        coord_cols : list of str
-            List containing the names of the coordinate columns to be ingested. Columns
-            are ingested in the order in which they are declared inside this list.
+        coord_cols : dict
+            Dictionary containing as keys the coordinate dimensions and their equivalent columns
+            as values. For example,
+            coord_cols = {
+                "rho" : Column name of radial distance values
+                "lon" : Column name of longitudinal values
+                "rho" : Column name of latitudinal values
+                "vrho" : Column name of the radial velocity values
+                "vlon" : Column name of longitudinal velocity values
+                "vlat" : Column name of latitudinal velocity values
+            }
         covariance_col : str
             Name of the column containing covariance matrices.
         """
         data = {}
+        names = deepcopy(SPHERICAL_COLS)
         data["times"] = times_from_df(df)
-        for c in coord_cols:
-            data[c] = df[c]
+        for i, c in enumerate(SPHERICAL_COLS):
+            if c in coord_cols.keys():
+                names[i] = coord_cols[c]
+                if coord_cols[c] in df.columns:
+                    data[c] = df[coord_cols[c]]
 
         if covariance_col in df.columns:
             data["covariances"] = np.stack(df[covariance_col].values)
+
+        data["names"] = names
 
         return cls(**data)
