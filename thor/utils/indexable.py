@@ -2,13 +2,14 @@ import numpy as np
 from copy import deepcopy
 from typing import Union
 from astropy.time import Time
+from collections import OrderedDict
 
 class Indexable:
     """
     Class that enables indexing and slicing of itself and its members.
-    If an Indexable sublclass has members that are `~numpy.ndarray`s, `~numpy.ma.core.MaskedArray`s,
-    these members are appropriately sliced and indexed along their first axis.
-    Any members that are lists, floats, integers or strings are not indexed and left unchanged.
+    If an Indexable subclass has members that are `~numpy.ndarray`s, `~numpy.ma.core.MaskedArray`s,
+    lists, or `~astropy.time.core.Time`s then these members are appropriately sliced and indexed along their first axis.
+    Any members that are dicts, OrderedDicts, floats, integers or strings are not indexed and left unchanged.
     """
     def _handle_index(self, i: Union[int, slice]):
         if isinstance(i, int):
@@ -40,9 +41,9 @@ class Indexable:
         copy = deepcopy(self)
 
         for k, v in self.__dict__.items():
-            if isinstance(v, (np.ndarray, np.ma.masked_array, Time, Indexable)):
+            if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable)):
                 copy.__dict__[k] = v[ind]
-            elif isinstance(v, (str, int, float, list, dict)):
+            elif isinstance(v, (str, int, float, dict, OrderedDict)):
                 copy.__dict__[k] = v
             elif v is None:
                 pass
@@ -70,9 +71,9 @@ class Indexable:
                     scale=v.scale,
                     format=v.format
                 )
-            elif isinstance(v, Indexable):
+            elif isinstance(v, (list, Indexable)):
                 del v[ind]
-            elif isinstance(v, (int, float, str, list, dict)):
+            elif isinstance(v, (int, float, str, dict, OrderedDict)):
                 self.__dict__[k] = v
             elif v is None:
                 pass

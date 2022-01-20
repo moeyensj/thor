@@ -1,13 +1,13 @@
 import numpy as np
-from copy import deepcopy
 from astropy.time import Time
 from astropy import units as u
 from typing import (
     List,
     Optional
 )
+from collections import OrderedDict
+
 from ..constants import Constants as c
-from ..utils import times_from_df
 from .coordinates import Coordinates
 
 __all__ = [
@@ -18,7 +18,9 @@ TRANSFORM_EQ2EC[0:3, 0:3] = c.TRANSFORM_EQ2EC
 TRANSFORM_EQ2EC[3:6, 3:6] = c.TRANSFORM_EQ2EC
 TRANSFORM_EC2EQ = TRANSFORM_EQ2EC.T
 
-CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
+CARTESIAN_COLS = OrderedDict()
+for i in ["x", "y", "z", "vx", "vy", "vz"]:
+    CARTESIAN_COLS[i] = i
 CARTESIAN_UNITS = [u.au, u.au, u.au, u.au / u.d, u.au / u.d, u.au / u.d]
 
 class CartesianCoordinates(Coordinates):
@@ -173,14 +175,7 @@ class CartesianCoordinates(Coordinates):
     @classmethod
     def from_df(cls,
             df,
-            coord_cols={
-                "x" : "x",
-                "y" : "y",
-                "z" : "z",
-                "vx" : "vx",
-                "vy" : "vy",
-                "vz" : "vz"
-            },
+            coord_cols=CARTESIAN_COLS,
             covariance_col="cartesian_covariances",
             origin_col="origin"
         ):
@@ -192,37 +187,25 @@ class CartesianCoordinates(Coordinates):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing Cartesian coordinates and optionally their
             times and covariances.
-        coord_cols : dict
-            Dictionary containing as keys the coordinate dimensions and their equivalent columns
+        coord_cols : OrderedDict
+            Ordered dictionary containing as keys the coordinate dimensions and their equivalent columns
             as values. For example,
-            coord_cols = {
-                "x" : Column name of x distance values
-                "y" : Column name of y distance values
-                "z" : Column name of z distance values
-                "vx" : Column name of x velocity values
-                "vy" : Column name of y velocity values
-                "vz" : Column name of z velocity values
-            }
+                coord_cols = OrderedDict()
+                coord_cols["x"] = Column name of x distance values
+                coord_cols["y"] = Column name of y distance values
+                coord_cols["z"] = Column name of z distance values
+                coord_cols["vx"] = Column name of x velocity values
+                coord_cols["vy"] = Column name of y velocity values
+                coord_cols["vz"] = Column name of z velocity values
         covariance_col : str
             Name of the column containing covariance matrices.
         origin_col : str
             Name of the column containing the origin of each coordinate.
         """
-        data = {}
-        names = deepcopy(CARTESIAN_COLS)
-        data["times"] = times_from_df(df)
-        for i, c in enumerate(CARTESIAN_COLS):
-            if c in coord_cols.keys():
-                names[i] = coord_cols[c]
-                if coord_cols[c] in df.columns:
-                    data[c] = df[coord_cols[c]]
-
-        if covariance_col in df.columns:
-            data["covariances"] = np.stack(df[covariance_col].values)
-
-        if origin_col in df.columns:
-            data["origin"] = df[origin_col].values
-
-        data["names"] = names
-
+        data = Coordinates._dict_from_df(
+            df,
+            coord_cols=coord_cols,
+            covariance_col=covariance_col,
+            origin_col=origin_col
+        )
         return cls(**data)

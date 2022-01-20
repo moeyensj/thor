@@ -5,13 +5,14 @@ from astropy import units as u
 from typing import (
     List,
     Optional,
-    Type,
     Union
 )
+from collections import OrderedDict
 
 from ..utils import (
     Indexable,
     times_to_df,
+    times_from_df
 )
 
 __all__ = [
@@ -132,11 +133,11 @@ class Coordinates(Indexable):
     def __init__(
             self,
             *args,
-            covariances: Optional[Union[np.ndarray, np.ma.array]] = None,
+            covariances: Optional[Union[np.ndarray, np.ma.array, List]] = None,
             times: Optional[Time] = None,
             origin: Optional[Union[np.ndarray, str]] = "heliocenter",
             frame: str = "ecliptic",
-            names: List[str] = [],
+            names: OrderedDict = OrderedDict(),
         ):
         coords = None
         for d, q in enumerate(args):
@@ -208,9 +209,8 @@ class Coordinates(Indexable):
         if self.times is not None:
             df = times_to_df(self.times, time_scale=time_scale)
 
-        for i in range(D):
-            col = self.names[i]
-            data[col] = self.coords.filled()[:, i]
+        for i, (k, v) in enumerate(self.names.items()):
+            data[k] = self.coords.filled()[:, i]
 
         coordinate_type = type(self).__name__
         coordinate_type = coordinate_type.lower()[:-11]
@@ -221,3 +221,49 @@ class Coordinates(Indexable):
 
         df = df.join(pd.DataFrame(data))
         return df
+
+    @staticmethod
+    def _dict_from_df(
+            df,
+            coord_cols=OrderedDict(),
+            covariance_col="covariance",
+            origin_col="origin"
+        ):
+        """
+        Create a dictionary from a dataframe.
+
+        Parameters
+        ----------
+        df : `~pandas.DataFrame`
+            Pandas DataFrame containing coordinates and optionally their
+            times and covariances.
+        coord_cols : OrderedDict
+            Ordered dictionary containing as keys the coordinate dimensions and their equivalent columns
+            as values. For example,
+                coord_cols = OrderedDict()
+                coord_cols["a"] = Column name of semi-major axis values
+                coord_cols["e"] = Column name of eccentricity values
+                coord_cols["i"] = Column name of inclination values
+                coord_cols["raan"] = Column name of longitude of ascending node values
+                coord_cols["ap"] = Column name of argument of pericenter values
+                coord_cols["M"] = Column name of mean anomaly values
+        covariance_col : str
+            Name of the column containing covariance matrices.
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
+        """
+        data = {}
+        data["times"] = times_from_df(df)
+        for i, (k, v) in enumerate(coord_cols.items()):
+            if v in df.columns:
+                data[k] = df[v].values
+
+        if covariance_col in df.columns:
+            data["covariances"] = np.stack(df[covariance_col].values)
+
+        if origin_col in df.columns:
+            data["origin"] = df[origin_col].values
+
+        data["names"] = coord_cols
+
+        return data

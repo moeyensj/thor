@@ -1,5 +1,4 @@
 import numpy as np
-from copy import deepcopy
 import jax.numpy as jnp
 from jax import config, jit
 from jax.experimental import loops
@@ -10,11 +9,11 @@ from typing import (
     Optional,
     Union
 )
+from collections import OrderedDict
 config.update("jax_enable_x64", True)
 config.update('jax_platform_name', 'cpu')
 
 from ..constants import Constants as c
-from ..utils import times_from_df
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
 from .covariances import transform_covariances_jacobian
@@ -28,7 +27,9 @@ __all__ = [
     "KeplerianCoordinates"
 ]
 
-KEPLERIAN_COLS = ["a", "e", "i", "raan", "ap", "M"]
+KEPLERIAN_COLS = OrderedDict()
+for i in ["a", "e", "i", "raan", "ap", "M"]:
+    KEPLERIAN_COLS[i] = i
 
 MU = c.MU
 Z_AXIS = jnp.array([0., 0., 1.])
@@ -589,37 +590,25 @@ class KeplerianCoordinates(Coordinates):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing Keplerian coordinates and optionally their
             times and covariances.
-        coord_cols : dict
-            Dictionary containing as keys the coordinate dimensions and their equivalent columns
+        coord_cols : OrderedDict
+            Ordered dictionary containing as keys the coordinate dimensions and their equivalent columns
             as values. For example,
-            coord_cols = {
-                "a" : Column name of semi-major axis values
-                "e" : Column name of eccentricity values
-                "i" : Column name of inclination values
-                "raan" : Column name of longitude of ascending node values
-                "ap" : Column name of argument of pericenter values
-                "M" : Column name of mean anomaly values
-            }
+                coord_cols = OrderedDict()
+                coord_cols["a"] = Column name of semi-major axis values
+                coord_cols["e"] = Column name of eccentricity values
+                coord_cols["i"] = Column name of inclination values
+                coord_cols["raan"] = Column name of longitude of ascending node values
+                coord_cols["ap"] = Column name of argument of pericenter values
+                coord_cols["M"] = Column name of mean anomaly values
         covariance_col : str
             Name of the column containing covariance matrices.
         origin_col : str
             Name of the column containing the origin of each coordinate.
         """
-        data = {}
-        names = deepcopy(KEPLERIAN_COLS)
-        data["times"] = times_from_df(df)
-        for i, c in enumerate(KEPLERIAN_COLS):
-            if c in coord_cols.keys():
-                names[i] = coord_cols[c]
-                if coord_cols[c] in df.columns:
-                    data[c] = df[coord_cols[c]]
-
-        if covariance_col in df.columns:
-            data["covariances"] = np.stack(df[covariance_col].values)
-
-        if origin_col in df.columns:
-            data["origin"] = df[origin_col].values
-
-        data["names"] = names
-
+        data = Coordinates._dict_from_df(
+            df,
+            coord_cols=coord_cols,
+            covariance_col=covariance_col,
+            origin_col=origin_col
+        )
         return cls(**data)

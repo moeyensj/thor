@@ -1,5 +1,4 @@
 import numpy as np
-from copy import deepcopy
 import jax.numpy as jnp
 from jax.experimental import loops
 from jax import config, jit
@@ -10,10 +9,10 @@ from typing import (
     Optional,
     Union
 )
+from collections import OrderedDict
 config.update("jax_enable_x64", True)
 config.update('jax_platform_name', 'cpu')
 
-from ..utils import times_from_df
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
 from .covariances import transform_covariances_jacobian
@@ -24,7 +23,9 @@ __all__ = [
     "SphericalCoordinates"
 ]
 
-SPHERICAL_COLS = ["rho", "lon", "lat", "vrho", "vlon", "vlat"]
+SPHERICAL_COLS = OrderedDict()
+for i in ["rho", "lon", "lat", "vrho", "vlon", "vlat"]:
+    SPHERICAL_COLS[i] = i
 SPHERICAL_UNITS = [u.au, u.degree, u.degree, u.au / u.d, u.degree / u.d, u.degree / u.d]
 
 @jit
@@ -376,14 +377,7 @@ class SphericalCoordinates(Coordinates):
     @classmethod
     def from_df(cls,
             df,
-            coord_cols={
-                "rho" : "rho",
-                "lon" : "lon",
-                "lat" : "lat",
-                "vrho" : "vrho",
-                "vlon" : "vlon",
-                "vlat" : "vlat"
-            },
+            coord_cols=SPHERICAL_COLS,
             covariance_col="spherical_covariances",
             origin_col="origin"
         ):
@@ -395,37 +389,25 @@ class SphericalCoordinates(Coordinates):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing spherical coordinates and optionally their
             times and covariances.
-        coord_cols : dict
-            Dictionary containing as keys the coordinate dimensions and their equivalent columns
+        coord_cols : OrderedDict
+            Ordered dictionary containing as keys the coordinate dimensions and their equivalent columns
             as values. For example,
-            coord_cols = {
-                "rho" : Column name of radial distance values
-                "lon" : Column name of longitudinal values
-                "rho" : Column name of latitudinal values
-                "vrho" : Column name of the radial velocity values
-                "vlon" : Column name of longitudinal velocity values
-                "vlat" : Column name of latitudinal velocity values
-            }
+                coord_cols = OrderedDict()
+                coord_cols["rho"] = Column name of radial distance values
+                coord_cols["lon"] = Column name of longitudinal values
+                coord_cols["rho"] = Column name of latitudinal values
+                coord_cols["vrho"] = Column name of the radial velocity values
+                coord_cols["vlon"] = Column name of longitudinal velocity values
+                coord_cols["vlat"] = Column name of latitudinal velocity values
         covariance_col : str
             Name of the column containing covariance matrices.
         origin_col : str
             Name of the column containing the origin of each coordinate.
         """
-        data = {}
-        names = deepcopy(SPHERICAL_COLS)
-        data["times"] = times_from_df(df)
-        for i, c in enumerate(SPHERICAL_COLS):
-            if c in coord_cols.keys():
-                names[i] = coord_cols[c]
-                if coord_cols[c] in df.columns:
-                    data[c] = df[coord_cols[c]]
-
-        if covariance_col in df.columns:
-            data["covariances"] = np.stack(df[covariance_col].values)
-
-        if origin_col in df.columns:
-            data["origin"] = df[origin_col].values
-
-        data["names"] = names
-
+        data = Coordinates._dict_from_df(
+            df,
+            coord_cols=coord_cols,
+            covariance_col=covariance_col,
+            origin_col=origin_col
+        )
         return cls(**data)
