@@ -181,7 +181,8 @@ class CartesianCoordinates(Coordinates):
                 "vy" : "vy",
                 "vz" : "vz"
             },
-            covariance_col="cartesian_covariances"
+            covariance_col="cartesian_covariances",
+            origin_col="origin"
         ):
         """
         Create a CartesianCoordinates class from a dataframe.
@@ -204,6 +205,8 @@ class CartesianCoordinates(Coordinates):
             }
         covariance_col : str
             Name of the column containing covariance matrices.
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
         """
         data = {}
         names = deepcopy(CARTESIAN_COLS)
@@ -216,6 +219,9 @@ class CartesianCoordinates(Coordinates):
 
         if covariance_col in df.columns:
             data["covariances"] = np.stack(df[covariance_col].values)
+
+        if origin_col in df.columns:
+            data["origin"] = df[origin_col].values
 
         data["names"] = names
 

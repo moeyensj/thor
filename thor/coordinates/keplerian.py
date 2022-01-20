@@ -28,7 +28,7 @@ __all__ = [
     "KeplerianCoordinates"
 ]
 
-KEPLERIAN_COLS = ["a", "e", "i", "raan", "argperi", "M"]
+KEPLERIAN_COLS = ["a", "e", "i", "raan", "ap", "M"]
 
 MU = c.MU
 Z_AXIS = jnp.array([0., 0., 1.])
@@ -578,7 +578,8 @@ class KeplerianCoordinates(Coordinates):
                 "ap" : "ap",
                 "M" : "M"
             },
-            covariance_col="keplerian_covariances"
+            covariance_col="keplerian_covariances",
+            origin_col="origin"
         ):
         """
         Create a KeplerianCoordinates class from a dataframe.
@@ -601,6 +602,8 @@ class KeplerianCoordinates(Coordinates):
             }
         covariance_col : str
             Name of the column containing covariance matrices.
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
         """
         data = {}
         names = deepcopy(KEPLERIAN_COLS)
@@ -613,6 +616,9 @@ class KeplerianCoordinates(Coordinates):
 
         if covariance_col in df.columns:
             data["covariances"] = np.stack(df[covariance_col].values)
+
+        if origin_col in df.columns:
+            data["origin"] = df[origin_col].values
 
         data["names"] = names
 

@@ -5,6 +5,7 @@ from astropy import units as u
 from typing import (
     List,
     Optional,
+    Type,
     Union
 )
 
@@ -133,7 +134,7 @@ class Coordinates(Indexable):
             *args,
             covariances: Optional[Union[np.ndarray, np.ma.array]] = None,
             times: Optional[Time] = None,
-            origin: str = "heliocentric",
+            origin: Optional[Union[np.ndarray, str]] = "heliocenter",
             frame: str = "ecliptic",
             names: List[str] = [],
         ):
@@ -143,7 +144,19 @@ class Coordinates(Indexable):
 
         self._times = times
         self._coords = coords
-        self._origin = origin
+        if origin is not None:
+            if isinstance(origin, str):
+                self._origin = np.array([origin for i in range(len(self._coords))])
+            elif isinstance(origin, np.ndarray):
+                assert len(origin) == len(self._coords)
+                self._origin = origin
+            else:
+                err = (
+                    "Origin should be a str or `~numpy.ndarray`"
+                )
+                raise TypeError(err)
+        else:
+            self._origin = origin
         self._frame = frame
         self._names = names
 
@@ -186,7 +199,9 @@ class Coordinates(Indexable):
     def from_cartesian(cls, cartesian):
         raise NotImplementedError
 
-    def to_df(self, time_scale="utc"):
+    def to_df(self,
+            time_scale="utc"
+        ):
         data = {}
         N, D = self.coords.shape
 
@@ -201,6 +216,8 @@ class Coordinates(Indexable):
         coordinate_type = coordinate_type.lower()[:-11]
         if self.covariances is not None:
             data[f"{coordinate_type}_covariances"] = [c for c in self.covariances.filled()]
+
+        data["origin"] = self.origin
 
         df = df.join(pd.DataFrame(data))
         return df

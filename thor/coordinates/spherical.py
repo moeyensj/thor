@@ -384,7 +384,8 @@ class SphericalCoordinates(Coordinates):
                 "vlon" : "vlon",
                 "vlat" : "vlat"
             },
-            covariance_col="spherical_covariances"
+            covariance_col="spherical_covariances",
+            origin_col="origin"
         ):
         """
         Create a SphericalCoordinates class from a dataframe.
@@ -407,6 +408,8 @@ class SphericalCoordinates(Coordinates):
             }
         covariance_col : str
             Name of the column containing covariance matrices.
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
         """
         data = {}
         names = deepcopy(SPHERICAL_COLS)
@@ -419,6 +422,9 @@ class SphericalCoordinates(Coordinates):
 
         if covariance_col in df.columns:
             data["covariances"] = np.stack(df[covariance_col].values)
+
+        if origin_col in df.columns:
+            data["origin"] = df[origin_col].values
 
         data["names"] = names
 
