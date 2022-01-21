@@ -110,6 +110,22 @@ class CartesianCoordinates(Coordinates):
     def v(self):
         return self._coords[:, 3:6]
 
+    @property
+    def r_mag(self):
+        return np.linalg.norm(self.r.filled(), axis=1)
+
+    @property
+    def v_mag(self):
+        return np.linalg.norm(self.v.filled(), axis=1)
+
+    @property
+    def r_hat(self):
+        return self.r.filled() / self.r_mag
+
+    @property
+    def v_hat(self):
+        return self.v.filled() / self.v_mag
+
     def to_cartesian(self):
         return self
 
