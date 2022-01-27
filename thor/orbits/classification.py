@@ -24,9 +24,8 @@ def calc_orbit_class(keplerian_coordinates : KeplerianCoordinates):
     """
     a = keplerian_coordinates.a.filled()
     e = keplerian_coordinates.e.filled()
-    i = keplerian_coordinates.i.filled()
-    q = a * (1 - e)
-    p = Q = a * (1 + e)
+    q = keplerian_coordinates.q.filled()
+    p = Q = keplerian_coordinates.p.filled()
 
     orbit_class = np.array(["AST" for i in range(len(keplerian_coordinates))])
 

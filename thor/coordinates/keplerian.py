@@ -498,6 +498,16 @@ class KeplerianCoordinates(Coordinates):
         return self._M
 
     @property
+    def q(self):
+        # pericenter distance
+        return self._a * (1 - self._e)
+
+    @property
+    def p(self):
+        # apocenter distance
+        return self._a * (1 + self._e)
+
+    @property
     def mu(self):
         return self._mu
 
