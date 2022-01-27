@@ -14,6 +14,7 @@ from ..coordinates import (
     SphericalCoordinates,
     transform_coordinates
 )
+from .classification import calc_orbit_class
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class Orbits(Indexable):
             coordinates,
             ids=None,
             obj_ids=None,
+            classes=None,
         ):
 
         self._cartesian = None
@@ -58,6 +60,11 @@ class Orbits(Indexable):
             self._obj_ids = obj_ids
         else:
             self._obj_ids = np.array(["None" for i in range(len(coordinates))])
+
+        if classes is not None:
+            self._classes = classes
+        else:
+            self._classes = None
 
         return
 
@@ -115,6 +122,14 @@ class Orbits(Indexable):
                 self._keplerian = transform_coordinates(self._spherical, "keplerian")
 
         return self._keplerian
+
+    @property
+    def classes(self):
+
+        if self._classes is None:
+            self._classes = calc_orbit_class(self.keplerian)
+
+        return self._classes
 
     @classmethod
     def from_horizons(cls, ids, times):
@@ -190,5 +205,7 @@ class Orbits(Indexable):
 
         df.insert(0, "orbit_id", self.ids)
         df.insert(1, "obj_id", self.obj_ids)
+        if self._classes is not None:
+            df.insert(len(df.columns), "class", self.classes)
 
         return df

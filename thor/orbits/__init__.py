@@ -1,4 +1,5 @@
 from .state import *
+from .classification import *
 from .orbits import *
 from .stumpff import *
 from .chi import *
