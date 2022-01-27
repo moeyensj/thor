@@ -12,6 +12,7 @@ class Indexable:
     Any members that are dicts, OrderedDicts, floats, integers or strings are not indexed and left unchanged.
     """
     def _handle_index(self, i: Union[int, slice]):
+
         if isinstance(i, int):
             if i < 0:
                 _i = i + len(self)
@@ -19,12 +20,15 @@ class Indexable:
                 _i = i
             ind = slice(_i, _i+1)
 
-        elif isinstance(i, slice):
+        elif isinstance(i, tuple):
+            ind = list(i)
+
+        elif isinstance(i, (slice, np.ndarray, list)):
             ind = i
         else:
             raise IndexError("Index should be either an int or a slice.")
 
-        if ind.start is not None and ind.start >= len(self):
+        if isinstance(i, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
         return ind
