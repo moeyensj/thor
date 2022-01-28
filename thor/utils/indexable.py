@@ -11,7 +11,7 @@ class Indexable:
     lists, or `~astropy.time.core.Time`s then these members are appropriately sliced and indexed along their first axis.
     Any members that are dicts, OrderedDicts, floats, integers or strings are not indexed and left unchanged.
     """
-    def _handle_index(self, i: Union[int, slice]):
+    def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
 
         if isinstance(i, int):
             if i < 0:
@@ -39,7 +39,7 @@ class Indexable:
         )
         raise NotImplementedError(err)
 
-    def __getitem__(self, i: Union[int, slice]):
+    def __getitem__(self, i: Union[int, slice, tuple, list, np.ndarray]):
 
         ind = self._handle_index(i)
         copy = deepcopy(self)
@@ -59,7 +59,7 @@ class Indexable:
 
         return copy
 
-    def __delitem__(self, i: Union[int, slice]):
+    def __delitem__(self, i: Union[int, slice, tuple, list, np.ndarray]):
 
         ind = self._handle_index(i)
 

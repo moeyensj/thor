@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import multiprocessing as mp
 
+from .indexable import Indexable
+
 __all__ = [
     "Timeout",
     "yield_chunks",
@@ -44,15 +46,15 @@ def yield_chunks(indexable, chunk_size):
     chunk : indexable (<=chunk_size)
         Chunks of indexable
     """
-    if isinstance(indexable, list) or isinstance(indexable, np.ndarray):
+    if isinstance(indexable, (list, np.ndarray, Indexable)):
         for c in range(0, len(indexable), chunk_size):
             yield indexable[c : c + chunk_size]
-    elif isinstance(indexable, pd.DataFrame) or isinstance(indexable, pd.Series):
+    elif isinstance(indexable, (pd.Series, pd.DataFrame)):
         for c in range(0, len(indexable), chunk_size):
             yield indexable.iloc[c : c + chunk_size]
     else:
         err = (
-            "Indexable should be one of {list, `~numpy.ndarray`, `~pandas.DataFrame`, `~pandas.Series`}"
+            "Indexable should be one of {list, Indexable, `~numpy.ndarray`, `~pandas.DataFrame`, `~pandas.Series`}"
         )
         raise ValueError(err)
 
