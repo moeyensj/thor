@@ -6,7 +6,7 @@ import multiprocessing as mp
 
 __all__ = [
     "Timeout",
-    "yieldChunks",
+    "yield_chunks",
     "calcChunkSize",
     "_initWorker",
     "_checkParallel"
@@ -27,7 +27,7 @@ class Timeout:
     def __exit__(self, type, value, traceback):
         signal.alarm(0)
 
-def yieldChunks(indexable, chunk_size):
+def yield_chunks(indexable, chunk_size):
     """
     Generator that yields chunks of size chunk_size.
 

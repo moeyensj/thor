@@ -2,16 +2,16 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from ..multiprocessing import yieldChunks
+from ..multiprocessing import yield_chunks
 from ..multiprocessing import calcChunkSize
 
-def test_yieldChunks_list():
+def test_yield_chunks_list():
     # Create list of data
     indexable = [i for i in range(15)]
 
     # Set chunk_size to 10
     chunk_size = 10
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 9
     chunk = next(generator)
@@ -25,7 +25,7 @@ def test_yieldChunks_list():
 
     # Set chunk_size to 5
     chunk_size = 5
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 4
     chunk = next(generator)
@@ -44,7 +44,7 @@ def test_yieldChunks_list():
 
     # Set chunk_size to 20
     chunk_size = 20
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 14
     chunk = next(generator)
@@ -52,13 +52,13 @@ def test_yieldChunks_list():
     np.testing.assert_array_equal(np.array(chunk), desired)
     return
 
-def test_yieldChunks_array():
+def test_yield_chunks_array():
     # Create list of data
     indexable = np.arange(0, 15, 1)
 
     # Set chunk_size to 10
     chunk_size = 10
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 9
     chunk = next(generator)
@@ -72,7 +72,7 @@ def test_yieldChunks_array():
 
     # Set chunk_size to 5
     chunk_size = 5
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 4
     chunk = next(generator)
@@ -91,7 +91,7 @@ def test_yieldChunks_array():
 
     # Set chunk_size to 20
     chunk_size = 20
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 14
     chunk = next(generator)
@@ -99,13 +99,13 @@ def test_yieldChunks_array():
     np.testing.assert_array_equal(chunk, desired)
     return
 
-def test_yieldChunks_series():
+def test_yield_chunks_series():
     # Create series of data
     indexable = pd.Series(np.arange(0, 15, 1))
 
     # Set chunk_size to 10
     chunk_size = 10
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 9
     chunk = next(generator)
@@ -119,7 +119,7 @@ def test_yieldChunks_series():
 
     # Set chunk_size to 5
     chunk_size = 5
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 4
     chunk = next(generator)
@@ -138,7 +138,7 @@ def test_yieldChunks_series():
 
     # Set chunk_size to 20
     chunk_size = 20
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 14
     chunk = next(generator)
@@ -146,7 +146,7 @@ def test_yieldChunks_series():
     np.testing.assert_array_equal(chunk.values, desired)
     return
 
-def test_yieldChunks_series_offsetIndex():
+def test_yield_chunks_series_offsetIndex():
     # Create series of data
     indexable = pd.Series(np.arange(0, 15, 1))
     # Offset the index and make sure chunking is done independent of
@@ -155,7 +155,7 @@ def test_yieldChunks_series_offsetIndex():
 
     # Set chunk_size to 10
     chunk_size = 10
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 9
     chunk = next(generator)
@@ -169,7 +169,7 @@ def test_yieldChunks_series_offsetIndex():
 
     # Set chunk_size to 5
     chunk_size = 5
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 4
     chunk = next(generator)
@@ -188,7 +188,7 @@ def test_yieldChunks_series_offsetIndex():
 
     # Set chunk_size to 20
     chunk_size = 20
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 14
     chunk = next(generator)
@@ -196,7 +196,7 @@ def test_yieldChunks_series_offsetIndex():
     np.testing.assert_array_equal(chunk.values, desired)
     return
 
-def test_yieldChunks_dataframe_offsetIndex():
+def test_yield_chunks_dataframe_offsetIndex():
     # Create dataframe of data
     data = {
         "x" : np.arange(0, 15, 1)
@@ -208,7 +208,7 @@ def test_yieldChunks_dataframe_offsetIndex():
 
     # Set chunk_size to 10
     chunk_size = 10
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 9
     chunk = next(generator)
@@ -222,7 +222,7 @@ def test_yieldChunks_dataframe_offsetIndex():
 
     # Set chunk_size to 5
     chunk_size = 5
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 4
     chunk = next(generator)
@@ -241,7 +241,7 @@ def test_yieldChunks_dataframe_offsetIndex():
 
     # Set chunk_size to 20
     chunk_size = 20
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 14
     chunk = next(generator)
@@ -249,7 +249,7 @@ def test_yieldChunks_dataframe_offsetIndex():
     np.testing.assert_array_equal(chunk["x"].values, desired)
     return
 
-def test_yieldChunks_dataframe():
+def test_yield_chunks_dataframe():
     # Create dataframe of data
     data = {
         "x" : np.arange(0, 15, 1)
@@ -258,7 +258,7 @@ def test_yieldChunks_dataframe():
 
     # Set chunk_size to 10
     chunk_size = 10
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 9
     chunk = next(generator)
@@ -272,7 +272,7 @@ def test_yieldChunks_dataframe():
 
     # Set chunk_size to 5
     chunk_size = 5
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 4
     chunk = next(generator)
@@ -291,7 +291,7 @@ def test_yieldChunks_dataframe():
 
     # Set chunk_size to 20
     chunk_size = 20
-    generator = yieldChunks(indexable, chunk_size)
+    generator = yield_chunks(indexable, chunk_size)
 
     # First iteration should yield 0 through 14
     chunk = next(generator)
@@ -299,12 +299,12 @@ def test_yieldChunks_dataframe():
     np.testing.assert_array_equal(chunk["x"].values, desired)
     return
 
-def test_yieldChunks_errors():
+def test_yield_chunks_errors():
 
-    # Make sure yieldChunks raises an error for unsupported types
+    # Make sure yield_chunks raises an error for unsupported types
     chunk_size = 1
     with pytest.raises(ValueError):
-        generator = yieldChunks(set(), chunk_size)
+        generator = yield_chunks(set(), chunk_size)
         next(generator)
 
     return

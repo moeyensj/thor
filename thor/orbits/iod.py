@@ -18,7 +18,7 @@ from functools import partial
 
 from ..utils import _initWorker
 from ..utils import _checkParallel
-from ..utils import yieldChunks
+from ..utils import yield_chunks
 from ..utils import calcChunkSize
 from ..utils import sortLinkages
 from ..utils import identifySubsetLinkages
@@ -674,7 +674,7 @@ def initialOrbitDetermination(
 
                 # Put the observations into ray's local object storage ("plasma")
                 observation_oids = []
-                for observations_i in yieldChunks(observations_split, chunk_size_):
+                for observations_i in yield_chunks(observations_split, chunk_size_):
                     observation_oids.append(ray.put(observations_i))
 
                 iod_orbits_oids = []
@@ -724,7 +724,7 @@ def initialOrbitDetermination(
                         backend=backend,
                         backend_kwargs=backend_kwargs
                     ),
-                    zip(yieldChunks(observations_split, chunk_size_)),
+                    zip(yield_chunks(observations_split, chunk_size_)),
                 )
                 p.close()
 
@@ -734,7 +734,7 @@ def initialOrbitDetermination(
 
         else:
 
-            for observations_i in yieldChunks(observations_split, chunk_size):
+            for observations_i in yield_chunks(observations_split, chunk_size):
                 iod_orbits_df, iod_orbit_members_df = iod_worker(
                     observations_i,
                     observation_selection_method=observation_selection_method,

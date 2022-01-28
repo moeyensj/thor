@@ -17,7 +17,7 @@ from sklearn.neighbors import BallTree
 
 from ..utils import _initWorker
 from ..utils import _checkParallel
-from ..utils import yieldChunks
+from ..utils import yield_chunks
 from ..utils import calcChunkSize
 from ..utils import sortLinkages
 from ..utils import removeDuplicateObservations
@@ -202,7 +202,7 @@ def attributeObservations(
             orbits_split = orbits.split(chunk_size_)
 
             obs_oids = []
-            for observations_c in yieldChunks(observations, observations_chunk_size):
+            for observations_c in yield_chunks(observations, observations_chunk_size):
                 obs_oids.append(ray.put(observations_c))
 
             p = []
@@ -232,7 +232,7 @@ def attributeObservations(
             chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
             orbits_split = orbits.split(chunk_size_)
 
-            for observations_c in yieldChunks(observations, observations_chunk_size):
+            for observations_c in yield_chunks(observations, observations_chunk_size):
 
                 obs = [observations_c for i in range(len(orbits_split))]
                 attribution_dfs_i = p.starmap(
@@ -253,7 +253,7 @@ def attributeObservations(
             p.close()
 
     else:
-        for observations_c in yieldChunks(observations, observations_chunk_size):
+        for observations_c in yield_chunks(observations, observations_chunk_size):
             for orbit_c in orbits.split(orbits_chunk_size):
                 attribution_df_i = attribution_worker(
                     orbit_c,

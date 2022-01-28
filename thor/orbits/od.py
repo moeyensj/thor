@@ -18,7 +18,7 @@ from astropy.time import Time
 
 from ..utils import _initWorker
 from ..utils import _checkParallel
-from ..utils import yieldChunks
+from ..utils import yield_chunks
 from ..utils import calcChunkSize
 from ..utils import sortLinkages
 from ..backend import PYOORB
@@ -641,7 +641,7 @@ def differentialCorrection(
                 # Put the observations and orbits into ray's local object storage ("plasma")
                 orbit_oids = []
                 observation_oids = []
-                for orbits_i, observations_i in zip(yieldChunks(orbits_split, chunk_size_), yieldChunks(observations_split, chunk_size_)):
+                for orbits_i, observations_i in zip(yield_chunks(orbits_split, chunk_size_), yield_chunks(observations_split, chunk_size_)):
                     orbit_oids.append(ray.put(orbits_i))
                     observation_oids.append(ray.put(observations_i))
 
@@ -695,8 +695,8 @@ def differentialCorrection(
                         backend_kwargs=backend_kwargs,
                     ),
                     zip(
-                        yieldChunks(orbits_split, chunk_size_),
-                        yieldChunks(observations_split, chunk_size_)
+                        yield_chunks(orbits_split, chunk_size_),
+                        yield_chunks(observations_split, chunk_size_)
                     )
                 )
                 p.close()
@@ -709,7 +709,7 @@ def differentialCorrection(
 
             od_orbits_dfs = []
             od_orbit_members_dfs = []
-            for orbits_i, observations_i in zip(yieldChunks(orbits_split, chunk_size), yieldChunks(observations_split, chunk_size)):
+            for orbits_i, observations_i in zip(yield_chunks(orbits_split, chunk_size), yield_chunks(observations_split, chunk_size)):
 
                 od_orbits_df, od_orbit_members_df = od_worker(
                     orbits_i,
