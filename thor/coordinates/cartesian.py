@@ -120,11 +120,11 @@ class CartesianCoordinates(Coordinates):
 
     @property
     def r_hat(self):
-        return self.r.filled() / self.r_mag
+        return self.r.filled() / self.r_mag.reshape(-1, 1)
 
     @property
     def v_hat(self):
-        return self.v.filled() / self.v_mag
+        return self.v.filled() / self.v_mag.reshape(-1, 1)
 
     def to_cartesian(self):
         return self
