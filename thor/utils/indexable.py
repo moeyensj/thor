@@ -91,3 +91,41 @@ class Indexable:
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
+
+    def append(self, other):
+
+        assert type(self) == type(other)
+
+        for k, v in other.__dict__.items():
+
+            self_v = self.__dict__[k]
+
+            if isinstance(v, np.ma.masked_array):
+                self.__dict__[k] = np.ma.concatenate([self_v, v])
+
+            elif isinstance(v, np.ndarray):
+                self.__dict__[k] = np.concatenate([self_v, v])
+
+            elif isinstance(v, Time):
+                self.__dict__[k] = Time(
+                    np.concatenate([self_v.tdb.mjd, v.tdb.mjd]),
+                    scale="tdb",
+                    format="mjd"
+                )
+                self.__dict__[k]._set_scale(self_v.scale)
+
+            elif isinstance(v, (list, Indexable)):
+                self_v.append(v)
+
+            elif isinstance(v, (int, float, str, dict, OrderedDict)):
+                assert v == self_v
+
+            elif v is None:
+                self.__dict__[k] = None
+
+            else:
+                err = (
+                    f"{type(v)} are not supported."
+                )
+                raise NotImplementedError(err)
+        return
