@@ -284,12 +284,12 @@ class SphericalCoordinates(Coordinates):
             names=names
         )
 
-        self._rho = self._coords[:, 0]
-        self._lon = self._coords[:, 1]
-        self._lat = self._coords[:, 2]
-        self._vrho = self._coords[:, 3]
-        self._vlon = self._coords[:, 4]
-        self._vlat = self._coords[:, 5]
+        self._rho = self._values[:, 0]
+        self._lon = self._values[:, 1]
+        self._lat = self._values[:, 2]
+        self._vrho = self._values[:, 3]
+        self._vlon = self._values[:, 4]
+        self._vlat = self._values[:, 5]
         return
 
     @property
@@ -318,12 +318,12 @@ class SphericalCoordinates(Coordinates):
 
     def to_cartesian(self) -> CartesianCoordinates:
 
-        coords_cartesian = spherical_to_cartesian(self.coords.filled())
+        coords_cartesian = spherical_to_cartesian(self.values.filled())
         coords_cartesian = np.array(coords_cartesian)
 
         if self.covariances is not None:
             covariances_cartesian = transform_covariances_jacobian(
-                self.coords.filled(),
+                self.values.filled(),
                 self.covariances.filled(),
                 _spherical_to_cartesian
             )
@@ -347,12 +347,12 @@ class SphericalCoordinates(Coordinates):
     @classmethod
     def from_cartesian(cls, cartesian: CartesianCoordinates):
 
-        coords_spherical = cartesian_to_spherical(cartesian.coords.filled())
+        coords_spherical = cartesian_to_spherical(cartesian.values.filled())
         coords_spherical = np.array(coords_spherical)
 
         if cartesian.covariances is not None:
             covariances_spherical = transform_covariances_jacobian(
-                cartesian.coords.filled(),
+                cartesian.values.filled(),
                 cartesian.covariances.filled(),
                 _cartesian_to_spherical
             )

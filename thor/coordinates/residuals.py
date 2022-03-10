@@ -104,9 +104,9 @@ def calc_residuals(observed: Coordinates, predicted: Coordinates):
 
     # Caclulate the degrees of freedom for every coordinate
     # Number of coordinate dimensions less the number of masked quantities
-    dof = observed.coords.shape[1] - observed.coords.mask.sum(axis=1)
+    dof = observed.values.shape[1] - observed.values.mask.sum(axis=1)
 
-    residuals = observed.coords - predicted.coords
+    residuals = observed.values - predicted.values
     #if isinstance(observed, SphericalCoordinates):
         #residuals[:, 1] = np.where(residuals[:, 1] > 180., 360. - residuals[:, 1], residuals[:, 1])
         #residual_ra *= np.cos(np.radians(dec_pred))
@@ -120,11 +120,11 @@ def calc_residuals(observed: Coordinates, predicted: Coordinates):
         p = []
         for i, (observed_i, predicted_i) in enumerate(zip(observed, predicted)):
 
-            mask = observed_i.coords.mask
+            mask = observed_i.values.mask
             dof_i = dof[i]
 
-            u = predicted_i.coords[~mask].filled()
-            v = observed_i.coords.compressed()
+            u = predicted_i.values[~mask].filled()
+            v = observed_i.values.compressed()
             cov = observed_i.covariances.compressed().reshape(dof_i, dof_i)
 
             d_i = mahalanobis(u, v, np.linalg.inv(cov))

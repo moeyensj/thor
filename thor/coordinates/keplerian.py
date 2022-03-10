@@ -463,12 +463,12 @@ class KeplerianCoordinates(Coordinates):
             names=names
         )
 
-        self._a = self._coords[:, 0]
-        self._e = self._coords[:, 1]
-        self._i = self._coords[:, 2]
-        self._raan = self._coords[:, 3]
-        self._ap = self._coords[:, 4]
-        self._M = self._coords[:, 5]
+        self._a = self._values[:, 0]
+        self._e = self._values[:, 1]
+        self._i = self._values[:, 2]
+        self._raan = self._values[:, 3]
+        self._ap = self._values[:, 4]
+        self._M = self._values[:, 5]
         self._mu = mu
 
         return
@@ -514,7 +514,7 @@ class KeplerianCoordinates(Coordinates):
     def to_cartesian(self) -> CartesianCoordinates:
 
         coords_cartesian = keplerian_to_cartesian(
-            self.coords.filled(),
+            self.values.filled(),
             mu=MU,
             max_iter=100,
             tol=1e-15,
@@ -523,7 +523,7 @@ class KeplerianCoordinates(Coordinates):
 
         if self.covariances is not None:
             covariances_cartesian = transform_covariances_jacobian(
-                self.coords.filled(),
+                self.values.filled(),
                 self.covariances.filled(),
                 _keplerian_to_cartesian
             )

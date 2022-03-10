@@ -96,7 +96,7 @@ def transform_covariances_jacobian(
     _func : function
         A function that takes a single coord (D) as input and return the transformed
         coordinate (D). See for example: `thor.coordinates._cartesian_to_spherical`
-        or `thor._coordinates.cartesian_to_keplerian`.
+        or `thor.coordinates._cartesian_to_keplerian`.
 
     Returns
     -------

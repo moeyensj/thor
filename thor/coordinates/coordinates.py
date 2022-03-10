@@ -149,13 +149,13 @@ class Coordinates(Indexable):
             coords = _ingest_coordinate(q, d, coords, D=len(args))
 
         self._times = times
-        self._coords = coords
+        self._values = coords
         if origin is not None:
             if isinstance(origin, str):
                 self._origin = np.empty(len(self), dtype="<U16")
                 self._origin.fill(origin)
             elif isinstance(origin, np.ndarray):
-                assert len(origin) == len(self._coords)
+                assert len(origin) == len(self._values)
                 self._origin = origin
             else:
                 err = (
@@ -180,15 +180,15 @@ class Coordinates(Indexable):
         return
 
     def __len__(self):
-        return len(self.coords)
+        return len(self.values)
 
     @property
     def times(self):
         return self._times
 
     @property
-    def coords(self):
-        return self._coords
+    def values(self):
+        return self._values
 
     @property
     def covariances(self):
@@ -220,13 +220,13 @@ class Coordinates(Indexable):
             time_scale="utc"
         ):
         data = {}
-        N, D = self.coords.shape
+        N, D = self.values.shape
 
         if self.times is not None:
             df = times_to_df(self.times, time_scale=time_scale)
 
         for i, (k, v) in enumerate(self.names.items()):
-            data[k] = self.coords.filled()[:, i]
+            data[k] = self.values.filled()[:, i]
 
         coordinate_type = type(self).__name__
         coordinate_type = coordinate_type.lower()[:-11]

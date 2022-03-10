@@ -70,12 +70,12 @@ class CartesianCoordinates(Coordinates):
             names=names
         )
 
-        self._x = self._coords[:, 0]
-        self._y = self._coords[:, 1]
-        self._z = self._coords[:, 2]
-        self._vx = self._coords[:, 3]
-        self._vy = self._coords[:, 4]
-        self._vz = self._coords[:, 5]
+        self._x = self._values[:, 0]
+        self._y = self._values[:, 1]
+        self._z = self._values[:, 2]
+        self._vx = self._values[:, 3]
+        self._vy = self._values[:, 4]
+        self._vz = self._values[:, 5]
         return
 
     @property
@@ -104,11 +104,11 @@ class CartesianCoordinates(Coordinates):
 
     @property
     def r(self):
-        return self._coords[:, 0:3]
+        return self._values[:, 0:3]
 
     @property
     def v(self):
-        return self._coords[:, 3:6]
+        return self._values[:, 3:6]
 
     @property
     def r_mag(self):
@@ -135,8 +135,8 @@ class CartesianCoordinates(Coordinates):
 
     def _rotate(self, matrix):
 
-        coords = self._coords.dot(matrix.T)
-        coords.mask = self._coords.mask
+        coords = self._values.dot(matrix.T)
+        coords.mask = self._values.mask
         coords.fill_value = np.NaN
 
         if self._covariances is not None:
