@@ -24,7 +24,8 @@ __all__ = [
 def _ingest_coordinate(
         q: Union[list, np.ndarray],
         d: int,
-        coords: Optional[np.ma.core.MaskedArray] = None
+        coords: Optional[np.ma.core.MaskedArray] = None,
+        D: int = 6,
     ) -> np.ma.core.MaskedArray:
     """
     Ingest coordinates along an axis (like the x, y, z) and add them to an existing masked array
@@ -42,10 +43,12 @@ def _ingest_coordinate(
     coords : `~numpy.ma.ndarray` (N, D), optional
         If coordinates (ie, other axes) have already been defined then pass them here
         so that current axis of coordinates can be added.
+    D : int, optional
+        Total number of dimensions represented by the coordinates.
 
     Returns
     -------
-    coords : `~numpy.ma.array` (N, 6)
+    coords : `~numpy.ma.array` (N, D)
         Masked array of 6D coordinate measurements with q measurements ingested.
 
     Raises
@@ -57,7 +60,7 @@ def _ingest_coordinate(
         q_ = np.asarray(q)
         N_ = len(q_)
         if coords is None:
-            coords = np.ma.zeros((N_, 6), dtype=np.float64, fill_value=np.NaN)
+            coords = np.ma.zeros((N_, D), dtype=np.float64, fill_value=np.NaN)
             coords.mask = 1
         else:
             N, D = coords.shape
@@ -82,7 +85,7 @@ def _ingest_covariance(
 
     Parameters
     ----------
-    coords : `~numpy.ma.array` (N, 6)
+    coords : `~numpy.ma.array` (N, D)
         Masked array of 6D coordinate measurements with q measurements ingested.
     covariance : `~numpy.ndarray` or `~numpy.ma.array` (N, <=6, <=6)
         Covariance matrices for each coordinate. These matrices may have fewer dimensions
@@ -91,7 +94,7 @@ def _ingest_covariance(
 
     Returns
     -------
-    covariance : `~numpy.ma.array` (N, 6, 6)
+    covariance : `~numpy.ma.array` (N, D, D)
         Masked array of covariance matrices.
 
     Raises
@@ -101,7 +104,9 @@ def _ingest_covariance(
         If the number of covariance dimensions does not match
             the number of unmasked or missing coordinate dimensions.
     """
-    axes = coords.shape[1] - np.sum(coords.mask.all(axis=0))
+    D = coords.shape[1]
+    axes = D - np.sum(coords.mask.all(axis=0))
+
     if covariance.shape[0] != len(coords):
         err = (
             "Every coordinate in coords should have an associated covariance."
@@ -118,7 +123,7 @@ def _ingest_covariance(
     if isinstance(covariance, np.ma.core.MaskedArray) and (covariance.shape[1] == covariance.shape[2] == coords.shape[1]):
         return covariance
 
-    covariance_ = np.ma.zeros((len(coords), 6, 6), dtype=np.float64, fill_value=np.NaN)
+    covariance_ = np.ma.zeros((len(coords), D, D), dtype=np.float64, fill_value=np.NaN)
     covariance_.mask = np.zeros_like(covariance_, dtype=bool)
 
     for n in range(len(coords)):
@@ -141,13 +146,14 @@ class Coordinates(Indexable):
         ):
         coords = None
         for d, q in enumerate(args):
-            coords = _ingest_coordinate(q, d, coords)
+            coords = _ingest_coordinate(q, d, coords, D=len(args))
 
         self._times = times
         self._coords = coords
         if origin is not None:
             if isinstance(origin, str):
-                self._origin = np.array([origin for i in range(len(self._coords))])
+                self._origin = np.empty(len(self), dtype="<U16")
+                self._origin.fill(origin)
             elif isinstance(origin, np.ndarray):
                 assert len(origin) == len(self._coords)
                 self._origin = origin
