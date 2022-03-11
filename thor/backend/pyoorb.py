@@ -57,7 +57,7 @@ class PYOORB(Backend):
 
         return
 
-    def _configureOrbits(self, orbits, t0, orbit_type, time_scale, magnitude, slope):
+    def _configure_orbits(self, orbits, t0, orbit_type, time_scale, magnitude, slope):
         """
         Convert an array of orbits into the format expected by PYOORB.
 
@@ -184,7 +184,7 @@ class PYOORB(Backend):
 
         return orbits_pyoorb
 
-    def _configureEpochs(self, epochs, time_scale):
+    def _configure_epochs(self, epochs, time_scale):
         """
         Convert an array of orbits into the format expected by PYOORB.
 
@@ -215,7 +215,7 @@ class PYOORB(Backend):
         epochs_pyoorb = np.array(list(np.vstack([epochs, time_scale]).T), dtype=np.double, order='F')
         return epochs_pyoorb
 
-    def _propagateOrbits(self, orbits, t1):
+    def _propagate_orbits(self, orbits, t1):
         """
         Propagate orbits using PYOORB.
 
@@ -267,17 +267,17 @@ class PYOORB(Backend):
             Orbits at new epochs.
         """
         # Convert orbits into PYOORB format
-        orbits_pyoorb = self._configureOrbits(
-            orbits.cartesian,
-            orbits.epochs.tt.mjd,
+        orbits_pyoorb = self._configure_orbits(
+            orbits.cartesian.values.filled(),
+            orbits.cartesian.times.tt.mjd,
             "cartesian",
             "TT",
-            orbits.H,
-            orbits.G
+            magnitude=None,
+            slope=None,
         )
 
         # Convert epochs into PYOORB format
-        epochs_pyoorb = self._configureEpochs(t1.tt.mjd, "TT")
+        epochs_pyoorb = self._configure_epochs(t1.tt.mjd, "TT")
 
         # Propagate orbits to each epoch and append to list
         # of new states
@@ -350,7 +350,7 @@ class PYOORB(Backend):
 
         return propagated
 
-    def _generateEphemeris(self, orbits, observers):
+    def _generate_ephemeris(self, orbits, observers):
         """
         Generate ephemeris using PYOORB.
 
@@ -399,13 +399,13 @@ class PYOORB(Backend):
             Which JPL ephemeris file to use with PYOORB.
         """
         # Convert orbits into PYOORB format
-        orbits_pyoorb = self._configureOrbits(
-            orbits.cartesian,
-            orbits.epochs.tt.mjd,
+        orbits_pyoorb = self._configure_orbits(
+            orbits.cartesian.values.filled(),
+            orbits.cartesian.times.tt.mjd,
             "cartesian",
             "TT",
-            orbits.H,
-            orbits.G
+            magnitude=None,
+            slope=None
         )
 
         columns = [
@@ -450,7 +450,7 @@ class PYOORB(Backend):
             _check_times(observation_times, "observation_times")
 
             # Convert epochs into PYOORB format
-            epochs_pyoorb = self._configureEpochs(observation_times.utc.mjd, "UTC")
+            epochs_pyoorb = self._configure_epochs(observation_times.utc.mjd, "UTC")
 
             # Generate ephemeris
             ephemeris, err = oo.pyoorb.oorb_ephemeris_full(
@@ -468,7 +468,7 @@ class PYOORB(Backend):
                 columns=columns
             )
 
-            ids = np.arange(0, orbits.num_orbits)
+            ids = np.arange(0, len(orbits))
             ephemeris["orbit_id"] = [i for i in ids for j in observation_times.utc.mjd]
             ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
             ephemeris = ephemeris[["orbit_id", "observatory_code"] + columns]

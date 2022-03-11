@@ -27,7 +27,7 @@ TIMEOUT = 30
 def propagation_worker(orbits, t1, backend):
     with Timeout(seconds=TIMEOUT):
         try:
-            propagated = backend._propagateOrbits(orbits, t1)
+            propagated = backend._propagate_orbits(orbits, t1)
         except TimeoutError:
             logger.critical("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
             propagated = pd.DataFrame()
@@ -36,7 +36,7 @@ def propagation_worker(orbits, t1, backend):
 def ephemeris_worker(orbits, observers, backend):
     with Timeout(seconds=TIMEOUT):
         try:
-            ephemeris = backend._generateEphemeris(orbits, observers)
+            ephemeris = backend._generate_ephemeris(orbits, observers)
         except TimeoutError:
             logger.critical("Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
             ephemeris = pd.DataFrame()
@@ -84,7 +84,7 @@ class Backend:
     def setup(self):
         return
 
-    def _propagateOrbits(self, orbits, t1):
+    def _propagate_orbits(self, orbits, t1):
         """
         Propagate orbits from t0 to t1.
 
@@ -96,7 +96,7 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def propagateOrbits(
+    def propagate_orbits(
             self,
             orbits,
             t1,
@@ -175,14 +175,14 @@ class Backend:
                 inplace=True
             )
         else:
-            propagated = self._propagateOrbits(
+            propagated = self._propagate_orbits(
                 orbits,
                 t1
             )
 
         return propagated
 
-    def _generateEphemeris(self, orbits, observers):
+    def _generate_ephemeris(self, orbits, observers):
         """
         Generate ephemerides for the given orbits as observed by
         the observers.
@@ -195,7 +195,7 @@ class Backend:
         )
         raise NotImplementedError(err)
 
-    def generateEphemeris(
+    def generate_ephemeris(
             self,
             orbits,
             observers,
@@ -278,14 +278,14 @@ class Backend:
                 inplace=True
             )
         else:
-            ephemeris = self._generateEphemeris(
+            ephemeris = self._generate_ephemeris(
                 orbits,
                 observers
             )
 
         if test_orbit is not None:
 
-            test_orbit_ephemeris = self._generateEphemeris(
+            test_orbit_ephemeris = self._generate_ephemeris(
                 test_orbit,
                 observers
             )

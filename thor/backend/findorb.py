@@ -133,7 +133,7 @@ class FINDORB(Backend):
         env["HOME"] = temp_dir
         return env
 
-    def _propagateOrbits(self, orbits, t1, out_dir=None):
+    def _propagate_orbits(self, orbits, t1, out_dir=None):
         """
         Propagate orbits to t1.
 
@@ -173,7 +173,7 @@ class FINDORB(Backend):
                 "tt"
             )
 
-            for i in range(orbits.num_orbits):
+            for i in range(len(orbits)):
 
                 # If you give fo a string for a numbered object it will typically append brackets
                 # automatically which makes retrieving the object's orbit a little more tedious so by making sure
@@ -186,8 +186,8 @@ class FINDORB(Backend):
 
                 # Format the state vector into the type understood by find_orb
                 fo_orbit = "-v{},{}".format(
-                    orbits.epochs[i].tt.jd,
-                    ",".join(orbits.cartesian[i].astype("str"))
+                    orbits.cartesian.times[i].tt.jd,
+                    ",".join(orbits.cartesian.values.filled()[i].astype("str"))
                 )
 
                 # Run fo
@@ -291,7 +291,7 @@ class FINDORB(Backend):
 
         return propagated, process_returns
 
-    def _generateEphemeris(self, orbits, observers, out_dir=None):
+    def _generate_ephemeris(self, orbits, observers, out_dir=None):
         """
         Generate ephemerides for each orbit and observer.
 
@@ -353,7 +353,7 @@ class FINDORB(Backend):
                     ]
 
                 # For each orbit calculate their ephemerides
-                for i in range(orbits.num_orbits):
+                for i in range(len(orbits)):
 
                     # If you give fo a string for a numbered object it will typically append brackets
                     # automatically which makes retrieving the object's orbit a little more tedious so by making sure
@@ -366,11 +366,11 @@ class FINDORB(Backend):
 
                     # Format the state vector into the type understood by find_orb
                     fo_orbit = "-v{},{}".format(
-                        orbits.epochs[i].tt.jd,
-                        ",".join(orbits.cartesian[i].astype("str"))
+                        orbits.cartesian.times[i].tt.jd,
+                        ",".join(orbits.cartesian.values.filled()[i].astype("str"))
                     )
-                    if orbits.H is not None:
-                        fo_orbit += ",H={}".format(orbits.H[i])
+                    #if orbits.H is not None:
+                    #    fo_orbit += ",H={}".format(orbits.H[i])
 
                     # Call fo and generate ephemerides
                     call = [
@@ -498,7 +498,7 @@ class FINDORB(Backend):
         if orbits.ids is not None:
             ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
 
-        return ephemeris, process_returns
+        return ephemeris
 
     def _orbitDetermination(self, observations, out_dir=None, ades_kwargs=ADES_KWARGS):
         ids = []

@@ -43,7 +43,7 @@ class MJOLNIR(Backend):
         super().__init__(name="Mjolnir", **kwargs)
         return
 
-    def _propagateOrbits(self, orbits, t1):
+    def _propagate_orbits(self, orbits, t1):
         """
 
 
@@ -112,7 +112,7 @@ class MJOLNIR(Backend):
 
         return propagated
 
-    def _generateEphemeris(self, orbits, observers):
+    def _generate_ephemeris(self, orbits, observers):
 
         observer_states_list = []
         for observatory_code, observation_times in observers.items():
