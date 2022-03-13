@@ -6,7 +6,7 @@ from numba import jit
 from ..constants import Constants as c
 from ..coordinates import transform_coordinates
 from ..utils import _check_times
-from .state import shiftOrbitsOrigin
+from ..utils import shift_states_origin
 from .universal_propagate import propagateUniversal
 from .aberrations import addLightTime
 from .aberrations import addStellarAberration
@@ -146,13 +146,13 @@ def generateEphemerisUniversal(
 
     # Shift states to the barycenter
     propagated_orbits_bary = propagated_orbits_helio.copy()
-    propagated_orbits_bary[:, 2:] = shiftOrbitsOrigin(
+    propagated_orbits_bary[:, 2:] = shift_states_origin(
         propagated_orbits_helio[:, 2:],
         observation_times_stacked,
         origin_in="heliocenter",
         origin_out="barycenter"
     )
-    observer_states_stacked_bary = shiftOrbitsOrigin(
+    observer_states_stacked_bary = shift_states_origin(
         observer_states_stacked_helio,
         observation_times_stacked,
         origin_in="heliocenter",

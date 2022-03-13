@@ -1,22 +1,47 @@
 import os
 import logging
+import numpy as np
 import spiceypy as sp
 
+from ..constants import KM_P_AU
+from ..constants import S_P_DAY
+from .astropy import _check_times
 from .io import _downloadFile
 from .io import _readFileLog
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "NAIF_MAPPING",
     "KERNEL_URLS",
     "KERNELS_DE430",
     "KERNELS_DE440",
-    "getSPICEKernels",
-    "setupSPICE",
-    "useDE430",
-    "useDE440",
-    "useDefaultDEXXX"
+    "get_spice_kernels",
+    "setup_spice",
+    "use_DE430",
+    "use_DE440",
+    "use_default_DEXXX",
+    "get_perturber_state",
+    "shift_states_origin"
 ]
+
+NAIF_MAPPING = {
+    "solar system barycenter" : 0,
+    "mercury barycenter" : 1,
+    "venus barycenter" : 2,
+    "earth barycenter" : 3,
+    "mars barycenter" : 4,
+    "jupiter barycenter" : 5,
+    "saturn barycenter" : 6,
+    "uranus barycenter" : 7,
+    "neptune barycenter" : 8,
+    "pluto barycenter" : 9,
+    "sun" : 10,
+    "mercury" : 199,
+    "venus" : 299,
+    "earth" : 399,
+    "moon" : 301
+}
 
 KERNEL_URLS = {
     # Internal Name :  URL
@@ -40,7 +65,7 @@ BASEKERNELS = [
 KERNELS_DE430 = BASEKERNELS + ["de430.bsp"]
 KERNELS_DE440 = BASEKERNELS + ["de440.bsp"]
 
-def getSPICEKernels(
+def get_spice_kernels(
         kernels=KERNELS_DE430
     ):
     """
@@ -79,7 +104,7 @@ def getSPICEKernels(
         _downloadFile(os.path.join(os.path.dirname(__file__), "..", "data"), url)
     return
 
-def setupSPICE(
+def setup_spice(
         kernels=KERNELS_DE430,
         force=False
     ):
@@ -126,7 +151,7 @@ def setupSPICE(
                 ephemeris_file = file_name
 
             if file_name not in log.keys():
-                err = ("{} not found. Please run thor.utils.getSPICEKernels to download SPICE kernels.")
+                err = ("{} not found. Please run thor.utils.get_spice_kernels to download SPICE kernels.")
                 raise FileNotFoundError(err.format(file_name))
             sp.furnsh(log[file_name]["location"])
 
@@ -141,26 +166,26 @@ def setupSPICE(
         logger.debug("SPICE enabled.")
     return
 
-def useDE430(func):
+def use_DE430(func):
     """
     Decorator: Configures SPICE (via spiceypy) to
     use the DE430 planetary ephemerides.
     """
-    getSPICEKernels(KERNELS_DE430)
-    setupSPICE(KERNELS_DE430, force=True)
+    get_spice_kernels(KERNELS_DE430)
+    setup_spice(KERNELS_DE430, force=True)
 
     def wrap(*args, **kwargs):
         return func(*args, **kwargs)
 
     return wrap
 
-def useDE440(func):
+def use_DE440(func):
     """
     Decorator: Configures SPICE (via spiceypy) to
     use the DE440 planetary ephemerides.
     """
-    getSPICEKernels(KERNELS_DE440)
-    setupSPICE(KERNELS_DE440, force=True)
+    get_spice_kernels(KERNELS_DE440)
+    setup_spice(KERNELS_DE440, force=True)
 
     def wrap(*args, **kwargs):
         return func(*args, **kwargs)
@@ -168,4 +193,123 @@ def useDE440(func):
     return wrap
 
 # Set default to DE430
-useDefaultDEXXX = useDE430
+use_default_DEXXX = use_DE430
+
+def get_perturber_state(
+        body_name,
+        times,
+        frame="ecliptic",
+        origin="heliocenter"
+    ):
+    """
+    Query the JPL ephemeris files loaded in SPICE for the state vectors of desired perturbers.
+
+    Major bodies and dynamical centers available:
+        'solar system barycenter', 'sun',
+        'mercury', 'venus', 'earth',
+        'mars', 'jupiter', 'saturn',
+        'uranus', 'neptune'
+
+    Parameters
+    ----------
+    body_name : str
+        Name of major body.
+    times : `~astropy.time.core.Time` (N)
+        Times at which to get state vectors.
+    frame : {'equatorial', 'ecliptic'}
+        Return perturber state in the equatorial or ecliptic J2000 frames.
+    origin : {'barycenter', 'heliocenter'}
+        Return perturber state with heliocentric or barycentric origin.
+
+    Returns
+    -------
+    states : `~numpy.ndarray` (N, 6)
+        Heliocentric ecliptic J2000 state vector with postion in AU
+        and velocity in AU per day.
+    """
+    if origin == "barycenter":
+        center = 0 # Solar System Barycenter
+    elif origin == "heliocenter":
+        center = 10 # Heliocenter
+    else:
+        err = ("origin should be one of 'heliocenter' or 'barycenter'")
+        raise ValueError(err)
+
+    if frame == "ecliptic":
+        frame_spice = "ECLIPJ2000"
+    elif frame == "equatorial":
+        frame_spice = "J2000"
+    else:
+        err = (
+            "frame should be one of {'equatorial', 'ecliptic'}"
+        )
+        raise ValueError(err)
+
+    # Make sure SPICE is ready to roll
+    setup_spice()
+
+    # Check that times is an astropy time object
+    _check_times(times, "times")
+
+    # Convert MJD epochs in TDB to ET in TDB
+    epochs_tdb = times.tdb
+    epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
+
+    # Get position of the body in heliocentric ecliptic J2000 coordinates
+    states = []
+    for epoch in epochs_et:
+        state, lt = sp.spkez(
+            NAIF_MAPPING[body_name.lower()],
+            epoch,
+            frame_spice,
+            'NONE',
+            center
+        )
+        states.append(state)
+    states = np.vstack(states)
+
+    # Convert to AU and AU per day
+    states = states / KM_P_AU
+    states[:, 3:] = states[:, 3:] * S_P_DAY
+    return states
+
+def shift_states_origin(states, t0, origin_in="heliocenter", origin_out="barycenter"):
+    """
+    Shift the origin of the given Cartesian states. States should be expressed in
+    ecliptic J2000 cartesian coordinates.
+
+    Parameters
+    ----------
+    states : `~numpy.ndarray` (N, 6)
+        states to shift to a different coordinate frame.
+    t0 : `~astropy.time.core.Time` (N)
+        Epoch at which states are defined.
+    origin_in : {'heliocenter', 'barycenter'}
+        Origin of the input states.
+    origin_out : {'heliocenter', 'barycenter'}
+        Desired origin of the output states.
+
+    Returns
+    -------
+    states_shifted : `~numpy.ndarray` (N, 6)
+        states shifted to the desired output origin.
+    """
+    _check_times(t0, "t0")
+
+    states_shifted = states.copy()
+    bary_to_helio = get_perturber_state("sun", t0, origin="barycenter")
+    helio_to_bary = get_perturber_state("solar system barycenter", t0, origin="heliocenter")
+
+    if origin_in == origin_out:
+        return states_shifted
+    elif origin_in == "heliocenter" and origin_out == "barycenter":
+        states_shifted += bary_to_helio
+    elif origin_in == "barycenter" and origin_out == "heliocenter":
+        states_shifted += helio_to_bary
+    else:
+        err = (
+            "states_in and states_out should be one of {'heliocenter', 'barycenter'}"
+        )
+        raise ValueError(err)
+
+    return states_shifted

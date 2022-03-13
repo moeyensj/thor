@@ -2,7 +2,7 @@ import plotly
 import numpy as np
 
 from ..orbits import propagateOrbits
-from ..orbits import getPerturberState
+from ..utils import get_perturber_state
 
 __all__ = [
     "plotOrbits"
@@ -46,7 +46,7 @@ def addPerturber(perturber, t0, dts, color=None):
         perturber_data.append(trace)
 
     else:
-        perturber_state_t0 = getPerturberState(perturber, t0)
+        perturber_state_t0 = get_perturber_state(perturber, t0)
         trace = plotly.graph_objs.Scatter3d(
             x=perturber_state_t0[:, 0],
             y=perturber_state_t0[:, 1],
@@ -68,7 +68,7 @@ def addPerturber(perturber, t0, dts, color=None):
 
 
         t1 = t0 + dts
-        perturber_states = getPerturberState(perturber, t1)
+        perturber_states = get_perturber_state(perturber, t1)
         trace = plotly.graph_objs.Scatter3d(
             x=perturber_states[:, 0],
             y=perturber_states[:, 1],

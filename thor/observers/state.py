@@ -4,9 +4,9 @@ import spiceypy as sp
 
 from ..constants import Constants as c
 from ..utils import _check_times
-from ..utils import setupSPICE
+from ..utils import setup_spice
 from ..utils import readMPCObservatoryCodes
-from ..orbits import getPerturberState
+from ..utils import get_perturber_state
 
 __all__ = ["getObserverState"]
 
@@ -58,7 +58,7 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         )
         raise ValueError(err)
 
-    setupSPICE()
+    setup_spice()
 
     # Check that times is an astropy time object
     _check_times(observation_times, "observation_times")
@@ -94,7 +94,7 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         o_vec_ITRF93 = np.dot(R_EARTH, o_hat_ITRF93)
 
         # Grab earth state vector
-        state = getPerturberState("earth", observation_times, frame=frame, origin=origin)
+        state = get_perturber_state("earth", observation_times, frame=frame, origin=origin)
 
         # Convert MJD epochs in TDB to ET in TDB
         epochs_tdb = observation_times.tdb

@@ -9,7 +9,7 @@ from ..constants import Constants as c
 from ..utils import _check_times
 from ..orbits import propagateUniversal
 from ..orbits import generateEphemerisUniversal
-from ..orbits import shiftOrbitsOrigin
+from ..utils import shift_states_origin
 from ..observers import getObserverState
 from .backend import Backend
 
@@ -49,12 +49,12 @@ class MJOLNIR(Backend):
 
         """
         # All propagations in THOR should be done with times in the TDB time scale
-        t0_tdb = orbits.epochs.tdb.mjd
+        t0_tdb = orbits.cartesian.times.tdb.mjd
         t1_tdb = t1.tdb.mjd
 
         if self.origin == "barycenter":
             # Shift orbits to barycenter
-            orbits_ = shiftOrbitsOrigin(
+            orbits_ = shift_states_origin(
                 orbits.cartesian,
                 orbits.epochs,
                 origin_in="heliocenter",
@@ -85,7 +85,7 @@ class MJOLNIR(Backend):
                 scale="tdb",
                 format="mjd"
             )
-            propagated[:, 2:] = shiftOrbitsOrigin(
+            propagated[:, 2:] = shift_states_origin(
                 propagated[:, 2:],
                 t1_tdb_stacked,
                 origin_in="barycenter",
@@ -148,8 +148,8 @@ class MJOLNIR(Backend):
 
             # Generate ephemeris for each orbit
             ephemeris = generateEphemerisUniversal(
-                orbits.cartesian,
-                orbits.epochs,
+                orbits.cartesian.values.filled(),
+                orbits.cartesian.times,
                 observer_selected,
                 observation_times,
                 light_time=self.light_time,
