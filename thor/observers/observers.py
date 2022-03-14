@@ -79,9 +79,33 @@ class Observers(Indexable):
 
         return
 
+    def iterate_unique(self):
+        """
+        Yield unique observatory codes and their coresponding
+        observation times.
+
+        Yield
+        -----
+        code : str
+            MPC observatory code
+        times : `~astropy.time.core.Time`
+            Observation times for the specific observatory.
+        """
+        unique_code = np.unique(self.codes)
+        for code in unique_code:
+            times = self._times[np.where(self.codes == code)]
+            yield code, times
+
+    def __len__(self):
+        return len(self.codes)
+
     @property
     def codes(self):
         return self._codes
+
+    @property
+    def times(self):
+        return self._times
 
     @property
     def cartesian(self):
