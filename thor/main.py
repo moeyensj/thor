@@ -27,7 +27,7 @@ from .orbits import generateEphemeris
 from .orbits import initialOrbitDetermination
 from .orbits import differentialCorrection
 from .orbits import mergeAndExtendOrbits
-from .observers import getObserverState
+from .observers import get_observer_state
 from .utils import _initWorker
 from .utils import _checkParallel
 
@@ -262,7 +262,7 @@ def rangeAndShift(
         observer_states = []
         for observatory_code, observation_times in observers.items():
             observer_states.append(
-                getObserverState(
+                get_observer_state(
                     [observatory_code],
                     observation_times,
                     frame='ecliptic',

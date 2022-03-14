@@ -8,12 +8,12 @@ from ..utils import setup_spice
 from ..utils import readMPCObservatoryCodes
 from ..utils import get_perturber_state
 
-__all__ = ["getObserverState"]
+__all__ = ["get_observer_state"]
 
 R_EARTH = c.R_EARTH
 OMEGA_EARTH = 2 * np.pi / 0.997269675925926
 
-def getObserverState(observatory_codes, observation_times, frame="ecliptic", origin="heliocenter"):
+def get_observer_state(observatory_codes, observation_times, frame="ecliptic", origin="heliocenter"):
     """
     Find the heliocentric or barycentric ecliptic or equatorial J2000 state vectors for different observers or observatories at
     the desired epochs. Currently only supports ground-based observers.
@@ -130,7 +130,6 @@ def getObserverState(observatory_codes, observation_times, frame="ecliptic", ori
         dfi["observatory_code"] = [code for i in range(len(dfi))]
         dfs.append(dfi)
 
-    df = pd.concat(dfs)
+    df = pd.concat(dfs, ignore_index=True)
     df = df[["observatory_code", "mjd_utc", "obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]]
-    df.reset_index(inplace=True, drop=True)
     return df

@@ -9,7 +9,7 @@ from astropy.time import Time
 
 from ..utils import Indexable
 from ..coordinates import CartesianCoordinates
-from .state import getObserverState
+from .state import get_observer_state
 
 class Observers(Indexable):
     """
@@ -113,12 +113,10 @@ class Observers(Indexable):
         if self._cartesian is None:
 
             dfs = []
-            unique_codes = np.unique(self._codes)
-            for c in unique_codes:
-                ind = np.where(self.codes == c)
-                df_i = getObserverState(
-                    [c],
-                    self._times[ind],
+            for code, times in self.iterate_unique():
+                df_i = get_observer_state(
+                    [code],
+                    times,
                     origin="heliocenter",
                     frame="ecliptic"
                 )
@@ -131,21 +129,27 @@ class Observers(Indexable):
                 ignore_index=True
             )
 
-            cartesian = CartesianCoordinates(
-                times=Time(
-                    cartesian_df["mjd_utc"].values,
-                    format="mjd",
-                    scale="utc"
-                ),
-                x=cartesian_df["obs_x"].values,
-                y=cartesian_df["obs_y"].values,
-                z=cartesian_df["obs_z"].values,
-                vx=cartesian_df["obs_vx"].values,
-                vy=cartesian_df["obs_vy"].values,
-                vz=cartesian_df["obs_vz"].values,
+            cartesian = CartesianCoordinates.from_df(
+                cartesian_df,
+                coord_cols={
+                    "x" : "obs_x",
+                    "y" : "obs_y",
+                    "z" : "obs_z",
+                    "vx" : "obs_vx",
+                    "vy" : "obs_vy",
+                    "vz" : "obs_vz",
+                },
+                covariance_col=None
             )
-
             self._cartesian = cartesian
 
         return self._cartesian
+
+    def to_df(self, time_scale="utc"):
+
+        df = self.cartesian.to_df(time_scale=time_scale)
+        obs_cols = {}
+        df.insert(1, "observatory_code", self.codes)
+        df.rename(columns=obs_cols, inplace=True)
+        return df
 

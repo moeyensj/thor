@@ -10,7 +10,7 @@ from ..utils import _check_times
 from ..orbits import propagateUniversal
 from ..orbits import generateEphemerisUniversal
 from ..utils import shift_states_origin
-from ..observers import getObserverState
+from ..observers import get_observer_state
 from .backend import Backend
 
 MU = c.MU
@@ -123,7 +123,7 @@ class MJOLNIR(Backend):
             )
 
             # Get the observer state for observation times and append to list
-            observer_states = getObserverState(
+            observer_states = get_observer_state(
                 [observatory_code],
                 observation_times
             )
