@@ -92,6 +92,10 @@ class Indexable:
         for i in range(len(self)):
             yield self[i]
 
+    def yield_chunks(self, chunk_size):
+        for c in range(0, len(self), chunk_size):
+            yield self[c : c + chunk_size]
+
     def append(self, other):
 
         assert type(self) == type(other)
