@@ -3,11 +3,11 @@ import pandas as pd
 from astropy.time import Time
 
 __all__ = [
-    "writeADESHeader",
-    "writeToADES"
+    "write_ADES_header",
+    "write_to_ADES"
 ]
 
-def writeADESHeader(
+def write_ADES_header(
         observatory_code,
         submitter,
         telescope_design,
@@ -73,7 +73,7 @@ def writeADESHeader(
     header += [f"! name {submitter}"]
 
     if submitter_institution is not None:
-        header += ["! institution {}".format(submitter_institution)]
+        header += ["! institution {submitter_institution}"]
 
     # Add telescope details [required]
     header += ["# telescope"]
@@ -87,7 +87,7 @@ def writeADESHeader(
 
     # Add observer details
     header += ["# observers"]
-    if type(observers) is not list:
+    if not isinstance(observers, list):
         err = (
             "observers should be a list of strings."
         )
@@ -97,7 +97,7 @@ def writeADESHeader(
 
     # Add measurer details
     header += ["# measurers"]
-    if type(measurers) is not list:
+    if not not isinstance(measurers, list):
         err = (
             "measurers should be a list of strings."
         )
@@ -108,16 +108,16 @@ def writeADESHeader(
     # Add comment
     if comment is not None:
         header += ["# comment"]
-        header += ["! line {}".format(comment)]
+        header += ["! line {comment}"]
 
     header = [i + "\n" for i in header]
     return header
 
-def writeToADES(
+def write_to_ADES(
         observations,
         file_out,
         mjd_scale="utc",
-        seconds_precision=9,
+        seconds_precision=3,
         columns_precision={
             "ra" : 16,
             "dec" : 16,
@@ -182,7 +182,7 @@ def writeToADES(
     list : str
         A list of each line in the ADES header.
     """
-    header = writeADESHeader(
+    header = write_ADES_header(
         observatory_code,
         submitter,
         telescope_design,

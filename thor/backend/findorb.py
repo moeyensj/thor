@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from ..utils import writeToADES
+from ..utils import write_to_ADES
 from .backend import Backend
 
 FINDORB_CONFIG = {
@@ -587,7 +587,7 @@ class FINDORB(Backend):
                 object_observations.loc[:, id_col] = orbit_id_short
                 object_observations.reset_index(inplace=True, drop=True)
 
-                writeToADES(
+                write_to_ADES(
                     object_observations,
                     observations_file,
                     **ades_kwargs
