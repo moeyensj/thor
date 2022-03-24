@@ -30,6 +30,11 @@ class Residuals(Indexable):
         self._mahalanobis_distance = mahalanobis_distance
         self._probability = probability
         self._names = names
+
+        # For each dimension in values add a class attribute
+        for i, name in enumerate(self._names):
+            self.__dict__[f"d{name}"] = self._values[:, i]
+
         return
 
     def __len__(self):
@@ -89,6 +94,15 @@ def calc_residuals(observed: Coordinates, predicted: Coordinates):
     ----------
     observed : Coordinates
         Observed coordinates.
+    predicted : Coordinates
+        Predicted coordinates.
+
+    Returns
+    -------
+    residuals : Residuals
+        Residuals calculated between the observed and predicted coordinates (observed - predicted).
+        Includes chi2, dof and mahalanobis distance if the covariance matrices for the observed
+        coordinates are defined.
     """
 
     assert isinstance(observed, Coordinates)
