@@ -14,6 +14,10 @@ from ..utils import (
     times_to_df,
     times_from_df
 )
+from .covariances import (
+    covariances_from_df,
+    covariances_to_df
+)
 
 __all__ = [
     "_ingest_coordinate",
@@ -228,22 +232,24 @@ class Coordinates(Indexable):
         for i, (k, v) in enumerate(self.names.items()):
             data[k] = self.values.filled()[:, i]
 
-        coordinate_type = type(self).__name__
-        coordinate_type = coordinate_type.lower()[:-11]
-        if self.covariances is not None:
-            data[f"{coordinate_type}_covariances"] = [c for c in self.covariances.filled()]
-
-        data["origin"] = self.origin
-
         df = df.join(pd.DataFrame(data))
+
+        if self.covariances is not None:
+            df = df.join(
+                covariances_to_df(
+                    self.covariances,
+                    list(self.names.keys())
+                )
+            )
+
+        df.insert(len(df.columns), "origin", self.origin)
         return df
 
     @staticmethod
     def _dict_from_df(
-            df,
-            coord_cols=OrderedDict(),
-            covariance_col="covariance",
-            origin_col="origin"
+            df: pd.DataFrame,
+            coord_cols: OrderedDict = OrderedDict(),
+            origin_col: str = "origin"
         ):
         """
         Create a dictionary from a dataframe.
@@ -263,8 +269,6 @@ class Coordinates(Indexable):
                 coord_cols["raan"] = Column name of longitude of ascending node values
                 coord_cols["ap"] = Column name of argument of pericenter values
                 coord_cols["M"] = Column name of mean anomaly values
-        covariance_col : str
-            Name of the column containing covariance matrices.
         origin_col : str
             Name of the column containing the origin of each coordinate.
         """
@@ -274,8 +278,10 @@ class Coordinates(Indexable):
             if v in df.columns:
                 data[k] = df[v].values
 
-        if covariance_col in df.columns:
-            data["covariances"] = np.stack(df[covariance_col].values)
+        data["covariances"] = covariances_from_df(
+            df,
+            list(coord_cols.keys())
+        )
 
         if origin_col in df.columns:
             data["origin"] = df[origin_col].values

@@ -192,7 +192,6 @@ class CartesianCoordinates(Coordinates):
     def from_df(cls,
             df,
             coord_cols=CARTESIAN_COLS,
-            covariance_col="cartesian_covariances",
             origin_col="origin"
         ):
         """
@@ -213,15 +212,12 @@ class CartesianCoordinates(Coordinates):
                 coord_cols["vx"] = Column name of x velocity values
                 coord_cols["vy"] = Column name of y velocity values
                 coord_cols["vz"] = Column name of z velocity values
-        covariance_col : str
-            Name of the column containing covariance matrices.
         origin_col : str
             Name of the column containing the origin of each coordinate.
         """
         data = Coordinates._dict_from_df(
             df,
             coord_cols=coord_cols,
-            covariance_col=covariance_col,
             origin_col=origin_col
         )
         return cls(**data)

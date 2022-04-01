@@ -589,7 +589,6 @@ class KeplerianCoordinates(Coordinates):
                 "ap" : "ap",
                 "M" : "M"
             },
-            covariance_col="keplerian_covariances",
             origin_col="origin"
         ):
         """
@@ -610,15 +609,12 @@ class KeplerianCoordinates(Coordinates):
                 coord_cols["raan"] = Column name of longitude of ascending node values
                 coord_cols["ap"] = Column name of argument of pericenter values
                 coord_cols["M"] = Column name of mean anomaly values
-        covariance_col : str
-            Name of the column containing covariance matrices.
         origin_col : str
             Name of the column containing the origin of each coordinate.
         """
         data = Coordinates._dict_from_df(
             df,
             coord_cols=coord_cols,
-            covariance_col=covariance_col,
             origin_col=origin_col
         )
         return cls(**data)

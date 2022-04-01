@@ -378,7 +378,6 @@ class SphericalCoordinates(Coordinates):
     def from_df(cls,
             df,
             coord_cols=SPHERICAL_COLS,
-            covariance_col="spherical_covariances",
             origin_col="origin"
         ):
         """
@@ -399,15 +398,12 @@ class SphericalCoordinates(Coordinates):
                 coord_cols["vrho"] = Column name of the radial velocity values
                 coord_cols["vlon"] = Column name of longitudinal velocity values
                 coord_cols["vlat"] = Column name of latitudinal velocity values
-        covariance_col : str
-            Name of the column containing covariance matrices.
         origin_col : str
             Name of the column containing the origin of each coordinate.
         """
         data = Coordinates._dict_from_df(
             df,
             coord_cols=coord_cols,
-            covariance_col=covariance_col,
             origin_col=origin_col
         )
         return cls(**data)
