@@ -548,14 +548,14 @@ class KeplerianCoordinates(Coordinates):
     def from_cartesian(cls, cartesian: CartesianCoordinates, mu=MU):
 
         coords_keplerian = cartesian_to_keplerian(
-            cartesian.coords.filled(),
+            cartesian.values.filled(),
             mu=mu,
         )
         coords_keplerian = np.array(coords_keplerian)
 
         if cartesian.covariances is not None:
             covariances_keplerian = transform_covariances_jacobian(
-                cartesian.coords.filled(),
+                cartesian.values.filled(),
                 cartesian.covariances.filled(),
                 _cartesian_to_keplerian6
             )
