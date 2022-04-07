@@ -27,12 +27,12 @@ SPHERICAL_COLS = OrderedDict()
 SPHERICAL_UNITS = OrderedDict()
 for i in ["rho", "lon", "lat", "vrho", "vlon", "vlat"]:
     SPHERICAL_COLS[i] = i
-for i in ["rho",  "vrho"]:
-    SPHERICAL_UNITS[i] = u.au
-for i in ["lon",  "lat", "vlon", "vlat"]:
-    SPHERICAL_UNITS[i] = u.deg
-for i in ["vrho", "vlon", "vlat"]:
-    SPHERICAL_UNITS[i] = SPHERICAL_UNITS[i]/u.d
+SPHERICAL_UNITS["rho"] = u.au
+SPHERICAL_UNITS["lon"] = u.deg
+SPHERICAL_UNITS["lat"] = u.deg
+SPHERICAL_UNITS["vrho"] = u.au / u.d
+SPHERICAL_UNITS["vlon"] = u.deg / u.d
+SPHERICAL_UNITS["vlat"] = u.deg / u.d
 
 @jit
 def _cartesian_to_spherical(coords_cartesian: Union[np.ndarray, jnp.ndarray]) -> jnp.ndarray:

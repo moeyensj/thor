@@ -33,8 +33,10 @@ for i in ["a", "e", "i", "raan", "ap", "M"]:
     KEPLERIAN_COLS[i] = i
 KEPLERIAN_UNITS["a"] = u.au
 KEPLERIAN_UNITS["e"] = u.dimensionless_unscaled
-for i in ["i", "raan", "ap", "M"]:
-    KEPLERIAN_COLS[i] = u.degree
+KEPLERIAN_UNITS["i"] = u.deg
+KEPLERIAN_UNITS["raan"] = u.deg
+KEPLERIAN_UNITS["ap"] = u.deg
+KEPLERIAN_UNITS["M"] = u.au
 
 MU = c.MU
 Z_AXIS = jnp.array([0., 0., 1.])
