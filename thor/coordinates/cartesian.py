@@ -140,9 +140,7 @@ class CartesianCoordinates(Coordinates):
         coords.fill_value = np.NaN
 
         if self._covariances is not None:
-            covariances = np.ma.zeros(self._covariances.shape)
-            for i, cov in enumerate(self._covariances):
-                covariances[i] = matrix @ cov @ matrix.T
+            covariances = matrix @ self._covariances @ matrix.T
         else:
             covariances = None
 
