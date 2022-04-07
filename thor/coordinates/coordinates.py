@@ -173,10 +173,6 @@ class Coordinates(Indexable):
 
         if covariances is not None:
             self._covariances = _ingest_covariance(coords, covariances)
-            sigmas = np.ma.zeros(coords.shape, dtype=float)
-            for i, cov in enumerate(self._covariances):
-                sigmas[i] = np.diag(cov)
-            self._sigmas = np.sqrt(sigmas)
         else:
             self._covariances = None
             self._sigmas = None
@@ -200,7 +196,13 @@ class Coordinates(Indexable):
 
     @property
     def sigmas(self):
-        return self._sigmas
+
+        sigmas = None
+        if self._covariances is not None:
+            cov_diag = np.diagonal(self._covariances, axis1=1, axis2=2)
+            sigmas = np.sqrt(cov_diag)
+
+        return sigmas
 
     @property
     def origin(self):
