@@ -147,10 +147,14 @@ class Coordinates(Indexable):
             origin: Optional[Union[np.ndarray, str]] = "heliocenter",
             frame: str = "ecliptic",
             names: OrderedDict = OrderedDict(),
+            units: OrderedDict = OrderedDict(),
         ):
         coords = None
+
+        # Total number of coordinate dimensions
+        D = len(args)
         for d, q in enumerate(args):
-            coords = _ingest_coordinate(q, d, coords, D=len(args))
+            coords = _ingest_coordinate(q, d, coords, D=D)
 
         self._times = times
         self._values = coords
@@ -168,14 +172,15 @@ class Coordinates(Indexable):
                 raise TypeError(err)
         else:
             self._origin = origin
+
         self._frame = frame
         self._names = names
+        self._units = units
 
         if covariances is not None:
             self._covariances = _ingest_covariance(coords, covariances)
         else:
             self._covariances = None
-            self._sigmas = None
 
         return
 
@@ -215,6 +220,10 @@ class Coordinates(Indexable):
     @property
     def names(self):
         return self._names
+
+    @property
+    def units(self):
+        return self._units
 
     def to_cartesian(self):
         raise NotImplementedError

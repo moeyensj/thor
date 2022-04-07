@@ -19,9 +19,13 @@ TRANSFORM_EQ2EC[3:6, 3:6] = c.TRANSFORM_EQ2EC
 TRANSFORM_EC2EQ = TRANSFORM_EQ2EC.T
 
 CARTESIAN_COLS = OrderedDict()
-for i in ["x", "y", "z", "vx", "vy", "vz"]:
+CARTESIAN_UNITS = OrderedDict()
+for i in ["x", "y", "z"]:
     CARTESIAN_COLS[i] = i
-CARTESIAN_UNITS = [u.au, u.au, u.au, u.au / u.d, u.au / u.d, u.au / u.d]
+    CARTESIAN_UNITS[i] = u.au
+for i in ["vx", "vy", "vz"]:
+    CARTESIAN_COLS[i] = i
+    CARTESIAN_UNITS[i] = u.au / u.d
 
 class CartesianCoordinates(Coordinates):
 
@@ -37,7 +41,8 @@ class CartesianCoordinates(Coordinates):
             covariances: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
-            names: List[str] = CARTESIAN_COLS,
+            names: OrderedDict = CARTESIAN_COLS,
+            units: OrderedDict = CARTESIAN_UNITS,
         ):
         """
 
@@ -67,7 +72,8 @@ class CartesianCoordinates(Coordinates):
             times=times,
             origin=origin,
             frame=frame,
-            names=names
+            names=names,
+            units=units
         )
         return
 

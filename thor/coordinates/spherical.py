@@ -24,9 +24,15 @@ __all__ = [
 ]
 
 SPHERICAL_COLS = OrderedDict()
+SPHERICAL_UNITS = OrderedDict()
 for i in ["rho", "lon", "lat", "vrho", "vlon", "vlat"]:
     SPHERICAL_COLS[i] = i
-SPHERICAL_UNITS = [u.au, u.degree, u.degree, u.au / u.d, u.degree / u.d, u.degree / u.d]
+for i in ["rho",  "vrho"]:
+    SPHERICAL_UNITS[i] = u.au
+for i in ["lon",  "lat", "vlon", "vlat"]:
+    SPHERICAL_UNITS[i] = u.deg
+for i in ["vrho", "vlon", "vlat"]:
+    SPHERICAL_UNITS[i] = SPHERICAL_UNITS[i]/u.d
 
 @jit
 def _cartesian_to_spherical(coords_cartesian: Union[np.ndarray, jnp.ndarray]) -> jnp.ndarray:
@@ -249,7 +255,8 @@ class SphericalCoordinates(Coordinates):
             covariances: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
-            names: List[str] = SPHERICAL_COLS,
+            names: OrderedDict = SPHERICAL_COLS,
+            units: OrderedDict = SPHERICAL_UNITS
         ):
         """
 
@@ -281,7 +288,8 @@ class SphericalCoordinates(Coordinates):
             times=times,
             origin=origin,
             frame=frame,
-            names=names
+            names=names,
+            units=units,
         )
         return
 

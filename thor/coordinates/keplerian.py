@@ -28,8 +28,13 @@ __all__ = [
 ]
 
 KEPLERIAN_COLS = OrderedDict()
+KEPLERIAN_UNITS = OrderedDict()
 for i in ["a", "e", "i", "raan", "ap", "M"]:
     KEPLERIAN_COLS[i] = i
+KEPLERIAN_UNITS["a"] = u.au
+KEPLERIAN_UNITS["e"] = u.dimensionless_unscaled
+for i in ["i", "raan", "ap", "M"]:
+    KEPLERIAN_COLS[i] = u.degree
 
 MU = c.MU
 Z_AXIS = jnp.array([0., 0., 1.])
@@ -446,7 +451,8 @@ class KeplerianCoordinates(Coordinates):
             covariances: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
-            names: List[str] = KEPLERIAN_COLS,
+            names: OrderedDict = KEPLERIAN_COLS,
+            units: OrderedDict = KEPLERIAN_UNITS,
             mu: float = MU,
         ):
         Coordinates.__init__(self,
@@ -460,7 +466,8 @@ class KeplerianCoordinates(Coordinates):
             times=times,
             origin=origin,
             frame=frame,
-            names=names
+            names=names,
+            units=units
         )
         self._mu = mu
 
