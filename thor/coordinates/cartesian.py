@@ -44,17 +44,17 @@ class CartesianCoordinates(Coordinates):
         Parameters
         ----------
         x : `~numpy.ndarray` (N)
-            X-coordinate in units of au.
+            X-coordinate.
         y : `~numpy.ndarray` (N)
-            Y-coordinate in units of au.
+            Y-coordinate.
         z : `~numpy.ndarray` (N)
-            Z-coordinate in units of au.
+            Z-coordinate.
         vx : `~numpy.ndarray` (N)
-            X-coordinate velocity in in units of au per day.
+            X-coordinate velocity.
         vy : `~numpy.ndarray` (N)
-            Y-coordinate velocity in in units of au per day.
+            Y-coordinate velocity.
         vz : `~numpy.ndarray` (N)
-            Z-coordinate velocity in in units of au per day.
+            Z-coordinate velocity.
         """
         Coordinates.__init__(self,
             x,
@@ -69,38 +69,31 @@ class CartesianCoordinates(Coordinates):
             frame=frame,
             names=names
         )
-
-        self._x = self._values[:, 0]
-        self._y = self._values[:, 1]
-        self._z = self._values[:, 2]
-        self._vx = self._values[:, 3]
-        self._vy = self._values[:, 4]
-        self._vz = self._values[:, 5]
         return
 
     @property
     def x(self):
-        return self._x
+        return self._values[:, 0]
 
     @property
     def y(self):
-        return self._y
+        return self._values[:, 1]
 
     @property
     def z(self):
-        return self._z
+        return self._values[:, 2]
 
     @property
     def vx(self):
-        return self._vx
+        return self._values[:, 3]
 
     @property
     def vy(self):
-        return self._vy
+        return self._values[:, 4]
 
     @property
     def vz(self):
-        return self._vz
+        return self._values[:, 5]
 
     @property
     def r(self):

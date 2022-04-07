@@ -462,40 +462,33 @@ class KeplerianCoordinates(Coordinates):
             frame=frame,
             names=names
         )
-
-        self._a = self._values[:, 0]
-        self._e = self._values[:, 1]
-        self._i = self._values[:, 2]
-        self._raan = self._values[:, 3]
-        self._ap = self._values[:, 4]
-        self._M = self._values[:, 5]
         self._mu = mu
 
         return
 
     @property
     def a(self):
-        return self._a
+        return self._values[:, 0]
 
     @property
     def e(self):
-        return self._e
+        return self._values[:, 1]
 
     @property
     def i(self):
-        return self._i
+        return self._values[:, 2]
 
     @property
     def raan(self):
-        return self._raan
+        return self._values[:, 3]
 
     @property
     def ap(self):
-        return self._ap
+        return self._values[:, 4]
 
     @property
     def M(self):
-        return self._M
+        return self._values[:, 5]
 
     @property
     def q(self):

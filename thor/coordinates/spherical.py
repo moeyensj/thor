@@ -283,38 +283,31 @@ class SphericalCoordinates(Coordinates):
             frame=frame,
             names=names
         )
-
-        self._rho = self._values[:, 0]
-        self._lon = self._values[:, 1]
-        self._lat = self._values[:, 2]
-        self._vrho = self._values[:, 3]
-        self._vlon = self._values[:, 4]
-        self._vlat = self._values[:, 5]
         return
 
     @property
     def rho(self):
-        return self._rho
+        return self._values[:, 0]
 
     @property
     def lon(self):
-        return self._lon
+        return self._values[:, 1]
 
     @property
     def lat(self):
-        return self._lat
+        return self._values[:, 2]
 
     @property
     def vrho(self):
-        return self._vrho
+        return self._values[:, 3]
 
     @property
     def vlon(self):
-        return self._vlon
+        return self._values[:, 4]
 
     @property
     def vlat(self):
-        return self._vlat
+        return self._values[:, 5]
 
     def to_cartesian(self) -> CartesianCoordinates:
 
