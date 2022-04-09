@@ -65,8 +65,8 @@ def _cartesian_to_keplerian(
 
     Returns
     -------
-    coords_keplerian : `~jax.numpy.ndarray` (8)
-        8D Keplerian coordinate.
+    coords_keplerian : `~jax.numpy.ndarray` (9)
+        9D Keplerian coordinate.
         a : semi-major axis in au.
         q : periapsis distance in au.
         e : eccentricity.
@@ -75,10 +75,11 @@ def _cartesian_to_keplerian(
         ap : argument of periapsis in degrees.
         M : mean anomaly in degrees.
         nu : true anomaly in degrees.
+        n : mean motion in degrees per day.
     """
     with loops.Scope() as s:
 
-        s.arr = np.zeros(8, dtype=jnp.float64)
+        s.arr = np.zeros(9, dtype=jnp.float64)
         r = coords_cartesian[0:3]
         v = coords_cartesian[3:6]
 
@@ -121,6 +122,8 @@ def _cartesian_to_keplerian(
         nu = jnp.arccos(jnp.dot(e_vec, r) / (e * r_mag))
         nu = jnp.where(jnp.dot(r, v) < 0, 2*jnp.pi - nu, nu)
 
+        n = jnp.sqrt(mu / jnp.abs(a)**3)
+
         for _ in s.cond_range(e < 1.0):
             E = jnp.arctan2(jnp.sqrt(1 - e**2) * jnp.sin(nu), e + jnp.cos(nu))
             M_E = E - e * jnp.sin(E)
@@ -140,6 +143,7 @@ def _cartesian_to_keplerian(
         s.arr = s.arr.at[5].set(jnp.degrees(ap))
         s.arr = s.arr.at[6].set(jnp.degrees(M))
         s.arr = s.arr.at[7].set(jnp.degrees(nu))
+        s.arr = s.arr.at[8].set(jnp.degrees(n))
 
         coords_keplerian = s.arr
 
