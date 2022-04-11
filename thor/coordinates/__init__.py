@@ -3,6 +3,7 @@ from .covariances import *
 from .cartesian import *
 from .spherical import *
 from .keplerian import *
+from .cometary import *
 from .conversions import *
 from .transform import *
 from .residuals import *

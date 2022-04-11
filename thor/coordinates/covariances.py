@@ -94,6 +94,7 @@ def transform_covariances_jacobian(
         coords: np.ndarray,
         covariances: np.ndarray,
         _func: Callable,
+        **kwargs,
     ) -> np.ndarray:
     """
     Transform covariance matrices by calculating the Jacobian of the transformation function
@@ -117,11 +118,20 @@ def transform_covariances_jacobian(
     """
     # Calculate the jacobian function for the input function
     # Do this only once!
-    jacobian_func = jacfwd(_func)
+    jacobian_func = jacfwd(_func, argnums=0)
 
     covariances_out = []
-    for coord, covariance in zip(coords, covariances):
-        jacobian = jacobian_func(coord)
+
+    for i, (coord, covariance) in enumerate(zip(coords, covariances)):
+
+        kwargs_i = {}
+        for k, v in kwargs.items():
+            if isinstance(v, (list, np.ndarray, jnp.ndarray)):
+                kwargs_i[k] = v[i]
+            else:
+                kwargs_i[k] = v
+
+        jacobian = jacobian_func(coord, **kwargs_i)
         covariance_out = np.array(jacobian @ covariance @ jacobian.T)
         covariances_out.append(covariance_out)
 

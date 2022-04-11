@@ -5,6 +5,7 @@ from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
 from .spherical import SphericalCoordinates
 from .keplerian import KeplerianCoordinates
+from .cometary import CometaryCoordinates
 
 TRANSFORM_EQ2EC = c.TRANSFORM_EQ2EC
 TRANSFORM_EC2EQ = c.TRANSFORM_EC2EQ
@@ -25,7 +26,7 @@ def transform_coordinates(
     ----------
     coords : `~thor.coordinates.Coordinates`
         Coordinates to transform between representations and frames.
-    representation_out : {'cartesian', 'spherical', 'keplerian'}
+    representation_out : {'cartesian', 'spherical', 'keplerian', 'cometary'}
         Desired coordinate type or representation of the output coordinates.
     frame_out : {'equatorial', 'ecliptic'}
         Desired reference frame of the output coordinates.
@@ -39,16 +40,23 @@ def transform_coordinates(
     ------
     ValueError
         If frame_in, frame_out are not one of 'equatorial', 'ecliptic'.
-        If representation_in, representation_out are not one of 'cartesian', 'spherical', 'keplerian'.
+        If representation_in, representation_out are not one of 'cartesian',
+            'spherical', 'keplerian', 'cometary'.
     """
     # Check that coords is a thor.coordinates.Coordinates object
-    if not isinstance(coords, (CartesianCoordinates, SphericalCoordinates, KeplerianCoordinates)):
+    if not isinstance(coords, (
+            CartesianCoordinates,
+            SphericalCoordinates,
+            KeplerianCoordinates,
+            CometaryCoordinates)
+        ):
         err = (
             "Coords of type {} are not supported.\n"
             "Supported coordinates are:\n"
             "  CartesianCoordinates\n"
             "  SphericalCoordinates\n"
             "  KeplerianCoordinates\n"
+            "  CometaryCoordinates\n"
         )
         raise TypeError(err)
 
@@ -71,9 +79,9 @@ def transform_coordinates(
     # or spherical, raise errors otherwise
     representation_err = [
         "{} should be one of:\n",
-        "'cartesian', 'spherical', keplerian"
+        "'cartesian', 'spherical', 'keplerian', 'cometary'"
     ]
-    if representation_out not in ("cartesian", "spherical", "keplerian"):
+    if representation_out not in ("cartesian", "spherical", "keplerian", "cometary"):
         raise ValueError("".join(representation_err).format("representation_out"))
 
     # If coords are already in the desired frame and representation
@@ -84,6 +92,8 @@ def transform_coordinates(
         elif isinstance(coords, SphericalCoordinates) and representation_out == "spherical":
             return coords
         elif isinstance(coords, KeplerianCoordinates) and representation_out == "keplerian":
+            return coords
+        elif isinstance(coords, CometaryCoordinates) and representation_out == "cometary":
             return coords
         else:
             pass
@@ -110,6 +120,8 @@ def transform_coordinates(
         coords_out = SphericalCoordinates.from_cartesian(cartesian)
     elif representation_out == "keplerian":
         coords_out = KeplerianCoordinates.from_cartesian(cartesian)
+    elif representation_out == "cometary":
+        coords_out = CometaryCoordinates.from_cartesian(cartesian)
     elif representation_out == "cartesian":
         coords_out = cartesian
 
