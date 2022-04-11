@@ -1,23 +1,22 @@
 import numpy as np
 import pandas as pd
 from astropy.time import Time
-from numba import jit
 
 from ..constants import Constants as c
 from ..coordinates import transform_coordinates
 from ..utils import _check_times
 from ..utils import shift_states_origin
-from .universal_propagate import propagateUniversal
-from .aberrations import addLightTime
-from .aberrations import addStellarAberration
+from .universal_propagate import propagate_universal
+from .aberrations import add_light_time
+from .aberrations import add_stellar_aberration
 
 __all__ = [
-    "generateEphemerisUniversal"
+    "generate_ephemeris_universal"
 ]
 
 MU = c.MU
 
-def generateEphemerisUniversal(
+def generate_ephemeris_universal(
         orbits,
         t0,
         observer_states,
@@ -115,7 +114,7 @@ def generateEphemerisUniversal(
     _check_times(observation_times, "observation_times")
 
     # Propagate orbits to observer states
-    propagated_orbits_helio = propagateUniversal(
+    propagated_orbits_helio = propagate_universal(
         orbits,
         t0.tdb.mjd,
         observation_times.tdb.mjd,
@@ -163,7 +162,7 @@ def generateEphemerisUniversal(
     lt = np.zeros(len(propagated_orbits_helio))
     if light_time is True:
 
-        propagated_orbits_bary_lt, lt = addLightTime(
+        propagated_orbits_bary_lt, lt = add_light_time(
             propagated_orbits_bary[:, 2:],
             observation_times_stacked.utc.mjd,
             observer_states_stacked_bary[:, :3],
@@ -178,7 +177,7 @@ def generateEphemerisUniversal(
     delta_state_bary = propagated_orbits_bary[:, 2:] - observer_states_stacked_bary
 
     if stellar_aberration is True:
-        delta_state_bary[:, :3] = addStellarAberration(propagated_orbits_bary[:, 2:], observer_states_stacked_bary)
+        delta_state_bary[:, :3] = add_stellar_aberration(propagated_orbits_bary[:, 2:], observer_states_stacked_bary)
 
     # Convert topocentric to target state to spherical coordinates
     # including velocities

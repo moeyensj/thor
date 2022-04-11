@@ -2,18 +2,18 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .universal_propagate import propagateUniversal
+from .universal_propagate import propagate_universal
 
 __all__ = [
-    "addLightTime",
-    "addStellarAberration"
+    "add_light_time",
+    "add_stellar_aberration"
 ]
 
 MU = c.MU
 C = c.C
 
 @jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True, cache=True)
-def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
+def add_light_time(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
     """
     When generating ephemeris, orbits need to be backwards propagated to the time
     at which the light emitted or relflected from the object towards the observer.
@@ -71,7 +71,7 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
             dlt = np.abs(lt - lt_i)
 
             # Propagate backwards to new epoch
-            orbit = propagateUniversal(orbits[i:i+1, :], t0[i:i+1], t0[i:i+1] - lt, mu=mu, max_iter=max_iter, tol=tol)
+            orbit = propagate_universal(orbits[i:i+1, :], t0[i:i+1], t0[i:i+1] - lt, mu=mu, max_iter=max_iter, tol=tol)
 
             # Update running variables
             t0_i = orbit[:, 1]
@@ -84,7 +84,7 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
     return corrected_orbits, lts
 
 @jit(["f8[:,:](f8[:,:], f8[:,:])"], nopython=True, cache=True)
-def addStellarAberration(orbits, observer_states):
+def add_stellar_aberration(orbits, observer_states):
     """
     The motion of the observer in an inertial frame will cause an object
     to appear in a different location than its true geometric location. This

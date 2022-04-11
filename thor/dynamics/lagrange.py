@@ -2,17 +2,17 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as C
-from .chi import calcChi
+from .chi import calc_chi
 
 __all__ = [
-    "calcLagrangeCoeffs",
-    "applyLagrangeCoeffs",
+    "calc_lagrange_coefficients",
+    "apply_lagrange_coefficients",
 ]
 
 MU = C.MU
 
 @jit("Tuple((UniTuple(f8, 4), UniTuple(f8, 6), f8))(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
-def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
+def calc_lagrange_coefficients(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate the exact Lagrange coefficients given an initial state defined at t0,
     and the change in time from t0 to t1 (dt = t1 - t0).
@@ -57,7 +57,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
         Elsevier Ltd. ISBN-13: 978-0080977478
     """
     sqrt_mu = np.sqrt(mu)
-    chi, c0, c1, c2, c3, c4, c5 = calcChi(
+    chi, c0, c1, c2, c3, c4, c5 = calc_chi(
         r,
         v,
         dt,
@@ -90,7 +90,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     return lagrange_coeffs, stumpff_coeffs, chi
 
 @jit("UniTuple(f8[:], 2)(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
-def applyLagrangeCoeffs(r, v, f, g, f_dot, g_dot):
+def apply_lagrange_coefficients(r, v, f, g, f_dot, g_dot):
     """
     Apply the Lagrange coefficients to r and v.
 

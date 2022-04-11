@@ -2,16 +2,16 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .stumpff import calcStumpff
+from .stumpff import calc_stumpff
 
 __all__ = [
-    "calcChi",
+    "calc_chi",
 ]
 
 MU = c.MU
 
 @jit(["UniTuple(f8, 7)(f8[:], f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
-def calcChi(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
+def calc_chi(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate universal anomaly chi using Newton-Raphson.
 
@@ -64,7 +64,7 @@ def calcChi(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     while np.abs(ratio) > tol:
         chi2 = chi**2
         psi = alpha * chi2
-        c0, c1, c2, c3, c4, c5 = calcStumpff(psi)
+        c0, c1, c2, c3, c4, c5 = calc_stumpff(psi)
 
         # Newton-Raphson
         # Equation 3.65 in Curtis (2014) [1]

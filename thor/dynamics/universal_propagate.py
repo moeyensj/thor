@@ -2,17 +2,17 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .lagrange import calcLagrangeCoeffs
-from .lagrange import applyLagrangeCoeffs
+from .lagrange import calc_lagrange_coefficients
+from .lagrange import apply_lagrange_coefficients
 
 __all__ = [
-    "propagateUniversal",
+    "propagate_universal",
 ]
 
 MU = c.MU
 
 @jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True, cache=True)
-def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
+def propagate_universal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
     """
     Propagate orbits using the universal anomaly formalism.
 
@@ -52,7 +52,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
             v = np.ascontiguousarray(orbits[i, 3:6])
             dt = t - t0[i]
 
-            lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
+            lagrange_coeffs, stumpff_coeffs, chi = calc_lagrange_coefficients(
                 r,
                 v,
                 dt,
@@ -60,7 +60,7 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
                 max_iter=max_iter,
                 tol=tol
             )
-            r_new, v_new = applyLagrangeCoeffs(r, v, *lagrange_coeffs)
+            r_new, v_new = apply_lagrange_coefficients(r, v, *lagrange_coeffs)
 
             new_orbits.append([i, t, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
 

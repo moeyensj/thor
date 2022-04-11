@@ -7,8 +7,8 @@ from astropy.time import Time
 
 from ..constants import Constants as c
 from ..utils import _check_times
-from ..orbits import propagateUniversal
-from ..orbits import generateEphemerisUniversal
+from ..dynamics import propagate_universal
+from ..dynamics import generate_ephemeris_universal
 from ..utils import shift_states_origin
 from ..observers import get_observer_state
 from .backend import Backend
@@ -70,7 +70,7 @@ class MJOLNIR(Backend):
             )
             raise ValueError(err)
 
-        propagated = propagateUniversal(
+        propagated = propagate_universal(
             orbits_,
             t0_tdb,
             t1_tdb,
@@ -147,7 +147,7 @@ class MJOLNIR(Backend):
                 observer_selected = observer_selected[cols].values
 
             # Generate ephemeris for each orbit
-            ephemeris = generateEphemerisUniversal(
+            ephemeris = generate_ephemeris_universal(
                 orbits.cartesian.values.filled(),
                 orbits.cartesian.times,
                 observer_selected,

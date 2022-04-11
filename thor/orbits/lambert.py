@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .stumpff import calcStumpff
+from ..dynamics.stumpff import calc_stumpff
 
 MU = c.MU
 
@@ -55,7 +55,7 @@ def calcLambert(r0, t0, r1, t1, mu=MU, max_iter=1000, dt_tol=1e-12):
     iterations = 0
     converged = False
     while not converged:
-        c0, c1, c2, c3, c4, c5 = calcStumpff(psi_iter)
+        c0, c1, c2, c3, c4, c5 = calc_stumpff(psi_iter)
 
         y = r0_mag + r1_mag - A * (1 - psi_iter * c3) / np.sqrt(c2)
 

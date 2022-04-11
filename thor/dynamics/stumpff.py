@@ -2,11 +2,11 @@ import numpy as np
 from numba import jit
 
 __all__ = [
-    "calcStumpff"
+    "calc_stumpff"
 ]
 
 @jit("UniTuple(f8, 6)(f8)", nopython=True, cache=True)
-def calcStumpff(psi):
+def calc_stumpff(psi):
     """
     Calculate the first 6 Stumpff functions for variable psi.
 

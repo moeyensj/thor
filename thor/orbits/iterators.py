@@ -1,9 +1,9 @@
 import numpy as np
 
 from ..constants import Constants as c
-from .lagrange import calcLagrangeCoeffs
-from .lagrange import applyLagrangeCoeffs
-from .state_transition import calcStateTransitionMatrix
+from ..dynamics.lagrange import calc_lagrange_coefficients
+from ..dynamics.lagrange import apply_lagrange_coefficients
+from ..dynamics.state_transition import calc_state_transition_matrix
 
 __all__ = [
     "iterateStateTransition"
@@ -88,7 +88,7 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             # differential equation:
             #   d\chi / dt = \sqrt{mu} / r
             # and the corresponding state vector
-            lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
+            lagrange_coeffs, stumpff_coeffs, chi = calc_lagrange_coefficients(
                 r,
                 v,
                 dt,
@@ -96,10 +96,10 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
                 max_iter=max_iter,
                 tol=tol
             )
-            r_new, v_new = applyLagrangeCoeffs(r, v, *lagrange_coeffs)
+            r_new, v_new = apply_lagrange_coefficients(r, v, *lagrange_coeffs)
 
             # Calculate the state transition matrix
-            STM = calcStateTransitionMatrix(orbit_iter, dt, mu=mu, max_iter=100, tol=1e-15)
+            STM = calc_state_transition_matrix(orbit_iter, dt, mu=mu, max_iter=100, tol=1e-15)
 
             if j == 0:
                 STM1 = STM

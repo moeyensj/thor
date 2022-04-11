@@ -1,7 +1,7 @@
 import numpy as np
 
 __all__ = [
-    "calcTisserandParameter"
+    "calc_tisserand_parameter"
 ]
 
 # This code generates the dictionary of semi-major axes for the
@@ -31,7 +31,7 @@ MAJOR_BODIES = {
     'neptune': 30.22486701698071
 }
 
-def calcTisserandParameter(a, e, i, third_body="jupiter"):
+def calc_tisserand_parameter(a, e, i, third_body="jupiter"):
     """
     Calculate Tisserand's parameter used to identify potential comets.
     For example, objects with Tisserand parameter's with respect to Jupiter greater than 3 are
