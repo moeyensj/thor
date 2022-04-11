@@ -11,6 +11,7 @@ from ..utils import (
 from ..coordinates import (
     CartesianCoordinates,
     KeplerianCoordinates,
+    CometaryCoordinates,
     SphericalCoordinates,
     transform_coordinates
 )
@@ -36,6 +37,7 @@ class Orbits(Indexable):
         self._cartesian = None
         self._spherical = None
         self._keplerian = None
+        self._cometary = None
 
         if isinstance(coordinates, CartesianCoordinates):
             self._cartesian = deepcopy(coordinates)
@@ -43,12 +45,15 @@ class Orbits(Indexable):
             self._spherical = deepcopy(coordinates)
         elif isinstance(coordinates, KeplerianCoordinates):
             self._keplerian = deepcopy(coordinates)
+        elif isinstance(coordinates, CometaryCoordinates):
+            self._cometary = deepcopy(coordinates)
         else:
             err = (
                 "coordinates should be one of:\n"
                 "  CartesianCoordinates\n"
                 "  SphericalCoordinates\n"
                 "  KeplerianCoordinates\n"
+                "  CometaryCoordinates\n"
             )
             raise TypeError(err)
 
@@ -75,6 +80,8 @@ class Orbits(Indexable):
             N = len(self._cartesian)
         elif self._keplerian is not None:
             N = len(self._keplerian)
+        elif self._cometary is not None:
+            N = len(self._cometary)
         else: # self._spherical is not None:
             N = len(self._spherical)
 
@@ -95,6 +102,8 @@ class Orbits(Indexable):
 
             if self._keplerian is not None:
                 self._cartesian = transform_coordinates(self._keplerian, "cartesian")
+            elif self._cometary is not None:
+                self._cartesian = transform_coordinates(self._cometary, "cartesian")
             elif self._spherical is not None:
                 self._cartesian = transform_coordinates(self._spherical, "cartesian")
 
@@ -109,6 +118,8 @@ class Orbits(Indexable):
                 self._spherical = transform_coordinates(self._cartesian, "spherical")
             elif self._keplerian is not None:
                 self._spherical = transform_coordinates(self._keplerian, "spherical")
+            elif self._cometary is not None:
+                self._spherical = transform_coordinates(self._cometary, "spherical")
 
         return self._spherical
 
@@ -119,10 +130,26 @@ class Orbits(Indexable):
 
             if self._cartesian is not None:
                 self._keplerian = transform_coordinates(self._cartesian, "keplerian")
+            elif self._cometary is not None:
+                self._keplerian = transform_coordinates(self._cometary, "keplerian")
             elif self._spherical is not None:
                 self._keplerian = transform_coordinates(self._spherical, "keplerian")
 
         return self._keplerian
+
+    @property
+    def cometary(self):
+
+        if self._cometary is None:
+
+            if self._cartesian is not None:
+                self._cometary = transform_coordinates(self._cartesian, "cometary")
+            elif self._keplerian is not None:
+                self._cometary = transform_coordinates(self._keplerian, "cometary")
+            elif self._spherical is not None:
+                self._cometary = transform_coordinates(self._spherical, "cometary")
+
+        return self._cometary
 
     @property
     def classes(self):
@@ -175,7 +202,7 @@ class Orbits(Indexable):
         ----------
         time_scale : {"tdb", "tt", "utc"}
             Desired timescale of the output MJDs.
-        coordinate_type : {"cartesian", "spherical", "keplerian"}
+        coordinate_type : {"cartesian", "spherical", "keplerian", "cometary"}
             Desired output representation of the orbits.
 
         Returns
@@ -191,6 +218,10 @@ class Orbits(Indexable):
             df = self.keplerian.to_df(
                 time_scale=time_scale
             )
+        elif coordinate_type == "cometary":
+            df = self.cometary.to_df(
+                time_scale=time_scale
+            )
         elif coordinate_type == "spherical":
             df = self.spherical.to_df(
                 time_scale=time_scale
@@ -201,6 +232,7 @@ class Orbits(Indexable):
                 "  cartesian\n"
                 "  spherical\n"
                 "  keplerian\n"
+                "  cometary\n"
             )
             raise ValueError(err)
 
