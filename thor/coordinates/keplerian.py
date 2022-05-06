@@ -41,7 +41,7 @@ KEPLERIAN_UNITS["e"] = u.dimensionless_unscaled
 KEPLERIAN_UNITS["i"] = u.deg
 KEPLERIAN_UNITS["raan"] = u.deg
 KEPLERIAN_UNITS["ap"] = u.deg
-KEPLERIAN_UNITS["M"] = u.au
+KEPLERIAN_UNITS["M"] = u.deg
 
 MU = c.MU
 Z_AXIS = jnp.array([0., 0., 1.])
