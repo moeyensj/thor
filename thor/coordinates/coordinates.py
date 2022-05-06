@@ -16,7 +16,7 @@ from ..utils import (
 )
 from .covariances import (
     covariances_from_df,
-    covariances_to_df
+    covariances_to_df,
 )
 
 __all__ = [
@@ -232,7 +232,7 @@ class Coordinates(Indexable):
         raise NotImplementedError
 
     def to_df(self,
-            time_scale="utc"
+            time_scale="utc",
         ):
         data = {}
         N, D = self.values.shape
@@ -244,23 +244,22 @@ class Coordinates(Indexable):
             data[k] = self.values.filled()[:, i]
 
         df = df.join(pd.DataFrame(data))
-
         if self.covariances is not None:
-            df = df.join(
-                covariances_to_df(
-                    self.covariances,
-                    list(self.names.keys())
-                )
+            df_covariances = covariances_to_df(
+                self.covariances,
+                list(self.names.keys()),
+                kind="lower"
             )
+            df = df.join(df_covariances)
 
         df.insert(len(df.columns), "origin", self.origin)
         return df
 
     @staticmethod
     def _dict_from_df(
-            df: pd.DataFrame,
-            coord_cols: OrderedDict = OrderedDict(),
-            origin_col: str = "origin"
+            df,
+            coord_cols=OrderedDict(),
+            origin_col="origin"
         ):
         """
         Create a dictionary from a dataframe.
@@ -289,14 +288,14 @@ class Coordinates(Indexable):
             if v in df.columns:
                 data[k] = df[v].values
 
-        data["covariances"] = covariances_from_df(
-            df,
-            list(coord_cols.keys())
-        )
-
         if origin_col in df.columns:
             data["origin"] = df[origin_col].values
 
+        data["covariances"] = covariances_from_df(
+            df,
+            coord_names=list(coord_cols.keys()),
+            kind="lower"
+        )
         data["names"] = coord_cols
 
         return data
