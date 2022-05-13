@@ -5,6 +5,9 @@ from jax import (
     config,
     jacfwd
 )
+import jax.numpy as jnp
+from astropy import units as u
+from astropy.table import Table
 from scipy.stats import multivariate_normal
 from typing import (
     Callable,
@@ -19,7 +22,8 @@ __all__ = [
     "transform_covariances_sampling",
     "transform_covariances_jacobian",
     "covariances_to_df",
-    "covariances_from_df"
+    "covariances_from_df",
+    "covariances_to_table",
 ]
 
 logger = logging.getLogger(__file__)
@@ -232,6 +236,110 @@ def covariances_from_df(
     for i, j in zip(ii, jj):
         try:
             covariances[:, i, j] = df[f"cov_{coord_names[i]}_{coord_names[j]}"].values
+            covariances[:, j, i] = covariances[:, i, j]
+        except KeyError:
+            logger.debug(f"No covariance column found for dimensions {coord_names[i]},{coord_names[j]}.")
+
+    return covariances
+
+def covariances_to_table(
+        covariances: np.ma.MaskedArray,
+        coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
+        coord_units = [u.au, u.au, u.au, u.au/u.d, u.au/u.d, u.au/u.d],
+        kind: str = "lower",
+    ) -> Table:
+    """
+    Place covariance matrices into a `astropy.table.table.Table`. Splits the covariance matrices
+    into either upper or lower triangular form and then adds one column per dimension.
+
+    Parameters
+    ----------
+    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+        3D array of covariance matrices.
+    coord_names : List[str]
+        Names of the coordinate columns, will be used to determine column names for
+        each element in the triangular covariance matrix.
+    coord_units : List[]
+        The unit for each coordinate, will be used to determination the units for
+        element in the triangular covariance matrix.
+    kind : {'upper', 'lower'}
+        The orientation of the triangular representation.
+
+    Returns
+    -------
+    table : `~astropy.table.table.Table`
+        Table containing covariances in either upper or lower triangular
+        form.
+
+    Raises
+    ------
+    ValueError : If kind is not one of {'upper', 'lower'}
+    """
+    N, D, D = covariances.shape
+
+    if kind == "upper":
+        ii, jj = np.triu_indices(D)
+    elif kind == "lower":
+        ii, jj = np.tril_indices(D)
+    else:
+        err = (
+            "kind should be one of {'upper', 'lower'}"
+        )
+        raise ValueError(err)
+
+    data = {}
+    for i, j in zip(ii, jj):
+        data[f"cov_{coord_names[i]}_{coord_names[j]}"] = covariances[:, i, j] * coord_units[i] * coord_units[j]
+
+    return Table(data)
+
+def covariances_from_table(
+        table: Table,
+        coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
+        kind: str = "lower"
+    ) -> np.ma.MaskedArray:
+    """
+    Read covariance matrices from a `~pandas.DataFrame`.
+
+    Parameters
+    ----------
+    df : `~pandas.DataFrame`
+        DataFrame containing covariances in either upper or lower triangular
+        form.
+    coord_names : List[str]
+        Names of the coordinate columns, will be used to determine column names for
+        each element in the triangular covariance matrix.
+    kind : {'upper', 'lower'}
+        The orientation of the triangular representation.
+
+    Returns
+    -------
+    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+        3D array of covariance matrices.
+
+    Raises
+    ------
+    ValueError : If kind is not one of {'upper', 'lower'}
+    """
+    N = len(table)
+    D = len(coord_names)
+    covariances = np.ma.zeros((N, D, D), dtype=np.float64)
+    covariances.fill_value = np.NaN
+    covariances.mask = np.ones((N, D, D), dtype=bool)
+
+    if kind == "upper":
+        ii, jj = np.triu_indices(D)
+    elif kind == "lower":
+        ii, jj = np.tril_indices(D)
+    else:
+        err = (
+            "kind should be one of {'upper', 'lower'}"
+        )
+        raise ValueError(err)
+
+    for i, j in zip(ii, jj):
+        try:
+            covariances[:, i, j] = table[f"cov_{coord_names[i]}_{coord_names[j]}"].values
             covariances[:, j, i] = covariances[:, i, j]
         except KeyError:
             logger.debug(f"No covariance column found for dimensions {coord_names[i]},{coord_names[j]}.")
