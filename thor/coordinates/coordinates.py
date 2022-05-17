@@ -239,6 +239,8 @@ class Coordinates(Indexable):
 
         if self.times is not None:
             df = times_to_df(self.times, time_scale=time_scale)
+        else:
+            df = pd.DataFrame(index=np.arange(0, len(self)))
 
         for i, (k, v) in enumerate(self.names.items()):
             data[k] = self.values.filled()[:, i]
