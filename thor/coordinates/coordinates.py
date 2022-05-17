@@ -145,7 +145,7 @@ class Coordinates(Indexable):
             covariances: Optional[Union[np.ndarray, np.ma.array, List]] = None,
             times: Optional[Time] = None,
             origin: Optional[Union[np.ndarray, str]] = "heliocenter",
-            frame: str = "ecliptic",
+            frame: Optional[Union[np.ndarray, str]] = "ecliptic",
             names: OrderedDict = OrderedDict(),
             units: OrderedDict = OrderedDict(),
         ):
@@ -172,6 +172,21 @@ class Coordinates(Indexable):
                 raise TypeError(err)
         else:
             self._origin = origin
+
+        if frame is not None:
+            if isinstance(frame, str):
+                self._frame = np.empty(len(self), dtype="<U16")
+                self._frame.fill(frame)
+            elif isinstance(frame, np.ndarray):
+                assert len(frame) == len(self._values)
+                self._frame = frame
+            else:
+                err = (
+                    "frame should be a str or `~numpy.ndarray`"
+                )
+                raise TypeError(err)
+        else:
+            self._frame = frame
 
         self._frame = frame
         self._names = names
@@ -255,6 +270,7 @@ class Coordinates(Indexable):
             df = df.join(df_covariances)
 
         df.insert(len(df.columns), "origin", self.origin)
+        df.insert(len(df.columns), "frame", self.frame)
         return df
 
     @staticmethod
