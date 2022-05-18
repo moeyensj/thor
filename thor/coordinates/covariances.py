@@ -18,6 +18,7 @@ config.update("jax_enable_x64", True)
 config.update('jax_platform_name', 'cpu')
 
 __all__ = [
+    "sigmas_to_covariance",
     "sample_covariance",
     "transform_covariances_sampling",
     "transform_covariances_jacobian",
@@ -26,7 +27,32 @@ __all__ = [
     "covariances_to_table",
 ]
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
+
+def sigmas_to_covariance(sigmas: np.ndarray) -> np.ma.core.MaskedArray:
+    """
+    Convert an array of sigmas into an array of covariance
+    matrices (non-diagonal elements are assumed to be zero).
+
+    Parameters
+    ----------
+    sigmas : `~numpy.ndarray` (N, D)
+        1-sigma uncertainty values for each coordinate dimension D.
+
+    Returns
+    -------
+    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+        Covariance matrices with the squared 1-sigma values inserted along
+        each N diagonal.
+    """
+    N, D = sigmas.shape
+    covariances = np.ma.zeros((N, D, D), dtype=np.float64)
+    covariances.fill_value = np.NaN
+    covariances.mask = np.ones((N, D, D), dtype=bool)
+
+    I = np.eye(D, dtype=sigmas.dtype)
+    covariances[:, :, :] = np.einsum('kj,ji->kij', sigmas**2, I)
+    return covariances
 
 def sample_covariance(
         mean: np.ndarray,
