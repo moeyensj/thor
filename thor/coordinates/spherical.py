@@ -278,12 +278,12 @@ class SphericalCoordinates(Coordinates):
         """
 
         Coordinates.__init__(self,
-            rho,
-            lon,
-            lat,
-            vrho,
-            vlon,
-            vlat,
+            rho=rho,
+            lon=lon,
+            lat=lat,
+            vrho=vrho,
+            vlon=vlon,
+            vlat=vlat,
             covariances=covariances,
             times=times,
             origin=origin,

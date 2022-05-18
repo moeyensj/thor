@@ -62,12 +62,12 @@ class CartesianCoordinates(Coordinates):
             Z-coordinate velocity.
         """
         Coordinates.__init__(self,
-            x,
-            y,
-            z,
-            vx,
-            vy,
-            vz,
+            x=x,
+            y=y,
+            z=z,
+            vx=vx,
+            vy=vy,
+            vz=vz,
             covariances=covariances,
             times=times,
             origin=origin,

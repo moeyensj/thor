@@ -141,19 +141,23 @@ class Coordinates(Indexable):
 
     def __init__(
             self,
-            *args,
             covariances: Optional[Union[np.ndarray, np.ma.array, List]] = None,
             times: Optional[Time] = None,
             origin: Optional[Union[np.ndarray, str]] = "heliocenter",
             frame: Optional[Union[np.ndarray, str]] = "ecliptic",
             names: OrderedDict = OrderedDict(),
             units: OrderedDict = OrderedDict(),
+            **kwargs
         ):
         coords = None
 
         # Total number of coordinate dimensions
-        D = len(args)
-        for d, q in enumerate(args):
+        D = len(kwargs)
+        arg_units = OrderedDict()
+        for d, (name, q) in enumerate(kwargs.items()):
+            if isinstance(q, Quantity):
+                arg_units[name] = q.unit
+                q = q.value
             coords = _ingest_coordinate(q, d, coords, D=D)
 
         self._times = times
