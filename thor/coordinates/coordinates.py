@@ -1,7 +1,9 @@
+import logging
 import numpy as np
 import pandas as pd
 from astropy.time import Time
 from astropy import units as u
+from astropy.units import Quantity
 from typing import (
     List,
     Optional,
@@ -18,6 +20,8 @@ from .covariances import (
     covariances_from_df,
     covariances_to_df,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "_ingest_coordinate",
@@ -194,7 +198,19 @@ class Coordinates(Indexable):
 
         self._frame = frame
         self._names = names
-        self._units = units
+
+        # If the coordinate dimensions were defined with certain
+        # units make sure to use those instead of the ones
+        # passed using the units keyword argument
+        if len(arg_units) > 0:
+            for name, unit in units.items():
+                if name not in arg_units.keys():
+                    arg_units[name] = unit
+                    logger.info(f"Coordinate dimension {name} does not have an associated unit, assuming default unit {unit}.")
+
+            self._units = arg_units
+        else:
+            self._units = units
 
         if covariances is not None:
             self._covariances = _ingest_covariance(coords, covariances)
