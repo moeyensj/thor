@@ -190,14 +190,10 @@ class Coordinates(Indexable):
 
         if frame is not None:
             if isinstance(frame, str):
-                self._frame = np.empty(len(self), dtype="<U16")
-                self._frame.fill(frame)
-            elif isinstance(frame, np.ndarray):
-                assert len(frame) == len(self._values)
                 self._frame = frame
             else:
                 err = (
-                    "frame should be a str or `~numpy.ndarray`"
+                    "frame should be a str"
                 )
                 raise TypeError(err)
         else:
@@ -268,7 +264,7 @@ class Coordinates(Indexable):
         Returns
         -------
         bool :
-            True if these coordinates have the given units.
+            True if these coordinates have the given units, False otherwise.
         """
         for dim, unit in self.units.items():
             if units[dim] != unit:
