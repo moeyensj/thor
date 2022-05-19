@@ -1,3 +1,5 @@
+import logging
+import numpy as np
 from typing import Optional
 
 from ..constants import Constants as c
@@ -10,6 +12,8 @@ from .cometary import CometaryCoordinates
 TRANSFORM_EQ2EC = c.TRANSFORM_EQ2EC
 TRANSFORM_EC2EQ = c.TRANSFORM_EC2EQ
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "transform_coordinates",
 ]
@@ -18,6 +22,7 @@ def transform_coordinates(
         coords: Coordinates,
         representation_out: str,
         frame_out: Optional[str] = None,
+        unit_sphere: bool = True,
     ) -> Coordinates:
     """
     Transform coordinates between frames ('ecliptic', 'equatorial') and/or representations ('cartesian', 'spherical', 'keplerian').
@@ -30,6 +35,11 @@ def transform_coordinates(
         Desired coordinate type or representation of the output coordinates.
     frame_out : {'equatorial', 'ecliptic'}
         Desired reference frame of the output coordinates.
+    unit_sphere : bool
+        Assume the coordinates lie on a unit sphere. In many cases, spherical coordinates may not have a value
+        for radial distance or radial velocity but transforms to other representations or frames are still meaningful.
+        If this parameter is set to true, then if radial distance is not defined and/or radial velocity is not defined
+        then they are assumed to be 1.0 au and 0.0 au/d, respectively.
 
     Returns
     -------
@@ -100,8 +110,24 @@ def transform_coordinates(
 
     # At this point, some form of transformation is going to occur so
     # convert the coords to Cartesian if they aren't already
+    set_rho_nan = False
+    set_vrho_nan = False
     if isinstance(coords, CartesianCoordinates):
         cartesian = coords
+    elif isinstance(coords, SphericalCoordinates):
+        if representation_out == "spherical" or representation_out == "cartesian":
+            if unit_sphere:
+                if np.all(np.isnan(coords.rho.filled())):
+                    set_rho_nan = True
+                    logger.debug("Spherical coordinates have no defined radial distance (rho), assuming spherical coordinates lie on unit sphere.")
+                    coords.values[:, 0] = 1.0
+
+                if np.all(np.isnan(coords.vrho.filled())):
+                    set_vrho_nan = True
+                    logger.debug("Spherical coordinates have no defined radial velocity (vrho), assuming spherical coordinates lie on unit sphere with zero velocity.")
+                    coords.values[:, 3] = 0.0
+
+            cartesian = coords.to_cartesian()
     else:
         cartesian = coords.to_cartesian()
 
@@ -118,6 +144,28 @@ def transform_coordinates(
 
     if representation_out == "spherical":
         coords_out = SphericalCoordinates.from_cartesian(cartesian)
+
+        # If we assumed the coordinates lie on a unit sphere and the
+        # rho and vrho values were assumed then make sure the output coordinates
+        # and covariances are set back to NaN values and masked
+        if set_rho_nan:
+            coords_out.values[:, 0] = np.NaN
+            coords_out.values[:, 0].mask = 1
+            if coords_out.covariances is not None:
+                coords_out.covariances[:, 0] = np.NaN
+                coords_out.covariances[0, :] = np.NaN
+                coords_out.covariances[:, 0].mask = 1
+                coords_out.covariances[0, :].mask = 1
+
+        if set_vrho_nan:
+            coords_out.values[:, 3] = np.NaN
+            coords_out.values[:, 3].mask = 1
+            if coords_out.covariances is not None:
+                coords_out.covariances[:, 3] = np.NaN
+                coords_out.covariances[3, :] = np.NaN
+                coords_out.covariances[:, 3].mask = 1
+                coords_out.covariances[3, :].mask = 1
+
     elif representation_out == "keplerian":
         coords_out = KeplerianCoordinates.from_cartesian(cartesian)
     elif representation_out == "cometary":
