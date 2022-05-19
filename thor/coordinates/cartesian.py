@@ -160,7 +160,7 @@ class CartesianCoordinates(Coordinates):
             data["times"] = self.times
             data["covariances"] = covariances
             data["origin"] = self.origin
-            data["frame"] = "ecliptic"
+            data["frame"] = "equatorial"
             return CartesianCoordinates(**data)
         else:
             raise ValueError
@@ -178,7 +178,7 @@ class CartesianCoordinates(Coordinates):
             data["times"] = self.times
             data["covariances"] = covariances
             data["origin"] = self.origin
-            data["frame"] = "equatorial"
+            data["frame"] = "ecliptic"
             return CartesianCoordinates(**data)
         elif self.frame == "ecliptic":
             return self
