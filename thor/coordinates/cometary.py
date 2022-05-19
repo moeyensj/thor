@@ -31,7 +31,9 @@ __all__ = [
     "cartesian_to_cometary",
     "_cometary_to_cartesian",
     "cometary_to_cartesian",
-    "CometaryCoordinates"
+    "CometaryCoordinates",
+    "COMETARY_COLS",
+    "COMETARY_UNITS",
 ]
 
 COMETARY_COLS = OrderedDict()

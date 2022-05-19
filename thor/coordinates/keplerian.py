@@ -29,7 +29,9 @@ __all__ = [
     "cartesian_to_keplerian",
     "_keplerian_to_cartesian",
     "keplerian_to_cartesian",
-    "KeplerianCoordinates"
+    "KeplerianCoordinates",
+    "KEPLERIAN_COLS",
+    "KEPLERIAN_UNITS"
 ]
 
 KEPLERIAN_COLS = OrderedDict()

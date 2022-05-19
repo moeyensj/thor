@@ -5,7 +5,6 @@ from jax import config, jit
 from astropy.time import Time
 from astropy import units as u
 from typing import (
-    List,
     Optional,
     Union
 )
@@ -20,7 +19,9 @@ from .covariances import transform_covariances_jacobian
 __all__ = [
     "_cartesian_to_spherical",
     "_spherical_to_cartesian",
-    "SphericalCoordinates"
+    "SphericalCoordinates",
+    "SPHERICAL_COLS",
+    "SPHERICAL_UNITS"
 ]
 
 SPHERICAL_COLS = OrderedDict()

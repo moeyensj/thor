@@ -157,11 +157,18 @@ class Coordinates(Indexable):
 
         # Total number of coordinate dimensions
         D = len(kwargs)
-        arg_units = OrderedDict()
+        units_ = OrderedDict()
         for d, (name, q) in enumerate(kwargs.items()):
+            # If the coordinate dimension has a coresponding unit
+            # then use that unit. If it does not look for the unit
+            # in the units kwarg.
             if isinstance(q, Quantity):
-                arg_units[name] = q.unit
+                units_[name] = q.unit
                 q = q.value
+            else:
+                logger.debug(f"Coordinate dimension {name} does not have a corresponding unit, using unit defined in units kwarg ({units[name]}).")
+                units_[name] = units[name]
+
             coords = _ingest_coordinate(q, d, coords, D=D)
 
         self._times = times
@@ -198,19 +205,7 @@ class Coordinates(Indexable):
 
         self._frame = frame
         self._names = names
-
-        # If the coordinate dimensions were defined with certain
-        # units make sure to use those instead of the ones
-        # passed using the units keyword argument
-        if len(arg_units) > 0:
-            for name, unit in units.items():
-                if name not in arg_units.keys():
-                    arg_units[name] = unit
-                    logger.info(f"Coordinate dimension {name} does not have an associated unit, assuming default unit {unit}.")
-
-            self._units = arg_units
-        else:
-            self._units = units
+        self._units = units_
 
         if covariances is not None:
             self._covariances = _ingest_covariance(coords, covariances)
@@ -259,6 +254,27 @@ class Coordinates(Indexable):
     @property
     def units(self):
         return self._units
+
+    def has_units(self, units: OrderedDict) -> bool:
+        """
+        Check if these coordinate have the given units.
+
+        Parameters
+        ----------
+        units : OrderedDict
+            Dictionary containing coordinate dimension names as keys
+            and astropy units as values.
+
+        Returns
+        -------
+        bool :
+            True if these coordinates have the given units.
+        """
+        for dim, unit in self.units.items():
+            if units[dim] != unit:
+                logger.debug(f"Coordinate dimension {dim} has units in {unit}, not the given units of {units[dim]}.")
+                return False
+        return True
 
     def to_cartesian(self):
         raise NotImplementedError

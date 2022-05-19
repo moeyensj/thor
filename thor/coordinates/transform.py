@@ -4,10 +4,23 @@ from typing import Optional
 
 from ..constants import Constants as c
 from .coordinates import Coordinates
-from .cartesian import CartesianCoordinates
-from .spherical import SphericalCoordinates
-from .keplerian import KeplerianCoordinates
-from .cometary import CometaryCoordinates
+from .conversions import convert_coordinates
+from .cartesian import (
+    CartesianCoordinates,
+    CARTESIAN_UNITS
+)
+from .spherical import (
+    SphericalCoordinates,
+    SPHERICAL_UNITS
+)
+from .keplerian import (
+    KeplerianCoordinates,
+    KEPLERIAN_UNITS
+)
+from .cometary import (
+    CometaryCoordinates,
+    COMETARY_UNITS
+)
 
 TRANSFORM_EQ2EC = c.TRANSFORM_EQ2EC
 TRANSFORM_EC2EQ = c.TRANSFORM_EC2EQ
@@ -109,12 +122,21 @@ def transform_coordinates(
             pass
 
     # At this point, some form of transformation is going to occur so
-    # convert the coords to Cartesian if they aren't already
+    # convert the coords to Cartesian if they aren't already and make sure
+    # the units match the default units assumed for each class
     set_rho_nan = False
     set_vrho_nan = False
     if isinstance(coords, CartesianCoordinates):
+        if not coords.has_units(CARTESIAN_UNITS):
+            logger.info("Cartesian coordinates do not have default units, converting units before transforming.")
+            coords = convert_coordinates(coords, CARTESIAN_UNITS)
         cartesian = coords
+
     elif isinstance(coords, SphericalCoordinates):
+        if not coords.has_units(SPHERICAL_UNITS):
+            logger.info("Spherical coordinates do not have default units, converting units before transforming.")
+            coords = convert_coordinates(coords, SPHERICAL_UNITS)
+
         if representation_out == "spherical" or representation_out == "cartesian":
             if unit_sphere:
                 if np.all(np.isnan(coords.rho.filled())):
@@ -127,8 +149,20 @@ def transform_coordinates(
                     logger.debug("Spherical coordinates have no defined radial velocity (vrho), assuming spherical coordinates lie on unit sphere with zero velocity.")
                     coords.values[:, 3] = 0.0
 
-            cartesian = coords.to_cartesian()
-    else:
+        cartesian = coords.to_cartesian()
+
+    elif isinstance(coords, KeplerianCoordinates):
+        if not coords.has_units(KEPLERIAN_UNITS):
+            logger.info("Keplerian coordinates do not have default units, converting units before transforming.")
+            coords = convert_coordinates(coords, KEPLERIAN_UNITS)
+
+        cartesian = coords.to_cartesian()
+
+    elif isinstance(coords, CometaryCoordinates):
+        if not coords.has_units(COMETARY_UNITS):
+            logger.info("Cometary coordinates do not have default units, converting units before transforming.")
+            coords = convert_coordinates(coords, COMETARY_UNITS)
+
         cartesian = coords.to_cartesian()
 
     if coords.frame != frame_out:

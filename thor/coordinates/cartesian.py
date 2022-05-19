@@ -11,8 +11,11 @@ from ..constants import Constants as c
 from .coordinates import Coordinates
 
 __all__ = [
-    "CartesianCoordinates"
+    "CartesianCoordinates",
+    "CARTESIAN_COLS",
+    "CARTESIAN_UNITS"
 ]
+
 TRANSFORM_EQ2EC = np.zeros((6, 6))
 TRANSFORM_EQ2EC[0:3, 0:3] = c.TRANSFORM_EQ2EC
 TRANSFORM_EQ2EC[3:6, 3:6] = c.TRANSFORM_EQ2EC
