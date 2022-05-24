@@ -104,13 +104,15 @@ def calc_residuals(observed: Coordinates, predicted: Coordinates):
         Includes chi2, dof and mahalanobis distance if the covariance matrices for the observed
         coordinates are defined.
     """
-
     assert isinstance(observed, Coordinates)
     assert isinstance(predicted, Coordinates)
     assert type(observed) == type(predicted)
     assert len(observed) == len(predicted)
     if observed.times is not None and predicted.times is not None:
         np.testing.assert_equal(observed.times.tdb.mjd, predicted.times.tdb.mjd)
+
+    if not predicted.has_units(observed.units):
+        predicted = convert_coordinates(predicted, observed.units)
 
     residual_names = OrderedDict()
     for k, v in observed.names.items():
