@@ -2,11 +2,11 @@ import numpy as np
 
 from ..constants import Constants as c
 
-__all__ = ["calcGibbs"]
+__all__ = ["calc_gibbs"]
 
 MU = c.MU
 
-def calcGibbs(r1, r2, r3):
+def calc_gibbs(r1, r2, r3):
     """
     Calculates the velocity vector at the location of the second position vector (r2) using the
     Gibbs method.

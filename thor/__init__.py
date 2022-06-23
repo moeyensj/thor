@@ -6,6 +6,7 @@ from .coordinates import *
 from .testing import *
 from .orbits import *
 from .backend import *
+from .orbit_determination import *
 from .utils import *
 from .projections import *
 from .orbit import *

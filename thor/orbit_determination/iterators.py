@@ -6,13 +6,13 @@ from ..dynamics.lagrange import apply_lagrange_coefficients
 from ..dynamics.state_transition import calc_state_transition_matrix
 
 __all__ = [
-    "iterateStateTransition"
+    "iterate_state_transition"
 ]
 
 MU = c.MU
 C = c.C
 
-def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_time=True, mu=MU, max_iter=10, tol=1e-15):
+def iterate_state_transition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_time=True, mu=MU, max_iter=10, tol=1e-15):
     """
     Improve an initial orbit by iteratively solving for improved Langrange coefficients and minimizing the phi error vector
     by calculating the state transition matrix required to achieve this minimization.

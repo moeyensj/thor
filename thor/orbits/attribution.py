@@ -24,7 +24,7 @@ from ..utils import removeDuplicateObservations
 from .orbits import Orbits
 from .ephemeris import generateEphemeris
 from .residuals import calcResiduals
-from .od import differentialCorrection
+from ..orbit_determination import differential_correction
 
 logger = logging.getLogger(__name__)
 
@@ -378,7 +378,7 @@ def mergeAndExtendOrbits(
             # Run differential orbit correction on all orbits
             # with the newly added observations to the orbits
             # that had observations attributed to them
-            orbits_iter, orbit_members_iter = differentialCorrection(
+            orbits_iter, orbit_members_iter = differential_correction(
                 orbits_iter,
                 orbit_members_iter,
                 observations_iter,

@@ -5,27 +5,27 @@ from astropy.time import Time
 
 from ..constants import Constants as c
 from ..coordinates import transform_coordinates
-from .orbits import Orbits
-from .gibbs import calcGibbs
-from .herrick_gibbs import calcHerrickGibbs
-from .iterators import iterateStateTransition
+from ..orbits import Orbits
+from .gibbs import calc_gibbs
+from .herrick_gibbs import calc_herrick_gibbs
+from .iterators import iterate_state_transition
 
 __all__ = [
-    "_calcV",
-    "_calcA",
-    "_calcB",
-    "_calcLambdas",
-    "_calcRhos",
-    "approxLangrangeCoeffs",
-    "calcGauss",
-    "gaussIOD"
+    "_calc_V",
+    "_calc_A",
+    "_calc_B",
+    "_calc_lambdas",
+    "_calc_rhos",
+    "approx_langrange_coefficients",
+    "calc_gauss",
+    "gauss_iod"
 ]
 
 MU = c.MU
 C = c.C
 
 @jit("f8(f8[:], f8[:], f8[:])", nopython=True, cache=True)
-def _calcV(rho1_hat, rho2_hat, rho3_hat):
+def _calc_V(rho1_hat, rho2_hat, rho3_hat):
     # Vector triple product that gives the area of
     # the "volume of the parallelepiped" or according to
     # to Milani et al. 2008: 3x volume of the pyramid with vertices q, r1, r2, r3.
@@ -33,24 +33,24 @@ def _calcV(rho1_hat, rho2_hat, rho3_hat):
     return np.dot(np.cross(rho1_hat, rho2_hat), rho3_hat)
 
 @jit("f8(f8[:], f8[:], f8[:], f8[:], f8[:], f8, f8, f8)", nopython=True, cache=True)
-def _calcA(q1, q2, q3, rho1_hat, rho3_hat, t31, t32, t21):
+def _calc_A(q1, q2, q3, rho1_hat, rho3_hat, t31, t32, t21):
     # Equation 21 from Milani et al. 2008
     return np.linalg.norm(q2)**3 * np.dot(np.cross(rho1_hat, rho3_hat), (t32 * q1 - t31 * q2 + t21 * q3))
 
 @jit("f8(f8[:], f8[:], f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
-def _calcB(q1, q3, rho1_hat, rho3_hat, t31, t32, t21, mu=MU):
+def _calc_B(q1, q3, rho1_hat, rho3_hat, t31, t32, t21, mu=MU):
     # Equation 19 from Milani et al. 2008
     return mu / 6 * t32 * t21 * np.dot(np.cross(rho1_hat, rho3_hat), ((t31 + t32) * q1 + (t31 + t21) * q3))
 
 @jit("UniTuple(f8, 2)(f8, f8, f8, f8, f8)", nopython=True, cache=True)
-def _calcLambdas(r2_mag, t31, t32, t21, mu=MU):
+def _calc_lambdas(r2_mag, t31, t32, t21, mu=MU):
     # Equations 16 and 17 from Milani et al. 2008
     lambda1 = t32 / t31 * (1 + mu / (6 * r2_mag**3) * (t31**2 - t32**2))
     lambda3 = t21 / t31 * (1 + mu / (6 * r2_mag**3) * (t31**2 - t21**2))
     return lambda1, lambda3
 
 @jit("UniTuple(f8[:], 3)(f8, f8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8)", nopython=True, cache=True)
-def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V):
+def _calc_rhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V):
     # This can be derived by taking a series of scalar products of the coplanarity condition equation
     # with cross products of unit vectors in the direction of the observer, in particular, see Chapter 9 in
     # Milani's book on the theory of orbit determination
@@ -64,13 +64,13 @@ def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V):
     return rho1, rho2, rho3
 
 @jit("UniTuple(f8, 2)(f8, f8, f8)", nopython=True, cache=True)
-def approxLangrangeCoeffs(r_mag, dt, mu=MU):
+def approx_langrange_coefficients(r_mag, dt, mu=MU):
     # Calculate the Lagrange coefficients (Gauss f and g series)
     f = 1 - (1 / 2) * mu / r_mag**3 * dt**2
     g = dt - (1 / 6) * mu / r_mag**3 * dt**2
     return f, g
 
-def calcGauss(r1, r2, r3, t1, t2, t3):
+def calc_gauss(r1, r2, r3, t1, t2, t3):
     """
     Calculates the velocity vector at the location of the second position vector (r2) with Gauss's
     original method.
@@ -119,12 +119,12 @@ def calcGauss(r1, r2, r3, t1, t2, t3):
     t12 = t1 - t2
     t32 = t3 - t2
     r2_mag = np.linalg.norm(r2)
-    f1, g1 = approxLangrangeCoeffs(r2_mag, t12)
-    f3, g3 = approxLangrangeCoeffs(r2_mag, t32)
+    f1, g1 = approx_langrange_coefficients(r2_mag, t12)
+    f3, g3 = approx_langrange_coefficients(r2_mag, t32)
     v2 = (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
     return v2
 
-def gaussIOD(coords,
+def gauss_iod(coords,
              observation_times,
              coords_obs,
              velocity_method="gibbs",
@@ -200,9 +200,9 @@ def gaussIOD(coords,
     t21 = t2 - t1
     t32 = t3 - t2
 
-    A = _calcA(q1, q2, q3, rho1_hat, rho3_hat, t31, t32, t21)
-    B = _calcB(q1, q3, rho1_hat, rho3_hat, t31, t32, t21, mu=mu)
-    V = _calcV(rho1_hat, rho2_hat, rho3_hat)
+    A = _calc_A(q1, q2, q3, rho1_hat, rho3_hat, t31, t32, t21)
+    B = _calc_B(q1, q3, rho1_hat, rho3_hat, t31, t32, t21, mu=mu)
+    V = _calc_V(rho1_hat, rho2_hat, rho3_hat)
     coseps2 = np.dot(q2, rho2_hat) / q2_mag
     C0 = V * t31 * q2_mag**4 / B
     h0 = - A / B
@@ -232,8 +232,8 @@ def gaussIOD(coords,
     orbits = []
     epochs = []
     for r2_mag in r2_mags:
-        lambda1, lambda3 = _calcLambdas(r2_mag, t31, t32, t21, mu=mu)
-        rho1, rho2, rho3 = _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V)
+        lambda1, lambda3 = _calc_lambdas(r2_mag, t31, t32, t21, mu=mu)
+        rho1, rho2, rho3 = _calc_rhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V)
 
         if np.dot(rho2, rho2_hat) < 0:
             continue
@@ -247,11 +247,11 @@ def gaussIOD(coords,
         r3 = q3 + rho3
 
         if velocity_method == "gauss":
-            v2 = calcGauss(r1, r2, r3, t1, t2, t3)
+            v2 = calc_gauss(r1, r2, r3, t1, t2, t3)
         elif velocity_method == "gibbs":
-            v2 = calcGibbs(r1, r2, r3)
+            v2 = calc_gibbs(r1, r2, r3)
         elif velocity_method == "herrick+gibbs":
-            v2 = calcHerrickGibbs(r1, r2, r3, t1, t2, t3)
+            v2 = calc_herrick_gibbs(r1, r2, r3, t1, t2, t3)
         else:
             raise ValueError("velocity_method should be one of {'gauss', 'gibbs', 'herrick+gibbs'}")
 
@@ -260,7 +260,7 @@ def gaussIOD(coords,
 
         if iterate == True:
             if iterator == "state transition":
-                orbit = iterateStateTransition(
+                orbit = iterate_state_transition(
                     orbit, t21, t32,
                     q1, q2, q3,
                     rho1, rho2, rho3,

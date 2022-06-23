@@ -24,8 +24,8 @@ from .cell import Cell
 from .orbit import TestOrbit
 from .orbits import Orbits
 from .orbits import generateEphemeris
-from .orbits import initialOrbitDetermination
-from .orbits import differentialCorrection
+from .orbit_determination import initialOrbitDetermination
+from .orbit_determination import differentialCorrection
 from .orbits import mergeAndExtendOrbits
 from .observers import get_observer_state
 from .utils import _initWorker

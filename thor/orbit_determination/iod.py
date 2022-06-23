@@ -24,19 +24,19 @@ from ..utils import sortLinkages
 from ..utils import identifySubsetLinkages
 from ..backend import MJOLNIR
 from ..backend import PYOORB
-from .gauss import gaussIOD
-from .residuals import calcResiduals
+from .gauss import gauss_iod
+from ..orbits.residuals import calcResiduals
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "selectObservations",
+    "select_observations",
     "iod",
     "iod_worker",
-    "initialOrbitDetermination"
+    "initial_orbit_determination"
 ]
 
-def selectObservations(
+def select_observations(
         observations,
         method="combinations"
     ):
@@ -326,7 +326,7 @@ def iod(
     num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
 
     # Select observation IDs to use for IOD
-    obs_ids = selectObservations(
+    obs_ids = select_observations(
         observations,
         method=observation_selection_method,
     )
@@ -350,7 +350,7 @@ def iod(
         times = times_all[mask]
 
         # Run IOD
-        iod_orbits = gaussIOD(
+        iod_orbits = gauss_iod(
             coords,
             times.utc.mjd,
             coords_obs,
@@ -516,7 +516,7 @@ def iod(
     return orbit, orbit_members
 
 
-def initialOrbitDetermination(
+def initial_orbit_determination(
         observations,
         linkage_members,
         min_obs=6,

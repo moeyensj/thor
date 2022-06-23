@@ -2,11 +2,11 @@ import numpy as np
 
 from ..constants import Constants as c
 
-__all__ = ["calcHerrickGibbs"]
+__all__ = ["calc_herrick_gibbs"]
 
 MU = c.MU
 
-def calcHerrickGibbs(r1, r2, r3, t1, t2, t3):
+def calc_herrick_gibbs(r1, r2, r3, t1, t2, t3):
     """
     Calculates the velocity vector at the location of the second position vector (r2) using the
     Herrick-Gibbs formula.

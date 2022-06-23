@@ -7,12 +7,12 @@ from ..dynamics.stumpff import calc_stumpff
 MU = c.MU
 
 __all__ = [
-    "calcLambert"
+    "calc_lambert"
 ]
 
 
 @jit(["UniTuple(f8[:], 2)(f8[:], f8, f8[:], f8, f8, f8, f8)"], nopython=True, cache=True)
-def calcLambert(r0, t0, r1, t1, mu=MU, max_iter=1000, dt_tol=1e-12):
+def calc_lambert(r0, t0, r1, t1, mu=MU, max_iter=1000, dt_tol=1e-12):
     """
     Solve the Lambert problem using the universal variable formulation and
     Newton-Raphson. Given two position vectors and their corresponding

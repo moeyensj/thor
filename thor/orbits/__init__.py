@@ -2,12 +2,5 @@ from .classification import *
 from .orbits import *
 from .propagate import *
 from .ephemeris import *
-from .iterators import *
-from .gauss import *
-from .gibbs import *
-from .herrick_gibbs import *
-from .lambert import *
 from .residuals import *
 from .attribution import *
-from .iod import *
-from .od import *

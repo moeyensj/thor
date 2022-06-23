@@ -23,15 +23,15 @@ from ..utils import calcChunkSize
 from ..utils import sortLinkages
 from ..backend import PYOORB
 from ..backend import MJOLNIR
-from .orbits import Orbits
-from .residuals import calcResiduals
+from ..orbits import Orbits
+from ..orbits.residuals import calcResiduals
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "od_worker",
     "od",
-    "differentialCorrection"
+    "differential_correction"
 ]
 
 def od_worker(
@@ -557,7 +557,7 @@ def od(
 
     return od_orbit, od_orbit_members
 
-def differentialCorrection(
+def differential_correction(
         orbits,
         orbit_members,
         observations,
