@@ -1,31 +1,31 @@
 import os
 import numpy as np
 import pandas as pd
+from typing import Optional
 from astropy.time import Time
 
-from .io import _readFileLog
-from .io import _downloadFile
+from .file_manager import FileManager
 
 __all__ = [
-    "_unpackMPCDate",
-    "_lookupMPC",
-    "convertMPCPackedDates",
-    "packMPCDesignation",
-    "unpackMPCDesignation",
-    "getMPCObservatoryCodes",
-    "readMPCObservatoryCodes",
-    "getMPCDesignationFiles",
-    "readMPCDesignationFiles",
-    "getMPCOrbitCatalog",
-    "readMPCOrbitCatalog",
-    "getMPCCometCatalog",
-    "readMPCCometCatalog"
+    "_unpack_MPC_date",
+    "__lookup_MPC",
+    "convert_MPC_packed_dates",
+    "pack_MPC_designation",
+    "unpack_MPC_designation",
+    "get_MPC_observatory_codes",
+    "read_MPC_observatory_codes",
+    "get_MPC_designation_files",
+    "read_MPC_designation_files",
+    "get_MPC_orbit_catalog",
+    "read_MPC_orbit_catalog",
+    "get_MPC_comet_catalog",
+    "read_MPC_comet_catalog"
 ]
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 BASE62_MAP = {BASE62[i] : i for i in range(len(BASE62))}
 
-def _unpackMPCDate(epoch_pf):
+def _unpack_MPC_date(epoch_pf):
     # Taken from Lynne Jones' SSO TOOLS.
     # See https://minorplanetcenter.net/iau/info/PackedDates.html
     # for MPC documentation on packed dates.
@@ -33,9 +33,9 @@ def _unpackMPCDate(epoch_pf):
     #    1998 Jan. 18.73     = J981I73
     #    2001 Oct. 22.138303 = K01AM138303
     epoch_pf = str(epoch_pf)
-    year = _lookupMPC(epoch_pf[0])*100 + int(epoch_pf[1:3])
-    month = _lookupMPC(epoch_pf[3])
-    day = _lookupMPC(epoch_pf[4])
+    year = __lookup_MPC(epoch_pf[0])*100 + int(epoch_pf[1:3])
+    month = __lookup_MPC(epoch_pf[3])
+    day = __lookup_MPC(epoch_pf[4])
     isot_string = "{:d}-{:02d}-{:02d}".format(year, month, day)
 
     if len(epoch_pf) > 5:
@@ -47,7 +47,7 @@ def _unpackMPCDate(epoch_pf):
 
     return isot_string
 
-def _lookupMPC(x):
+def __lookup_MPC(x):
     # Convert the single character dates into integers.
     try:
         x = int(x)
@@ -57,7 +57,7 @@ def _lookupMPC(x):
         raise ValueError
     return x
 
-def convertMPCPackedDates(pf_tt):
+def convert_MPC_packed_dates(pf_tt):
     """
     Convert MPC packed form dates (in the TT time scale) to
     MJDs in TT. See: https://minorplanetcenter.net/iau/info/PackedDates.html
@@ -77,12 +77,12 @@ def convertMPCPackedDates(pf_tt):
     isot_tt = np.empty(len(pf_tt), dtype="<U32")
 
     for i, epoch in enumerate(pf_tt):
-        isot_tt[i] = _unpackMPCDate(epoch)
+        isot_tt[i] = _unpack_MPC_date(epoch)
 
     epoch = Time(isot_tt, format="isot", scale="tt")
     return epoch.tt.mjd
 
-def packMPCDesignation(designation):
+def pack_MPC_designation(designation):
     """
     Pack a unpacked MPC designation. For example, provisional
     designation 1998 SS162 will be packed to J98SG2S. Permanent
@@ -192,7 +192,7 @@ def packMPCDesignation(designation):
 
     return designation_pf
 
-def unpackMPCDesignation(designation_pf):
+def unpack_MPC_designation(designation_pf):
     """
     Unpack a packed MPC designation. For example, provisional
     designation J98SG2S will be unpacked to 1998 SS162. Permanent
@@ -290,7 +290,7 @@ def unpackMPCDesignation(designation_pf):
 
     return designation
 
-def getMPCObservatoryCodes():
+def get_MPC_observatory_codes():
     """
     Downloads the JSON-formatted MPC observatory codes file. Checks if a newer version of the file exists online, if so,
     replaces the previously downloaded file if available.
@@ -303,18 +303,18 @@ def getMPCObservatoryCodes():
     -------
     None
     """
-    directory = os.path.join(os.path.dirname(__file__), "..", "data")
+    file_manager = FileManager()
     url = "https://minorplanetcenter.net/Extended_Files/obscodes_extended.json.gz"
-    _downloadFile(directory, url)
+    file_manager.download(url, sub_directory="mpc")
     return
 
-def readMPCObservatoryCodes(observatoryCodes=None):
+def read_MPC_observatory_codes(observatory_codes: Optional[str] = None):
     """
     Reads the JSON-formatted MPC observatory codes file.
 
     Parameters
     ----------
-    observatoryCodes : str, optional
+    observatory_codes : str, optional
         Path to file
 
     Returns
@@ -324,13 +324,13 @@ def readMPCObservatoryCodes(observatoryCodes=None):
 
     See Also
     --------
-    `~thor.utils.mpc.getMPCObservatoryCodes` : Downloads the MPC observatory codes file.
+    `~thor.utils.mpc.get_MPC_observatory_codes` : Downloads the MPC observatory codes file.
     """
-    if observatoryCodes is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
-        observatoryCodes = log["obscodes_extended.json.gz"]["location"]
+    if observatory_codes is None:
+        file_manager = FileManager()
+        observatory_codes = file_manager.log["obscodes_extended.json.gz"]["location"]
 
-    observatories = pd.read_json(observatoryCodes).T
+    observatories = pd.read_json(observatory_codes).T
     observatories.rename(columns={
         "Longitude" : "longitude_deg",
         "Name" : "name"},
@@ -339,7 +339,7 @@ def readMPCObservatoryCodes(observatoryCodes=None):
     observatories.index.name = 'code'
     return observatories
 
-def getMPCDesignationFiles():
+def get_MPC_designation_files():
     """
     Downloads the JSON-formatted MPC designation files (both the unpacked and packed versions).
     Checks if a newer version of the files exist online, if so,
@@ -353,12 +353,14 @@ def getMPCDesignationFiles():
     -------
     None
     """
-    directory = os.path.join(os.path.dirname(__file__), "..", "data")
-    _downloadFile(directory, "https://www.minorplanetcenter.net/Extended_Files/mpc_ids.json.gz")
-    _downloadFile(directory,"https://www.minorplanetcenter.net/Extended_Files/mpc_ids_packed.json.gz")
+    file_manager = FileManager()
+    url = "https://www.minorplanetcenter.net/Extended_Files/mpc_ids.json.gz"
+    file_manager.download(url, sub_directory="mpc")
+    url = "https://www.minorplanetcenter.net/Extended_Files/mpc_ids_packed.json.gz"
+    file_manager.download(url, sub_directory="mpc")
     return
 
-def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=None):
+def read_MPC_designation_files(mpcDesignationsFile=None, mpcPackedDesignationsFile=None):
     """
     Reads the JSON-formatted MPC designation files (both the unpacked and packed forms).
 
@@ -378,15 +380,15 @@ def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=
 
     See Also
     --------
-    `~thor.utils.mpc.getMPCDesignationFiles` : Downloads the JSON-formatted MPC designation files.
+    `~thor.utils.mpc.get_MPC_designation_files` : Downloads the JSON-formatted MPC designation files.
     """
     if mpcDesignationsFile is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
-        mpcDesignationsFile = log["mpc_ids.json.gz"]["location"]
+        file_manager = FileManager()
+        mpcDesignationsFile = file_manager.log["mpc_ids.json.gz"]["location"]
 
     if mpcPackedDesignationsFile is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
-        mpcPackedDesignationsFile = log["mpc_ids_packed.json.gz"]["location"]
+        file_manager = FileManager()
+        mpcPackedDesignationsFile = file_manager.log["mpc_ids_packed.json.gz"]["location"]
 
     designations = pd.read_json(mpcDesignationsFile, orient='index')
     designations = pd.DataFrame(designations.stack(), columns=["other_designations"])
@@ -402,7 +404,7 @@ def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=
 
     return designations, designations_pf
 
-def getMPCOrbitCatalog():
+def get_MPC_orbit_catalog():
     """
     Downloads the JSON-formatted extended MPC orbit catalog. Checks if a newer version of the file exists online, if so,
     replaces the previously downloaded file if available.
@@ -415,18 +417,18 @@ def getMPCOrbitCatalog():
     -------
     None
     """
-    directory = os.path.join(os.path.dirname(__file__), "..", "data")
+    file_manager = FileManager()
     url = "https://www.minorplanetcenter.net/Extended_Files/mpcorb_extended.json.gz"
-    _downloadFile(directory, url)
+    file_manager.download(url, "mpc")
     return
 
-def readMPCOrbitCatalog(mpcOrbitCatalog=None):
+def read_MPC_orbit_catalog(mpc_orbit_catalog=None):
     """
     Reads the JSON-formatted extended MPC orbit catalog.
 
     Parameters
     ----------
-    mpcOrbitCatalog : str, optional
+    mpc_orbit_catalog : str, optional
         Path to file
 
     Returns
@@ -436,12 +438,13 @@ def readMPCOrbitCatalog(mpcOrbitCatalog=None):
 
     See Also
     --------
-    `~thor.utils.mpc.getMPCOrbitCatalog` : Downloads the extended MPC orbit catalog.
+    `~thor.utils.mpc.get_MPC_orbit_catalog` : Downloads the extended MPC orbit catalog.
     """
-    if mpcOrbitCatalog is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
-        mpcOrbitCatalog = log["mpcorb_extended.json.gz"]["location"]
-    mpcorb = pd.read_json(mpcOrbitCatalog)
+    if mpc_orbit_catalog is None:
+        file_manager = FileManager()
+        mpc_orbit_catalog = file_manager.log["mpcorb_extended.json.gz"]["location"]
+
+    mpcorb = pd.read_json(mpc_orbit_catalog)
 
     # Rename columns, include units where possible
     mpcorb.rename(columns={
@@ -542,7 +545,7 @@ def readMPCOrbitCatalog(mpcOrbitCatalog=None):
 
     return mpcorb
 
-def getMPCCometCatalog():
+def get_MPC_comet_catalog():
     """
     Downloads the JSON-formatted MPC comet orbit catalog. Checks if a newer version of the file exists online, if so,
     replaces the previously downloaded file if available.
@@ -555,18 +558,18 @@ def getMPCCometCatalog():
     -------
     None
     """
-    directory = os.path.join(os.path.dirname(__file__), "..", "data")
+    file_manager = FileManager()
     url = "https://www.minorplanetcenter.net/Extended_Files/cometels.json.gz"
-    _downloadFile(directory, url)
+    file_manager.download(url, sub_directory="mpc")
     return
 
-def readMPCCometCatalog(mpcCometCatalog=None):
+def read_MPC_comet_catalog(mpc_comet_catalog: Optional[str] = None):
     """
     Reads the JSON-formatted MPC comet catalog.
 
     Parameters
     ----------
-    mpcCometCatalog : str, optional
+    mpc_comet_catalog : str, optional
         Path to file
 
     Returns
@@ -576,12 +579,12 @@ def readMPCCometCatalog(mpcCometCatalog=None):
 
     See Also
     --------
-    `~thor.utils.mpc.getMPCCometCatalog` : Downloads the MPC comet catalog.
+    `~thor.utils.mpc.get_MPC_comet_catalog` : Downloads the MPC comet catalog.
     """
-    if mpcCometCatalog is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
-        mpcCometCatalog = log["cometels.json.gz"]["location"]
-    mpcorb_comets = pd.read_json(mpcCometCatalog)
+    file_manager = FileManager()
+    if mpc_comet_catalog is None:
+        mpc_comet_catalog = file_manager.log["cometels.json.gz"]["location"]
+    mpcorb_comets = pd.read_json(mpc_comet_catalog)
 
     mpcorb_comets.rename(columns={
          "Orbit_type" : "orbit_type",

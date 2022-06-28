@@ -1,5 +1,5 @@
 from .indexable import *
-from .io import *
+from .file_manager import *
 from .spice import *
 from .astropy import *
 from .horizons import *

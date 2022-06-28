@@ -3,10 +3,10 @@ import pandas as pd
 import spiceypy as sp
 
 from ..constants import Constants as c
-from ..utils import _check_times
-from ..utils import setup_spice
-from ..utils import readMPCObservatoryCodes
-from ..utils import get_perturber_state
+from ..utils.astropy import _check_times
+from ..utils.spice import setup_spice
+from ..utils.spice import get_perturber_state
+from ..utils.mpc import read_MPC_observatory_codes
 
 __all__ = ["get_observer_state"]
 
@@ -40,7 +40,7 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
     `~pandas.DataFrame`
         Pandas DataFrame with a column of observatory codes, MJDs (in UTC), and the J2000
         postion vector in three columns (obs_x, obs_y, obs_z) and J2000
-        velocity in three columns (obs_vx, obs_vy, obs_vg).
+        velocity in three columns (obs_vx, obs_vy, obs_vz).
     """
     if type(observatory_codes) not in [list, np.ndarray]:
         err = (
@@ -63,7 +63,7 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
     # Check that times is an astropy time object
     _check_times(observation_times, "observation_times")
 
-    observatories = readMPCObservatoryCodes()
+    observatories = read_MPC_observatory_codes()
     positions = {}
 
     for code in observatory_codes:
@@ -100,7 +100,7 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
         epochs_tdb = observation_times.tdb
         epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
 
-        # Grab rotaton matrices from ITRF93 to ecliptic J2000
+        # Grab rotaton matrices from ITRF93 to desired frame
         # The ITRF93 high accuracy Earth rotation model takes into account:
         # Precession:  1976 IAU model from Lieske.
         # Nutation:  1980 IAU model, with IERS corrections due to Herring et al.
