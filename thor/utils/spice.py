@@ -13,8 +13,8 @@ __all__ = [
     "KERNEL_URLS",
     "KERNELS_DE430",
     "KERNELS_DE440",
-    "get_spice_kernels",
-    "setup_spice",
+    "get_SPICE_kernels",
+    "setup_SPICE",
     "use_DE430",
     "use_DE440",
     "use_default_DEXXX",
@@ -62,7 +62,7 @@ BASEKERNELS = [
 KERNELS_DE430 = BASEKERNELS + ["de430.bsp"]
 KERNELS_DE440 = BASEKERNELS + ["de440.bsp"]
 
-def get_spice_kernels(
+def get_SPICE_kernels(
         kernels=KERNELS_DE440
     ):
     """
@@ -100,7 +100,7 @@ def get_spice_kernels(
         file_manager.download(KERNEL_URLS[kernel], sub_directory="spice")
     return
 
-def setup_spice(
+def setup_SPICE(
         kernels=KERNELS_DE440,
         force=False
     ):
@@ -147,7 +147,7 @@ def setup_spice(
                 ephemeris_file = file_name
 
             if file_name not in file_manager.log.keys():
-                err = ("{} not found. Please run thor.utils.get_spice_kernels to download SPICE kernels.")
+                err = ("{} not found. Please run thor.utils.get_SPICE_kernels to download SPICE kernels.")
                 raise FileNotFoundError(err.format(file_name))
             sp.furnsh(file_manager.log[file_name]["location"])
 
@@ -167,8 +167,8 @@ def use_DE430(func):
     Decorator: Configures SPICE (via spiceypy) to
     use the DE430 planetary ephemerides.
     """
-    get_spice_kernels(KERNELS_DE430)
-    setup_spice(KERNELS_DE430, force=True)
+    get_SPICE_kernels(KERNELS_DE430)
+    setup_SPICE(KERNELS_DE430, force=True)
 
     def wrap(*args, **kwargs):
         return func(*args, **kwargs)
@@ -180,8 +180,8 @@ def use_DE440(func):
     Decorator: Configures SPICE (via spiceypy) to
     use the DE440 planetary ephemerides.
     """
-    get_spice_kernels(KERNELS_DE440)
-    setup_spice(KERNELS_DE440, force=True)
+    get_SPICE_kernels(KERNELS_DE440)
+    setup_SPICE(KERNELS_DE440, force=True)
 
     def wrap(*args, **kwargs):
         return func(*args, **kwargs)
@@ -242,7 +242,7 @@ def get_perturber_state(
         raise ValueError(err)
 
     # Make sure SPICE is ready to roll
-    setup_spice()
+    setup_SPICE()
 
     # Check that times is an astropy time object
     _check_times(times, "times")

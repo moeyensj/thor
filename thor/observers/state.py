@@ -4,7 +4,7 @@ import spiceypy as sp
 
 from ..constants import Constants as c
 from ..utils.astropy import _check_times
-from ..utils.spice import setup_spice
+from ..utils.spice import setup_SPICE
 from ..utils.spice import get_perturber_state
 from ..utils.mpc import read_MPC_observatory_codes
 
@@ -57,7 +57,7 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
         )
         raise ValueError(err)
 
-    setup_spice()
+    setup_SPICE()
 
     # Check that times is an astropy time object
     _check_times(observation_times, "observation_times")
