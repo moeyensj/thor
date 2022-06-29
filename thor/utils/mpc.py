@@ -330,7 +330,7 @@ def read_MPC_observatory_codes(observatory_codes: Optional[str] = None):
         file_manager = FileManager()
         observatory_codes = file_manager.log["obscodes_extended.json.gz"]["location"]
 
-    observatories = pd.read_json(observatory_codes).T
+    observatories = pd.read_json(observatory_codes, orient="index", precise_float=True)
     observatories.rename(columns={
         "Longitude" : "longitude_deg",
         "Name" : "name"},
@@ -444,7 +444,7 @@ def read_MPC_orbit_catalog(mpc_orbit_catalog=None):
         file_manager = FileManager()
         mpc_orbit_catalog = file_manager.log["mpcorb_extended.json.gz"]["location"]
 
-    mpcorb = pd.read_json(mpc_orbit_catalog)
+    mpcorb = pd.read_json(mpc_orbit_catalog, precise_float=True)
 
     # Rename columns, include units where possible
     mpcorb.rename(columns={
@@ -584,7 +584,7 @@ def read_MPC_comet_catalog(mpc_comet_catalog: Optional[str] = None):
     file_manager = FileManager()
     if mpc_comet_catalog is None:
         mpc_comet_catalog = file_manager.log["cometels.json.gz"]["location"]
-    mpcorb_comets = pd.read_json(mpc_comet_catalog)
+    mpcorb_comets = pd.read_json(mpc_comet_catalog, precise_float=True)
 
     mpcorb_comets.rename(columns={
          "Orbit_type" : "orbit_type",
