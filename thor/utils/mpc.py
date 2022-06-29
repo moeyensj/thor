@@ -319,8 +319,9 @@ def read_MPC_observatory_codes(observatory_codes: Optional[str] = None):
 
     Returns
     -------
-    observatories : `~pandas.DataFrame`
-        DataFrame indexed on observatory code.
+    observatories : `~numpy.ndarray` (N)
+        Structured array containing the observatory codes and the
+        geodetic terms for each observatory.
 
     See Also
     --------
@@ -330,13 +331,28 @@ def read_MPC_observatory_codes(observatory_codes: Optional[str] = None):
         file_manager = FileManager()
         observatory_codes = file_manager.log["obscodes_extended.json.gz"]["location"]
 
-    observatories = pd.read_json(observatory_codes, orient="index", precise_float=True)
-    observatories.rename(columns={
+    observatories_df = pd.read_json(observatory_codes, orient="index", precise_float=True)
+    observatories_df.rename(columns={
         "Longitude" : "longitude_deg",
         "Name" : "name"},
         inplace=True
     )
-    observatories.index.name = 'code'
+    observatories_df.index.name = 'code'
+    observatories_df.reset_index(inplace=True)
+
+    observatories = np.zeros(
+        len(observatories_df),
+        dtype={
+            "names" : ("code", "longitude_deg", "cos", "sin", "name"),
+            "formats" : ("U3", np.float64, np.float64, np.float64, "U60")
+        },
+    )
+    observatories["code"] = observatories_df["code"].values
+    observatories["longitude_deg"] = observatories_df["longitude_deg"].values
+    observatories["cos"] = observatories_df["cos"].values
+    observatories["sin"] = observatories_df["sin"].values
+    observatories["name"] = observatories_df["name"].values
+
     return observatories
 
 def get_MPC_designation_files():

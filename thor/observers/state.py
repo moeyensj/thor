@@ -26,9 +26,9 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
 
     Parameters
     ----------
-    observatory_codes : list or `~numpy.ndarray`
+    observatory_codes : list or `~numpy.ndarray` (N)
         MPC observatory codes.
-    observation_times : `~astropy.time.core.Time`
+    observation_times : `~astropy.time.core.Time` (M)
         Epochs for which to find the observatory locations.
     frame : {'equatorial', 'ecliptic'}
         Return observer state in the equatorial or ecliptic J2000 frames.
@@ -37,12 +37,11 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
 
     Returns
     -------
-    `~pandas.DataFrame`
-        Pandas DataFrame with a column of observatory codes, MJDs (in UTC), and the J2000
-        postion vector in three columns (obs_x, obs_y, obs_z) and J2000
-        velocity in three columns (obs_vx, obs_vy, obs_vz).
+    `~numpy.ndarray` (N * M)
+        Structured array with a column of observatory codes, MJDs (in UTC), and
+        colums containing the observatories' states at the desired times.
     """
-    if type(observatory_codes) not in [list, np.ndarray]:
+    if not isinstance(observatory_codes, (list, np.ndarray)):
         err = (
             "observatory_codes should be a list or `~numpy.ndarray`."
         )
@@ -64,10 +63,17 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
     _check_times(observation_times, "observation_times")
 
     observatories = read_MPC_observatory_codes()
-    positions = {}
+    num_times = len(observation_times)
+    N = len(observatory_codes) * num_times
+    observer_states = np.zeros(N,
+        dtype={
+            "names" : ("code", "mjd_utc", "x", "y", "z", "vx", "vy", "vz"),
+            "formats" : ("U3", np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, np.float64),
+        }
+    )
 
-    for code in observatory_codes:
-        if np.any(observatories[observatories.index == code][["longitude_deg", "cos", "sin"]].isna().values == True):
+    for i, code in enumerate(observatory_codes):
+        if np.any(np.isnan(observatories[observatories["code"] == code][["longitude_deg", "cos", "sin"][0]])):
             err = (
                 "{} is missing information on Earth-based geodetic coordinates. The MPC Obs Code\n"
                 "file may be missing this information or the observer is a space-based observatory.\n"
@@ -75,11 +81,10 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
             )
             raise ValueError(err.format(code))
 
-
         # Get observer location on Earth
-        longitude = observatories[observatories.index == code]["longitude_deg"].values[0]
-        sin_phi = observatories[observatories.index == code]["sin"].values[0]
-        cos_phi = observatories[observatories.index == code]["cos"].values[0]
+        longitude = observatories[observatories["code"] == code]["longitude_deg"][0]
+        sin_phi = observatories[observatories["code"] == code]["sin"][0]
+        cos_phi = observatories[observatories["code"] == code]["cos"][0]
         sin_longitude = np.sin(np.radians(longitude))
         cos_longitude = np.cos(np.radians(longitude))
 
@@ -114,22 +119,14 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
         # Calculate velocity
         v_obs = np.array([vg + rm @ (- OMEGA_EARTH * R_EARTH * np.cross(o_hat_ITRF93, np.array([0, 0, 1]))) for vg, rm in zip(state[:, 3:], rotation_matrices)])
 
-        # Create table of mjds and positions
-        table = np.empty((len(observation_times), 7))
-        table[:, 0] = observation_times.utc.mjd
-        table[:, 1:4] = r_obs
-        table[:, 4:] = v_obs
+        # Insert states into structured array
+        observer_states[i * num_times : (i + 1) * num_times]["code"] = code
+        observer_states[i * num_times : (i + 1) * num_times]["mjd_utc"] = observation_times.utc.mjd
+        observer_states[i * num_times : (i + 1) * num_times]["x"] = r_obs[:, 0]
+        observer_states[i * num_times : (i + 1) * num_times]["y"] = r_obs[:, 1]
+        observer_states[i * num_times : (i + 1) * num_times]["z"] = r_obs[:, 2]
+        observer_states[i * num_times : (i + 1) * num_times]["vx"] = v_obs[:, 0]
+        observer_states[i * num_times : (i + 1) * num_times]["vy"] = v_obs[:, 1]
+        observer_states[i * num_times : (i + 1) * num_times]["vz"] = v_obs[:, 2]
 
-        # Add to dictionary
-        positions[code] = table
-
-    # Process dictionary into a clean pandas DataFrame
-    dfs = []
-    for code, table in positions.items():
-        dfi = pd.DataFrame(table, columns=["mjd_utc", "obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"])
-        dfi["observatory_code"] = [code for i in range(len(dfi))]
-        dfs.append(dfi)
-
-    df = pd.concat(dfs, ignore_index=True)
-    df = df[["observatory_code", "mjd_utc", "obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]]
-    return df
+    return observer_states
