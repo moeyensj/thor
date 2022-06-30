@@ -69,7 +69,9 @@ def _ingest_coordinate(
         N_ = len(q_)
         if coords is None:
             coords = np.ma.zeros((N_, D), dtype=np.float64, fill_value=np.NaN)
-            coords.mask = 1
+            coords.fill_value = np.NaN
+            # Set the entire array to be masked by default
+            coords.mask = np.ones(coords.shape, dtype=bool)
         else:
             N, D = coords.shape
             if N != N_:
@@ -80,7 +82,7 @@ def _ingest_coordinate(
                 raise ValueError(err)
 
         coords[:, d] = q_
-        coords.mask[:, d] = np.where(np.isnan(q_), 1, 0)
+        coords.mask[:, d] = np.where(np.isnan(q_), True, False)
 
     return coords
 
@@ -132,11 +134,12 @@ def _ingest_covariance(
         return covariance
 
     covariance_ = np.ma.zeros((len(coords), D, D), dtype=np.float64, fill_value=np.NaN)
-    covariance_.mask = np.zeros_like(covariance_, dtype=bool)
+    # Set the entire array to be masked by default
+    covariance_.mask = np.ones(covariance_.shape, dtype=bool)
 
     for n in range(len(coords)):
-        covariance_[n].mask[coords[n].mask, :] = 1
-        covariance_[n].mask[:, coords[n].mask] = 1
+        covariance_[n].mask[coords[n].mask, :] = True
+        covariance_[n].mask[:, coords[n].mask] = True
         covariance_[n][~covariance_[n].mask] = covariance[n][~covariance_[n].mask].flatten()
 
     return covariance_

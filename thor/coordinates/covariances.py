@@ -11,7 +11,8 @@ from astropy.table import Table
 from scipy.stats import multivariate_normal
 from typing import (
     Callable,
-    List
+    List,
+    Union
 )
 
 config.update("jax_enable_x64", True)
@@ -51,8 +52,8 @@ def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.core.MaskedArray]) -> n
         sigmas_ = sigmas
 
     N, D = sigmas_.shape
-    covariances = np.ma.zeros((N, D, D), dtype=np.float64)
-    covariances.fill_value = np.NaN
+    covariances = np.ma.zeros((N, D, D), dtype=np.float64, fill_value=np.NaN)
+    # Set the entire array to be masked by default
     covariances.mask = np.ones((N, D, D), dtype=bool)
 
     I = np.identity(D, dtype=sigmas_.dtype)
