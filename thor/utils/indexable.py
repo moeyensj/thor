@@ -73,7 +73,7 @@ class Indexable:
                 self.__dict__[k] = Time(
                     np.delete(v.mjd, np.s_[ind], axis=0),
                     scale=v.scale,
-                    format=v.format
+                    format="mjd"
                 )
             elif isinstance(v, (list, Indexable)):
                 del v[ind]
@@ -112,11 +112,10 @@ class Indexable:
 
             elif isinstance(v, Time):
                 self.__dict__[k] = Time(
-                    np.concatenate([self_v.tdb.mjd, v.tdb.mjd]),
-                    scale="tdb",
+                    np.concatenate([self_v.mjd, v.mjd]),
+                    scale=v.scale,
                     format="mjd"
                 )
-                self.__dict__[k]._set_scale(self_v.scale)
 
             elif isinstance(v, (list, Indexable)):
                 self_v.append(v)
