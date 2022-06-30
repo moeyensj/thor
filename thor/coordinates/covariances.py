@@ -23,6 +23,8 @@ __all__ = [
     "sample_covariance",
     "transform_covariances_sampling",
     "transform_covariances_jacobian",
+    "sigmas_to_df",
+    "sigmas_from_df",
     "covariances_to_df",
     "covariances_from_df",
     "covariances_to_table",
@@ -174,6 +176,72 @@ def transform_covariances_jacobian(
         covariances_out.append(covariance_out)
 
     return np.stack(covariances_out)
+
+def sigmas_to_df(
+        sigmas: np.ma.MaskedArray,
+        coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
+    ) -> pd.DataFrame:
+    """
+    Place sigmas into a `pandas.DataFrame`.
+
+    Parameters
+    ----------
+    sigmas : `~numpy.ma.core.MaskedArray` (N, D)
+        1-sigma uncertainty values for each coordinate dimension D.
+    coord_names : List[str]
+        Names of the coordinate columns, will be used to determine column names for
+        each element in the triangular covariance matrix.
+
+    Returns
+    -------
+    df : `~pandas.DataFrame`
+        DataFrame containing covariances in either upper or lower triangular
+        form.
+    """
+    N, D = sigmas.shape
+
+    data = {}
+    for i in range(D):
+        data[f"sigma_{coord_names[i]}"] = sigmas[:, i]
+
+    return pd.DataFrame(data)
+
+def sigmas_from_df(
+        df: pd.DataFrame,
+        coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
+    ) -> np.ma.MaskedArray:
+    """
+    Read sigmas from a `~pandas.DataFrame`.
+
+    Parameters
+    ----------
+    df : `~pandas.DataFrame`
+        DataFrame containing covariances in either upper or lower triangular
+        form.
+    coord_names : List[str]
+        Names of the coordinate columns, will be used to determine column names for
+        each element in the triangular covariance matrix.
+
+    Returns
+    -------
+    sigmas : `~numpy.ma.core.MaskedArray` (N, D)
+        1-sigma uncertainty values for each coordinate dimension D.
+    """
+    N = len(df)
+    D = len(coord_names)
+    sigmas = np.ma.zeros((N, D), dtype=np.float64)
+    sigmas.fill_value = np.NaN
+    sigmas.mask = np.ones((N, D), dtype=bool)
+
+    for i in range(D):
+        try:
+            sigmas[:, i] = df[f"sigma_{coord_names[i]}"].values
+            sigmas.mask[:, i] = np.where(np.isnan(sigmas[:, i]), 1, 0)
+
+        except KeyError:
+            logger.debug(f"No sigma column found for dimension {coord_names[i]}.")
+
+    return sigmas
 
 def covariances_to_df(
         covariances: np.ma.MaskedArray,
