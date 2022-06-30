@@ -277,7 +277,6 @@ class SphericalCoordinates(Coordinates):
         vlat : `~numpy.ndarray` (N)
             Latitudinal velocity in units of degrees per day.
         """
-
         Coordinates.__init__(self,
             rho=rho,
             lon=lon,
@@ -380,7 +379,8 @@ class SphericalCoordinates(Coordinates):
     def from_df(cls,
             df,
             coord_cols=SPHERICAL_COLS,
-            origin_col="origin"
+            origin_col="origin",
+            frame_col="frame"
         ):
         """
         Create a SphericalCoordinates class from a dataframe.
@@ -402,10 +402,13 @@ class SphericalCoordinates(Coordinates):
                 coord_cols["vlat"] = Column name of latitudinal velocity values
         origin_col : str
             Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
         """
         data = Coordinates._dict_from_df(
             df,
             coord_cols=coord_cols,
-            origin_col=origin_col
+            origin_col=origin_col,
+            frame_col=frame_col
         )
         return cls(**data)

@@ -309,7 +309,8 @@ class Coordinates(Indexable):
     def _dict_from_df(
             df,
             coord_cols=OrderedDict(),
-            origin_col="origin"
+            origin_col="origin",
+            frame_col="frame"
         ):
         """
         Create a dictionary from a dataframe.
@@ -331,6 +332,13 @@ class Coordinates(Indexable):
                 coord_cols["M"] = Column name of mean anomaly values
         origin_col : str
             Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
+
+        Returns
+        -------
+        data : dict
+            Dictionary containing attributes extracted from the given Pandas DataFrame.
         """
         data = {}
         data["times"] = times_from_df(df)
@@ -340,6 +348,13 @@ class Coordinates(Indexable):
 
         if origin_col in df.columns:
             data["origin"] = df[origin_col].values
+        else:
+            logger.debug(f"origin_col ({origin_col}) has not been found in given dataframe.")
+
+        if frame_col in df.columns:
+            data["origin"] = df[frame_col].values
+        else:
+            logger.debug(f"frame_col ({frame_col}) has not been found in given dataframe.")
 
         data["covariances"] = covariances_from_df(
             df,

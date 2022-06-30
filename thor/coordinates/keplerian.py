@@ -585,15 +585,9 @@ class KeplerianCoordinates(Coordinates):
     @classmethod
     def from_df(cls,
             df,
-            coord_cols={
-                "a" : "a",
-                "e" : "e",
-                "i" : "i",
-                "raan" : "raan",
-                "ap" : "ap",
-                "M" : "M"
-            },
-            origin_col="origin"
+            coord_cols=KEPLERIAN_COLS,
+            origin_col="origin",
+            frame_col="frame"
         ):
         """
         Create a KeplerianCoordinates class from a dataframe.
@@ -615,10 +609,13 @@ class KeplerianCoordinates(Coordinates):
                 coord_cols["M"] = Column name of mean anomaly values
         origin_col : str
             Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
         """
         data = Coordinates._dict_from_df(
             df,
             coord_cols=coord_cols,
-            origin_col=origin_col
+            origin_col=origin_col,
+            frame_col=frame_col
         )
         return cls(**data)

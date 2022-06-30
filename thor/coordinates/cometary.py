@@ -434,15 +434,9 @@ class CometaryCoordinates(Coordinates):
     @classmethod
     def from_df(cls,
             df,
-            coord_cols={
-                "q" : "q",
-                "e" : "e",
-                "i" : "i",
-                "raan" : "raan",
-                "ap" : "ap",
-                "tp" : "tp"
-            },
-            origin_col="origin"
+            coord_cols=COMETARY_COLS,
+            origin_col="origin",
+            frame_col="frame"
         ):
         """
         Create a KeplerianCoordinates class from a dataframe.
@@ -464,10 +458,13 @@ class CometaryCoordinates(Coordinates):
                 coord_cols["tp"] = Column name of time of pericenter passage values.
         origin_col : str
             Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
         """
         data = Coordinates._dict_from_df(
             df,
             coord_cols=coord_cols,
-            origin_col=origin_col
+            origin_col=origin_col,
+            frame_col=frame_col
         )
         return cls(**data)

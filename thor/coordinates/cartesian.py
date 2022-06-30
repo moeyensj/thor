@@ -192,7 +192,8 @@ class CartesianCoordinates(Coordinates):
     def from_df(cls,
             df,
             coord_cols=CARTESIAN_COLS,
-            origin_col="origin"
+            origin_col="origin",
+            frame_col="frame",
         ):
         """
         Create a CartesianCoordinates class from a dataframe.
@@ -218,6 +219,7 @@ class CartesianCoordinates(Coordinates):
         data = Coordinates._dict_from_df(
             df,
             coord_cols=coord_cols,
-            origin_col=origin_col
+            origin_col=origin_col,
+            frame_col=frame_col
         )
         return cls(**data)
