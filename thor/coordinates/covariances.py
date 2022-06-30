@@ -29,14 +29,14 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-def sigmas_to_covariance(sigmas: np.ndarray) -> np.ma.core.MaskedArray:
+def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.core.MaskedArray]) -> np.ma.core.MaskedArray:
     """
     Convert an array of sigmas into an array of covariance
     matrices (non-diagonal elements are assumed to be zero).
 
     Parameters
     ----------
-    sigmas : `~numpy.ndarray` (N, D)
+    sigmas : {`~numpy.ndarray`, `~numpy.ma.core.MaskedArray`} (N, D)
         1-sigma uncertainty values for each coordinate dimension D.
 
     Returns
@@ -45,13 +45,20 @@ def sigmas_to_covariance(sigmas: np.ndarray) -> np.ma.core.MaskedArray:
         Covariance matrices with the squared 1-sigma values inserted along
         each N diagonal.
     """
-    N, D = sigmas.shape
+    if isinstance(sigmas, (np.ma.core.MaskedArray)):
+        sigmas_ = sigmas.filled()
+    else:
+        sigmas_ = sigmas
+
+    N, D = sigmas_.shape
     covariances = np.ma.zeros((N, D, D), dtype=np.float64)
     covariances.fill_value = np.NaN
     covariances.mask = np.ones((N, D, D), dtype=bool)
 
-    I = np.eye(D, dtype=sigmas.dtype)
-    covariances[:, :, :] = np.einsum('kj,ji->kij', sigmas**2, I)
+    I = np.identity(D, dtype=sigmas_.dtype)
+    covariances[:, :, :] = np.einsum('kj,ji->kij', sigmas_**2, I)
+    covariances.mask = np.where(np.isnan(covariances) | (covariances == 0), 1, 0)
+
     return covariances
 
 def sample_covariance(
