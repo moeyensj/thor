@@ -37,8 +37,10 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
 
     Returns
     -------
-    `~numpy.ndarray` (N * M)
-        Structured array with a column of observatory codes, MJDs (in UTC), and
+    observer_codes : `~numpy.ndarray` (N * M)
+        Array containing the observatory code for each state
+    observer_states : `~numpy.ndarray` (N * M, 7)
+        Array with a column of MJDs (in UTC) and
         colums containing the observatories' states at the desired times.
     """
     if not isinstance(observatory_codes, (list, np.ndarray)):
@@ -65,12 +67,8 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
     observatories = read_MPC_observatory_codes()
     num_times = len(observation_times)
     N = len(observatory_codes) * num_times
-    observer_states = np.zeros(N,
-        dtype={
-            "names" : ("code", "mjd_utc", "x", "y", "z", "vx", "vy", "vz"),
-            "formats" : ("U3", np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, np.float64),
-        }
-    )
+    observer_codes = np.zeros(N, dtype=object)
+    observer_states = np.zeros((N, 7), dtype=np.float64)
 
     for i, code in enumerate(observatory_codes):
         if np.any(np.isnan(observatories[observatories["code"] == code][["longitude_deg", "cos", "sin"][0]])):
@@ -120,13 +118,13 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
         v_obs = np.array([vg + rm @ (- OMEGA_EARTH * R_EARTH * np.cross(o_hat_ITRF93, np.array([0, 0, 1]))) for vg, rm in zip(state[:, 3:], rotation_matrices)])
 
         # Insert states into structured array
-        observer_states[i * num_times : (i + 1) * num_times]["code"] = code
-        observer_states[i * num_times : (i + 1) * num_times]["mjd_utc"] = observation_times.utc.mjd
-        observer_states[i * num_times : (i + 1) * num_times]["x"] = r_obs[:, 0]
-        observer_states[i * num_times : (i + 1) * num_times]["y"] = r_obs[:, 1]
-        observer_states[i * num_times : (i + 1) * num_times]["z"] = r_obs[:, 2]
-        observer_states[i * num_times : (i + 1) * num_times]["vx"] = v_obs[:, 0]
-        observer_states[i * num_times : (i + 1) * num_times]["vy"] = v_obs[:, 1]
-        observer_states[i * num_times : (i + 1) * num_times]["vz"] = v_obs[:, 2]
+        observer_codes[i * num_times : (i + 1) * num_times] = code
+        observer_states[i * num_times : (i + 1) * num_times, 0] = observation_times.utc.mjd
+        observer_states[i * num_times : (i + 1) * num_times, 1] = r_obs[:, 0]
+        observer_states[i * num_times : (i + 1) * num_times, 2] = r_obs[:, 1]
+        observer_states[i * num_times : (i + 1) * num_times, 3] = r_obs[:, 2]
+        observer_states[i * num_times : (i + 1) * num_times, 4] = v_obs[:, 0]
+        observer_states[i * num_times : (i + 1) * num_times, 5] = v_obs[:, 1]
+        observer_states[i * num_times : (i + 1) * num_times, 6] = v_obs[:, 2]
 
-    return observer_states
+    return observer_codes, observer_states

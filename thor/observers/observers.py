@@ -71,7 +71,7 @@ class Observers(Indexable):
             assert len(self._codes) == len(self._cartesian)
 
         # Sort by observation times and then by observatory codes
-        sorted_ind = np.lexsort((self._codes, self._times))
+        sorted_ind = np.lexsort((self._codes, self._times.mjd))
         self._times = self._times[sorted_ind]
         self._codes = self._codes[sorted_ind]
         if self._cartesian is not None:
@@ -82,7 +82,7 @@ class Observers(Indexable):
     def iterate_unique(self):
         """
         Yield unique observatory codes and their coresponding
-        observation times.
+        unique observation times.
 
         Yield
         -----
@@ -93,7 +93,11 @@ class Observers(Indexable):
         """
         unique_code = np.unique(self.codes)
         for code in unique_code:
-            times = self._times[np.where(self.codes == code)]
+            times = Time(
+                np.unique(self._times.mjd[np.where(self.codes == code)]),
+                scale=self._times.scale,
+                format="mjd"
+            )
             yield code, times
 
     def __len__(self):
@@ -112,34 +116,62 @@ class Observers(Indexable):
 
         if self._cartesian is None:
 
-            dfs = []
+            # Get observatory states for each unique observatory code
+            # and their corresponding unique observation times
+            codes = []
+            unique_states = []
             for code, times in self.iterate_unique():
-                df_i = get_observer_state(
+                codes_i, states_i = get_observer_state(
                     [code],
                     times,
                     origin="heliocenter",
                     frame="ecliptic"
                 )
-                dfs.append(df_i)
+                codes.append(codes_i)
+                unique_states.append(states_i)
 
-            cartesian_df = pd.concat(dfs, ignore_index=True)
-            cartesian_df.sort_values(
+            codes = np.hstack(codes)
+            unique_states = np.vstack(unique_states)
+
+            # Duplicate unique observer states for each repeated observation time
+            # using pandas merge (significantly easier and faster than iterating over a numpy
+            # array using a for loop and np.where)
+            # TODO: evaluate https://stackoverflow.com/questions/49495344/numpy-equivalent-of-merge
+            # as a potential alternative
+            unique_states_df = pd.DataFrame({
+                "observatory_code" : codes,
+                "mjd_utc" : unique_states[:, 0],
+                "x" : unique_states[:, 1],
+                "y" : unique_states[:, 2],
+                "z" : unique_states[:, 3],
+                "vx" : unique_states[:, 4],
+                "vy" : unique_states[:, 5],
+                "vz" : unique_states[:, 6],
+                })
+            states_df = pd.DataFrame({
+                "observatory_code" : self.codes,
+                "mjd_utc" : self.times.utc.mjd,
+                })
+            states_df = states_df.merge(unique_states_df, on=["observatory_code", "mjd_utc"])
+            states_df.sort_values(
                 by=["mjd_utc", "observatory_code"],
-                inplace=True,
-                ignore_index=True
+                inplace=True
             )
 
-            cartesian = CartesianCoordinates.from_df(
-                cartesian_df,
-                coord_cols={
-                    "x" : "obs_x",
-                    "y" : "obs_y",
-                    "z" : "obs_z",
-                    "vx" : "obs_vx",
-                    "vy" : "obs_vy",
-                    "vz" : "obs_vz",
-                },
-                covariance_col=None
+            cartesian = CartesianCoordinates(
+                times=Time(
+                    states_df["mjd_utc"].values,
+                    scale="utc",
+                    format="mjd"
+                ),
+                x=states_df["x"].values,
+                y=states_df["y"].values,
+                z=states_df["z"].values,
+                vx=states_df["vx"].values,
+                vy=states_df["vy"].values,
+                vz=states_df["vz"].values,
+                origin="heliocenter",
+                frame="ecliptic"
             )
             self._cartesian = cartesian
 
