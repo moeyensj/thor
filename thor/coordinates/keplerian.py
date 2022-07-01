@@ -509,6 +509,10 @@ class KeplerianCoordinates(Coordinates):
         return self.a * (1 + self.e)
 
     @property
+    def P(self):
+        return np.sqrt(4 * np.pi**2 * self.a**3 / self.mu)
+
+    @property
     def mu(self):
         return self._mu
 
