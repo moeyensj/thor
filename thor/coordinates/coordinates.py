@@ -359,11 +359,25 @@ class Coordinates(Indexable):
         else:
             logger.debug(f"frame_col ({frame_col}) has not been found in given dataframe.")
 
-        data["covariances"] = covariances_from_df(
+        # Try to read covariances from the dataframe
+        covariances = covariances_from_df(
             df,
             coord_names=list(coord_cols.keys()),
             kind="lower"
         )
+
+        # If the covariance matrices are fully masked out then try reading covariances
+        # using the standard deviation columns
+        if (isinstance(covariances, np.ma.core.MaskedArray) and (np.all(covariances.mask) == True)) or (covariances is None):
+            sigmas = sigmas_from_df(
+                df,
+                coord_names=list(coord_cols.keys()),
+            )
+            covariances = sigmas_to_covariance(sigmas)
+            if isinstance(covariances, np.ma.core.MaskedArray) and (np.all(covariances.mask) == True):
+                covariances = None
+
+        data["covariances"] = covariances
         data["names"] = coord_cols
 
         return data
