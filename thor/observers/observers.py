@@ -185,3 +185,50 @@ class Observers(Indexable):
         df.rename(columns=obs_cols, inplace=True)
         return df
 
+    @classmethod
+    def from_df(cls,
+        df,
+        coord_cols=OBSERVER_CARTESIAN_COLS,
+        origin_col="obs_origin",
+        frame_col="obs_frame"
+        ):
+        """
+        Create a Observers class from a DataFrame.
+
+        Parameters
+        ----------
+        df : `~pandas.DataFrame`
+            Pandas DataFrame containing Observers.
+        coord_cols : OrderedDict
+            Ordered dictionary containing as keys the coordinate dimensions and their equivalent columns
+            as values. For example,
+                coord_cols = OrderedDict()
+                coord_cols["x"] = Column name of x distance values
+                coord_cols["y"] = Column name of y distance values
+                coord_cols["z"] = Column name of z distance values
+                coord_cols["vx"] = Column name of x velocity values
+                coord_cols["vy"] = Column name of y velocity values
+                coord_cols["vz"] = Column name of z velocity values
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
+        """
+        data = {}
+        data["codes"] = df["observatory_code"].values
+        data["times"] = times_from_df(df)
+
+        cartesian_present = False
+        for k, v in coord_cols.items():
+            if v in df.columns:
+                cartesian_present = True
+
+        if cartesian_present:
+            data["cartesian"] = CartesianCoordinates.from_df(
+                df,
+                coord_cols=coord_cols,
+                origin_col=origin_col,
+                frame_col=frame_col
+            )
+
+        return cls(**data)
