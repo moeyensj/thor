@@ -71,18 +71,25 @@ def get_observer_state(observatory_codes, observation_times, frame="ecliptic", o
     observer_states = np.zeros((N, 7), dtype=np.float64)
 
     for i, code in enumerate(observatory_codes):
-        if np.any(np.isnan(observatories[observatories["code"] == code][["longitude_deg", "cos", "sin"][0]])):
+        if (len(observatories[observatories["code"] == code]) == 0):
             err = (
-                "{} is missing information on Earth-based geodetic coordinates. The MPC Obs Code\n"
-                "file may be missing this information or the observer is a space-based observatory.\n"
-                "Space observatories are currently not supported.\n"
+                "Observatory code ('{}') could not be found in the MPC observatory code file. The MPC observatory code\n"
+                "file may be missing this particular observatory code or the MPC observatory code is not valid."
+            )
+            raise ValueError(err.format(code))
+
+        geodetics = np.array([*observatories[observatories["code"] == code][["longitude_deg", "cos", "sin"]][0]])
+        if np.any(np.isnan(geodetics)):
+            err = (
+                "Observatory code ('{}') is missing information on Earth-based geodetic coordinates. The MPC observatory code\n"
+                "file may be missing this information and/or the observatory might be space-based."
             )
             raise ValueError(err.format(code))
 
         # Get observer location on Earth
-        longitude = observatories[observatories["code"] == code]["longitude_deg"][0]
-        sin_phi = observatories[observatories["code"] == code]["sin"][0]
-        cos_phi = observatories[observatories["code"] == code]["cos"][0]
+        longitude = geodetics[0]
+        cos_phi = geodetics[1]
+        sin_phi = geodetics[2]
         sin_longitude = np.sin(np.radians(longitude))
         cos_longitude = np.cos(np.radians(longitude))
 
