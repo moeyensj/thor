@@ -1,6 +1,10 @@
 import numpy as np
-import pandas as pd
 import spiceypy as sp
+from astropy.time import Time
+from typing import (
+    List,
+    Union
+)
 
 from ..constants import Constants as c
 from ..utils.astropy import _check_times
@@ -13,7 +17,12 @@ __all__ = ["get_observer_state"]
 R_EARTH = c.R_EARTH
 OMEGA_EARTH = 2 * np.pi / 0.997269675925926
 
-def get_observer_state(observatory_codes, observation_times, frame="ecliptic", origin="heliocenter"):
+def get_observer_state(
+        observatory_codes: Union[List, np.ndarray],
+        observation_times: Time,
+        frame: str = "ecliptic",
+        origin: str = "heliocenter"
+    ):
     """
     Find the heliocentric or barycentric ecliptic or equatorial J2000 state vectors for different observers or observatories at
     the desired epochs. Currently only supports ground-based observers.
