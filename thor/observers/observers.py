@@ -6,10 +6,21 @@ from typing import (
     Union
 )
 from astropy.time import Time
+from collections import OrderedDict
 
-from ..utils import Indexable
-from ..coordinates import CartesianCoordinates
+from ..utils.indexable import Indexable
+from ..utils.astropy import times_from_df
+from ..coordinates.coordinates import Coordinates
+from ..coordinates.cartesian import CartesianCoordinates
 from .state import get_observer_state
+
+OBSERVER_CARTESIAN_COLS = OrderedDict()
+OBSERVER_CARTESIAN_COLS["x"] = "obs_x"
+OBSERVER_CARTESIAN_COLS["y"] = "obs_y"
+OBSERVER_CARTESIAN_COLS["z"] = "obs_z"
+OBSERVER_CARTESIAN_COLS["vx"] = "obs_vx"
+OBSERVER_CARTESIAN_COLS["vy"] = "obs_vy"
+OBSERVER_CARTESIAN_COLS["vz"] = "obs_vz"
 
 class Observers(Indexable):
     """
@@ -24,9 +35,9 @@ class Observers(Indexable):
 
     """
     def __init__(self,
-        codes : List,
-        times : Optional[Union[Time, List]] = None,
-        cartesian : Optional[CartesianCoordinates] = None
+        codes: List,
+        times: Optional[Union[Time, List]] = None,
+        cartesian: Optional[CartesianCoordinates] = None
     ):
         self._cartesian = None
         if isinstance(cartesian, CartesianCoordinates) and times is not None:
@@ -177,21 +188,37 @@ class Observers(Indexable):
 
         return self._cartesian
 
-    def to_df(self, time_scale="utc"):
+    def to_df(self,
+            time_scale: str = "utc"
+        ) -> pd.DataFrame:
+        """
+        Represent Observers as a `~pandas.DataFrame`.
 
-        df = self.cartesian.to_df(time_scale=time_scale)
-        obs_cols = {}
+        Parameters
+        ----------
+        time_scale : {"tdb", "tt", "utc"}
+            Desired timescale of the output MJDs.
+
+        Returns
+        -------
+        df : `~pandas.DataFrame`
+            Pandas DataFrame containing observers.
+        """
+        df = self.cartesian.to_df(
+            time_scale=time_scale,
+            )
+        obs_cols = {col : f"obs_{col}" for col in df.columns[1:]}
         df.insert(1, "observatory_code", self.codes)
         df.rename(columns=obs_cols, inplace=True)
         return df
 
     @classmethod
     def from_df(cls,
-        df,
-        coord_cols=OBSERVER_CARTESIAN_COLS,
-        origin_col="obs_origin",
-        frame_col="obs_frame"
-        ):
+            df: pd.DataFrame,
+            coord_cols: OrderedDict = OBSERVER_CARTESIAN_COLS,
+            origin_col: str = "obs_origin",
+            frame_col: str = "obs_frame"
+        ) -> "Observers":
         """
         Create a Observers class from a DataFrame.
 
@@ -231,4 +258,28 @@ class Observers(Indexable):
                 frame_col=frame_col
             )
 
+        return cls(**data)
+
+    @classmethod
+    def from_observations_coordinates(cls,
+            coords: Coordinates
+        ) -> "Observers":
+        """
+        Instantiate an Observers class from observation coordinates. This
+        assumes the origin and times have been correctly defined in the
+        observations coordinates.
+
+        Parameters
+        ----------
+        coords : `~thor.coordinates.coordinates.Coordinates`
+            Observation coordinates.
+
+        Returns
+        -------
+        observers : `~thor.observers.observers.Observers`
+            Observers class.
+        """
+        data = {}
+        data["codes"] = coords.origin
+        data["times"] = coords.times
         return cls(**data)
