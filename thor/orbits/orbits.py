@@ -30,7 +30,7 @@ class Orbits(Indexable):
     def __init__(self,
             coordinates,
             ids=None,
-            obj_ids=None,
+            object_ids=None,
             classes=None,
         ):
 
@@ -62,10 +62,10 @@ class Orbits(Indexable):
         else:
             self._ids = np.array([uuid.uuid4().hex for i in range(len(coordinates))])
 
-        if obj_ids is not None:
-            self._obj_ids = obj_ids
+        if object_ids is not None:
+            self._object_ids = object_ids
         else:
-            self._obj_ids = np.array(["None" for i in range(len(coordinates))])
+            self._object_ids = np.array(["None" for i in range(len(coordinates))])
 
         if classes is not None:
             self._classes = classes
@@ -92,8 +92,8 @@ class Orbits(Indexable):
         return self._ids
 
     @property
-    def obj_ids(self):
-        return self._obj_ids
+    def object_ids(self):
+        return self._object_ids
 
     @property
     def cartesian(self):
@@ -187,9 +187,9 @@ class Orbits(Indexable):
             origin="heliocenter",
             frame="ecliptic"
         )
-        obj_ids = vectors["targetname"].values
+        object_ids = vectors["targetname"].values
 
-        return cls(coordinates, obj_ids=obj_ids)
+        return cls(coordinates, object_ids=object_ids)
 
     def to_df(self,
             time_scale: str = "tdb",
@@ -237,7 +237,7 @@ class Orbits(Indexable):
             raise ValueError(err)
 
         df.insert(0, "orbit_id", self.ids)
-        df.insert(1, "obj_id", self.obj_ids)
+        df.insert(1, "obj_id", self.object_ids)
         if self._classes is not None:
             df.insert(len(df.columns), "class", self.classes)
 
@@ -248,7 +248,7 @@ class FittedOrbits(Orbits):
     def __init__(self,
             coordinates,
             ids=None,
-            obj_ids=None,
+            object_ids=None,
             members=None,
             num_obs=None,
             arc_length=None,
@@ -259,7 +259,7 @@ class FittedOrbits(Orbits):
             self,
             coordinates=coordinates,
             ids=ids,
-            obj_ids=obj_ids,
+            object_ids=object_ids,
         )
 
         N = len(self)
