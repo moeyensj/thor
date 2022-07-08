@@ -4,17 +4,15 @@ import numpy as np
 import pandas as pd
 from copy import deepcopy
 from astropy.time import Time
-from ..utils import (
-    Indexable,
-    getHorizonsVectors
-)
-from ..coordinates import (
-    CartesianCoordinates,
-    KeplerianCoordinates,
-    CometaryCoordinates,
-    SphericalCoordinates,
-    transform_coordinates
-)
+from typing import List
+
+from ..utils.indexable import Indexable
+from ..utils.horizons import get_Horizons_vectors
+from ..coordinates.cartesian import CartesianCoordinates
+from ..coordinates.keplerian import KeplerianCoordinates
+from ..coordinates.cometary import CometaryCoordinates
+from ..coordinates.spherical import SphericalCoordinates
+from ..coordinates.transform import transform_coordinates
 from .classification import calc_orbit_class
 
 logger = logging.getLogger(__name__)
@@ -160,11 +158,13 @@ class Orbits(Indexable):
         return self._classes
 
     @classmethod
-    def from_horizons(cls, ids, times):
-
+    def from_Horizons(cls,
+            ids: List,
+            times: Time
+        ):
         assert len(times) == 1
 
-        vectors = getHorizonsVectors(
+        vectors = get_Horizons_vectors(
             ids,
             times,
             location="@sun",

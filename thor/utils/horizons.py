@@ -1,21 +1,28 @@
+import numpy as np
 import pandas as pd
 from astroquery.jplhorizons import Horizons
+from astropy.time import Time
+from typing import (
+    List,
+    Union
+)
+
 from .astropy import _check_times
 
 __all__ = [
-    "getHorizonsVectors",
-    "getHorizonsElements",
-    "getHorizonsEphemeris",
-    "getHorizonsObserverState"
+    "get_Horizons_vectors",
+    "get_Horizons_elements",
+    "get_Horizons_ephemeris",
+    "get_Horizons_observer_state"
 ]
 
-def getHorizonsVectors(
-        obj_ids,
-        times,
-        location="@sun",
-        id_type="smallbody",
-        aberrations="geometric",
-    ):
+def get_Horizons_vectors(
+        obj_ids: Union[List, np.ndarray],
+        times: Time,
+        location: str = "@sun",
+        id_type: str = "smallbody",
+        aberrations: str = "geometric",
+    ) -> pd.DataFrame:
     """
     Query JPL Horizons (through astroquery) for an object's
     state vectors at the given times.
@@ -64,12 +71,12 @@ def getHorizonsVectors(
     )
     return vectors
 
-def getHorizonsElements(
-        obj_ids,
-        times,
-        location="@sun",
-        id_type="smallbody"
-    ):
+def get_Horizons_elements(
+        obj_ids: Union[List, np.ndarray],
+        times: Time,
+        location: str = "@sun",
+        id_type: str = "smallbody"
+    ) -> pd.DataFrame:
     """
     Query JPL Horizons (through astroquery) for an object's
     elements at the given times.
@@ -117,20 +124,20 @@ def getHorizonsElements(
     )
     return elements
 
-def getHorizonsEphemeris(
-        obj_ids,
-        observers,
-        id_type="smallbody"
-    ):
+def get_Horizons_ephemeris(
+        obj_ids: Union[List, np.ndarray],
+        observers: dict,
+        id_type: str = "smallbody"
+    ) -> pd.DataFrame:
     """
     Query JPL Horizons (through astroquery) for an object's
     ephemerides at the given times viewed from the given location.
 
     Parameters
     ----------
-    obj_ids : `~numpy.ndarray` (N)
+    obj_ids : list or `~numpy.ndarray` (N)
         Object IDs / designations recognizable by HORIZONS.
-    observers : dict or `~pandas.DataFrame`
+    observers : dict`
         A dictionary with observatory/location codes as keys and observation_times (`~astropy.time.core.Time`) as values.
         Location of the observer which can be an MPC observatory code (eg, 'I41', 'I11')
         or a NAIF code ('0' for solar system barycenter, '10' for heliocenter)
@@ -173,21 +180,21 @@ def getHorizonsEphemeris(
     )
     return ephemeris
 
-def getHorizonsObserverState(
-        observatory_codes,
-        observation_times,
-        origin="heliocenter",
-        aberrations="geometric"
-    ):
+def get_Horizons_observer_state(
+        observatory_codes: Union[List, np.ndarray],
+        observation_times: Time,
+        origin: str = "heliocenter",
+        aberrations: str = "geometric"
+    ) -> pd.DataFrame:
     """
     Query JPL Horizons (through astroquery) for an object's
     elements at the given times.
 
     Parameters
     ----------
-    observatory_codes : list or `~numpy.ndarray`
+    observatory_codes : list or `~numpy.ndarray` (N)
         MPC observatory codes.
-    observation_times : `~astropy.time.core.Time`
+    observation_times : `~astropy.time.core.Time` (M)
         Epochs for which to find the observatory locations.
     origin : {'barycenter', 'heliocenter'}
         Return observer state with heliocentric or barycentric origin.
@@ -196,7 +203,7 @@ def getHorizonsObserverState(
 
     Returns
     -------
-    vectors : `~pandas.DataFrame`
+    vectors : `~pandas.DataFrame` (N * M)
         Dataframe containing the full cartesian state, r, r_rate, delta, delta_rate and light time
         of the object at each time.
     """
