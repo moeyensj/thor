@@ -310,11 +310,11 @@ class Coordinates(Indexable):
 
     @staticmethod
     def _dict_from_df(
-            df,
-            coord_cols=OrderedDict(),
-            origin_col="origin",
-            frame_col="frame"
-        ):
+            df: pd.DataFrame,
+            coord_cols: OrderedDict,
+            origin_col: str = "origin",
+            frame_col: str = "frame"
+        ) -> dict:
         """
         Create a dictionary from a dataframe.
 
