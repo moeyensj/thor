@@ -171,34 +171,67 @@ class Orbits(Indexable):
     @classmethod
     def from_Horizons(cls,
             ids: List,
-            times: Time
+            times: Time,
+            coordinate_type="cartesian"
         ):
         assert len(times) == 1
 
-        vectors = get_Horizons_vectors(
-            ids,
-            times,
-            location="@sun",
-            id_type="smallbody",
-            aberrations="geometric",
-        )
+        if coordinate_type == "cartesian":
+            vectors = get_Horizons_vectors(
+                ids,
+                times,
+                location="@sun",
+                id_type="smallbody",
+                aberrations="geometric",
+            )
 
-        coordinates = CartesianCoordinates(
-            times=Time(
-                vectors["datetime_jd"].values,
-                scale="tdb",
-                format="jd"
-            ),
-            x=vectors["x"].values,
-            y=vectors["y"].values,
-            z=vectors["z"].values,
-            vx=vectors["vx"].values,
-            vy=vectors["vy"].values,
-            vz=vectors["vz"].values,
-            origin="heliocenter",
-            frame="ecliptic"
-        )
-        object_ids = vectors["targetname"].values
+            coordinates = CartesianCoordinates(
+                times=Time(
+                    vectors["datetime_jd"].values,
+                    scale="tdb",
+                    format="jd"
+                ),
+                x=vectors["x"].values,
+                y=vectors["y"].values,
+                z=vectors["z"].values,
+                vx=vectors["vx"].values,
+                vy=vectors["vy"].values,
+                vz=vectors["vz"].values,
+                origin="heliocenter",
+                frame="ecliptic"
+            )
+            object_ids = vectors["targetname"].values
+
+        elif coordinate_type == "keplerian":
+            elements = get_Horizons_elements(
+                ids,
+                times,
+                location="@sun",
+                id_type="smallbody",
+            )
+
+            coordinates = KeplerianCoordinates(
+                times=Time(
+                    elements["datetime_jd"].values,
+                    scale="tdb",
+                    format="jd"
+                ),
+                a=elements["a"].values,
+                e=elements["e"].values,
+                i=elements["incl"].values,
+                raan=elements["Omega"].values,
+                ap=elements["w"].values,
+                M=elements["M"].values,
+                origin="heliocenter",
+                frame="ecliptic"
+            )
+            object_ids = elements["targetname"].values
+
+        else:
+            err = (
+                "coordinate_type should be one of {'cartesian', 'keplerian'}"
+            )
+            raise ValueError(err)
 
         return cls(coordinates, object_ids=object_ids)
 
