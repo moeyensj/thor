@@ -4,10 +4,16 @@ import numpy as np
 import pandas as pd
 from copy import deepcopy
 from astropy.time import Time
-from typing import List
+from typing import (
+    List,
+    Optional
+)
 
 from ..utils.indexable import Indexable
-from ..utils.horizons import get_Horizons_vectors
+from ..utils.horizons import (
+    get_Horizons_vectors,
+    get_Horizons_elements
+)
 from ..coordinates.cartesian import CartesianCoordinates
 from ..coordinates.keplerian import KeplerianCoordinates
 from ..coordinates.cometary import CometaryCoordinates
@@ -36,15 +42,20 @@ class Orbits(Indexable):
         self._spherical = None
         self._keplerian = None
         self._cometary = None
+        self.default_coordinate_type = None
 
         if isinstance(coordinates, CartesianCoordinates):
             self._cartesian = deepcopy(coordinates)
+            self.default_coordinate_type = "cartesian"
         elif isinstance(coordinates, SphericalCoordinates):
             self._spherical = deepcopy(coordinates)
+            self.default_coordinate_type = "spherical"
         elif isinstance(coordinates, KeplerianCoordinates):
             self._keplerian = deepcopy(coordinates)
+            self.default_coordinate_type = "keplerian"
         elif isinstance(coordinates, CometaryCoordinates):
             self._cometary = deepcopy(coordinates)
+            self.default_coordinate_type = "cometary"
         else:
             err = (
                 "coordinates should be one of:\n"
@@ -193,7 +204,7 @@ class Orbits(Indexable):
 
     def to_df(self,
             time_scale: str = "tdb",
-            coordinate_type: str = "cartesian",
+            coordinate_type: Optional[str] = None,
         ) -> pd.DataFrame:
         """
         Represent Orbits as a `~pandas.DataFrame`.
@@ -210,19 +221,24 @@ class Orbits(Indexable):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing orbits.
         """
-        if coordinate_type == "cartesian":
+        if coordinate_type is None:
+            coordinate_type_ = self.default_coordinate_type
+        else:
+            coordinate_type_ = coordinate_type
+
+        if coordinate_type_ == "cartesian":
             df = self.cartesian.to_df(
                 time_scale=time_scale
             )
-        elif coordinate_type == "keplerian":
+        elif coordinate_type_ == "keplerian":
             df = self.keplerian.to_df(
                 time_scale=time_scale
             )
-        elif coordinate_type == "cometary":
+        elif coordinate_type_ == "cometary":
             df = self.cometary.to_df(
                 time_scale=time_scale
             )
-        elif coordinate_type == "spherical":
+        elif coordinate_type_ == "spherical":
             df = self.spherical.to_df(
                 time_scale=time_scale
             )
