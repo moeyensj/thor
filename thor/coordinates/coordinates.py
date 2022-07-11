@@ -133,6 +133,14 @@ def _ingest_covariance(
     if isinstance(covariance, np.ma.core.MaskedArray) and (covariance.shape[1] == covariance.shape[2] == coords.shape[1]):
         return covariance
 
+    if isinstance(covariance, np.ndarray) and (covariance.shape[1] == covariance.shape[2] == coords.shape[1]):
+        covariance_ = np.ma.MaskedArray(
+            covariance,
+            fill_value=np.NaN,
+            mask=np.isnan(covariance)
+        )
+        return covariance_
+
     covariance_ = np.ma.zeros((len(coords), D, D), dtype=np.float64, fill_value=np.NaN)
     # Set the entire array to be masked by default
     covariance_.mask = np.ones(covariance_.shape, dtype=bool)
