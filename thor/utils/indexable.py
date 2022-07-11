@@ -132,3 +132,12 @@ class Indexable:
                 )
                 raise NotImplementedError(err)
         return
+
+class MultiIndexable(Indexable):
+
+    def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
+
+        unique_ind = np.unique(self._index)
+        ind = np.in1d(self._index, unique_ind[i])
+
+        return ind
