@@ -228,9 +228,39 @@ class Orbits(Indexable):
             )
             object_ids = elements["targetname"].values
 
+        elif coordinate_type == "cometary":
+            elements = get_Horizons_elements(
+                ids,
+                times,
+                location="@sun",
+                id_type="smallbody",
+            )
+
+            tp = Time(
+                elements["Tp_jd"].values,
+                scale="tdb",
+                format="jd"
+            )
+            coordinates = CometaryCoordinates(
+                times=Time(
+                    elements["datetime_jd"].values,
+                    scale="tdb",
+                    format="jd"
+                ),
+                q=elements["q"].values,
+                e=elements["e"].values,
+                i=elements["incl"].values,
+                raan=elements["Omega"].values,
+                ap=elements["w"].values,
+                tp=tp.tdb.mjd,
+                origin="heliocenter",
+                frame="ecliptic"
+            )
+            object_ids = elements["targetname"].values
+
         else:
             err = (
-                "coordinate_type should be one of {'cartesian', 'keplerian'}"
+                "coordinate_type should be one of {'cartesian', 'keplerian', 'cometary'}"
             )
             raise ValueError(err)
 
