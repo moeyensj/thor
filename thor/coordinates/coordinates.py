@@ -217,7 +217,9 @@ class Coordinates(Indexable):
         if covariances is not None:
             self._covariances = _ingest_covariance(coords, covariances)
         else:
-            self._covariances = None
+            N, D = coords.shape
+            self._covariances = np.ma.zeros((N, D, D), dtype=np.float64, fill_value=np.NaN)
+            self._covariances.mask = np.ma.ones((N, D, D), dtype=bool)
 
         return
 
@@ -304,7 +306,7 @@ class Coordinates(Indexable):
             data[k] = self.values.filled()[:, i]
 
         df = df.join(pd.DataFrame(data))
-        if self.covariances is not None:
+        if self.covariances is not None and np.all(~self.covariances.mask):
             df_covariances = covariances_to_df(
                 self.covariances,
                 list(self.names.keys()),

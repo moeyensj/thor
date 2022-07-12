@@ -387,6 +387,7 @@ class CometaryCoordinates(Coordinates):
             vx=coords_cartesian[:, 3],
             vy=coords_cartesian[:, 4],
             vz=coords_cartesian[:, 5],
+            times=self.times,
             covariances=covariances_cartesian,
             origin=self.origin,
             frame=self.frame
@@ -404,8 +405,8 @@ class CometaryCoordinates(Coordinates):
         )
         coords_cometary = np.array(coords_cometary)
 
-        if cartesian.covariances is not None:
-            covariances_keplerian = transform_covariances_jacobian(
+        if cartesian.covariances is not None and (~np.all(cartesian.covariances.mask)):
+            covariances_cometary = transform_covariances_jacobian(
                 cartesian.values.filled(),
                 cartesian.covariances.filled(),
                 _cartesian_to_cometary,
@@ -413,7 +414,7 @@ class CometaryCoordinates(Coordinates):
                 mu=mu,
             )
         else:
-            covariances_keplerian = None
+            covariances_cometary = None
 
         coords = cls(
             q=coords_cometary[:, 0],
@@ -423,7 +424,7 @@ class CometaryCoordinates(Coordinates):
             ap=coords_cometary[:, 4],
             tp=coords_cometary[:, 5],
             times=cartesian.times,
-            covariances=covariances_keplerian,
+            covariances=covariances_cometary,
             origin=cartesian.origin,
             frame=cartesian.frame,
             mu=mu

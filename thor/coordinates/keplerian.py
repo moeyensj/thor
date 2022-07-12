@@ -542,6 +542,7 @@ class KeplerianCoordinates(Coordinates):
             vx=coords_cartesian[:, 3],
             vy=coords_cartesian[:, 4],
             vz=coords_cartesian[:, 5],
+            times=self.times,
             covariances=covariances_cartesian,
             origin=self.origin,
             frame=self.frame
@@ -559,7 +560,7 @@ class KeplerianCoordinates(Coordinates):
         )
         coords_keplerian = np.array(coords_keplerian)
 
-        if cartesian.covariances is not None:
+        if cartesian.covariances is not None and (~np.all(cartesian.covariances.mask)):
             covariances_keplerian = transform_covariances_jacobian(
                 cartesian.values.filled(),
                 cartesian.covariances.filled(),

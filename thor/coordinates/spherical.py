@@ -351,7 +351,7 @@ class SphericalCoordinates(Coordinates):
         coords_spherical = cartesian_to_spherical(cartesian.values.filled())
         coords_spherical = np.array(coords_spherical)
 
-        if cartesian.covariances is not None:
+        if cartesian.covariances is not None and (~np.all(cartesian.covariances.mask)):
             covariances_spherical = transform_covariances_jacobian(
                 cartesian.values.filled(),
                 cartesian.covariances.filled(),
