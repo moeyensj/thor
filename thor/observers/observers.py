@@ -88,6 +88,7 @@ class Observers(Indexable):
         if self._cartesian is not None:
             self._cartesian = self._cartesian[sorted_ind]
 
+        super().__init__(index=np.arange(0, len(self), dtype=int))
         return
 
     def iterate_unique(self):

@@ -81,6 +81,7 @@ class Orbits(Indexable):
         else:
             self._classes = None
 
+        super().__init__(index=self.ids)
         return
 
     def __len__(self):

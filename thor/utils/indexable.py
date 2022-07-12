@@ -1,13 +1,15 @@
 import numpy as np
 import pandas as pd
 from copy import deepcopy
-from typing import Union
+from typing import (
+    Optional,
+    Union
+)
 from astropy.time import Time
 from collections import OrderedDict
 
 __all__ = [
     "Indexable",
-    "MultiIndexable"
 ]
 
 class Indexable:
@@ -17,6 +19,15 @@ class Indexable:
     lists, or `~astropy.time.core.Time`s then these members are appropriately sliced and indexed along their first axis.
     Any members that are dicts, OrderedDicts, floats, integers or strings are not indexed and left unchanged.
     """
+    def __init__(self, index: Optional[np.ndarray] = None):
+
+        if isinstance(index, np.ndarray):
+            self._index = index
+        else:
+            self._index = np.arange(0, len(self), dtype=int)
+
+        return
+
     def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
 
         if isinstance(i, int):
@@ -37,6 +48,9 @@ class Indexable:
         if isinstance(i, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
+        unique_ind = pd.unique(self._index)
+        ind = np.in1d(self._index, unique_ind[i])
+
         return ind
 
     def __len__(self):
@@ -44,6 +58,10 @@ class Indexable:
             "Length is not defined for this class."
         )
         raise NotImplementedError(err)
+
+    @property
+    def index(self):
+        return self._index
 
     def __getitem__(self, i: Union[int, slice, tuple, list, np.ndarray]):
 
@@ -138,14 +156,3 @@ class Indexable:
                 )
                 raise NotImplementedError(err)
         return
-
-class MultiIndexable(Indexable):
-
-    def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
-
-        # Use pandas to find unique occurences in index (faster than numpy and not sorted by
-        # default which is what we want)
-        unique_ind = pd.unique(self._index)
-        ind = np.in1d(self._index, unique_ind[i])
-
-        return ind

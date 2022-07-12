@@ -221,6 +221,7 @@ class Coordinates(Indexable):
             self._covariances = np.ma.zeros((N, D, D), dtype=np.float64, fill_value=np.NaN)
             self._covariances.mask = np.ma.ones((N, D, D), dtype=bool)
 
+        super().__init__(index=np.arange(0, len(self), dtype=int))
         return
 
     def __len__(self):
