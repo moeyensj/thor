@@ -1,8 +1,14 @@
 import numpy as np
+import pandas as pd
 from copy import deepcopy
 from typing import Union
 from astropy.time import Time
 from collections import OrderedDict
+
+__all__ = [
+    "Indexable",
+    "MultiIndexable"
+]
 
 class Indexable:
     """
@@ -137,7 +143,9 @@ class MultiIndexable(Indexable):
 
     def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
 
-        unique_ind = np.unique(self._index)
+        # Use pandas to find unique occurences in index (faster than numpy and not sorted by
+        # default which is what we want)
+        unique_ind = pd.unique(self._index)
         ind = np.in1d(self._index, unique_ind[i])
 
         return ind
