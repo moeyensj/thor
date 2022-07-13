@@ -7,10 +7,10 @@ from ..backend import FINDORB
 from ..backend import MJOLNIR
 
 __all__ = [
-    "propagateOrbits"
+    "propagate_orbits"
 ]
 
-def propagateOrbits(
+def propagate_orbits(
         orbits,
         t1,
         backend="MJOLNIR",
@@ -74,7 +74,7 @@ def propagateOrbits(
         )
         raise ValueError(err)
 
-    propagated = backend.propagateOrbits(
+    propagated = backend.propagate_orbits(
         orbits,
         t1,
         chunk_size=chunk_size,

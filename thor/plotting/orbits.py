@@ -1,7 +1,7 @@
 import plotly
 import numpy as np
 
-from ..orbits import propagateOrbits
+from ..orbits import propagate_orbits
 from ..utils import get_perturber_state
 
 __all__ = [
@@ -97,7 +97,7 @@ def addOrbits(orbits, dts):
 
     orbit_data = []
     t1 = orbits.epochs[0] + dts
-    propagated = propagateOrbits(orbits, t1)
+    propagated = propagate_orbits(orbits, t1)
 
     for orbit_id in orbits.ids:
 

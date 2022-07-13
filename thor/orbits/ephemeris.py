@@ -6,15 +6,14 @@ from ..backend import FINDORB
 from ..backend import MJOLNIR
 
 __all__ = [
-    "generateEphemeris"
+    "generate_ephemeris"
 ]
 
-def generateEphemeris(
+def generate_ephemeris(
         orbits,
         observers,
         backend="MJOLNIR",
         backend_kwargs={},
-        test_orbit=None,
         chunk_size=1,
         num_jobs=1,
         parallel_backend="mp"
@@ -73,10 +72,9 @@ def generateEphemeris(
         )
         raise ValueError(err)
 
-    ephemeris = backend.generateEphemeris(
+    ephemeris = backend.generate_ephemeris(
         orbits,
         observers,
-        test_orbit=test_orbit,
         chunk_size=chunk_size,
         num_jobs=num_jobs,
         parallel_backend=parallel_backend

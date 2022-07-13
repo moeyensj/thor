@@ -22,7 +22,7 @@ from ..utils import calcChunkSize
 from ..utils import sortLinkages
 from ..utils import removeDuplicateObservations
 from .orbits import Orbits
-from .ephemeris import generateEphemeris
+from .ephemeris import generate_ephemeris
 from .residuals import calcResiduals
 from ..orbit_determination import differential_correction
 
@@ -53,7 +53,7 @@ def attribution_worker(
         )
 
     # Genereate ephemerides for each orbit at the observation times
-    ephemeris = generateEphemeris(
+    ephemeris = generate_ephemeris(
         orbits,
         observers,
         backend=backend,
