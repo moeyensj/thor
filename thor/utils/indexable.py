@@ -12,6 +12,8 @@ __all__ = [
     "Indexable",
 ]
 
+UNSLICEABLE_DATA_STRUCTURES = (str, int, float, dict, OrderedDict)
+
 class Indexable:
     """
     Class that enables indexing and slicing of itself and its members.
@@ -71,7 +73,7 @@ class Indexable:
         for k, v in self.__dict__.items():
             if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable)):
                 copy.__dict__[k] = v[ind]
-            elif isinstance(v, (str, int, float, dict, OrderedDict)):
+            elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                 copy.__dict__[k] = v
             elif v is None:
                 pass
@@ -101,7 +103,7 @@ class Indexable:
                 )
             elif isinstance(v, (list, Indexable)):
                 del v[ind]
-            elif isinstance(v, (int, float, str, dict, OrderedDict)):
+            elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                 self.__dict__[k] = v
             elif v is None:
                 pass
@@ -144,7 +146,7 @@ class Indexable:
             elif isinstance(v, (list, Indexable)):
                 self_v.append(v)
 
-            elif isinstance(v, (int, float, str, dict, OrderedDict)):
+            elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                 assert v == self_v
 
             elif v is None:
