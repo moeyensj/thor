@@ -317,7 +317,7 @@ class Orbits(Indexable):
             raise ValueError(err)
 
         df.insert(0, "orbit_id", self.ids)
-        df.insert(1, "obj_id", self.object_ids)
+        df.insert(1, "object_id", self.object_ids)
         if self._classes is not None:
             df.insert(len(df.columns), "class", self.classes)
 
