@@ -14,11 +14,10 @@ from ..utils.horizons import (
     get_Horizons_vectors,
     get_Horizons_elements
 )
+from ..coordinates.members import CoordinateMembers
 from ..coordinates.cartesian import CartesianCoordinates
 from ..coordinates.keplerian import KeplerianCoordinates
 from ..coordinates.cometary import CometaryCoordinates
-from ..coordinates.spherical import SphericalCoordinates
-from ..coordinates.transform import transform_coordinates
 from .classification import calc_orbit_class
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,7 @@ __all__ = [
 ]
 
 
-class Orbits(Indexable):
+class Orbits(CoordinateMembers):
 
     def __init__(self,
             coordinates,
@@ -37,35 +36,13 @@ class Orbits(Indexable):
             object_ids=None,
             classes=None,
         ):
-
-        self._cartesian = None
-        self._spherical = None
-        self._keplerian = None
-        self._cometary = None
-        self.default_coordinate_type = None
-
-        if isinstance(coordinates, CartesianCoordinates):
-            self._cartesian = deepcopy(coordinates)
-            self.default_coordinate_type = "cartesian"
-        elif isinstance(coordinates, SphericalCoordinates):
-            self._spherical = deepcopy(coordinates)
-            self.default_coordinate_type = "spherical"
-        elif isinstance(coordinates, KeplerianCoordinates):
-            self._keplerian = deepcopy(coordinates)
-            self.default_coordinate_type = "keplerian"
-        elif isinstance(coordinates, CometaryCoordinates):
-            self._cometary = deepcopy(coordinates)
-            self.default_coordinate_type = "cometary"
-        else:
-            err = (
-                "coordinates should be one of:\n"
-                "  CartesianCoordinates\n"
-                "  SphericalCoordinates\n"
-                "  KeplerianCoordinates\n"
-                "  CometaryCoordinates\n"
-            )
-            raise TypeError(err)
-
+        CoordinateMembers.__init__(self,
+            coordinates=coordinates,
+            cartesian=True,
+            keplerian=True,
+            spherical=True,
+            cometary=True
+        )
         if ids is not None:
             self._ids = ids
         else:
@@ -81,21 +58,8 @@ class Orbits(Indexable):
         else:
             self._classes = None
 
-        super().__init__(index=self.ids)
+        Indexable.__init__(self, index=self.ids)
         return
-
-    def __len__(self):
-
-        if self._cartesian is not None:
-            N = len(self._cartesian)
-        elif self._keplerian is not None:
-            N = len(self._keplerian)
-        elif self._cometary is not None:
-            N = len(self._cometary)
-        else: # self._spherical is not None:
-            N = len(self._spherical)
-
-        return N
 
     @property
     def ids(self):
@@ -104,62 +68,6 @@ class Orbits(Indexable):
     @property
     def object_ids(self):
         return self._object_ids
-
-    @property
-    def cartesian(self):
-
-        if self._cartesian is None:
-
-            if self._keplerian is not None:
-                self._cartesian = transform_coordinates(self._keplerian, "cartesian")
-            elif self._cometary is not None:
-                self._cartesian = transform_coordinates(self._cometary, "cartesian")
-            elif self._spherical is not None:
-                self._cartesian = transform_coordinates(self._spherical, "cartesian")
-
-        return self._cartesian
-
-    @property
-    def spherical(self):
-
-        if self._spherical is None:
-
-            if self._cartesian is not None:
-                self._spherical = transform_coordinates(self._cartesian, "spherical")
-            elif self._keplerian is not None:
-                self._spherical = transform_coordinates(self._keplerian, "spherical")
-            elif self._cometary is not None:
-                self._spherical = transform_coordinates(self._cometary, "spherical")
-
-        return self._spherical
-
-    @property
-    def keplerian(self):
-
-        if self._keplerian is None:
-
-            if self._cartesian is not None:
-                self._keplerian = transform_coordinates(self._cartesian, "keplerian")
-            elif self._cometary is not None:
-                self._keplerian = transform_coordinates(self._cometary, "keplerian")
-            elif self._spherical is not None:
-                self._keplerian = transform_coordinates(self._spherical, "keplerian")
-
-        return self._keplerian
-
-    @property
-    def cometary(self):
-
-        if self._cometary is None:
-
-            if self._cartesian is not None:
-                self._cometary = transform_coordinates(self._cartesian, "cometary")
-            elif self._keplerian is not None:
-                self._cometary = transform_coordinates(self._keplerian, "cometary")
-            elif self._spherical is not None:
-                self._cometary = transform_coordinates(self._spherical, "cometary")
-
-        return self._cometary
 
     @property
     def classes(self):
@@ -285,37 +193,10 @@ class Orbits(Indexable):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing orbits.
         """
-        if coordinate_type is None:
-            coordinate_type_ = self.default_coordinate_type
-        else:
-            coordinate_type_ = coordinate_type
-
-        if coordinate_type_ == "cartesian":
-            df = self.cartesian.to_df(
-                time_scale=time_scale
-            )
-        elif coordinate_type_ == "keplerian":
-            df = self.keplerian.to_df(
-                time_scale=time_scale
-            )
-        elif coordinate_type_ == "cometary":
-            df = self.cometary.to_df(
-                time_scale=time_scale
-            )
-        elif coordinate_type_ == "spherical":
-            df = self.spherical.to_df(
-                time_scale=time_scale
-            )
-        else:
-            err = (
-                "coordinate_type should be one of:\n"
-                "  cartesian\n"
-                "  spherical\n"
-                "  keplerian\n"
-                "  cometary\n"
-            )
-            raise ValueError(err)
-
+        df = CoordinateMembers.to_df(self,
+            time_scale=time_scale,
+            coordinate_type=coordinate_type
+        )
         df.insert(0, "orbit_id", self.ids)
         df.insert(1, "object_id", self.object_ids)
         if self._classes is not None:

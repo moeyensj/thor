@@ -6,4 +6,5 @@ from .keplerian import *
 from .cometary import *
 from .conversions import *
 from .transform import *
+from .members import *
 from .residuals import *
