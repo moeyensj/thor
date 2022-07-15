@@ -4,8 +4,8 @@ import numpy as np
 import pyoorb as oo
 import pandas as pd
 from astropy.time import Time
+from thor.orbits.classes import Ephemeris
 
-from ..utils import _check_times
 from ..coordinates.cartesian import CartesianCoordinates
 from ..coordinates.spherical import SphericalCoordinates
 from .backend import Backend
@@ -445,7 +445,7 @@ class PYOORB(Backend):
             "TrueAnom"
         ]
 
-        ephemeris_dfs = []
+        ephemeris_list = []
         for observatory_code, observation_times in observers.iterate_unique():
             # Convert epochs into PYOORB format
             epochs_pyoorb = self._configure_epochs(observation_times.utc.mjd, "UTC")
@@ -461,51 +461,44 @@ class PYOORB(Backend):
             if err == 1:
                 warnings.warn("PYOORB has returned an error!", UserWarning)
 
-            ephemeris = pd.DataFrame(
-                np.vstack(ephemeris),
-                columns=columns
-            )
+            ephemeris = np.vstack(ephemeris)
 
             ids = np.arange(0, len(orbits))
-            ephemeris["orbit_id"] = [i for i in ids for j in observation_times.utc.mjd]
-            ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
-            ephemeris = ephemeris[["orbit_id", "observatory_code"] + columns]
+            orbit_ids = np.array([i for i in ids for j in observation_times.utc.mjd])
+            observatory_codes = np.array([observatory_code for i in range(len(ephemeris))])
 
-            ephemeris_dfs.append(ephemeris)
+            if orbits.ids is not None:
+                orbit_ids = orbits.ids[orbit_ids]
 
-        ephemeris = pd.concat(ephemeris_dfs)
-        ephemeris.sort_values(
-            by=["orbit_id", "observatory_code", "mjd_utc"],
-            inplace=True,
-            ignore_index=True
-        )
-
-        if orbits.object_ids is not None:
-            ephemeris.insert(1, "object_id", orbits.object_ids[ephemeris["orbit_id"].values])
-        else:
-            ephemeris.insert(1, "object_id", "None")
-
-        if orbits.ids is not None:
-            ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
-
-        ephemeris = Ephemeris(
-            SphericalCoordinates(
-                rho=ephemeris["delta_au"].values,
-                lon=ephemeris["RA_deg"].values,
-                lat=ephemeris["Dec_deg"].values,
-                #vrho=ephemeris["vx"].values,
-                vlon=ephemeris["vRAcosDec"].values / np.cos(np.radians(ephemeris["Dec_deg"].values)),
-                vlat=ephemeris["vDec"].values,
-                times=Time(
-                    ephemeris["mjd_utc"].values,
-                    scale="utc",
-                    format="mjd"
+            ephemeris = Ephemeris(
+                SphericalCoordinates(
+                    rho=ephemeris[:, 8],
+                    lon=ephemeris[:, 1],
+                    lat=ephemeris[:, 2],
+                    vrho=None,
+                    vlon=ephemeris[:, 3] / np.cos(np.radians(ephemeris[:, 4])),
+                    vlat=ephemeris[:, 4],
+                    times=Time(
+                        ephemeris[:, 0],
+                        scale="utc",
+                        format="mjd"
+                    ),
+                    origin=observatory_codes,
+                    frame="ecliptic"
                 ),
-                origin=ephemeris["observatory_code"].values,
-                frame="ecliptic"
-            ),
-            ephemeris["orbit_id"].values,
-            object_ids=ephemeris["object_id"].values
+                orbit_ids=orbit_ids
 
-        )
-        return ephemeris
+            )
+
+            ephemeris_list.append(ephemeris)
+
+
+        #if orbits.object_ids is not None:
+        #    ephemeris.insert(1, "object_id", orbits.object_ids[ephemeris["orbit_id"].values])
+        #else:
+        #    ephemeris.insert(1, "object_id", "None")
+        #
+        #if orbits.ids is not None:
+        #    ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
+
+        return ephemeris_list
