@@ -6,7 +6,10 @@ import pandas as pd
 from astropy.time import Time
 
 from ..utils import _check_times
+from ..coordinates.cartesian import CartesianCoordinates
+from ..coordinates.spherical import SphericalCoordinates
 from .backend import Backend
+from ..orbits.orbits import Orbits
 
 PYOORB_CONFIG = {
     "dynamical_model" : "N",
@@ -294,61 +297,58 @@ class PYOORB(Backend):
         # Convert list of new states into a pandas data frame
         # These states at the moment will always be return as cartesian
         # state vectors
-        elements = ["x", "y", "z", "vx", "vy", "vz"]
+        # elements = ["x", "y", "z", "vx", "vy", "vz"]
         # Other PYOORB state vector representations:
         #"keplerian":
         #    elements = ["a", "e", "i", "Omega", "omega", "M0"]
         #"cometary":
         #    elements = ["q", "e", "i", "Omega", "omega", "T0"]
+        states = np.concatenate(states)
 
-        # Create pandas data frame
-        columns = [
-            "orbit_id",
-            *elements,
-            "orbit_type",
-            "epoch_mjd",
-            "time_scale",
-            "H/M1",
-            "G/K1"
-        ]
-        propagated = pd.DataFrame(
-            np.concatenate(states),
-            columns=columns
-        )
-        propagated["orbit_id"] = propagated["orbit_id"].astype(int)
+        # Extract cartesian states from PYOORB results
+        orbit_ids_ = states[:, 0].astype(int)
+        x = states[:, 1]
+        y = states[:, 2]
+        z = states[:, 3]
+        vx = states[:, 4]
+        vy = states[:, 5]
+        vz = states[:, 6]
+        mjd_tt = states[:, 8]
 
         # Convert output epochs to TDB
-        epochs = Time(
-            propagated["epoch_mjd"].values,
+        times = Time(
+            mjd_tt,
             format="mjd",
             scale="tt"
         )
-        propagated["mjd_tdb"] = epochs.tdb.value
+        times = times.tdb
 
-        # Drop PYOORB specific columns (may want to consider this option later on.)
-        propagated.drop(
-            columns=[
-                "epoch_mjd",
-                "orbit_type",
-                "time_scale",
-                "H/M1",
-                "G/K1"
-            ],
-            inplace=True
-        )
-
-        # Re-order columns and sort
-        propagated = propagated[["orbit_id", "mjd_tdb"] + elements]
-        propagated.sort_values(
-            by=["orbit_id", "mjd_tdb"],
-            inplace=True,
-            ignore_index=True
-        )
+        if orbits.object_ids is not None:
+            object_ids = orbits.object_ids[orbit_ids_]
+        else:
+            object_ids = None
 
         if orbits.ids is not None:
-            propagated["orbit_id"] = orbits.ids[propagated["orbit_id"].values]
+            orbit_ids = orbits.ids[orbit_ids_]
+        else:
+            orbit_ids = None
 
-        return propagated
+        propagated_orbits = Orbits(
+            CartesianCoordinates(
+                x=x,
+                y=y,
+                z=z,
+                vx=vx,
+                vy=vy,
+                vz=vz,
+                times=times,
+                origin="heliocentric",
+                frame="ecliptic"
+            ),
+            ids=orbit_ids,
+            object_ids=object_ids
+        )
+        return propagated_orbits
 
     def _generate_ephemeris(self, orbits, observers):
         """
@@ -446,9 +446,7 @@ class PYOORB(Backend):
         ]
 
         ephemeris_dfs = []
-        for observatory_code, observation_times in observers.items():
-            _check_times(observation_times, "observation_times")
-
+        for observatory_code, observation_times in observers.iterate_unique():
             # Convert epochs into PYOORB format
             epochs_pyoorb = self._configure_epochs(observation_times.utc.mjd, "UTC")
 
@@ -482,7 +480,32 @@ class PYOORB(Backend):
             ignore_index=True
         )
 
+        if orbits.object_ids is not None:
+            ephemeris.insert(1, "object_id", orbits.object_ids[ephemeris["orbit_id"].values])
+        else:
+            ephemeris.insert(1, "object_id", "None")
+
         if orbits.ids is not None:
             ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
 
+        ephemeris = Ephemeris(
+            SphericalCoordinates(
+                rho=ephemeris["delta_au"].values,
+                lon=ephemeris["RA_deg"].values,
+                lat=ephemeris["Dec_deg"].values,
+                #vrho=ephemeris["vx"].values,
+                vlon=ephemeris["vRAcosDec"].values / np.cos(np.radians(ephemeris["Dec_deg"].values)),
+                vlat=ephemeris["vDec"].values,
+                times=Time(
+                    ephemeris["mjd_utc"].values,
+                    scale="utc",
+                    format="mjd"
+                ),
+                origin=ephemeris["observatory_code"].values,
+                frame="ecliptic"
+            ),
+            ephemeris["orbit_id"].values,
+            object_ids=ephemeris["object_id"].values
+
+        )
         return ephemeris
