@@ -16,8 +16,8 @@ class Ephemeris(CoordinateMembers):
             coordinates=coordinates,
             cartesian=True,
             spherical=True,
-            keplerian=True,
-            cometary=True
+            keplerian=False,
+            cometary=False
         )
 
         if object_ids is not None:

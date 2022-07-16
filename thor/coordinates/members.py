@@ -28,6 +28,17 @@ class CoordinateMembers(Indexable):
         self._cometary = None
         self.default_coordinate_type = None
 
+        allowed_coordinate_types = set()
+        if cartesian:
+            allowed_coordinate_types.add("CartesianCoordinates")
+        if spherical:
+            allowed_coordinate_types.add("SphericalCoordinates")
+        if keplerian:
+            allowed_coordinate_types.add("KeplerianCoordinates")
+        if cometary:
+            allowed_coordinate_types.add("CometaryCoordinates")
+        self.__allowed_coordinate_types = allowed_coordinate_types
+
         if isinstance(coordinates, CartesianCoordinates) and cartesian:
             self._cartesian = deepcopy(coordinates)
             self.default_coordinate_type = "cartesian"
@@ -41,40 +52,40 @@ class CoordinateMembers(Indexable):
             self._cometary = deepcopy(coordinates)
             self.default_coordinate_type = "cometary"
         else:
-            err = (
-                "coordinates should be one of:\n"
-                "  CartesianCoordinates\n"
-                "  SphericalCoordinates\n"
-                "  KeplerianCoordinates\n"
-                "  CometaryCoordinates\n"
-            )
+            err = "coordinates should be one of:\n"
+            err += "".join([f"  {type_i}\n" for type_i in list(self.__allowed_coordinate_types)])
             raise TypeError(err)
 
         return
 
     def __len__(self):
 
-        if self._cartesian is not None:
+        if self._cartesian is not None and "CartesianCoordinates" in self.__allowed_coordinate_types:
             N = len(self._cartesian)
-        elif self._keplerian is not None:
+        elif self._keplerian is not None and "KeplerianCoordinates" in self.__allowed_coordinate_types:
             N = len(self._keplerian)
-        elif self._cometary is not None:
+        elif self._cometary is not None and "CometaryCoordinates" in self.__allowed_coordinate_types:
             N = len(self._cometary)
-        else: # self._spherical is not None:
+        elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
             N = len(self._spherical)
-
+        else:
+            pass
         return N
 
     @property
     def cartesian(self):
 
-        if self._cartesian is None:
+        if "CartesianCoordinates" not in self.__allowed_coordinate_types:
+            err = ("Cartesian coordinates are not supported by this class.")
+            raise ValueError(err)
 
-            if self._keplerian is not None:
+        if self._cartesian is None and "CartesianCoordinates":
+
+            if self._keplerian is not None and "KeplerianCoordinates" in self.__allowed_coordinate_types:
                 self._cartesian = transform_coordinates(self._keplerian, "cartesian")
-            elif self._cometary is not None:
+            elif self._cometary is not None and "CometaryCoordinates" in self.__allowed_coordinate_types:
                 self._cartesian = transform_coordinates(self._cometary, "cartesian")
-            elif self._spherical is not None:
+            elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
                 self._cartesian = transform_coordinates(self._spherical, "cartesian")
 
         return self._cartesian
@@ -82,13 +93,17 @@ class CoordinateMembers(Indexable):
     @property
     def spherical(self):
 
+        if "SphericalCoordinates" not in self.__allowed_coordinate_types:
+            err = ("Spherical coordinates are not supported by this class.")
+            raise ValueError(err)
+
         if self._spherical is None:
 
-            if self._cartesian is not None:
+            if self._cartesian is not None and "CartesianCoordinates" in self.__allowed_coordinate_types:
                 self._spherical = transform_coordinates(self._cartesian, "spherical")
-            elif self._keplerian is not None:
+            elif self._keplerian is not None and "KeplerianCoordinates" in self.__allowed_coordinate_types:
                 self._spherical = transform_coordinates(self._keplerian, "spherical")
-            elif self._cometary is not None:
+            elif self._cometary is not None and "CometaryCoordinates" in self.__allowed_coordinate_types:
                 self._spherical = transform_coordinates(self._cometary, "spherical")
 
         return self._spherical
@@ -96,13 +111,17 @@ class CoordinateMembers(Indexable):
     @property
     def keplerian(self):
 
+        if "KeplerianCoordinates" not in self.__allowed_coordinate_types:
+            err = ("Keplerian coordinates are not supported by this class.")
+            raise ValueError(err)
+
         if self._keplerian is None:
 
-            if self._cartesian is not None:
+            if self._cartesian is not None and "CartesianCoordinates" in self.__allowed_coordinate_types:
                 self._keplerian = transform_coordinates(self._cartesian, "keplerian")
-            elif self._cometary is not None:
+            elif self._cometary is not None and "CometaryCoordinates" in self.__allowed_coordinate_types:
                 self._keplerian = transform_coordinates(self._cometary, "keplerian")
-            elif self._spherical is not None:
+            elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
                 self._keplerian = transform_coordinates(self._spherical, "keplerian")
 
         return self._keplerian
@@ -110,13 +129,17 @@ class CoordinateMembers(Indexable):
     @property
     def cometary(self):
 
+        if "CometaryCoordinates" not in self.__allowed_coordinate_types:
+            err = ("Keplerian coordinates are not supported by this class.")
+            raise ValueError(err)
+
         if self._cometary is None:
 
-            if self._cartesian is not None:
+            if self._cartesian is not None and "CartesianCoordinates" in self.__allowed_coordinate_types:
                 self._cometary = transform_coordinates(self._cartesian, "cometary")
-            elif self._keplerian is not None:
+            elif self._keplerian is not None and "KeplerianCoordinates" in self.__allowed_coordinate_types:
                 self._cometary = transform_coordinates(self._keplerian, "cometary")
-            elif self._spherical is not None:
+            elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
                 self._cometary = transform_coordinates(self._spherical, "cometary")
 
         return self._cometary
@@ -126,19 +149,20 @@ class CoordinateMembers(Indexable):
         coordinate_type: Optional[str] = None,
     ) -> pd.DataFrame:
         """
-        Represent Orbits as a `~pandas.DataFrame`.
+        Represent coordinates as a `~pandas.DataFrame`.
 
         Parameters
         ----------
         time_scale : {"tdb", "tt", "utc"}
             Desired timescale of the output MJDs.
-        coordinate_type : {"cartesian", "spherical", "keplerian", "cometary"}
-            Desired output representation of the orbits.
+        coordinate_type : {None, "cartesian", "spherical", "keplerian", "cometary"}
+            Desired output representation of the coordinates. If None, will default
+            to coordinate type that was given at class initialization.
 
         Returns
         -------
         df : `~pandas.DataFrame`
-            Pandas DataFrame containing orbits.
+            Pandas DataFrame containing coordinates.
         """
         if coordinate_type is None:
             coordinate_type_ = self.default_coordinate_type
