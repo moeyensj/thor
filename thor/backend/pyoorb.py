@@ -2,14 +2,15 @@ import os
 import warnings
 import numpy as np
 import pyoorb as oo
-import pandas as pd
 from astropy.time import Time
-from thor.orbits.classes import Ephemeris
 
 from ..coordinates.cartesian import CartesianCoordinates
 from ..coordinates.spherical import SphericalCoordinates
-from .backend import Backend
 from ..orbits.orbits import Orbits
+from ..orbits.classes import Ephemeris
+from ..observers.observers import Observers
+from ..utils.indexable import concatenate
+from .backend import Backend
 
 PYOORB_CONFIG = {
     "dynamical_model" : "N",
@@ -218,56 +219,24 @@ class PYOORB(Backend):
         epochs_pyoorb = np.array(list(np.vstack([epochs, time_scale]).T), dtype=np.double, order='F')
         return epochs_pyoorb
 
-    def _propagate_orbits(self, orbits, t1):
+    def _propagate_orbits(self,
+            orbits: Orbits,
+            times: Time
+        ) -> Orbits:
         """
         Propagate orbits using PYOORB.
 
         Parameters
         ----------
-        orbits : `~numpy.ndarray` (N, 6)
-            Orbits to propagate. See orbit_type for expected input format.
-        t0 : `~numpy.ndarray` (N)
-            Epoch in MJD at which the orbits are defined.
-        t1 : `~numpy.ndarray` (N)
-            Epoch in MJD to which to propagate the orbits.
-        orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
-            Heliocentric ecliptic J2000 orbital element representation of the provided orbits
-            If 'cartesian':
-                x : x-position [AU]
-                y : y-position [AU]
-                z : z-position [AU]
-                vx : x-velocity [AU per day]
-                vy : y-velocity [AU per day]
-                vz : z-velocity [AU per day]
-            If 'keplerian':
-                a : semi-major axis [AU]
-                e : eccentricity [degrees]
-                i : inclination [degrees]
-                Omega : longitude of the ascending node [degrees]
-                omega : argument of periapsis [degrees]
-                M0 : mean anomaly [degrees]
-            If 'cometary':
-                p : perihelion distance [AU]
-                e : eccentricity [degrees]
-                i : inclination [degrees]
-                Omega : longitude of the ascending node [degrees]
-                omega : argument of periapsis [degrees]
-                T0 : time of perihelion passage [degrees]
-        time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
-            Time scale of the MJD epochs.
-        magnitude : float or `~numpy.ndarray` (N), optional
-            Absolute H-magnitude or M1 magnitude.
-        slope : float or `~numpy.ndarray` (N), optional
-            Photometric slope parameter G or K1.
-        dynamical_model : {'N', '2'}, optional
-            Propagate using N or 2-body dynamics.
-        ephemeris_file : str, optional
-            Which JPL ephemeris file to use with PYOORB.
+        orbits : `~thor.orbits.orbits.Orbits` (N)
+            Orbits to propagate.
+        times : `~astropy.time.core.Time` (M)
+            Times to which to propagate orbits.
 
         Returns
         -------
-        propagated : `~pandas.DataFrame`
-            Orbits at new epochs.
+        propagated : `~thor.orbits.orbits.Orbits` (N * M)
+            Orbits propagated to each time in times.
         """
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configure_orbits(
@@ -280,7 +249,7 @@ class PYOORB(Backend):
         )
 
         # Convert epochs into PYOORB format
-        epochs_pyoorb = self._configure_epochs(t1.tt.mjd, "TT")
+        epochs_pyoorb = self._configure_epochs(times.tt.mjd, "TT")
 
         # Propagate orbits to each epoch and append to list
         # of new states
@@ -316,12 +285,12 @@ class PYOORB(Backend):
         mjd_tt = states[:, 8]
 
         # Convert output epochs to TDB
-        times = Time(
+        times_ = Time(
             mjd_tt,
             format="mjd",
             scale="tt"
         )
-        times = times.tdb
+        times_ = times.tdb
 
         if orbits.object_ids is not None:
             object_ids = orbits.object_ids[orbit_ids_]
@@ -341,7 +310,7 @@ class PYOORB(Backend):
                 vx=vx,
                 vy=vy,
                 vz=vz,
-                times=times,
+                times=times_,
                 origin="heliocentric",
                 frame="ecliptic"
             ),
@@ -350,53 +319,26 @@ class PYOORB(Backend):
         )
         return propagated_orbits
 
-    def _generate_ephemeris(self, orbits, observers):
+    def _generate_ephemeris(self,
+            orbits: Orbits,
+            observers: Observers
+        ) -> Ephemeris:
         """
         Generate ephemeris using PYOORB.
 
         Parameters
         ----------
-        orbits : `~numpy.ndarray` (N, 6)
-            Orbits to propagate. See orbit_type for expected input format.
-        t0 : `~numpy.ndarray` (N)
-            Epoch in MJD at which the orbits are defined.
-        t1 : `~numpy.ndarray` (N)
-            Epoch in MJD to which to propagate the orbits.
-        orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
-            Heliocentric ecliptic J2000 orbital element representation of the provided orbits
-            If 'cartesian':
-                x : x-position [AU]
-                y : y-position [AU]
-                z : z-position [AU]
-                vx : x-velocity [AU per day]
-                vy : y-velocity [AU per day]
-                vz : z-velocity [AU per day]
-            If 'keplerian':
-                a : semi-major axis [AU]
-                e : eccentricity [degrees]
-                i : inclination [degrees]
-                Omega : longitude of the ascending node [degrees]
-                omega : argument of periapsis [degrees]
-                M0 : mean anomaly [degrees]
-            If 'cometary':
-                p : perihelion distance [AU]
-                e : eccentricity [degrees]
-                i : inclination [degrees]
-                Omega : longitude of the ascending node [degrees]
-                omega : argument of periapsis [degrees]
-                T0 : time of perihelion passage [degrees]
-        time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
-            Time scale of the MJD epochs.
-        magnitude : float or `~numpy.ndarray` (N), optional
-            Absolute H-magnitude or M1 magnitude.
-        slope : float or `~numpy.ndarray` (N), optional
-            Photometric slope parameter G or K1.
-        observatory_code : str, optional
-            Observatory code for which to generate topocentric ephemeris.
-        dynamical_model : {'N', '2'}, optional
-            Propagate using N or 2-body dynamics.
-        ephemeris_file : str, optional
-            Which JPL ephemeris file to use with PYOORB.
+        orbits : `~thor.orbits.orbits.Orbits` (N)
+            Orbits for which to generate ephemerides.
+        observers : `~thor.observers.observers.Observers` (M)
+            Observers for which to generate the ephemerides of each
+            orbit.
+
+        Returns
+        -------
+        ephemeris : `~thor.orbits.classes.Ephemeris` (N * M)
+            Predicted ephemerides for each orbit observed by each
+            observer.
         """
         # Convert orbits into PYOORB format
         orbits_pyoorb = self._configure_orbits(
@@ -408,42 +350,42 @@ class PYOORB(Backend):
             slope=None
         )
 
-        columns = [
-            "mjd_utc",
-            "RA_deg",
-            "Dec_deg",
-            "vRAcosDec",
-            "vDec",
-            "PhaseAngle_deg",
-            "SolarElon_deg",
-            "r_au",
-            "delta_au",
-            "VMag",
-            "PosAngle_deg",
-            "TLon_deg",
-            "TLat_deg",
-            "TOCLon_deg",
-            "TOCLat_deg",
-            "HLon_deg",
-            "HLat_deg",
-            "HOCLon_deg",
-            "HOCLat_deg",
-            "Alt_deg",
-            "SolarAlt_deg",
-            "LunarAlt_deg",
-            "LunarPhase",
-            "LunarElon_deg",
-            "obj_x",
-            "obj_y",
-            "obj_z",
-            "obj_vx",
-            "obj_vy",
-            "obj_vz",
-            "obs_x",
-            "obs_y",
-            "obs_z",
-            "TrueAnom"
-        ]
+        # columns = [
+        #     "mjd_utc",
+        #     "RA_deg",
+        #     "Dec_deg",
+        #     "vRAcosDec",
+        #     "vDec",
+        #     "PhaseAngle_deg",
+        #     "SolarElon_deg",
+        #     "r_au",
+        #     "delta_au",
+        #     "VMag",
+        #     "PosAngle_deg",
+        #     "TLon_deg",
+        #     "TLat_deg",
+        #     "TOCLon_deg",
+        #     "TOCLat_deg",
+        #     "HLon_deg",
+        #     "HLat_deg",
+        #     "HOCLon_deg",
+        #     "HOCLat_deg",
+        #     "Alt_deg",
+        #     "SolarAlt_deg",
+        #     "LunarAlt_deg",
+        #     "LunarPhase",
+        #     "LunarElon_deg",
+        #     "obj_x",
+        #     "obj_y",
+        #     "obj_z",
+        #     "obj_vx",
+        #     "obj_vy",
+        #     "obj_vz",
+        #     "obs_x",
+        #     "obs_y",
+        #     "obs_z",
+        #     "TrueAnom"
+        # ]
 
         ephemeris_list = []
         for observatory_code, observation_times in observers.iterate_unique():
@@ -467,6 +409,11 @@ class PYOORB(Backend):
             orbit_ids = np.array([i for i in ids for j in observation_times.utc.mjd])
             observatory_codes = np.array([observatory_code for i in range(len(ephemeris))])
 
+            if orbits.object_ids is not None:
+                object_ids = orbits.object_ids[orbit_ids]
+            else:
+                object_ids = None
+
             if orbits.ids is not None:
                 orbit_ids = orbits.ids[orbit_ids]
 
@@ -486,19 +433,11 @@ class PYOORB(Backend):
                     origin=observatory_codes,
                     frame="ecliptic"
                 ),
-                orbit_ids=orbit_ids
-
+                orbit_ids=orbit_ids,
+                object_ids=object_ids
             )
 
             ephemeris_list.append(ephemeris)
 
-
-        #if orbits.object_ids is not None:
-        #    ephemeris.insert(1, "object_id", orbits.object_ids[ephemeris["orbit_id"].values])
-        #else:
-        #    ephemeris.insert(1, "object_id", "None")
-        #
-        #if orbits.ids is not None:
-        #    ephemeris["orbit_id"] = orbits.ids[ephemeris["orbit_id"].values]
-
-        return ephemeris_list
+        ephemeris = concatenate(ephemeris_list)
+        return ephemeris

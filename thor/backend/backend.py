@@ -10,8 +10,12 @@ import copy
 import logging
 import pandas as pd
 import multiprocessing as mp
+from astropy.time import Time
 
-from ..orbit import TestOrbit
+from ..orbits.orbits import Orbits
+from ..orbits.classes import Ephemeris
+from ..observers.observers import Observers
+from ..utils.indexable import concatenate
 from ..utils import Timeout
 from ..utils import _initWorker
 from ..utils import _checkParallel
@@ -24,16 +28,24 @@ __all__ = [
 
 TIMEOUT = 30
 
-def propagation_worker(orbits, t1, backend):
+def propagation_worker(
+        orbits: Orbits,
+        times: Time,
+        backend: "Backend"
+    ) -> Orbits:
     with Timeout(seconds=TIMEOUT):
         try:
-            propagated = backend._propagate_orbits(orbits, t1)
+            propagated = backend._propagate_orbits(orbits, times)
         except TimeoutError:
             logger.critical("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
             propagated = pd.DataFrame()
     return propagated
 
-def ephemeris_worker(orbits, observers, backend):
+def ephemeris_worker(
+        orbits: Orbits,
+        observers: Observers,
+        backend: "Backend"
+    ) -> Ephemeris:
     with Timeout(seconds=TIMEOUT):
         try:
             ephemeris = backend._generate_ephemeris(orbits, observers)
@@ -42,7 +54,7 @@ def ephemeris_worker(orbits, observers, backend):
             ephemeris = pd.DataFrame()
     return ephemeris
 
-def orbitDetermination_worker(observations, backend):
+def orbit_determination_worker(observations, backend: "Backend"):
     with Timeout(seconds=TIMEOUT):
         try:
             orbits = backend._orbit_determination(observations)
@@ -51,31 +63,9 @@ def orbitDetermination_worker(observations, backend):
             orbits = pd.DataFrame()
     return orbits
 
-def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
-
-    assert len(ephemeris["mjd_utc"].unique()) == 1
-    assert len(test_orbit_ephemeris["mjd_utc"].unique()) == 1
-    assert ephemeris["mjd_utc"].unique()[0] == test_orbit_ephemeris["mjd_utc"].unique()[0]
-    observation_time = ephemeris["mjd_utc"].unique()[0]
-
-    # Create test orbit with state of orbit at visit time
-    test_orbit = TestOrbit(
-        test_orbit_ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values[0],
-        observation_time
-    )
-
-    # Prepare rotation matrices
-    test_orbit.prepare()
-
-    # Apply rotation matrices and transform observations into the orbit's
-    # frame of motion.
-    test_orbit.applyToEphemeris(ephemeris)
-
-    return ephemeris
-
 class Backend:
 
-    def __init__(self, name="Backend", **kwargs):
+    def __init__(self, name: str = "Backend", **kwargs):
         self.__dict__.update(kwargs)
         self.name = name
         self.is_setup = False
@@ -84,9 +74,12 @@ class Backend:
     def setup(self):
         return
 
-    def _propagate_orbits(self, orbits, t1):
+    def _propagate_orbits(self,
+            orbits: Orbits,
+            times: Time
+        ) -> Orbits:
         """
-        Propagate orbits from t0 to t1.
+        Propagate orbits from t0 to times.
 
         THIS FUNCTION SHOULD BE DEFINED BY THE USER.
 
@@ -98,21 +91,21 @@ class Backend:
 
     def propagate_orbits(
             self,
-            orbits,
-            t1,
-            chunk_size=100,
-            num_jobs=1,
-            parallel_backend="mp"
-        ):
+            orbits: Orbits,
+            times: Time,
+            chunk_size: int = 100,
+            num_jobs: int = 1,
+            parallel_backend: str = "mp"
+        ) -> Orbits:
         """
-        Propagate each orbit in orbits to each time in t1.
+        Propagate each orbit in orbits to each time in times.
 
         Parameters
         ----------
-        orbits : `~thor.orbits.orbits.Orbits`
+        orbits : `~thor.orbits.orbits.Orbits` (N)
             Orbits to propagate.
-        t1 : `~astropy.time.core.Time`
-            Times to which to propagate each orbit.
+        times : `~astropy.time.core.Time` (M)
+            Times to which to propagate orbits.
         chunk_size : int, optional
             Number of orbits to send to each job.
         num_jobs : int, optional
@@ -132,8 +125,8 @@ class Backend:
         """
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
         if parallel:
-            orbits_split = orbits.split(chunk_size)
-            t1_duplicated = [copy.deepcopy(t1) for i in range(len(orbits_split))]
+            orbits_split = list(orbits.yield_chunks(chunk_size))
+            times_duplicated = [copy.deepcopy(times) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
 
@@ -149,9 +142,9 @@ class Backend:
                 )
 
                 p = []
-                for o, t, b in zip(orbits_split, t1_duplicated, backend_duplicated):
+                for o, t, b in zip(orbits_split, times_duplicated, backend_duplicated):
                     p.append(propagation_worker_ray.remote(o, t, b))
-                propagated_dfs = ray.get(p)
+                propagated_list = ray.get(p)
 
             else: # parallel_backend == "mp"
                 p = mp.Pool(
@@ -159,30 +152,30 @@ class Backend:
                     initializer=_initWorker,
                 )
 
-                propagated_dfs = p.starmap(
+                propagated_list = p.starmap(
                     propagation_worker,
                     zip(
                         orbits_split,
-                        t1_duplicated,
+                        times_duplicated,
                         backend_duplicated,
                     )
                 )
                 p.close()
 
-            propagated = pd.concat(propagated_dfs)
-            propagated.reset_index(
-                drop=True,
-                inplace=True
-            )
+            propagated = concatenate(propagated_list)
         else:
             propagated = self._propagate_orbits(
                 orbits,
-                t1
+                times
             )
 
         return propagated
 
-    def _generate_ephemeris(self, orbits, observers):
+    def _generate_ephemeris(
+            self,
+            orbits: Orbits,
+            observers: Observers
+        ) -> Ephemeris:
         """
         Generate ephemerides for the given orbits as observed by
         the observers.
@@ -197,22 +190,23 @@ class Backend:
 
     def generate_ephemeris(
             self,
-            orbits,
-            observers,
-            chunk_size=100,
-            num_jobs=1,
-            parallel_backend="mp"
-        ):
+            orbits: Orbits,
+            observers: Observers,
+            chunk_size: int = 100,
+            num_jobs: int = 1,
+            parallel_backend: str = "mp"
+        ) -> Ephemeris:
         """
         Generate ephemerides for each orbit in orbits as observed by each observer
         in observers.
 
         Parameters
         ----------
-        orbits : `~thor.orbits.orbits.Orbits`
+        orbits : `~thor.orbits.orbits.Orbits` (N)
             Orbits for which to generate ephemerides.
-        observers : dict or `~pandas.DataFrame`
-            A dictionary with observatory codes as keys and observation_times (`~astropy.time.core.Time`) as values.
+        observers : `~thor.observers.observers.Observers` (M)
+            Observers for which to generate the ephemerides of each
+            orbit.
         chunk_size : int, optional
             Number of orbits to send to each job.
         num_jobs : int, optional
@@ -223,17 +217,13 @@ class Backend:
 
         Returns
         -------
-        ephemeris : `~pandas.DataFrame`
-            Ephemerides with at least the following columns:
-                orbit_id : Input orbit ID
-                observatory_code : Observatory's MPC code.
-                mjd_utc : Observation time in MJD UTC.
-                RA : Right Ascension in decimal degrees.
-                Dec : Declination in decimal degrees.
+        ephemeris : `~thor.orbits.classes.Ephemeris` (N * M)
+            Predicted ephemerides for each orbit observed by each
+            observer.
         """
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
         if parallel:
-            orbits_split = orbits.split(chunk_size)
+            orbits_split = list(orbits.yield_chunks(chunk_size))
             observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
@@ -251,7 +241,7 @@ class Backend:
                 p = []
                 for o, t, b in zip(orbits_split, observers_duplicated, backend_duplicated):
                     p.append(ephemeris_worker_ray.remote(o, t, b))
-                ephemeris_dfs = ray.get(p)
+                ephemeris_list = ray.get(p)
 
             else: # parallel_backend == "mp"
                 p = mp.Pool(
@@ -259,7 +249,7 @@ class Backend:
                     initializer=_initWorker,
                 )
 
-                ephemeris_dfs = p.starmap(
+                ephemeris_list = p.starmap(
                     ephemeris_worker,
                     zip(
                         orbits_split,
@@ -269,22 +259,19 @@ class Backend:
                 )
                 p.close()
 
-            ephemeris = pd.concat(ephemeris_dfs)
-            ephemeris.reset_index(
-                drop=True,
-                inplace=True
-            )
+            ephemeris = concatenate(ephemeris_list)
+
         else:
             ephemeris = self._generate_ephemeris(
                 orbits,
                 observers
             )
 
-        ephemeris.sort_values(
-            by=["orbit_id", "observatory_code", "mjd_utc"],
-            inplace=True,
-            ignore_index=True
-        )
+        #ephemeris.sort_values(
+        #    by=["orbit_id", "observatory_code", "mjd_utc"],
+        #    inplace=True,
+        #    ignore_index=True
+        #)
         return ephemeris
 
     def orbit_determination(self):
