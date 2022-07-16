@@ -12,6 +12,7 @@ from ..utils.indexable import Indexable
 from ..utils.astropy import times_from_df
 from ..coordinates.coordinates import Coordinates
 from ..coordinates.cartesian import CartesianCoordinates
+from ..coordinates.members import CoordinateMembers
 from .state import get_observer_state
 
 OBSERVER_CARTESIAN_COLS = OrderedDict()
@@ -22,7 +23,7 @@ OBSERVER_CARTESIAN_COLS["vx"] = "obs_vx"
 OBSERVER_CARTESIAN_COLS["vy"] = "obs_vy"
 OBSERVER_CARTESIAN_COLS["vz"] = "obs_vz"
 
-class Observers(Indexable):
+class Observers(CoordinateMembers):
     """
     Observers
 
@@ -37,24 +38,30 @@ class Observers(Indexable):
     def __init__(self,
         codes: List,
         times: Optional[Union[Time, List]] = None,
-        cartesian: Optional[CartesianCoordinates] = None
+        coordinates: Optional[Coordinates] = None
     ):
-        self._cartesian = None
-        if isinstance(cartesian, CartesianCoordinates) and times is not None:
-            if cartesian.times is not None:
+
+        if isinstance(coordinates, Coordinates) and times is not None:
+            if coordinates.times is not None:
                 try:
-                    np.testing.assert_equal(cartesian.times.tdb.mjd, times.tdb.mjd)
+                    np.testing.assert_equal(coordinates.times.tdb.mjd, times.tdb.mjd)
                 except AssertionError as e:
                     err = (
-                        "CartesianCoordinates times do not match the given times."
+                        "Coordinates times do not match the given times."
                     )
                     raise ValueError(err)
             else:
                 if isinstance(times, Time):
-                    assert len(times) == len(cartesian)
-                    cartesian._times = times
+                    assert len(times) == len(coordinates)
+                    coordinates._times = times
 
-            self._cartesian = cartesian
+        CoordinateMembers.__init__(self,
+            coordinates=coordinates,
+            cartesian=True,
+            spherical=False,
+            keplerian=False,
+            cometary=False
+        )
 
         # Case 1: codes and times are both a list -- each observatory code
         # has a list of unique observation times.
@@ -88,7 +95,7 @@ class Observers(Indexable):
         if self._cartesian is not None:
             self._cartesian = self._cartesian[sorted_ind]
 
-        super().__init__(index=np.arange(0, len(self), dtype=int))
+        Indexable.__init__(self, index=np.arange(0, len(self), dtype=int))
         return
 
     def iterate_unique(self):
@@ -186,6 +193,7 @@ class Observers(Indexable):
                 frame="ecliptic"
             )
             self._cartesian = cartesian
+            self.default_coordinate_type = "cartesian"
 
         return self._cartesian
 
@@ -205,9 +213,11 @@ class Observers(Indexable):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing observers.
         """
-        df = self.cartesian.to_df(
+        df = CoordinateMembers.to_df(
+            self,
             time_scale=time_scale,
-            )
+            coordinate_type="cartesian"
+        )
         obs_cols = {col : f"obs_{col}" for col in df.columns[1:]}
         df.insert(1, "observatory_code", self.codes)
         df.rename(columns=obs_cols, inplace=True)

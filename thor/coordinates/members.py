@@ -15,7 +15,7 @@ __all__ = ["CoordinateMembers"]
 class CoordinateMembers(Indexable):
 
     def __init__(self,
-            coordinates: Coordinates,
+            coordinates: Optional[Coordinates] = None,
             cartesian=True,
             keplerian=True,
             spherical=True,
@@ -51,6 +51,8 @@ class CoordinateMembers(Indexable):
         elif isinstance(coordinates, CometaryCoordinates) and cometary:
             self._cometary = deepcopy(coordinates)
             self.default_coordinate_type = "cometary"
+        elif coordinates is None:
+            pass
         else:
             err = "coordinates should be one of:\n"
             err += "".join([f"  {type_i}\n" for type_i in list(self.__allowed_coordinate_types)])
