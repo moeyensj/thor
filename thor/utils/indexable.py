@@ -12,7 +12,7 @@ __all__ = [
     "Indexable",
 ]
 
-UNSLICEABLE_DATA_STRUCTURES = (str, int, float, dict, OrderedDict)
+UNSLICEABLE_DATA_STRUCTURES = (str, int, float, dict, bool, set, OrderedDict)
 
 class Indexable:
     """
