@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from copy import deepcopy
 from typing import (
+    List,
     Optional,
     Union
 )
@@ -10,6 +11,7 @@ from collections import OrderedDict
 
 __all__ = [
     "Indexable",
+    "concatenate"
 ]
 
 UNSLICEABLE_DATA_STRUCTURES = (str, int, float, dict, bool, set, OrderedDict)
@@ -158,3 +160,92 @@ class Indexable:
                 )
                 raise NotImplementedError(err)
         return
+
+def concatenate(indexables: List[Indexable]) -> Indexable:
+    """
+    Concatenate a list of Indexables.
+
+    Parameters
+    ----------
+    indexables : list
+        List of instances of Indexables.
+
+    Returns
+    -------
+    indexable : Indexable
+        Indexable with each sliceable attribute concatenated.
+    """
+    # Create a deepcopy of the first class in the list
+    copy = deepcopy(indexables[0])
+
+    # For each attribute in that class, if it is an array-like object
+    # that can be concatenated add it to the dictionary as a list
+    # If it is not a data structure that should be concatenated, simply
+    # add a copy of that data structure to the list.
+    data = {}
+
+    # Astropy time objects concatenate slowly and very poorly so we convert them to
+    # numpy arrays and track which attributes should be time objects.
+    time_attributes = []
+    time_scales = {}
+    time_formats = {}
+    for k, v in indexables[0].__dict__.items():
+        if isinstance(v, (np.ndarray, np.ma.masked_array, list, Indexable)):
+            data[k] = [deepcopy(v)]
+        elif isinstance(v, Time):
+            time_attributes.append(k)
+            time_scales[k] = v.scale
+            time_formats[k] = v.format
+
+            data[k] = [v.mjd]
+
+        elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
+            data[k] = deepcopy(v)
+        else:
+            data[k] = None
+
+
+    # Loop through each indexable and add their attributes to lists in data
+    # For unsupported data structures insure they are equal
+    for indexable_i in indexables[1:]:
+        for k, v in indexable_i.__dict__.items():
+            if isinstance(v, (np.ndarray, np.ma.masked_array, list, Indexable)) and k not in time_attributes:
+                data[k].append(v)
+            elif k in time_attributes:
+                assert time_scales[k] == v.scale
+                data[k].append(v.mjd)
+            elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
+                assert data[k] == v
+            else:
+                pass
+
+    for k, v in data.items():
+        if isinstance(v, list):
+            if isinstance(v[0], np.ma.masked_array):
+                copy.__dict__[k] = np.ma.concatenate(v)
+                copy.__dict__[k].fill_value = np.NaN
+            elif isinstance(v[0], np.ndarray) and k not in time_attributes:
+                copy.__dict__[k] = np.concatenate(v)
+            elif isinstance(v[0], Indexable):
+                copy.__dict__[k] = concatenate(v)
+            elif k in time_attributes:
+                copy.__dict__[k] = Time(
+                    np.concatenate(v),
+                    scale=time_scales[k],
+                    format="mjd"
+                )
+        elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
+            pass
+        else:
+            pass
+
+    if "_index" in copy.__dict__.keys():
+        index = copy.__dict__["_index"]
+        if issubclass(index.dtype.type, (np.str_, np.string_)):
+            copy.__dict__["_index"] = index
+        elif issubclass(index.dtype.type, np.int_) and (len(pd.unique(index)) == len(index)):
+            copy.__dict__["_index"] = index
+        else:
+            copy.__dict__["_index"] = None
+
+    return copy
