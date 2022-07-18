@@ -290,7 +290,7 @@ class PYOORB(Backend):
             format="mjd",
             scale="tt"
         )
-        times_ = times.tdb
+        times_ = times_.tdb
 
         if orbits.object_ids is not None:
             object_ids = orbits.object_ids[orbit_ids_]

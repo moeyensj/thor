@@ -182,8 +182,16 @@ class Coordinates(Indexable):
 
             coords = _ingest_coordinate(q, d, coords, D=D)
 
-        self._times = times
         self._values = coords
+        if isinstance(times, Time):
+            if len(self.values) != len(times):
+                err = (
+                    "coordinates (N = {}) and times (N = {}) do not have the same length.\n"
+                    "If times are defined, each coordinate must have a corresponding time.\n"
+                )
+                raise ValueError(err)
+        self._times = times
+
         if origin is not None:
             if isinstance(origin, str):
                 self._origin = np.empty(len(self), dtype="<U16")
