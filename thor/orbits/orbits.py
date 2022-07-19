@@ -32,7 +32,7 @@ class Orbits(CoordinateMembers):
 
     def __init__(self,
             coordinates,
-            ids=None,
+            orbit_ids=None,
             object_ids=None,
             classes=None,
         ):
@@ -43,10 +43,10 @@ class Orbits(CoordinateMembers):
             spherical=True,
             cometary=True
         )
-        if ids is not None:
-            self._ids = ids
+        if orbit_ids is not None:
+            self._orbit_ids = orbit_ids
         else:
-            self._ids = np.array([uuid.uuid4().hex for i in range(len(coordinates))])
+            self._orbit_ids = np.array([uuid.uuid4().hex for i in range(len(coordinates))])
 
         if object_ids is not None:
             self._object_ids = object_ids
@@ -58,12 +58,12 @@ class Orbits(CoordinateMembers):
         else:
             self._classes = None
 
-        Indexable.__init__(self, index=self.ids)
+        Indexable.__init__(self, index=self.orbit_ids)
         return
 
     @property
-    def ids(self):
-        return self._ids
+    def orbit_ids(self):
+        return self._orbit_ids
 
     @property
     def object_ids(self):
@@ -197,7 +197,7 @@ class Orbits(CoordinateMembers):
             time_scale=time_scale,
             coordinate_type=coordinate_type
         )
-        df.insert(0, "orbit_id", self.ids)
+        df.insert(0, "orbit_id", self.orbit_ids)
         df.insert(1, "object_id", self.object_ids)
         if self._classes is not None:
             df.insert(len(df.columns), "class", self.classes)

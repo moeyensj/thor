@@ -227,7 +227,7 @@ def concatenate(indexables: List[Indexable]) -> Indexable:
             elif isinstance(v[0], np.ndarray) and k not in time_attributes:
                 copy.__dict__[k] = np.concatenate(v)
             elif isinstance(v[0], Indexable):
-                copy.__dict__[k] = concatenate(v)
+                copy.__dict__[k] = concatenate(v, reset_index=True)
             elif k in time_attributes:
                 copy.__dict__[k] = Time(
                     np.concatenate(v),
@@ -240,12 +240,13 @@ def concatenate(indexables: List[Indexable]) -> Indexable:
             pass
 
     if "_index" in copy.__dict__.keys():
-        index = copy.__dict__["_index"]
-        if issubclass(index.dtype.type, (np.str_, np.string_)):
-            copy.__dict__["_index"] = index
-        elif issubclass(index.dtype.type, np.int_) and (len(pd.unique(index)) == len(index)):
-            copy.__dict__["_index"] = index
-        else:
-            copy.__dict__["_index"] = None
+        if reset_index:
+            index = copy.__dict__["_index"]
+            if issubclass(index.dtype.type, (np.str_, np.string_)):
+                copy.__dict__["_index"] = index
+            elif issubclass(index.dtype.type, np.int_) and (len(pd.unique(index)) == len(index)):
+                copy.__dict__["_index"] = index
+            else:
+                copy.__dict__["_index"] = np.arange(0, len(index), dtype=int)
 
     return copy
