@@ -6,9 +6,7 @@ from scipy.spatial.distance import mahalanobis
 
 from ..utils import Indexable
 from .coordinates import Coordinates
-from .cartesian import CartesianCoordinates
-from .spherical import SphericalCoordinates
-from .keplerian import KeplerianCoordinates
+from .conversions import convert_coordinates
 
 __all__ = [
     "calc_residuals"
@@ -35,6 +33,7 @@ class Residuals(Indexable):
         for i, name in enumerate(self._names):
             self.__dict__[f"d{name}"] = self._values[:, i]
 
+        Indexable.__init__(self)
         return
 
     def __len__(self):

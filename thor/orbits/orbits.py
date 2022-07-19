@@ -58,7 +58,7 @@ class Orbits(CoordinateMembers):
         else:
             self._classes = None
 
-        Indexable.__init__(self, index=self.orbit_ids)
+        Indexable.__init__(self, index="orbit_ids")
         return
 
     @property

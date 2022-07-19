@@ -23,13 +23,9 @@ class Indexable:
     lists, or `~astropy.time.core.Time`s then these members are appropriately sliced and indexed along their first axis.
     Any members that are dicts, OrderedDicts, floats, integers or strings are not indexed and left unchanged.
     """
-    def __init__(self, index: Optional[np.ndarray] = None):
+    def __init__(self, index: Optional[Union[str, np.ndarray]] = None):
 
-        if isinstance(index, np.ndarray):
-            self._index = index
-        else:
-            self._index = np.arange(0, len(self), dtype=int)
-
+        self.set_index(index=index)
         return
 
     def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
@@ -52,10 +48,8 @@ class Indexable:
         if isinstance(i, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
-        unique_ind = pd.unique(self._index)
-        ind = np.in1d(self._index, unique_ind[i])
-
-        return ind
+        unique_ind = self.index.unique(level=0)
+        return self.index.get_locs([unique_ind[ind], slice(None)])
 
     def __len__(self):
         err = (
@@ -67,13 +61,39 @@ class Indexable:
     def index(self):
         return self._index
 
-    def __getitem__(self, i: Union[int, slice, tuple, list, np.ndarray]):
+    def set_index(self, index: Union[str, np.ndarray]):
+
+        array_index = np.arange(0, len(self), dtype=int)
+        if isinstance(index, str):
+            class_index = getattr(self, index)
+            self._index_attribute = index
+
+        elif isinstance(index, np.ndarray):
+            class_index = index
+            self._index_attribute = None
+
+        elif index is None:
+            class_index = np.arange(0, len(self), dtype=int)
+            self._index_attribute = None
+
+        else:
+            err = ("index must be a str, numpy.ndarray or None")
+            raise ValueError(err)
+
+        self._index = pd.MultiIndex.from_arrays(
+            [class_index, array_index],
+            names=["class_index", "array_index"]
+        )
+
+        return
+
+    def __getitem__(self, i: Union[int, slice, tuple, list, np.ndarray, pd.MultiIndex]):
 
         ind = self._handle_index(i)
         copy = deepcopy(self)
 
         for k, v in self.__dict__.items():
-            if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable)):
+            if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable, pd.MultiIndex)):
                 copy.__dict__[k] = v[ind]
             elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                 copy.__dict__[k] = v
@@ -87,7 +107,7 @@ class Indexable:
 
         return copy
 
-    def __delitem__(self, i: Union[int, slice, tuple, list, np.ndarray]):
+    def __delitem__(self, i: Union[int, slice, tuple, list, np.ndarray, pd.MultiIndex]):
 
         ind = self._handle_index(i)
 
@@ -105,6 +125,8 @@ class Indexable:
                 )
             elif isinstance(v, (list, Indexable)):
                 del v[ind]
+            elif isinstance(v, pd.MultiIndex):
+                self.__dict__[k] = v.delete(ind)
             elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                 self.__dict__[k] = v
             elif v is None:
@@ -134,6 +156,8 @@ class Indexable:
 
             if isinstance(v, np.ma.masked_array):
                 self.__dict__[k] = np.ma.concatenate([self_v, v])
+                self.__dict__[k].mask = np.concatenate([self_v.mask, v.mask])
+                self.__dict__[k].fill_value = self_v.fill_value
 
             elif isinstance(v, np.ndarray):
                 self.__dict__[k] = np.concatenate([self_v, v])
@@ -148,6 +172,9 @@ class Indexable:
             elif isinstance(v, (list, Indexable)):
                 self_v.append(v)
 
+            elif isinstance(v, pd.MultiIndex):
+                self.set_index(index=self._index_attribute)
+
             elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                 assert v == self_v
 
@@ -161,7 +188,9 @@ class Indexable:
                 raise NotImplementedError(err)
         return
 
-def concatenate(indexables: List[Indexable]) -> Indexable:
+def concatenate(
+        indexables: List[Indexable],
+    ) -> Indexable:
     """
     Concatenate a list of Indexables.
 
@@ -227,7 +256,7 @@ def concatenate(indexables: List[Indexable]) -> Indexable:
             elif isinstance(v[0], np.ndarray) and k not in time_attributes:
                 copy.__dict__[k] = np.concatenate(v)
             elif isinstance(v[0], Indexable):
-                copy.__dict__[k] = concatenate(v, reset_index=True)
+                copy.__dict__[k] = concatenate(v)
             elif k in time_attributes:
                 copy.__dict__[k] = Time(
                     np.concatenate(v),
@@ -240,13 +269,6 @@ def concatenate(indexables: List[Indexable]) -> Indexable:
             pass
 
     if "_index" in copy.__dict__.keys():
-        if reset_index:
-            index = copy.__dict__["_index"]
-            if issubclass(index.dtype.type, (np.str_, np.string_)):
-                copy.__dict__["_index"] = index
-            elif issubclass(index.dtype.type, np.int_) and (len(pd.unique(index)) == len(index)):
-                copy.__dict__["_index"] = index
-            else:
-                copy.__dict__["_index"] = np.arange(0, len(index), dtype=int)
+        copy.set_index(index=copy._index_attribute)
 
     return copy

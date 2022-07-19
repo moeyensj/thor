@@ -95,7 +95,7 @@ class Observers(CoordinateMembers):
         if self._cartesian is not None:
             self._cartesian = self._cartesian[sorted_ind]
 
-        Indexable.__init__(self, index=np.arange(0, len(self), dtype=int))
+        Indexable.__init__(self)
         return
 
     def iterate_unique(self):

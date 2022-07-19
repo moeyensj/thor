@@ -26,7 +26,7 @@ class Ephemeris(CoordinateMembers):
             self._object_ids = np.array(["None" for i in range(len(coordinates))])
 
         self._orbit_ids = orbit_ids
-        Indexable.__init__(self, index=self.orbit_ids)
+        Indexable.__init__(self, index="orbit_ids")
         return
 
     def __len__(self):
