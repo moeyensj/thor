@@ -188,6 +188,100 @@ class Indexable:
                 raise NotImplementedError(err)
         return
 
+    def sort_values(self,
+            by: Union[str, List[str]],
+            inplace: bool = False,
+            ascending: Union[bool, List[bool]] = True,
+        ):
+        """
+        Sort by values. Values can be contained by this class itself or any attribute
+        that is also an Indexable. For example, if an attribute of this class is an Indexable
+        with attribute "a", then this function will first search all attributes of this class,
+        if no attribute is found then it will search all Indexable attributes of this class
+        for the attribute "a".
+
+        Parameters
+        ----------
+        by : {str, list}
+            Sort values using this class attribute or class attributes.
+        inplace : bool
+            If True will sort the class inplace, if False will return a sorted
+            copy of the class.
+        ascending : {bool, list}
+            Sort columns in ascending order or descending order. If by is a list
+            then each attribute can have a separate sort order by passing a list.
+
+        Returns
+        -------
+        cls : If inplace is False.
+        """
+        if isinstance(ascending, list) and isinstance(by, list):
+            assert len(ascending) == len(by)
+            ascending_ = ascending
+            by_ = by
+
+        elif isinstance(ascending, bool) and isinstance(by, list):
+            ascending_ = [ascending for i in range(len(by))]
+            by_ = by
+
+        elif isinstance(ascending, bool) and isinstance(by, str):
+            ascending_ = [ascending]
+            by_ = [by]
+
+        elif isinstance(ascending, list) and isinstance(by, str):
+            ascending_ = ascending
+            by_ = [by]
+
+        else:
+            pass
+
+        attributes = []
+        for by_i in by_:
+            try:
+                attribute_i = getattr(self, by_i)
+                attributes.append(attribute_i)
+            except AttributeError as e:
+                for k, v in self.__dict__.items():
+                    if isinstance(v, Indexable):
+                        try:
+                            attribute_i = getattr(v, by_i)
+                            attributes.append(attribute_i)
+                        except AttributeError as e:
+                            pass
+        data = {}
+        for by_i, attribute_i in zip(by_, attributes):
+            if isinstance(attribute_i, np.ma.masked_array):
+                data[by_i] = deepcopy(attribute_i.filled())
+            elif isinstance(attribute_i, Time):
+                data[by_i] = deepcopy(attribute_i.mjd)
+            else:
+                data[by_i] = deepcopy(attribute_i)
+
+        df = pd.DataFrame(data)
+        df_sorted = df.sort_values(
+            by=by_,
+            ascending=ascending_,
+            inplace=False,
+            ignore_index=False
+        )
+
+        sorted_indices = df_sorted.index.values
+        index_attribute = deepcopy(self._index_attribute)
+        # Reset index to integer values so that sorted can be cleanly
+        # achieved
+        self.set_index(index=None)
+
+        copy = deepcopy(self[sorted_indices])
+        copy.set_index(index=index_attribute)
+
+        # Set index back to what it was before the reset
+        self.set_index(index=index_attribute)
+        if inplace:
+            self.__dict__.update(copy.__dict__)
+        else:
+            return copy
+        return
+
 def concatenate(
         indexables: List[Indexable],
     ) -> Indexable:
