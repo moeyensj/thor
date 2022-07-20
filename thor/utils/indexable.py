@@ -23,9 +23,8 @@ class Indexable:
     lists, or `~astropy.time.core.Time`s then these members are appropriately sliced and indexed along their first axis.
     Any members that are dicts, OrderedDicts, floats, integers or strings are not indexed and left unchanged.
     """
-    def __init__(self, index: Optional[Union[str, np.ndarray]] = None):
-
-        self.set_index(index=index)
+    def __init__(self, index: Union[str, np.ndarray]):
+        self.set_index(index)
         return
 
     def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
@@ -48,14 +47,17 @@ class Indexable:
         if isinstance(i, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
-        unique_ind = self.index.unique(level=0)
+        unique_ind = self.index.unique(level="class_index")
         return self.index.get_locs([unique_ind[ind], slice(None)])
 
     def __len__(self):
-        err = (
-            "Length is not defined for this class."
-        )
-        raise NotImplementedError(err)
+        if self.index is not None:
+            return len(self.index.unique(level="class_index"))
+        else:
+            err = (
+                "Length is not defined for this class."
+            )
+            raise NotImplementedError(err)
 
     @property
     def index(self):
@@ -63,21 +65,18 @@ class Indexable:
 
     def set_index(self, index: Union[str, np.ndarray]):
 
-        array_index = np.arange(0, len(self), dtype=int)
         if isinstance(index, str):
             class_index = getattr(self, index)
             self._index_attribute = index
+            array_index = np.arange(0, len(class_index), dtype=int)
 
         elif isinstance(index, np.ndarray):
             class_index = index
             self._index_attribute = None
-
-        elif index is None:
-            class_index = np.arange(0, len(self), dtype=int)
-            self._index_attribute = None
+            array_index = np.arange(0, len(index), dtype=int)
 
         else:
-            err = ("index must be a str, numpy.ndarray or None")
+            err = ("index must be a str, numpy.ndarray")
             raise ValueError(err)
 
         self._index = pd.MultiIndex.from_arrays(
@@ -269,13 +268,17 @@ class Indexable:
         index_attribute = deepcopy(self._index_attribute)
         # Reset index to integer values so that sorted can be cleanly
         # achieved
-        self.set_index(index=None)
+        index = np.arange(0, len(self.index), 1)
+        self.set_index(index)
 
         copy = deepcopy(self[sorted_indices])
-        copy.set_index(index=index_attribute)
+        if index_attribute is not None:
+            copy.set_index(index_attribute)
+            self.set_index(index_attribute)
+        else:
+            copy.set_index(index)
+            self.set_index(index)
 
-        # Set index back to what it was before the reset
-        self.set_index(index=index_attribute)
         if inplace:
             self.__dict__.update(copy.__dict__)
         else:
@@ -342,27 +345,35 @@ def concatenate(
             else:
                 pass
 
+    N = 0
     for k, v in data.items():
         if isinstance(v, list):
             if isinstance(v[0], np.ma.masked_array):
                 copy.__dict__[k] = np.ma.concatenate(v)
                 copy.__dict__[k].fill_value = np.NaN
+                N = len(copy.__dict__[k])
             elif isinstance(v[0], np.ndarray) and k not in time_attributes:
                 copy.__dict__[k] = np.concatenate(v)
+                N = len(copy.__dict__[k])
             elif isinstance(v[0], Indexable):
                 copy.__dict__[k] = concatenate(v)
+                N = len(copy.__dict__[k])
             elif k in time_attributes:
                 copy.__dict__[k] = Time(
                     np.concatenate(v),
                     scale=time_scales[k],
                     format="mjd"
                 )
+                N = len(copy.__dict__[k])
         elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
             pass
         else:
             pass
 
     if "_index" in copy.__dict__.keys():
-        copy.set_index(index=copy._index_attribute)
+        if copy._index_attribute is not None:
+            copy.set_index(copy._index_attribute)
+        else:
+            copy.set_index(np.arange(0, N, 1))
 
     return copy

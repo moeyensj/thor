@@ -189,12 +189,15 @@ class Coordinates(Indexable):
                     "coordinates (N = {}) and times (N = {}) do not have the same length.\n"
                     "If times are defined, each coordinate must have a corresponding time.\n"
                 )
-                raise ValueError(err)
-        self._times = times
+                raise ValueError(err.format(len(self._values), len(times)))
+
+            self._times = times
+        else:
+            self._times = None
 
         if origin is not None:
             if isinstance(origin, str):
-                self._origin = np.empty(len(self), dtype="<U16")
+                self._origin = np.empty(len(self._values), dtype="<U16")
                 self._origin.fill(origin)
             elif isinstance(origin, np.ndarray):
                 assert len(origin) == len(self._values)
@@ -229,11 +232,9 @@ class Coordinates(Indexable):
             self._covariances = np.ma.zeros((N, D, D), dtype=np.float64, fill_value=np.NaN)
             self._covariances.mask = np.ma.ones((N, D, D), dtype=bool)
 
-        Indexable.__init__(self)
+        index = np.arange(0, len(self._values), 1)
+        Indexable.__init__(self, index)
         return
-
-    def __len__(self):
-        return len(self.values)
 
     @property
     def times(self):

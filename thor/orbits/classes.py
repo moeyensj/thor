@@ -29,12 +29,6 @@ class Ephemeris(CoordinateMembers):
         Indexable.__init__(self, index="orbit_ids")
         return
 
-    def __len__(self):
-
-        N = len(pd.unique(self._index))
-
-        return N
-
     @property
     def orbit_ids(self):
         return self._orbit_ids

@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from copy import deepcopy
 from typing import Optional
@@ -58,21 +59,13 @@ class CoordinateMembers(Indexable):
             err += "".join([f"  {type_i}\n" for type_i in list(self.__allowed_coordinate_types)])
             raise TypeError(err)
 
-        return
-
-    def __len__(self):
-
-        if self._cartesian is not None and "CartesianCoordinates" in self.__allowed_coordinate_types:
-            N = len(self._cartesian)
-        elif self._keplerian is not None and "KeplerianCoordinates" in self.__allowed_coordinate_types:
-            N = len(self._keplerian)
-        elif self._cometary is not None and "CometaryCoordinates" in self.__allowed_coordinate_types:
-            N = len(self._cometary)
-        elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
-            N = len(self._spherical)
+        if coordinates is not None:
+            index = np.arange(0, len(coordinates), 1)
         else:
-            pass
-        return N
+            index = np.array([])
+
+        Indexable.__init__(self, index)
+        return
 
     @property
     def cartesian(self):

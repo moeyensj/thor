@@ -2,7 +2,6 @@ import uuid
 import logging
 import numpy as np
 import pandas as pd
-from copy import deepcopy
 from astropy.time import Time
 from typing import (
     List,

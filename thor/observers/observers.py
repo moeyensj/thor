@@ -95,7 +95,8 @@ class Observers(CoordinateMembers):
         if self._cartesian is not None:
             self._cartesian = self._cartesian[sorted_ind]
 
-        Indexable.__init__(self)
+        index = np.arange(0, len(self._codes), 1)
+        Indexable.__init__(self, index)
         return
 
     def iterate_unique(self):
@@ -118,9 +119,6 @@ class Observers(CoordinateMembers):
                 format="mjd"
             )
             yield code, times
-
-    def __len__(self):
-        return len(self.codes)
 
     @property
     def codes(self):
