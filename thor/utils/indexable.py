@@ -44,7 +44,7 @@ class Indexable:
         else:
             raise IndexError("Index should be either an int or a slice.")
 
-        if isinstance(i, slice) and ind.start is not None and ind.start >= len(self):
+        if isinstance(ind, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
         unique_ind = self.index.unique(level="class_index")
@@ -236,17 +236,25 @@ class Indexable:
 
         attributes = []
         for by_i in by_:
+            found = False
             try:
                 attribute_i = getattr(self, by_i)
                 attributes.append(attribute_i)
+                found = True
             except AttributeError as e:
                 for k, v in self.__dict__.items():
                     if isinstance(v, Indexable):
                         try:
                             attribute_i = getattr(v, by_i)
                             attributes.append(attribute_i)
+                            found = True
                         except AttributeError as e:
                             pass
+
+                if not found:
+                    err = (f"{by_i} attribute could not be found.")
+                    raise AttributeError(err)
+
         data = {}
         for by_i, attribute_i in zip(by_, attributes):
             if isinstance(attribute_i, np.ma.masked_array):
@@ -329,7 +337,6 @@ def concatenate(
             data[k] = deepcopy(v)
         else:
             data[k] = None
-
 
     # Loop through each indexable and add their attributes to lists in data
     # For unsupported data structures insure they are equal

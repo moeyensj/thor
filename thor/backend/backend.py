@@ -169,6 +169,11 @@ class Backend:
                 times
             )
 
+        propagated.sort_values(
+            by=["orbit_ids", "times"],
+            ascending=[True, True],
+            inplace=True
+        )
         return propagated
 
     def _generate_ephemeris(
@@ -267,11 +272,10 @@ class Backend:
                 observers
             )
 
-        #ephemeris.sort_values(
-        #    by=["orbit_id", "observatory_code", "mjd_utc"],
-        #    inplace=True,
-        #    ignore_index=True
-        #)
+        ephemeris.sort_values(
+            by=["orbit_ids", "origin", "times"],
+            inplace=True,
+        )
         return ephemeris
 
     def orbit_determination(self):
