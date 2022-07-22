@@ -375,7 +375,10 @@ class Coordinates(Indexable):
             logger.debug(f"origin_col ({origin_col}) has not been found in given dataframe.")
 
         if frame_col in df.columns:
-            data["origin"] = df[frame_col].values
+            frame = df[frame_col].values
+            unique_frames = np.unique(frame)
+            assert len(unique_frames) == 1
+            data["frame"] = unique_frames[0]
         else:
             logger.debug(f"frame_col ({frame_col}) has not been found in given dataframe.")
 
@@ -388,13 +391,13 @@ class Coordinates(Indexable):
 
         # If the covariance matrices are fully masked out then try reading covariances
         # using the standard deviation columns
-        if (isinstance(covariances, np.ma.core.MaskedArray) and (np.all(covariances.mask) == True)) or (covariances is None):
+        if (isinstance(covariances, np.ma.masked_array) and (np.all(covariances.mask) == True)) or (covariances is None):
             sigmas = sigmas_from_df(
                 df,
                 coord_names=list(coord_cols.keys()),
             )
             covariances = sigmas_to_covariance(sigmas)
-            if isinstance(covariances, np.ma.core.MaskedArray) and (np.all(covariances.mask) == True):
+            if isinstance(covariances, np.ma.masked_array) and (np.all(covariances.mask) == True):
                 covariances = None
 
         data["covariances"] = covariances
