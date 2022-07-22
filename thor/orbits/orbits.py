@@ -173,7 +173,8 @@ class Orbits(CoordinateMembers):
 
         return cls(coordinates, object_ids=object_ids)
 
-    def to_df(self,
+    def to_df(
+            self,
             time_scale: str = "tdb",
             coordinate_type: Optional[str] = None,
         ) -> pd.DataFrame:
@@ -202,6 +203,50 @@ class Orbits(CoordinateMembers):
             df.insert(len(df.columns), "class", self.classes)
 
         return df
+
+    @classmethod
+    def from_df(
+            cls: "Orbits",
+            df: pd.DataFrame
+        ) -> "Orbits":
+        """
+        Read Orbits class from a `~pandas.DataFrame`.
+
+        Parameters
+        ----------
+        df : `~pandas.DataFrame`
+            DataFrame containing orbits.
+
+        Returns
+        -------
+        cls : `~thor.orbits.orbits.Orbits`
+            Orbits class.
+        """
+        data = cls._dict_from_df(
+            df,
+            cartesian=True,
+            keplerian=True,
+            cometary=True,
+            spherical=True,
+        )
+
+        columns = df.columns.values
+        if "orbit_id" in columns:
+            data["orbit_ids"] = df["orbit_id"].values
+        else:
+            data["orbit_ids"] = None
+
+        if "object_id" in columns:
+            data["object_ids"] = df["object_id"].values
+        else:
+            data["object_ids"] = None
+
+        if "class" in columns:
+            data["classes"] = df["class"].values
+        else:
+            data["classes"] = None
+
+        return cls(**data)
 
 class FittedOrbits(Orbits):
 
