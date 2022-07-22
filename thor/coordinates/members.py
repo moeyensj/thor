@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from copy import deepcopy
 from typing import Optional
+from collections import OrderedDict
 
 from ..utils import Indexable
 from .coordinates import Coordinates
@@ -216,6 +217,9 @@ class CoordinateMembers(Indexable):
             keplerian: bool = True,
             cometary: bool = True,
             spherical: bool = True,
+            coord_cols: Optional[OrderedDict] = None,
+            origin_col: str = "origin",
+            frame_col: str = "frame"
         ) -> dict:
         """
         Create a dictionary with a single instance of coordinates
@@ -235,6 +239,18 @@ class CoordinateMembers(Indexable):
             Look for Cometary coordinates.
         spherical : bool, optional
             Look for Spherical coordinates.
+        coord_cols : OrderedDict, optional
+            Ordered dictionary containing the coordinate dimensions as keys and their equivalent columns
+            as values. If None, this function will use the default dictionaries for each coordinate class.
+            The following coordinate (dictionary) keys are supported:
+                Cartesian columns: x, y, z, vx, vy, vz
+                Keplerian columns: a, e, i, raan, ap, M
+                Cometary columns: q, e, i, raan, ap, tp
+                Spherical columns: rho, lon, lat, vrho, vlon, vlat
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
 
         Returns
         -------
@@ -243,27 +259,65 @@ class CoordinateMembers(Indexable):
         """
         data = {}
         columns = df.columns.values
-        if cartesian and np.all(np.in1d(list(CARTESIAN_COLS.values()), columns)):
-            coord_class = CartesianCoordinates
-            coord_cols = CARTESIAN_COLS
-        elif keplerian and np.all(np.in1d(list(KEPLERIAN_COLS.values()), columns)):
-            coord_class = KeplerianCoordinates
-            coord_cols = KEPLERIAN_COLS
-        elif cometary and np.all(np.in1d(list(COMETARY_COLS.values()), columns)):
-            coord_class = CometaryCoordinates
-            coord_cols = COMETARY_COLS
-        elif spherical and np.all(np.in1d(list(SPHERICAL_COLS.values()), columns)):
-            coord_class = SphericalCoordinates
-            coord_cols = SPHERICAL_COLS
+        if coord_cols is None:
+            if cartesian and np.all(np.in1d(list(CARTESIAN_COLS.values()), columns)):
+                coord_class = CartesianCoordinates
+                coord_cols_ = CARTESIAN_COLS
+            elif keplerian and np.all(np.in1d(list(KEPLERIAN_COLS.values()), columns)):
+                coord_class = KeplerianCoordinates
+                coord_cols_ = KEPLERIAN_COLS
+            elif cometary and np.all(np.in1d(list(COMETARY_COLS.values()), columns)):
+                coord_class = CometaryCoordinates
+                coord_cols_ = COMETARY_COLS
+            elif spherical and np.all(np.in1d(list(SPHERICAL_COLS.values()), columns)):
+                coord_class = SphericalCoordinates
+                coord_cols_ = SPHERICAL_COLS
+            else:
+                err = "No supported coordinates could be found in the given dataframe.\n" \
+                    "The following coordinate columns were searched for:\n"
+                if cartesian:
+                    err += f" Cartesian columns: {', '.join(CARTESIAN_COLS.keys())}\n"
+                if keplerian:
+                    err += f" Keplerian columns: {', '.join(KEPLERIAN_COLS.keys())}\n"
+                if cometary:
+                    err += f" Cometary columns: {', '.join(COMETARY_COLS.keys())}\n"
+                if spherical:
+                    err += f" Spherical columns: {', '.join(SPHERICAL_COLS.keys())}\n"
+                raise ValueError(err)
+
+        elif isinstance(coord_cols, OrderedDict):
+            if cartesian and coord_cols.keys() == CARTESIAN_COLS.keys():
+                coord_class = CartesianCoordinates
+            elif keplerian and coord_cols.keys() == KEPLERIAN_COLS.keys():
+                coord_class = KeplerianCoordinates
+            elif cometary and coord_cols.keys() == COMETARY_COLS.keys():
+                coord_class = CometaryCoordinates
+            elif spherical and coord_cols.keys() == SPHERICAL_COLS.keys():
+                coord_class = SphericalCoordinates
+            else:
+                err = "Coordinate column dictionary keys could not be\n" \
+                    "matched to any of the supported coordinates for this class:\n"
+                if cartesian:
+                    err += f" Cartesian columns: {', '.join(CARTESIAN_COLS.keys())}\n"
+                if keplerian:
+                    err += f" Keplerian columns: {', '.join(KEPLERIAN_COLS.keys())}\n"
+                if cometary:
+                    err += f" Cometary columns: {', '.join(COMETARY_COLS.keys())}\n"
+                if spherical:
+                    err += f" Spherical columns: {', '.join(SPHERICAL_COLS.keys())}\n"
+                raise ValueError(err)
+
+            coord_cols_ = coord_cols
+
         else:
-            err = ("No coordinates could be found in the given dataframe.")
+            err = ("coord_cols should be one of {None, OrderedDict}.")
             raise ValueError(err)
 
         coordinates = coord_class.from_df(
             df,
-            coord_cols=coord_cols,
-            origin_col="origin",
-            frame_col="frame"
+            coord_cols=coord_cols_,
+            origin_col=origin_col,
+            frame_col=frame_col
         )
         data["coordinates"] = coordinates
 
@@ -295,6 +349,18 @@ class CoordinateMembers(Indexable):
             Look for Cometary coordinates.
         spherical : bool, optional
             Look for Spherical coordinates.
+        coord_cols : OrderedDict, optional
+            Ordered dictionary containing the coordinate dimensions as keys and their equivalent columns
+            as values. If None, this function will use the default dictionaries for each coordinate class.
+            The following coordinate (dictionary) keys are supported:
+                Cartesian columns: x, y, z, vx, vy, vz
+                Keplerian columns: a, e, i, raan, ap, M
+                Cometary columns: q, e, i, raan, ap, tp
+                Spherical columns: rho, lon, lat, vrho, vlon, vlat
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
 
         Returns
         -------

@@ -344,7 +344,7 @@ class Coordinates(Indexable):
             Pandas DataFrame containing coordinates and optionally their
             times and covariances.
         coord_cols : OrderedDict
-            Ordered dictionary containing as keys the coordinate dimensions and their equivalent columns
+            Ordered dictionary containing the coordinate dimensions as keys and their equivalent columns
             as values. For example,
                 coord_cols = OrderedDict()
                 coord_cols["a"] = Column name of semi-major axis values
