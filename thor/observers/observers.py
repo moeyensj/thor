@@ -236,7 +236,7 @@ class Observers(CoordinateMembers):
         df : `~pandas.DataFrame`
             Pandas DataFrame containing Observers.
         coord_cols : OrderedDict
-            Ordered dictionary containing as keys the coordinate dimensions and their equivalent columns
+            Ordered dictionary containing the coordinate dimensions as keys and their equivalent columns
             as values. For example,
                 coord_cols = OrderedDict()
                 coord_cols["x"] = Column name of x distance values
@@ -253,19 +253,16 @@ class Observers(CoordinateMembers):
         data = {}
         data["codes"] = df["observatory_code"].values
         data["times"] = times_from_df(df)
-
-        cartesian_present = False
-        for k, v in coord_cols.items():
-            if v in df.columns:
-                cartesian_present = True
-
-        if cartesian_present:
-            data["cartesian"] = CartesianCoordinates.from_df(
-                df,
-                coord_cols=coord_cols,
-                origin_col=origin_col,
-                frame_col=frame_col
-            )
+        data["coordinates"] = cls._dict_from_df(
+            df,
+            cartesian=True,
+            keplerian=False,
+            cometary=False,
+            spherical=False,
+            coord_cols=coord_cols,
+            origin_col=origin_col,
+            frame_col=frame_col
+        )["coordinates"]
 
         return cls(**data)
 

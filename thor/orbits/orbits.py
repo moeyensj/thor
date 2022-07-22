@@ -5,8 +5,9 @@ import pandas as pd
 from astropy.time import Time
 from typing import (
     List,
-    Optional
+    Optional,
 )
+from collections import OrderedDict
 
 from ..utils.indexable import Indexable
 from ..utils.horizons import (
@@ -207,7 +208,10 @@ class Orbits(CoordinateMembers):
     @classmethod
     def from_df(
             cls: "Orbits",
-            df: pd.DataFrame
+            df: pd.DataFrame,
+            coord_cols: Optional[OrderedDict] = None,
+            origin_col: str = "origin",
+            frame_col: str = "frame"
         ) -> "Orbits":
         """
         Read Orbits class from a `~pandas.DataFrame`.
@@ -216,6 +220,18 @@ class Orbits(CoordinateMembers):
         ----------
         df : `~pandas.DataFrame`
             DataFrame containing orbits.
+        coord_cols : OrderedDict, optional
+            Ordered dictionary containing the coordinate dimensions as keys and their equivalent columns
+            as values. If None, this function will use the default dictionaries for each coordinate class.
+            The following coordinate (dictionary) keys are supported:
+                Cartesian columns: x, y, z, vx, vy, vz
+                Keplerian columns: a, e, i, raan, ap, M
+                Cometary columns: q, e, i, raan, ap, tp
+                Spherical columns: rho, lon, lat, vrho, vlon, vlat
+        origin_col : str
+            Name of the column containing the origin of each coordinate.
+        frame_col : str
+            Name of the column containing the coordinate frame.
 
         Returns
         -------
@@ -228,6 +244,9 @@ class Orbits(CoordinateMembers):
             keplerian=True,
             cometary=True,
             spherical=True,
+            coord_cols=coord_cols,
+            origin_col=origin_col,
+            frame_col=frame_col
         )
 
         columns = df.columns.values
