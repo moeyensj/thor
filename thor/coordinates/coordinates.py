@@ -336,7 +336,7 @@ class Coordinates(Indexable):
             frame_col: str = "frame"
         ) -> dict:
         """
-        Create a dictionary from a dataframe.
+        Create a dictionary from a `pandas.DataFrame`.
 
         Parameters
         ----------
