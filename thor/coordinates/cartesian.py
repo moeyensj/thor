@@ -147,6 +147,14 @@ class CartesianCoordinates(Coordinates):
         return self._values[:, 3:6]
 
     @property
+    def sigma_r(self):
+        return np.sqrt(np.sum(self.sigmas.filled()[:, 0:3]**2, axis=1))
+
+    @property
+    def sigma_v(self):
+        return np.sqrt(np.sum(self.sigmas.filled()[:, 3:6]**2, axis=1))
+
+    @property
     def r_mag(self):
         return np.linalg.norm(self.r.filled(), axis=1)
 
