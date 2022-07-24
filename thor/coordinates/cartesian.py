@@ -2,7 +2,6 @@ import numpy as np
 from astropy.time import Time
 from astropy import units as u
 from typing import (
-    List,
     Optional
 )
 from collections import OrderedDict
@@ -42,6 +41,12 @@ class CartesianCoordinates(Coordinates):
             vz: Optional[np.ndarray] = None,
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
+            sigma_x: Optional[np.ndarray] = None,
+            sigma_y: Optional[np.ndarray] = None,
+            sigma_z: Optional[np.ndarray] = None,
+            sigma_vx: Optional[np.ndarray] = None,
+            sigma_vy: Optional[np.ndarray] = None,
+            sigma_vz: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
             names: OrderedDict = CARTESIAN_COLS,
@@ -64,6 +69,10 @@ class CartesianCoordinates(Coordinates):
         vz : `~numpy.ndarray` (N)
             Z-coordinate velocity.
         """
+        sigmas = (
+            sigma_x, sigma_y, sigma_z,
+            sigma_vx, sigma_vy, sigma_vz
+        )
         Coordinates.__init__(self,
             x=x,
             y=y,
@@ -72,6 +81,7 @@ class CartesianCoordinates(Coordinates):
             vy=vy,
             vz=vz,
             covariances=covariances,
+            sigmas=sigmas,
             times=times,
             origin=origin,
             frame=frame,
@@ -103,6 +113,30 @@ class CartesianCoordinates(Coordinates):
     @property
     def vz(self):
         return self._values[:, 5]
+
+    @property
+    def sigma_x(self):
+        return self.sigmas[:, 0]
+
+    @property
+    def sigma_y(self):
+        return self.sigmas[:, 1]
+
+    @property
+    def sigma_z(self):
+        return self.sigmas[:, 2]
+
+    @property
+    def sigma_vx(self):
+        return self.sigmas[:, 3]
+
+    @property
+    def sigma_vy(self):
+        return self.sigmas[:, 4]
+
+    @property
+    def sigma_vz(self):
+        return self.sigmas[:, 5]
 
     @property
     def r(self):

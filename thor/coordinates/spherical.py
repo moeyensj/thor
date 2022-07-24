@@ -254,6 +254,12 @@ class SphericalCoordinates(Coordinates):
             vlat: Optional[np.ndarray] = None,
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
+            sigma_rho: Optional[np.ndarray] = None,
+            sigma_lon: Optional[np.ndarray] = None,
+            sigma_lat: Optional[np.ndarray] = None,
+            sigma_vrho: Optional[np.ndarray] = None,
+            sigma_vlon: Optional[np.ndarray] = None,
+            sigma_vlat: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
             names: OrderedDict = SPHERICAL_COLS,
@@ -277,6 +283,10 @@ class SphericalCoordinates(Coordinates):
         vlat : `~numpy.ndarray` (N)
             Latitudinal velocity in units of degrees per day.
         """
+        sigmas = (
+            sigma_rho, sigma_lon, sigma_lat,
+            sigma_vrho, sigma_vlon, sigma_vlat
+        )
         Coordinates.__init__(self,
             rho=rho,
             lon=lon,
@@ -285,6 +295,7 @@ class SphericalCoordinates(Coordinates):
             vlon=vlon,
             vlat=vlat,
             covariances=covariances,
+            sigmas=sigmas,
             times=times,
             origin=origin,
             frame=frame,
@@ -316,6 +327,30 @@ class SphericalCoordinates(Coordinates):
     @property
     def vlat(self):
         return self._values[:, 5]
+
+    @property
+    def sigma_rho(self):
+        return self.sigmas[:, 0]
+
+    @property
+    def sigma_lon(self):
+        return self.sigmas[:, 1]
+
+    @property
+    def sigma_lat(self):
+        return self.sigmas[:, 2]
+
+    @property
+    def sigma_vrho(self):
+        return self.sigmas[:, 3]
+
+    @property
+    def sigma_vlon(self):
+        return self.sigmas[:, 4]
+
+    @property
+    def sigma_vlat(self):
+        return self.sigmas[:, 5]
 
     def to_cartesian(self) -> CartesianCoordinates:
 

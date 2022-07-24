@@ -294,12 +294,22 @@ class CometaryCoordinates(Coordinates):
             tp: Optional[np.ndarray] = None,
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
+            sigma_q: Optional[np.ndarray] = None,
+            sigma_e: Optional[np.ndarray] = None,
+            sigma_i: Optional[np.ndarray] = None,
+            sigma_raan: Optional[np.ndarray] = None,
+            sigma_ap: Optional[np.ndarray] = None,
+            sigma_tp: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
             names: OrderedDict = COMETARY_COLS,
             units: OrderedDict = COMETARY_UNITS,
             mu: float = MU,
         ):
+        sigmas = (
+            sigma_q, sigma_e, sigma_i,
+            sigma_raan, sigma_ap, sigma_tp
+        )
         Coordinates.__init__(self,
             q=q,
             e=e,
@@ -308,6 +318,7 @@ class CometaryCoordinates(Coordinates):
             ap=ap,
             tp=tp,
             covariances=covariances,
+            sigmas=sigmas,
             times=times,
             origin=origin,
             frame=frame,
@@ -341,6 +352,30 @@ class CometaryCoordinates(Coordinates):
     @property
     def tp(self):
         return self._values[:, 5]
+
+    @property
+    def sigma_q(self):
+        return self.sigmas[:, 0]
+
+    @property
+    def sigma_e(self):
+        return self.sigmas[:, 1]
+
+    @property
+    def sigma_i(self):
+        return self.sigmas[:, 2]
+
+    @property
+    def sigma_raan(self):
+        return self.sigmas[:, 3]
+
+    @property
+    def sigma_ap(self):
+        return self.sigmas[:, 4]
+
+    @property
+    def sigma_tp(self):
+        return self.sigmas[:, 5]
 
     @property
     def a(self):

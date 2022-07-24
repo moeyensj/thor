@@ -450,12 +450,22 @@ class KeplerianCoordinates(Coordinates):
             M: Optional[np.ndarray] = None,
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
+            sigma_a: Optional[np.ndarray] = None,
+            sigma_e: Optional[np.ndarray] = None,
+            sigma_i: Optional[np.ndarray] = None,
+            sigma_raan: Optional[np.ndarray] = None,
+            sigma_ap: Optional[np.ndarray] = None,
+            sigma_M: Optional[np.ndarray] = None,
             origin: str = "heliocentric",
             frame: str = "ecliptic",
             names: OrderedDict = KEPLERIAN_COLS,
             units: OrderedDict = KEPLERIAN_UNITS,
             mu: float = MU,
         ):
+        sigmas = (
+            sigma_a, sigma_e, sigma_i,
+            sigma_raan, sigma_ap, sigma_M
+        )
         Coordinates.__init__(self,
             a=a,
             e=e,
@@ -464,6 +474,7 @@ class KeplerianCoordinates(Coordinates):
             ap=ap,
             M=M,
             covariances=covariances,
+            sigmas=sigmas,
             times=times,
             origin=origin,
             frame=frame,
@@ -497,6 +508,30 @@ class KeplerianCoordinates(Coordinates):
     @property
     def M(self):
         return self._values[:, 5]
+
+    @property
+    def sigma_a(self):
+        return self.sigmas[:, 0]
+
+    @property
+    def sigma_e(self):
+        return self.sigmas[:, 1]
+
+    @property
+    def sigma_i(self):
+        return self.sigmas[:, 2]
+
+    @property
+    def sigma_raan(self):
+        return self.sigmas[:, 3]
+
+    @property
+    def sigma_ap(self):
+        return self.sigmas[:, 4]
+
+    @property
+    def sigma_M(self):
+        return self.sigmas[:, 5]
 
     @property
     def q(self):
