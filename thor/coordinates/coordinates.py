@@ -156,7 +156,8 @@ class Coordinates(Indexable):
 
     def __init__(
             self,
-            covariances: Optional[Union[np.ndarray, np.ma.array, List]] = None,
+            covariances: Optional[Union[np.ndarray, np.ma.masked_array, List]] = None,
+            sigmas: Optional[Union[np.ndarray, np.ma.masked_array]] = None,
             times: Optional[Time] = None,
             origin: Optional[Union[np.ndarray, str]] = "heliocenter",
             frame: Optional[Union[np.ndarray, str]] = "ecliptic",
@@ -226,7 +227,34 @@ class Coordinates(Indexable):
         self._units = units_
 
         if covariances is not None:
+            if sigmas is not None:
+                logger.info(
+                    "Both covariances and sigmas have been given. Sigmas will be ignored " \
+                    "and the covariance matrices will be used instead."
+                )
             self._covariances = _ingest_covariance(coords, covariances)
+
+        elif covariances is None and sigmas is not None:
+            if isinstance(sigmas, tuple):
+                N = len(self._values)
+                sigmas_ = np.zeros((N, D), dtype=float)
+                for i, sigma in enumerate(sigmas):
+                    if sigma is None:
+                        sigmas_[:, i] = np.NaN
+                    else:
+                        sigmas_[:, i] = sigma
+
+            elif isinstance(sigmas, (np.ndarray, np.ma.masked_array)):
+                sigmas_ = sigmas
+            else:
+                err = (
+                    "sigmas should be one of {None, `~numpy.ndarray`, `~numpy.ma.masked_array`, tuple}"
+                )
+                raise TypeError(err)
+
+            self._covariances = sigmas_to_covariance(sigmas_)
+
+        # Both covariances and sigmas are None
         else:
             N, D = coords.shape
             self._covariances = np.ma.zeros((N, D, D), dtype=np.float64, fill_value=np.NaN)

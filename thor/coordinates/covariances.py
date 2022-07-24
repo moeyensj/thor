@@ -48,7 +48,7 @@ def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.core.MaskedArray]) -> n
         Covariance matrices with the squared 1-sigma values inserted along
         each N diagonal.
     """
-    if isinstance(sigmas, (np.ma.core.MaskedArray)):
+    if isinstance(sigmas, (np.ma.masked_array)):
         sigmas_ = sigmas.filled()
     else:
         sigmas_ = sigmas
