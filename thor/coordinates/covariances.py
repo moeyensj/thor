@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 from jax import (
     config,
-    jacfwd
+    jacfwd,
+    vmap
 )
 import jax.numpy as jnp
 from astropy import units as u
@@ -160,22 +161,22 @@ def transform_covariances_jacobian(
     # Do this only once!
     jacobian_func = jacfwd(_func, argnums=0)
 
-    covariances_out = []
+    in_axes = [0]
+    for k, v in kwargs.items():
+        if isinstance(v, (np.ndarray, np.ma.masked_array)):
+            in_axes.append(0)
+        else:
+            in_axes.append(None)
+    in_axes = tuple(in_axes)
 
-    for i, (coord, covariance) in enumerate(zip(coords, covariances)):
+    vmapped_jacobian_func = vmap(
+        jacobian_func,
+        in_axes=in_axes,
+        out_axes=(0),
+    )
 
-        kwargs_i = {}
-        for k, v in kwargs.items():
-            if isinstance(v, (list, np.ndarray, jnp.ndarray)):
-                kwargs_i[k] = v[i]
-            else:
-                kwargs_i[k] = v
-
-        jacobian = jacobian_func(coord, **kwargs_i)
-        covariance_out = np.array(jacobian @ covariance @ jacobian.T)
-        covariances_out.append(covariance_out)
-
-    return np.stack(covariances_out)
+    jacobian = vmapped_jacobian_func(coords, *kwargs.values())
+    return jacobian @ covariances @ jnp.transpose(jacobian, axes=(0, 2, 1))
 
 def sigmas_to_df(
         sigmas: np.ma.MaskedArray,
