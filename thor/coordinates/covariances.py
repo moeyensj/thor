@@ -176,7 +176,8 @@ def transform_covariances_jacobian(
     )
 
     jacobian = vmapped_jacobian_func(coords, *kwargs.values())
-    return jacobian @ covariances @ jnp.transpose(jacobian, axes=(0, 2, 1))
+    covariances = jacobian @ covariances @ jnp.transpose(jacobian, axes=(0, 2, 1))
+    return np.array(covariances)
 
 def sigmas_to_df(
         sigmas: np.ma.MaskedArray,
