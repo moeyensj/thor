@@ -155,6 +155,8 @@ class CoordinateMembers(Indexable):
     def to_df(self,
             time_scale: str = "tdb",
             coordinate_type: Optional[str] = None,
+            sigmas: bool = False,
+            covariances: bool = False,
         ) -> pd.DataFrame:
         """
         Represent coordinates as a `~pandas.DataFrame`.
@@ -166,6 +168,10 @@ class CoordinateMembers(Indexable):
         coordinate_type : {None, "cartesian", "spherical", "keplerian", "cometary"}
             Desired output representation of the coordinates. If None, will default
             to coordinate type that was given at class initialization.
+        sigmas : bool, optional
+            Include 1-sigma uncertainty columns.
+        covariances : bool, optional
+            Include lower triangular covariance matrix columns.
 
         Returns
         -------
@@ -182,22 +188,19 @@ class CoordinateMembers(Indexable):
         else:
             coordinate_type_ = coordinate_type
 
+        kwargs = {
+            "time_scale" : time_scale,
+            "sigmas" : sigmas,
+            "covariances" : covariances
+        }
         if coordinate_type_ == "cartesian":
-            df = self.cartesian.to_df(
-                time_scale=time_scale
-            )
+            df = self.cartesian.to_df(**kwargs)
         elif coordinate_type_ == "keplerian":
-            df = self.keplerian.to_df(
-                time_scale=time_scale
-            )
+            df = self.keplerian.to_df(**kwargs)
         elif coordinate_type_ == "cometary":
-            df = self.cometary.to_df(
-                time_scale=time_scale
-            )
+            df = self.cometary.to_df(**kwargs)
         elif coordinate_type_ == "spherical":
-            df = self.spherical.to_df(
-                time_scale=time_scale
-            )
+            df = self.spherical.to_df(**kwargs)
         else:
             err = (
                 "coordinate_type should be one of:\n"

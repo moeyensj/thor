@@ -178,6 +178,8 @@ class Orbits(CoordinateMembers):
             self,
             time_scale: str = "tdb",
             coordinate_type: Optional[str] = None,
+            sigmas: bool = False,
+            covariances: bool = False,
         ) -> pd.DataFrame:
         """
         Represent Orbits as a `~pandas.DataFrame`.
@@ -188,15 +190,22 @@ class Orbits(CoordinateMembers):
             Desired timescale of the output MJDs.
         coordinate_type : {"cartesian", "spherical", "keplerian", "cometary"}
             Desired output representation of the orbits.
+        sigmas : bool, optional
+            Include 1-sigma uncertainty columns.
+        covariances : bool, optional
+            Include lower triangular covariance matrix columns.
 
         Returns
         -------
         df : `~pandas.DataFrame`
             Pandas DataFrame containing orbits.
         """
-        df = CoordinateMembers.to_df(self,
+        df = CoordinateMembers.to_df(
+            self,
             time_scale=time_scale,
-            coordinate_type=coordinate_type
+            coordinate_type=coordinate_type,
+            sigmas=sigmas,
+            covariances=covariances
         )
         df.insert(0, "orbit_id", self.orbit_ids)
         df.insert(1, "object_id", self.object_ids)
