@@ -330,8 +330,28 @@ class Coordinates(Indexable):
         raise NotImplementedError
 
     def to_df(self,
-            time_scale="utc",
-        ):
+            time_scale: str = "utc",
+            sigmas: bool = False,
+            covariances: bool = False,
+        ) -> pd.DataFrame:
+        """
+        Represent Coordinates as a `~pandas.DataFrame`.
+
+        Parameters
+        ----------
+        time_scale : {"tdb", "tt", "utc"}
+            Desired timescale of the output MJDs.
+        sigmas : bool, optional
+            Include 1-sigma uncertainty columns.
+        covariances : bool, optional
+            Include lower triangular covariance matrix columns.
+
+        Returns
+        -------
+        df : `~pandas.DataFrame`
+            `~pandas.DataFrame` containing coordinates and optionally their 1-sigma uncertainties
+            and lower triangular covariance matrix elements.
+        """
         data = {}
         N, D = self.values.shape
 
@@ -341,13 +361,21 @@ class Coordinates(Indexable):
             df = pd.DataFrame(index=np.arange(0, len(self)))
 
         for i, (k, v) in enumerate(self.names.items()):
-            data[k] = self.values.filled()[:, i]
+            data[v] = self.values.filled()[:, i]
 
         df = df.join(pd.DataFrame(data))
-        if self.covariances is not None and np.all(~self.covariances.mask):
+
+        if sigmas:
+            df_sigmas = sigmas_to_df(
+                self.sigmas,
+                coord_names=list(self.names.values())
+            )
+            df = df.join(df_sigmas)
+
+        if covariances:
             df_covariances = covariances_to_df(
                 self.covariances,
-                list(self.names.keys()),
+                list(self.names.values()),
                 kind="lower"
             )
             df = df.join(df_covariances)
