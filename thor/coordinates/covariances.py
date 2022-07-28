@@ -1,11 +1,6 @@
 import logging
 import numpy as np
 import pandas as pd
-from jax import (
-    config,
-    jacfwd,
-    vmap
-)
 import jax.numpy as jnp
 from astropy import units as u
 from astropy.table import Table
@@ -16,8 +11,9 @@ from typing import (
     Union
 )
 
-config.update("jax_enable_x64", True)
-config.update('jax_platform_name', 'cpu')
+from .jacobian import calc_jacobian
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "sigmas_to_covariance",
@@ -166,25 +162,11 @@ def transform_covariances_jacobian(
     covariances_out : `~numpy.ndarray` (N, D, D)
         Transformed covariance matrices.
     """
-    # Calculate the jacobian function for the input function
-    # Do this only once!
-    jacobian_func = jacfwd(_func, argnums=0)
-
-    in_axes = [0]
-    for k, v in kwargs.items():
-        if isinstance(v, (np.ndarray, np.ma.masked_array)):
-            in_axes.append(0)
-        else:
-            in_axes.append(None)
-    in_axes = tuple(in_axes)
-
-    vmapped_jacobian_func = vmap(
-        jacobian_func,
-        in_axes=in_axes,
-        out_axes=(0),
+    jacobian = calc_jacobian(
+        coords,
+        _func,
+        **kwargs
     )
-
-    jacobian = vmapped_jacobian_func(coords, *kwargs.values())
     covariances = jacobian @ covariances @ jnp.transpose(jacobian, axes=(0, 2, 1))
     return np.array(covariances)
 

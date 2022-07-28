@@ -1,4 +1,5 @@
 from .coordinates import *
+from .jacobian import *
 from .covariances import *
 from .cartesian import *
 from .spherical import *
