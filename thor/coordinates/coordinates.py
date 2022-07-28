@@ -17,6 +17,7 @@ from ..utils import (
     times_from_df
 )
 from .covariances import (
+    COVARIANCE_FILL_VALUE,
     covariances_from_df,
     covariances_to_df,
 )
@@ -28,6 +29,8 @@ __all__ = [
     "_ingest_covariance",
     "Coordinates",
 ]
+
+COORD_FILL_VALUE = np.NaN
 
 def _ingest_coordinate(
         q: Union[list, np.ndarray],
@@ -68,10 +71,13 @@ def _ingest_coordinate(
         q_ = np.asarray(q)
         N_ = len(q_)
         if coords is None:
-            coords = np.ma.zeros((N_, D), dtype=np.float64, fill_value=np.NaN)
-            coords.fill_value = np.NaN
-            # Set the entire array to be masked by default
-            coords.mask = np.ones(coords.shape, dtype=bool)
+            coords = np.ma.zeros(
+                (N_, D),
+                dtype=np.float64,
+            )
+            coords.fill_value = COORD_FILL_VALUE
+            coords.mask = np.ones((N_, D), dtype=bool)
+
         else:
             N, D = coords.shape
             if N != N_:
@@ -114,7 +120,7 @@ def _ingest_covariance(
         If the number of covariance dimensions does not match
             the number of unmasked or missing coordinate dimensions.
     """
-    D = coords.shape[1]
+    N, D = coords.shape
     axes = D - np.sum(coords.mask.all(axis=0))
 
     if covariance.shape[0] != len(coords):
@@ -130,19 +136,23 @@ def _ingest_covariance(
         )
         raise ValueError(err)
 
-    if isinstance(covariance, np.ma.core.MaskedArray) and (covariance.shape[1] == covariance.shape[2] == coords.shape[1]):
+    if isinstance(covariance, np.ma.masked_array) and (covariance.shape[1] == covariance.shape[2] == coords.shape[1]):
         return covariance
 
     if isinstance(covariance, np.ndarray) and (covariance.shape[1] == covariance.shape[2] == coords.shape[1]):
-        covariance_ = np.ma.MaskedArray(
+        covariance_ = np.ma.masked_array(
             covariance,
-            fill_value=np.NaN,
+            dtype=np.float64,
+            fill_value=COVARIANCE_FILL_VALUE,
             mask=np.isnan(covariance)
         )
         return covariance_
 
-    covariance_ = np.ma.zeros((len(coords), D, D), dtype=np.float64, fill_value=np.NaN)
-    # Set the entire array to be masked by default
+    covariance_ = np.ma.zeros(
+        (N, D, D),
+        dtype=np.float64
+    )
+    covariance_.fill_value = COVARIANCE_FILL_VALUE
     covariance_.mask = np.ones(covariance_.shape, dtype=bool)
 
     for n in range(len(coords)):
@@ -240,7 +250,7 @@ class Coordinates(Indexable):
                 sigmas_ = np.zeros((N, D), dtype=float)
                 for i, sigma in enumerate(sigmas):
                     if sigma is None:
-                        sigmas_[:, i] = np.NaN
+                        sigmas_[:, i] = np.sqrt(COVARIANCE_FILL_VALUE)
                     else:
                         sigmas_[:, i] = sigma
 
@@ -257,8 +267,12 @@ class Coordinates(Indexable):
         # Both covariances and sigmas are None
         else:
             N, D = coords.shape
-            self._covariances = np.ma.zeros((N, D, D), dtype=np.float64, fill_value=np.NaN)
-            self._covariances.mask = np.ma.ones((N, D, D), dtype=bool)
+            self._covariances = np.ma.zeros(
+                (N, D, D),
+                dtype=np.float64,
+            )
+            self._covariances.fill_value = COVARIANCE_FILL_VALUE
+            self._covariances.mask = np.ones((N, D, D), dtype=bool)
 
         index = np.arange(0, len(self._values), 1)
         Indexable.__init__(self, index)

@@ -31,21 +31,21 @@ __all__ = [
     "covariances_to_table",
 ]
 
-logger = logging.getLogger(__name__)
+COVARIANCE_FILL_VALUE = np.NaN
 
-def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.core.MaskedArray]) -> np.ma.core.MaskedArray:
+def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.masked_array]) -> np.ma.masked_array:
     """
     Convert an array of sigmas into an array of covariance
     matrices (non-diagonal elements are assumed to be zero).
 
     Parameters
     ----------
-    sigmas : {`~numpy.ndarray`, `~numpy.ma.core.MaskedArray`} (N, D)
+    sigmas : {`~numpy.ndarray`, `~numpy.ma.masked_array`} (N, D)
         1-sigma uncertainty values for each coordinate dimension D.
 
     Returns
     -------
-    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+    covariances : `~numpy.ma.masked_array` (N, D, D)
         Covariance matrices with the squared 1-sigma values inserted along
         each N diagonal.
     """
@@ -55,13 +55,22 @@ def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.core.MaskedArray]) -> n
         sigmas_ = sigmas
 
     N, D = sigmas_.shape
-    covariances = np.ma.zeros((N, D, D), dtype=np.float64, fill_value=np.NaN)
-    # Set the entire array to be masked by default
-    covariances.mask = np.ones((N, D, D), dtype=bool)
+    if np.all(np.isnan(sigmas_)):
+        covariances = np.ma.zeros((N, D, D),
+            dtype=np.float64,
+        )
+        covariances.fill_value = COVARIANCE_FILL_VALUE
+        covariances.mask = np.ma.ones((N, D, D), dtype=bool)
 
-    I = np.identity(D, dtype=sigmas_.dtype)
-    covariances[:, :, :] = np.einsum('kj,ji->kij', sigmas_**2, I)
-    covariances.mask = np.where(np.isnan(covariances) | (covariances == 0), 1, 0)
+    else:
+        I = np.identity(D, dtype=sigmas_.dtype)
+        covariances = np.einsum('kj,ji->kij', sigmas_**2, I)
+        covariances = np.ma.masked_array(
+            covariances,
+            dtype=np.float64,
+            fill_value=COVARIANCE_FILL_VALUE
+        )
+        covariances.mask = np.where(np.isnan(covariances) | (covariances == 0), 1, 0)
 
     return covariances
 
@@ -323,9 +332,12 @@ def covariances_from_df(
     """
     N = len(df)
     D = len(coord_names)
-    covariances = np.ma.zeros((N, D, D), dtype=np.float64)
-    covariances.fill_value = np.NaN
-    covariances.mask = np.ones((N, D, D), dtype=bool)
+    covariances = np.ma.zeros(
+        (N, D, D),
+        dtype=np.float64,
+        fill_value=COVARIANCE_FILL_VALUE,
+        mask=np.ones((N, D, D), dtype=bool)
+    )
 
     if kind == "upper":
         ii, jj = np.triu_indices(D)
@@ -427,9 +439,12 @@ def covariances_from_table(
     """
     N = len(table)
     D = len(coord_names)
-    covariances = np.ma.zeros((N, D, D), dtype=np.float64)
-    covariances.fill_value = np.NaN
-    covariances.mask = np.ones((N, D, D), dtype=bool)
+    covariances = np.ma.zeros(
+        (N, D, D),
+        dtype=np.float64,
+        fill_value=COVARIANCE_FILL_VALUE,
+        mask=np.ones((N, D, D), dtype=bool)
+    )
 
     if kind == "upper":
         ii, jj = np.triu_indices(D)
