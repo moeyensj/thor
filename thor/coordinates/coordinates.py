@@ -20,6 +20,9 @@ from .covariances import (
     COVARIANCE_FILL_VALUE,
     covariances_from_df,
     covariances_to_df,
+    sigmas_to_df,
+    sigmas_from_df,
+    sigmas_to_covariance,
 )
 
 logger = logging.getLogger(__name__)
@@ -167,7 +170,7 @@ class Coordinates(Indexable):
     def __init__(
             self,
             covariances: Optional[Union[np.ndarray, np.ma.masked_array, List]] = None,
-            sigmas: Optional[Union[np.ndarray, np.ma.masked_array]] = None,
+            sigmas: Optional[Union[tuple, np.ndarray, np.ma.masked_array]] = None,
             times: Optional[Time] = None,
             origin: Optional[Union[np.ndarray, str]] = "heliocenter",
             frame: Optional[Union[np.ndarray, str]] = "ecliptic",
@@ -236,15 +239,21 @@ class Coordinates(Indexable):
         self._names = names
         self._units = units_
 
+        if not isinstance(sigmas, (tuple, np.ndarray, np.ma.masked_array)) and sigmas is not None:
+            err = (
+                "sigmas should be one of {None, `~numpy.ndarray`, `~numpy.ma.masked_array`, tuple}"
+            )
+            raise TypeError(err)
+
         if covariances is not None:
-            if sigmas is not None:
+            if (isinstance(sigmas, tuple) and all(sigmas)) or isinstance(sigmas, (np.ndarray, np.ma.masked_array)):
                 logger.info(
                     "Both covariances and sigmas have been given. Sigmas will be ignored " \
                     "and the covariance matrices will be used instead."
                 )
             self._covariances = _ingest_covariance(coords, covariances)
 
-        elif covariances is None and sigmas is not None:
+        elif covariances is None and isinstance(sigmas, (tuple, np.ndarray, np.ma.masked_array)):
             if isinstance(sigmas, tuple):
                 N = len(self._values)
                 sigmas_ = np.zeros((N, D), dtype=float)
@@ -254,13 +263,8 @@ class Coordinates(Indexable):
                     else:
                         sigmas_[:, i] = sigma
 
-            elif isinstance(sigmas, (np.ndarray, np.ma.masked_array)):
+            else: #isinstance(sigmas, (np.ndarray, np.ma.masked_array)):
                 sigmas_ = sigmas
-            else:
-                err = (
-                    "sigmas should be one of {None, `~numpy.ndarray`, `~numpy.ma.masked_array`, tuple}"
-                )
-                raise TypeError(err)
 
             self._covariances = sigmas_to_covariance(sigmas_)
 
