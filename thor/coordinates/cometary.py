@@ -404,8 +404,8 @@ class CometaryCoordinates(Coordinates):
 
         if self.covariances is not None:
             covariances_cartesian = transform_covariances_jacobian(
-                self.values.filled(),
-                self.covariances.filled(),
+                self.values,
+                self.covariances,
                 _cometary_to_cartesian,
                 t0=self.times.tdb.mjd,
                 mu=self.mu,
@@ -442,8 +442,8 @@ class CometaryCoordinates(Coordinates):
 
         if cartesian.covariances is not None and (~np.all(cartesian.covariances.mask)):
             covariances_cometary = transform_covariances_jacobian(
-                cartesian.values.filled(),
-                cartesian.covariances.filled(),
+                cartesian.values,
+                cartesian.covariances,
                 _cartesian_to_cometary,
                 t0=cartesian.times.tdb.mjd,
                 mu=mu,

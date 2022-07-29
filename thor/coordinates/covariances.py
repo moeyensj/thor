@@ -102,19 +102,19 @@ def sample_covariance(
     return samples
 
 def transform_covariances_sampling(
-        coords: np.ndarray,
-        covariances: np.ndarray,
+        coords: Union[np.ndarray, np.ma.masked_array],
+        covariances: Union[np.ndarray, np.ma.masked_array],
         func: Callable,
         num_samples: int = 100000
-    ) -> np.ndarray:
+    ) -> np.ma.masked_array:
     """
     Transform covariance matrices by sampling the transformation function.
 
     Parameters
     ----------
-    coords : `~numpy.ndarray` (N, D)
+    coords : {`~numpy.ndarray`, `~np.ma.masked_array`} (N, D)
         Coordinates that correspond to the input covariance matrices.
-    covariances : `~numpy.ndarray` (N, D, D)
+    covariances : {`~numpy.ndarray`, `~np.ma.masked_array`} (N, D, D)
         Covariance matrices to transform via sampling.
     func : function
         A function that takes coords (N, D) as input and returns the transformed
@@ -125,32 +125,58 @@ def transform_covariances_sampling(
 
     Returns
     -------
-    covariances_out : `~numpy.ndarray` (N, D, D)
+    covariances_out : `~np.ma.masked_array` (N, D, D)
         Transformed covariance matrices.
+
+    Raises
+    ------
+    TypeError: If coords or covariances are not a `~numpy.ndarray` or a `~numpy.ma.masked_array`
     """
+    if isinstance(coords, np.ma.masked_array):
+        coords_ = deepcopy(coords.filled())
+    elif isinstance(coords, np.ndarray):
+        coords_ = deepcopy(coords)
+    else:
+        err = ("coords should be one of {`~numpy.ndarray`, `~numpy.ma.masked_array`}")
+        raise TypeError(err)
+
+    if isinstance(covariances, np.ma.masked_array):
+        covariances_ = deepcopy(covariances.filled())
+    elif isinstance(covariances, np.ndarray):
+        covariances_ = deepcopy(covariances)
+    else:
+        err = ("covariances should be one of {`~numpy.ndarray`, `~numpy.ma.masked_array`}")
+        raise TypeError(err)
+
     covariances_out = []
-    for coord, covariance in zip(coords, covariances):
+    for coord, covariance in zip(coords_, covariances_):
         samples = sample_covariance(coord, covariance, num_samples)
         samples_converted = func(samples)
         covariances_out.append(np.cov(samples_converted.T))
 
-    return np.stack(covariances_out)
+    covariances_out = np.stack(covariances_out)
+    covariances_out = np.ma.masked_array(
+        covariances,
+        fill_value = COVARIANCE_FILL_VALUE,
+        mask = np.isnan(covariances)
+    )
+    return covariances_out
 
 def transform_covariances_jacobian(
-        coords: np.ndarray,
-        covariances: np.ndarray,
+        coords: Union[np.ndarray, np.ma.masked_array],
+        covariances: Union[np.ndarray, np.ma.masked_array],
         _func: Callable,
         **kwargs,
-    ) -> np.ndarray:
+    ) -> np.ma.masked_array:
     """
     Transform covariance matrices by calculating the Jacobian of the transformation function
     using `~jax.jacfwd`.
 
     Parameters
     ----------
-    coords : `~numpy.ndarray` (N, D)
+    coords : {`~numpy.ndarray`, `~np.ma.masked_array`} (N, D)
         Coordinates that correspond to the input covariance matrices.
-    covariances : `~numpy.ndarray` (N, D, D)
+    covariances : {`~numpy.ndarray`, `~np.ma.masked_array`} (N, D, D)
         Covariance matrices to transform via numerical differentiation.
     _func : function
         A function that takes a single coord (D) as input and return the transformed
@@ -159,17 +185,41 @@ def transform_covariances_jacobian(
 
     Returns
     -------
-    covariances_out : `~numpy.ndarray` (N, D, D)
+    covariances_out : `~np.ma.masked_array` (N, D, D)
         Transformed covariance matrices.
+
+    Raises
+    ------
+    TypeError: If coords or covariances are not a `~numpy.ndarray` or a `~numpy.ma.masked_array`
     """
+    if isinstance(coords, np.ma.masked_array):
+        coords_ = deepcopy(coords.filled())
+    elif isinstance(coords, np.ndarray):
+        coords_ = deepcopy(coords)
+    else:
+        err = ("coords should be one of {`~numpy.ndarray`, `~numpy.ma.masked_array`}")
+        raise TypeError(err)
+
+    if isinstance(covariances, np.ma.masked_array):
+        covariances_ = deepcopy(covariances.filled())
+    elif isinstance(covariances, np.ndarray):
+        covariances_ = deepcopy(covariances)
+    else:
+        err = ("covariances should be one of {`~numpy.ndarray`, `~numpy.ma.masked_array`}")
+        raise TypeError(err)
+
     jacobian = calc_jacobian(
-        coords,
+        coords_,
         _func,
         **kwargs
     )
     covariances = jacobian @ covariances_ @ np.transpose(jacobian, axes=(0, 2, 1))
-
-    return covariances
+    covariances_out = np.ma.masked_array(
+        covariances,
+        fill_value = COVARIANCE_FILL_VALUE,
+        mask = np.isnan(covariances)
+    )
+    return covariances_out
 
 def sigmas_to_df(
         sigmas: np.ma.masked_array,
@@ -224,7 +274,7 @@ def sigmas_from_df(
     N = len(df)
     D = len(coord_names)
     sigmas = np.ma.zeros((N, D), dtype=np.float64)
-    sigmas.fill_value = np.NaN
+    sigmas.fill_value = COVARIANCE_FILL_VALUE
     sigmas.mask = np.ones((N, D), dtype=bool)
 
     for i in range(D):
@@ -317,10 +367,10 @@ def covariances_from_df(
     D = len(coord_names)
     covariances = np.ma.zeros(
         (N, D, D),
-        dtype=np.float64,
-        fill_value=COVARIANCE_FILL_VALUE,
-        mask=np.ones((N, D, D), dtype=bool)
+        dtype=np.float64
     )
+    covariances.fill_value = COVARIANCE_FILL_VALUE
+    covariances.mask = np.ones((N, D, D), dtype=bool)
 
     if kind == "upper":
         ii, jj = np.triu_indices(D)
@@ -342,7 +392,7 @@ def covariances_from_df(
     return covariances
 
 def covariances_to_table(
-        covariances: np.ma.MaskedArray,
+        covariances: np.ma.masked_array,
         coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
         coord_units = [u.au, u.au, u.au, u.au/u.d, u.au/u.d, u.au/u.d],
         kind: str = "lower",
@@ -424,10 +474,10 @@ def covariances_from_table(
     D = len(coord_names)
     covariances = np.ma.zeros(
         (N, D, D),
-        dtype=np.float64,
-        fill_value=COVARIANCE_FILL_VALUE,
-        mask=np.ones((N, D, D), dtype=bool)
+        dtype=np.float64
     )
+    covariances.fill_value = COVARIANCE_FILL_VALUE
+    covariances.mask = np.ones((N, D, D), dtype=bool)
 
     if kind == "upper":
         ii, jj = np.triu_indices(D)

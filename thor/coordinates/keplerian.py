@@ -563,8 +563,8 @@ class KeplerianCoordinates(Coordinates):
 
         if self.covariances is not None:
             covariances_cartesian = transform_covariances_jacobian(
-                self.values.filled(),
-                self.covariances.filled(),
+                self.values,
+                self.covariances,
                 _keplerian_to_cartesian
             )
         else:
@@ -597,8 +597,8 @@ class KeplerianCoordinates(Coordinates):
 
         if cartesian.covariances is not None and (~np.all(cartesian.covariances.mask)):
             covariances_keplerian = transform_covariances_jacobian(
-                cartesian.values.filled(),
-                cartesian.covariances.filled(),
+                cartesian.values,
+                cartesian.covariances,
                 _cartesian_to_keplerian6,
                 t0=cartesian.times.tdb.mjd,
                 mu=mu,

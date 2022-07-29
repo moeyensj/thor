@@ -359,8 +359,8 @@ class SphericalCoordinates(Coordinates):
 
         if self.covariances is not None:
             covariances_cartesian = transform_covariances_jacobian(
-                self.values.filled(),
-                self.covariances.filled(),
+                self.values,
+                self.covariances,
                 _spherical_to_cartesian
             )
         else:
@@ -388,8 +388,8 @@ class SphericalCoordinates(Coordinates):
 
         if cartesian.covariances is not None and (~np.all(cartesian.covariances.mask)):
             covariances_spherical = transform_covariances_jacobian(
-                cartesian.values.filled(),
-                cartesian.covariances.filled(),
+                cartesian.values,
+                cartesian.covariances,
                 _cartesian_to_spherical
             )
         else:
