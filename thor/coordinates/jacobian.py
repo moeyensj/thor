@@ -34,7 +34,7 @@ def calc_jacobian(
 
     Returns
     -------
-    jacobian : `~jax.numpy.ndarray` (N, D, D)
+    jacobian : `~numpy.ndarray` (N, D, D)
         Array containing function partial derivatives for each coordinate.
     """
     # Calculate the jacobian function for the input function
@@ -56,4 +56,4 @@ def calc_jacobian(
     )
 
     jacobian = vmapped_jacobian_func(coords, *kwargs.values())
-    return jacobian
+    return np.array(jacobian)
