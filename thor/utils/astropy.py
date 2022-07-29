@@ -1,4 +1,5 @@
 import pandas as pd
+from copy import deepcopy
 from astropy.time import Time
 
 __all__ = [

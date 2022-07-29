@@ -23,9 +23,9 @@ from .clusters import find_clusters, filter_clusters_by_length
 from .cell import Cell
 from .orbit import TestOrbit
 from .orbits import Orbits
-from .orbits import generateEphemeris
-from .orbit_determination import initialOrbitDetermination
-from .orbit_determination import differentialCorrection
+from .orbits import generate_ephemeris
+from .orbit_determination import initial_orbit_determination
+from .orbit_determination import differential_correction
 from .orbits import mergeAndExtendOrbits
 from .observers import get_observer_state
 from .utils import _initWorker
@@ -34,16 +34,16 @@ from .utils import _checkParallel
 logger = logging.getLogger("thor")
 
 __all__ = [
-    "rangeAndShift_worker",
-    "rangeAndShift",
-    "clusterVelocity",
-    "clusterVelocity_worker",
-    "clusterAndLink",
-    "runTHOROrbit",
-    "runTHOR",
+    "range_and_shift_worker",
+    "range_and_shift",
+    "cluster_velocity",
+    "cluster_velocity_worker",
+    "cluster_and_link",
+    "run_THOR_orbit",
+    "run_THOR",
 ]
 
-def rangeAndShift_worker(observations, ephemeris, cell_area=10):
+def range_and_shift_worker(observations, ephemeris, cell_area=10):
 
     assert len(observations["mjd_utc"].unique()) == 1
     assert len(ephemeris["mjd_utc"].unique()) == 1
@@ -84,7 +84,7 @@ def rangeAndShift_worker(observations, ephemeris, cell_area=10):
 
     return projected_observations
 
-def clusterVelocity(
+def cluster_velocity(
         obs_ids,
         x,
         y,
@@ -153,7 +153,7 @@ def clusterVelocity(
     return cluster_ids
 
 
-def clusterVelocity_worker(
+def cluster_velocity_worker(
         vx,
         vy,
         obs_ids=None,
@@ -169,7 +169,7 @@ def clusterVelocity_worker(
     Helper function to multiprocess clustering.
 
     """
-    cluster_ids = clusterVelocity(
+    cluster_ids = cluster_velocity(
         obs_ids,
         x,
         y,
@@ -183,7 +183,7 @@ def clusterVelocity_worker(
     )
     return cluster_ids
 
-def rangeAndShift(
+def range_and_shift(
         observations,
         orbit,
         cell_area=10,
@@ -248,7 +248,7 @@ def rangeAndShift(
         )
 
     # Propagate test orbit to all times in observations
-    ephemeris = generateEphemeris(
+    ephemeris = generate_ephemeris(
         orbit,
         observers,
         backend=backend,
@@ -303,7 +303,7 @@ def rangeAndShift(
             if not ray.is_initialized():
                 ray.init(address="auto")
 
-            rangeAndShift_worker_ray = ray.remote(rangeAndShift_worker)
+            range_and_shift_worker_ray = ray.remote(range_and_shift_worker)
             rangeAndShift_worker_ray = rangeAndShift_worker_ray.options(
                 num_returns=1,
                 num_cpus=1
@@ -327,7 +327,7 @@ def rangeAndShift(
             )
             projected_dfs = p.starmap(
                 partial(
-                    rangeAndShift_worker,
+                    range_and_shift_worker,
                     cell_area=cell_area
                 ),
                 zip(
@@ -340,7 +340,7 @@ def rangeAndShift(
     else:
         projected_dfs = []
         for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
-            projected_df = rangeAndShift_worker(
+            projected_df = range_and_shift_worker(
                 observations_i,
                 ephemeris_i,
                 cell_area=cell_area
@@ -366,7 +366,7 @@ def rangeAndShift(
 
     return projected_observations
 
-def clusterAndLink(
+def cluster_and_link(
         observations,
         vx_range=[-0.1, 0.1],
         vy_range=[-0.1, 0.1],
@@ -530,8 +530,8 @@ def clusterAndLink(
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
-                clusterVelocity_worker_ray = ray.remote(clusterVelocity_worker)
-                clusterVelocity_worker_ray = clusterVelocity_worker_ray.options(
+                cluster_velocity_worker_ray = ray.remote(cluster_velocity_worker)
+                cluster_velocity_worker_ray = cluster_velocity_worker_ray.options(
                     num_returns=1,
                     num_cpus=1
                 )
@@ -546,7 +546,7 @@ def clusterAndLink(
                 p = []
                 for vxi, vyi in zip(vxx, vyy):
                     p.append(
-                        clusterVelocity_worker_ray.remote(
+                        cluster_velocity_worker_ray.remote(
                             vxi,
                             vyi,
                             obs_ids=obs_ids_oid,
@@ -569,7 +569,7 @@ def clusterAndLink(
                 )
                 possible_clusters = p.starmap(
                     partial(
-                        clusterVelocity_worker,
+                        cluster_velocity_worker,
                         obs_ids=obs_ids,
                         x=theta_x,
                         y=theta_y,
@@ -587,7 +587,7 @@ def clusterAndLink(
             possible_clusters = []
             for vxi, vyi in zip(vxx, vyy):
                 possible_clusters.append(
-                    clusterVelocity(
+                    cluster_velocity(
                         obs_ids,
                         theta_x,
                         theta_y,
@@ -615,7 +615,7 @@ def clusterAndLink(
     if len(possible_clusters) != 0:
         ### The following code is a little messy, its a lot of pandas dataframe manipulation.
         ### I have tried doing an overhaul wherein the clusters and cluster_members dataframe are created per
-        ### velocity combination in the clusterVelocity function. However, this adds an overhead in that function
+        ### velocity combination in the cluster_velocity function. However, this adds an overhead in that function
         ### of ~ 1ms. So clustering 90,000 velocities takes 90 seconds longer which on small datasets is problematic.
         ### On large datasets, the effect is not as pronounced because the below code takes a while to run due to
         ### in-memory pandas dataframe restructuring.
@@ -699,7 +699,7 @@ def clusterAndLink(
 
     return clusters, cluster_members
 
-def runTHOROrbit(
+def run_THOR_orbit(
         preprocessed_observations,
         orbit,
         range_shift_config=Config.RANGE_SHIFT_CONFIG,
@@ -723,10 +723,10 @@ def runTHOROrbit(
         odp_config=odp_config
     )
     status = {
-        "rangeAndShift" : False,
-        "clusterAndLink" : False,
-        "initialOrbitDetermination" : False,
-        "differentialCorrection" : False,
+        "range_and_shift" : False,
+        "cluster_and_link" : False,
+        "initial_orbit_determination" : False,
+        "differential_correction" : False,
         "mergeAndExtendOrbits" : False,
         "complete" : False
     }
@@ -830,8 +830,8 @@ def runTHOROrbit(
                 logger.info("Orbit has already finished processing.")
 
     if not status["complete"]:
-        if not status["rangeAndShift"]:
-            projected_observations = rangeAndShift(
+        if not status["range_and_shift"]:
+            projected_observations = range_and_shift(
                 preprocessed_observations,
                 orbit,
                 **range_shift_config
@@ -854,14 +854,14 @@ def runTHOROrbit(
             )
             logger.debug("Read projected_observations.csv.")
 
-        status["rangeAndShift"] = True
+        status["range_and_shift"] = True
         if out_dir is not None:
             with open(status_file, "w") as status_out:
                 yaml.safe_dump(status, status_out)
             logger.debug("Updated status.yml.")
 
-        if not status["clusterAndLink"]:
-            clusters, cluster_members = clusterAndLink(
+        if not status["cluster_and_link"]:
+            clusters, cluster_members = cluster_and_link(
                 projected_observations,
                 **cluster_link_config
             )
@@ -895,14 +895,14 @@ def runTHOROrbit(
             )
             logger.debug("Read cluster_members.csv.")
 
-        status["clusterAndLink"] = True
+        status["cluster_and_link"] = True
         if out_dir is not None:
             with open(status_file, "w") as status_out:
                 yaml.safe_dump(status, status_out)
             logger.debug("Updated status.yml.")
 
-        if not status["initialOrbitDetermination"]:
-            iod_orbits, iod_orbit_members = initialOrbitDetermination(
+        if not status["initial_orbit_determination"]:
+            iod_orbits, iod_orbit_members = initial_orbit_determination(
                 projected_observations,
                 cluster_members,
                 **iod_config
@@ -934,7 +934,7 @@ def runTHOROrbit(
             )
             logger.debug("Read iod_orbit_members.csv.")
 
-        status["initialOrbitDetermination"] = True
+        status["initial_orbit_determination"] = True
         if out_dir is not None:
             with open(status_file, "w") as status_out:
                 yaml.safe_dump(status, status_out)
@@ -949,8 +949,8 @@ def runTHOROrbit(
                 drop=True
             )
 
-        if not status["differentialCorrection"]:
-            od_orbits, od_orbit_members = differentialCorrection(
+        if not status["differential_correction"]:
+            od_orbits, od_orbit_members = differential_correction(
                 iod_orbits,
                 iod_orbit_members,
                 projected_observations,
@@ -983,7 +983,7 @@ def runTHOROrbit(
             )
             logger.debug("Read od_orbit_members.csv.")
 
-        status["differentialCorrection"] = True
+        status["differential_correction"] = True
         if out_dir is not None:
             with open(status_file, "w") as status_out:
                 yaml.safe_dump(status, status_out)
@@ -1057,7 +1057,7 @@ def runTHOROrbit(
     logger.removeHandler(file_handler)
     return recovered_orbits, recovered_orbit_members
 
-def runTHOR(
+def run_THOR(
         preprocessed_observations,
         test_orbits,
         range_shift_config=Config.RANGE_SHIFT_CONFIG,
@@ -1265,7 +1265,7 @@ def runTHOR(
 
             linked_mask = (~preprocessed_observations["obs_id"].isin(obs_ids_linked))
 
-            recovered_orbits_i, recovered_orbit_members_i = runTHOROrbit(
+            recovered_orbits_i, recovered_orbit_members_i = run_THOR_orbit(
                 preprocessed_observations[linked_mask],
                 orbit_i,
                 range_shift_config=range_shift_config,
