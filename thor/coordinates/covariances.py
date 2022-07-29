@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import pandas as pd
-import jax.numpy as jnp
+from copy import deepcopy
 from astropy import units as u
 from astropy.table import Table
 from scipy.stats import multivariate_normal
@@ -172,7 +172,7 @@ def transform_covariances_jacobian(
     return covariances
 
 def sigmas_to_df(
-        sigmas: np.ma.MaskedArray,
+        sigmas: np.ma.masked_array,
         coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
     ) -> pd.DataFrame:
     """
@@ -180,7 +180,7 @@ def sigmas_to_df(
 
     Parameters
     ----------
-    sigmas : `~numpy.ma.core.MaskedArray` (N, D)
+    sigmas : `~numpy.ma.masked_array` (N, D)
         1-sigma uncertainty values for each coordinate dimension D.
     coord_names : List[str]
         Names of the coordinate columns, will be used to determine column names for
@@ -203,7 +203,7 @@ def sigmas_to_df(
 def sigmas_from_df(
         df: pd.DataFrame,
         coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
-    ) -> np.ma.MaskedArray:
+    ) -> np.ma.masked_array:
     """
     Read sigmas from a `~pandas.DataFrame`.
 
@@ -218,7 +218,7 @@ def sigmas_from_df(
 
     Returns
     -------
-    sigmas : `~numpy.ma.core.MaskedArray` (N, D)
+    sigmas : `~numpy.ma.masked_array` (N, D)
         1-sigma uncertainty values for each coordinate dimension D.
     """
     N = len(df)
@@ -238,7 +238,7 @@ def sigmas_from_df(
     return sigmas
 
 def covariances_to_df(
-        covariances: np.ma.MaskedArray,
+        covariances: np.ma.masked_array,
         coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
         kind: str = "lower",
     ) -> pd.DataFrame:
@@ -248,7 +248,7 @@ def covariances_to_df(
 
     Parameters
     ----------
-    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+    covariances : `~numpy.ma.masked_array` (N, D, D)
         3D array of covariance matrices.
     coord_names : List[str]
         Names of the coordinate columns, will be used to determine column names for
@@ -289,7 +289,7 @@ def covariances_from_df(
         df: pd.DataFrame,
         coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
         kind: str = "lower"
-    ) -> np.ma.MaskedArray:
+    ) -> np.ma.masked_array:
     """
     Read covariance matrices from a `~pandas.DataFrame`.
 
@@ -306,7 +306,7 @@ def covariances_from_df(
 
     Returns
     -------
-    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+    covariances : `~numpy.ma.masked_array` (N, D, D)
         3D array of covariance matrices.
 
     Raises
@@ -353,7 +353,7 @@ def covariances_to_table(
 
     Parameters
     ----------
-    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+    covariances : `~numpy.ma.masked_array` (N, D, D)
         3D array of covariance matrices.
     coord_names : List[str]
         Names of the coordinate columns, will be used to determine column names for
@@ -396,14 +396,14 @@ def covariances_from_table(
         table: Table,
         coord_names: List[str] = ["x", "y", "z", "vx", "vy", "vz"],
         kind: str = "lower"
-    ) -> np.ma.MaskedArray:
+    ) -> np.ma.masked_array:
     """
-    Read covariance matrices from a `~pandas.DataFrame`.
+    Read covariance matrices from a `~astropy.table.table.Table`.
 
     Parameters
     ----------
-    df : `~pandas.DataFrame`
-        DataFrame containing covariances in either upper or lower triangular
+    table : `~astropy.table.table.Table`
+        Table containing covariances in either upper or lower triangular
         form.
     coord_names : List[str]
         Names of the coordinate columns, will be used to determine column names for
@@ -413,7 +413,7 @@ def covariances_from_table(
 
     Returns
     -------
-    covariances : `~numpy.ma.core.MaskedArray` (N, D, D)
+    covariances : `~numpy.ma.masked_array` (N, D, D)
         3D array of covariance matrices.
 
     Raises

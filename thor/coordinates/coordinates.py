@@ -38,9 +38,9 @@ COORD_FILL_VALUE = np.NaN
 def _ingest_coordinate(
         q: Union[list, np.ndarray],
         d: int,
-        coords: Optional[np.ma.core.MaskedArray] = None,
+        coords: Optional[np.ma.masked_array] = None,
         D: int = 6,
-    ) -> np.ma.core.MaskedArray:
+    ) -> np.ma.masked_array:
     """
     Ingest coordinates along an axis (like the x, y, z) and add them to an existing masked array
     of coordinate measurements if that object already exists. If that object doesn't exist then
@@ -62,7 +62,7 @@ def _ingest_coordinate(
 
     Returns
     -------
-    coords : `~numpy.ma.array` (N, D)
+    coords : `~numpy.ma.masked_array` (N, D)
         Masked array of 6D coordinate measurements with q measurements ingested.
 
     Raises
@@ -96,24 +96,24 @@ def _ingest_coordinate(
     return coords
 
 def _ingest_covariance(
-        coords: np.ma.core.MaskedArray,
-        covariance: Union[np.ndarray, np.ma.core.MaskedArray],
-    ) -> np.ma.core.MaskedArray:
+        coords: np.ma.masked_array,
+        covariance: Union[np.ndarray, np.ma.masked_array],
+    ) -> np.ma.masked_array:
     """
     Ingest a set of covariance matrices.
 
     Parameters
     ----------
-    coords : `~numpy.ma.array` (N, D)
+    coords : `~numpy.ma.masked_array` (N, D)
         Masked array of 6D coordinate measurements with q measurements ingested.
-    covariance : `~numpy.ndarray` or `~numpy.ma.array` (N, <=6, <=6)
+    covariance : `~numpy.ndarray` or `~numpy.ma.masked_array` (N, <=D, <=D)
         Covariance matrices for each coordinate. These matrices may have fewer dimensions
-        than 6. If so, additional dimensions will be added for each masked or missing coordinate
+        than D. If so, additional dimensions will be added for each masked or missing coordinate
         dimension.
 
     Returns
     -------
-    covariance : `~numpy.ma.array` (N, D, D)
+    covariance : `~numpy.ma.masked_array` (N, D, D)
         Masked array of covariance matrices.
 
     Raises

@@ -1,31 +1,37 @@
 import numpy as np
 from copy import deepcopy
 from collections import OrderedDict
+from typing import (
+    Union,
+    List
+)
+
+from .coordinates import Coordinates
 
 __all__ = [
     "convert_coordinates"
 ]
 
 def _convert_coordinates_units(
-        coords,
-        units,
-        desired_units
-    ):
+        coords: Union[np.ndarray, np.ma.masked_array],
+        units: List,
+        desired_units: List
+    ) -> Union[np.ndarray, np.ma.masked_array]:
     """
     Convert coordinate units to desired units.
 
     Parameters
     ----------
-    coords : `~numpy.ndarray` or `~numpy.ma.core.MaskedArray` (N, D)
+    coords : `~numpy.ndarray` or `~numpy.ma.masked_array` (N, D)
         Coordinates that need to be converted.
-    units : `~numpy.ndarray` (D)
+    units : List (D)
         Current units for each coordinate dimension.
-    desired_units : `~numpy.ndarray` (D)
+    desired_units : List (D)
         Desired units for each coordinate dimension.
 
     Returns
     -------
-    coords_converted : `~numpy.ndarray` or `~numpy.ma.core.MaskedArray` (N, D)
+    coords_converted : `~numpy.ndarray` or `~numpy.ma.masked_array` (N, D)
         Coordinates converted to the desired coordinate units.
 
     Raises
@@ -47,16 +53,16 @@ def _convert_coordinates_units(
     return coords_converted
 
 def _convert_covariances_units(
-        covariances,
-        units,
-        desired_units,
-    ):
+        covariances: Union[np.ndarray, np.ma.masked_array],
+        units: List,
+        desired_units: List
+    ) -> Union[np.ndarray, np.ma.masked_array]:
     """
     Convert covariance units to desired units.
 
     Parameters
     ----------
-    covariances : `~numpy.ndarray` or `~numpy.ma.core.MaskedArray` (N, D, D)
+    covariances : `~numpy.ndarray` or `~numpy.ma.masked_array` (N, D, D)
         Covariances that need to be converted.
     units : `~numpy.ndarray` (D)
         Current units for each coordinate dimension. Note, these are not the units for
@@ -67,7 +73,7 @@ def _convert_covariances_units(
 
     Returns
     -------
-    covariances_converted : `~numpy.ndarray` or `~numpy.ma.core.MaskedArray` (N, D, D)
+    covariances_converted : `~numpy.ndarray` or `~numpy.ma.masked_array` (N, D, D)
         Covariances converted to the desired coordinate units.
 
     Raises
@@ -103,7 +109,10 @@ def _convert_covariances_units(
 
     return covariances_converted
 
-def convert_coordinates(coords, desired_units):
+def convert_coordinates(
+        coords: Coordinates,
+        desired_units: Union[List, dict, OrderedDict]
+    ) -> Coordinates:
     """
     Convert coordinates to desired units.
 
