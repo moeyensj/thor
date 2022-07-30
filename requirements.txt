@@ -15,7 +15,6 @@ spiceypy
 matplotlib
 seaborn
 plotly
-ipykernel
 pytest
 pytest-cov
 coveralls
