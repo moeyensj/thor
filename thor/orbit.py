@@ -157,7 +157,7 @@ class TestOrbit:
         """
         raise NotImplementedError
 
-@jit("f8[:,:](f8[:,:])", nopython=True, cache=True)
+#@jit("f8[:,:](f8[:,:])", nopython=True, cache=True)
 def calcNae(coords_ec_ang):
     """
     Convert angular ecliptic coordinates to
@@ -182,16 +182,13 @@ def calcNae(coords_ec_ang):
         angular coordinates.
     """
     N = len(coords_ec_ang)
-    rho = np.ones(N)
-    lon = np.radians(coords_ec_ang[:, 0])
-    lat = np.radians(coords_ec_ang[:, 1])
-    velocities = np.zeros(len(rho))
-    x, y, z, vx, vy, vz = _spherical_to_cartesian(rho, lon, lat, velocities, velocities, velocities)
+    coords_spherical = np.zeros((N, 6), dtype=np.float64)
+    coords_spherical[:, 0] = np.ones(N)
+    coords_spherical[:, 1] = coords_ec_ang[:, 0]
+    coords_spherical[:, 2] = coords_ec_ang[:, 1]
+    coords_cartesian = _spherical_to_cartesian(coords_spherical)
 
-    n_ae = np.zeros((N, 3))
-    n_ae[:, 0] = x
-    n_ae[:, 1] = y
-    n_ae[:, 2] = z
+    n_ae = coords_cartesian[:, 0:3]
     return n_ae
 
 @jit("f8[:](f8, f8[:,:], f8[:,:])", nopython=True, cache=True)
