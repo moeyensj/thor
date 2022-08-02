@@ -1,7 +1,15 @@
 import numpy as np
-from numba import jit
+import jax.numpy as jnp
+from jax import (
+    config,
+    jit,
+)
+from typing import Tuple
+
+config.update("jax_enable_x64", True)
 
 from ..constants import Constants as C
+from .stumpff import STUMPFF_TYPES
 from .chi import calc_chi
 
 __all__ = [
@@ -10,9 +18,17 @@ __all__ = [
 ]
 
 MU = C.MU
+LANGRANGE_TYPES = Tuple[np.float64, np.float64, np.float64, np.float64]
 
-@jit("Tuple((UniTuple(f8, 4), UniTuple(f8, 6), f8))(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
-def calc_lagrange_coefficients(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
+@jit
+def calc_lagrange_coefficients(
+        r: np.ndarray,
+        v: np.ndarray,
+        dt: float,
+        mu: float = MU,
+        max_iter: int = 100,
+        tol: float = 1e-16
+    ) -> Tuple[LANGRANGE_TYPES, STUMPFF_TYPES, np.float64]:
     """
     Calculate the exact Lagrange coefficients given an initial state defined at t0,
     and the change in time from t0 to t1 (dt = t1 - t0).
@@ -56,7 +72,7 @@ def calc_lagrange_coefficients(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     [1] Curtis, H. D. (2014). Orbital Mechanics for Engineering Students. 3rd ed.,
         Elsevier Ltd. ISBN-13: 978-0080977478
     """
-    sqrt_mu = np.sqrt(mu)
+    sqrt_mu = jnp.sqrt(mu)
     chi, c0, c1, c2, c3, c4, c5 = calc_chi(
         r,
         v,
@@ -68,8 +84,8 @@ def calc_lagrange_coefficients(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     stumpff_coeffs = (c0, c1, c2, c3, c4, c5)
     chi2 = chi**2
 
-    r_mag = np.linalg.norm(r)
-    v_mag = np.linalg.norm(v)
+    r_mag = jnp.linalg.norm(r)
+    v_mag = jnp.linalg.norm(v)
 
     # Equations 3.48 and 3.50 in Curtis (2014) [1]
     alpha = -v_mag**2 / mu + 2 / r_mag
@@ -79,7 +95,7 @@ def calc_lagrange_coefficients(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     g = dt - 1 / sqrt_mu * chi**3 * c3
 
     r_new = f * r + g * v
-    r_new_mag = np.linalg.norm(r_new)
+    r_new_mag = jnp.linalg.norm(r_new)
 
     # Equations 3.69c and 3.69d in Curtis (2014) [1]
     f_dot = sqrt_mu / (r_mag * r_new_mag) * (alpha * chi**3 * c3 - chi)
@@ -89,8 +105,15 @@ def calc_lagrange_coefficients(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
 
     return lagrange_coeffs, stumpff_coeffs, chi
 
-@jit("UniTuple(f8[:], 2)(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
-def apply_lagrange_coefficients(r, v, f, g, f_dot, g_dot):
+@jit
+def apply_lagrange_coefficients(
+        r: np.ndarray,
+        v: np.ndarray,
+        f: float,
+        g: float,
+        f_dot: float,
+        g_dot: float
+    ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Apply the Lagrange coefficients to r and v.
 
