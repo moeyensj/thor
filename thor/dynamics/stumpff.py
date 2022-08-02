@@ -1,12 +1,69 @@
 import numpy as np
-from numba import jit
+import jax.numpy as jnp
+from jax import (
+    config,
+    jit,
+    lax
+)
+from typing import Tuple
+
+config.update("jax_enable_x64", True)
 
 __all__ = [
     "calc_stumpff"
 ]
 
-@jit("UniTuple(f8, 6)(f8)", nopython=True, cache=True)
-def calc_stumpff(psi):
+STUMPFF_TYPES = Tuple[np.float64, np.float64, np.float64, np.float64, np.float64, np.float64]
+
+@jit
+def _positive_psi(psi: np.float64) -> STUMPFF_TYPES:
+    # Equation 6.9.15 in Danby (1992) [1]
+    sqrt_psi = jnp.sqrt(psi)
+    c0 = jnp.cos(sqrt_psi)
+    c1 = jnp.sin(sqrt_psi) / sqrt_psi
+
+    # Equation 6.9.16 in Danby (1992) [1]
+    # states the recursion relation for higher
+    # order Stumpff functions
+    c2 = (1. - c0) / psi
+    c3 = (1. - c1) / psi
+    c4 = (1/2. - c2) / psi
+    c5 = (1/6. - c3) / psi
+
+    return c0, c1, c2, c3, c4, c5
+
+@jit
+def _negative_psi(psi: np.float64) -> STUMPFF_TYPES:
+    # Equation 6.9.15 in Danby (1992) [1]
+    sqrt_npsi = jnp.sqrt(-psi)
+    c0 = jnp.cosh(sqrt_npsi)
+    c1 = jnp.sinh(sqrt_npsi) / sqrt_npsi
+
+    # Equation 6.9.16 in Danby (1992) [1]
+    # states the recursion relation for higher
+    # order Stumpff functions
+    c2 = (1. - c0) / psi
+    c3 = (1. - c1) / psi
+    c4 = (1/2. - c2) / psi
+    c5 = (1/6. - c3) / psi
+
+    return c0, c1, c2, c3, c4, c5
+
+@jit
+def _null_psi(psi: np.float64) -> STUMPFF_TYPES:
+    # Equation 6.9.14 in Danby (1992) [1]
+    c0 = 1.
+    c1 = 1.
+    c2 = 1/2.
+    c3 = 1/6.
+    c4 = 1/24.
+    c5 = 1/120.
+
+    return c0, c1, c2, c3, c4, c5
+
+
+@jit
+def calc_stumpff(psi: np.float64) -> STUMPFF_TYPES:
     """
     Calculate the first 6 Stumpff functions for variable psi.
 
@@ -48,39 +105,15 @@ def calc_stumpff(psi):
         William-Bell, Inc. ISBN-13: 978-0943396200
         Notes: of particular interest is Danby's fantastic chapter on universal variables (6.9)
     """
-    if psi > 0.0:
-        # Equation 6.9.15 in Danby (1992) [1]
-        sqrt_psi = np.sqrt(psi)
-        c0 = np.cos(sqrt_psi)
-        c1 = np.sin(sqrt_psi) / sqrt_psi
-
-        # Equation 6.9.16 in Danby (1992) [1]
-        # states the recursion relation for higher
-        # order Stumpff functions
-        c2 = (1. - c0) / psi
-        c3 = (1. - c1) / psi
-        c4 = (1/2. - c2) / psi
-        c5 = (1/6. - c3) / psi
-    elif psi < 0.0:
-        # Equation 6.9.15 in Danby (1992) [1]
-        sqrt_npsi = np.sqrt(-psi)
-        c0 = np.cosh(sqrt_npsi)
-        c1 = np.sinh(sqrt_npsi) / sqrt_npsi
-
-        # Equation 6.9.16 in Danby (1992) [1]
-        # states the recursion relation for higher
-        # order Stumpff functions
-        c2 = (1. - c0) / psi
-        c3 = (1. - c1) / psi
-        c4 = (1/2. - c2) / psi
-        c5 = (1/6. - c3) / psi
-    else:
-        # Equation 6.9.14 in Danby (1992) [1]
-        c0 = 1.
-        c1 = 1.
-        c2 = 1/2.
-        c3 = 1/6.
-        c4 = 1/24.
-        c5 = 1/120.
-
+    c0, c1, c2, c3, c4, c5 = lax.cond(
+        psi > 0.0,
+        _positive_psi,
+        lambda psi: lax.cond(
+            psi < 0.0,
+            _negative_psi,
+            _null_psi,
+            psi
+        ),
+        psi
+    )
     return c0, c1, c2, c3, c4, c5
