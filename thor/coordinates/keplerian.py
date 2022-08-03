@@ -2,20 +2,19 @@ import numpy as np
 import jax.numpy as jnp
 from jax import (
     config,
-    jit
+    jit,
+    lax
 )
 from jax.experimental import loops
 from astropy.time import Time
 from astropy import units as u
 from typing import (
-    List,
     Optional,
     Union
 )
 from collections import OrderedDict
 
 config.update("jax_enable_x64", True)
-config.update('jax_platform_name', 'cpu')
 
 from ..constants import Constants as c
 from ..dynamics.kepler import solve_kepler
@@ -253,21 +252,19 @@ def cartesian_to_keplerian(
         P : period in days.
         tp : time of pericenter passage in days.
     """
-    with loops.Scope() as s:
-        N = len(coords_cartesian)
-        s.arr = jnp.zeros((N, 11), dtype=jnp.float64)
-
-        for i in s.range(s.arr.shape[0]):
-            s.arr = s.arr.at[i].set(
-                _cartesian_to_keplerian(
-                    coords_cartesian[i],
-                    t0[i],
-                    mu=mu
-                )
+    N = len(coords_cartesian)
+    coords_keplerian = lax.fori_loop(
+        0,
+        N,
+        lambda i, coords_keplerian: coords_keplerian.at[i].set(
+            _cartesian_to_keplerian(
+                coords_cartesian[i],
+                t0[i],
+                mu=mu
             )
-
-        coords_keplerian = s.arr
-
+        ),
+        jnp.zeros((N, 11), dtype=jnp.float64)
+    )
     return coords_keplerian
 
 @jit
@@ -420,22 +417,20 @@ def keplerian_to_cartesian(
         vy : y-velocity in units of au per day.
         vz : z-velocity in units of au per day.
     """
-    with loops.Scope() as s:
-        N = len(coords_keplerian)
-        s.arr = jnp.zeros((N, 6), dtype=jnp.float64)
-
-        for i in s.range(s.arr.shape[0]):
-            s.arr = s.arr.at[i].set(
-                _keplerian_to_cartesian(
-                    coords_keplerian[i],
-                    mu=mu,
-                    max_iter=max_iter,
-                    tol=tol
-                )
+    N = len(coords_keplerian)
+    coords_cartesian = lax.fori_loop(
+        0,
+        N,
+        lambda i, coords_cartesian: coords_cartesian.at[i].set(
+            _keplerian_to_cartesian(
+                coords_keplerian[i],
+                mu=mu,
+                max_iter=max_iter,
+                tol=tol
             )
-
-        coords_cartesian = s.arr
-
+        ),
+        jnp.zeros((N, 6), dtype=jnp.float64)
+    )
     return coords_cartesian
 
 class KeplerianCoordinates(Coordinates):
