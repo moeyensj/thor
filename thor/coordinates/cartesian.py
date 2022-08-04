@@ -2,7 +2,8 @@ import numpy as np
 from astropy.time import Time
 from astropy import units as u
 from typing import (
-    Optional
+    Optional,
+    Union
 )
 from collections import OrderedDict
 
@@ -33,12 +34,12 @@ class CartesianCoordinates(Coordinates):
 
     def __init__(
             self,
-            x: Optional[np.ndarray] = None,
-            y: Optional[np.ndarray] = None,
-            z: Optional[np.ndarray] = None,
-            vx: Optional[np.ndarray] = None,
-            vy: Optional[np.ndarray] = None,
-            vz: Optional[np.ndarray] = None,
+            x: Optional[Union[int, float, np.ndarray]] = None,
+            y: Optional[Union[int, float, np.ndarray]] = None,
+            z: Optional[Union[int, float, np.ndarray]] = None,
+            vx: Optional[Union[int, float, np.ndarray]] = None,
+            vy: Optional[Union[int, float, np.ndarray]] = None,
+            vz: Optional[Union[int, float, np.ndarray]] = None,
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
             sigma_x: Optional[np.ndarray] = None,

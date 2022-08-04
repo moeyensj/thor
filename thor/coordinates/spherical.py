@@ -245,12 +245,12 @@ class SphericalCoordinates(Coordinates):
 
     def __init__(
             self,
-            rho: Optional[np.ndarray] = None,
-            lon: Optional[np.ndarray] = None,
-            lat: Optional[np.ndarray] = None,
-            vrho: Optional[np.ndarray] = None,
-            vlon: Optional[np.ndarray] = None,
-            vlat: Optional[np.ndarray] = None,
+            rho: Optional[Union[int, float, np.ndarray]] = None,
+            lon: Optional[Union[int, float, np.ndarray]] = None,
+            lat: Optional[Union[int, float, np.ndarray]] = None,
+            vrho: Optional[Union[int, float, np.ndarray]] = None,
+            vlon: Optional[Union[int, float, np.ndarray]] = None,
+            vlat: Optional[Union[int, float, np.ndarray]] = None,
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
             sigma_rho: Optional[np.ndarray] = None,

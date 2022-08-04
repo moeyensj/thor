@@ -187,14 +187,19 @@ class Coordinates(Indexable):
             # If the coordinate dimension has a coresponding unit
             # then use that unit. If it does not look for the unit
             # in the units kwarg.
-            if isinstance(q, Quantity):
-                units_[name] = q.unit
-                q = q.value
+            if isinstance(q, (int, float)):
+                q_ = np.array([q], dtype=np.float64)
+            else:
+                q_ = q
+
+            if isinstance(q_, Quantity):
+                units_[name] = q_.unit
+                q_ = q_.value
             else:
                 logger.debug(f"Coordinate dimension {name} does not have a corresponding unit, using unit defined in units kwarg ({units[name]}).")
                 units_[name] = units[name]
 
-            coords = _ingest_coordinate(q, d, coords, D=D)
+            coords = _ingest_coordinate(q_, d, coords, D=D)
 
         self._values = coords
         if isinstance(times, Time):

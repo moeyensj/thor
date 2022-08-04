@@ -476,12 +476,12 @@ class KeplerianCoordinates(Coordinates):
 
     def __init__(
             self,
-            a: Optional[np.ndarray] = None,
-            e: Optional[np.ndarray] = None,
-            i: Optional[np.ndarray] = None,
-            raan: Optional[np.ndarray] = None,
-            ap: Optional[np.ndarray] = None,
-            M: Optional[np.ndarray] = None,
+            a: Optional[Union[int, float, np.ndarray]] = None,
+            e: Optional[Union[int, float, np.ndarray]] = None,
+            i: Optional[Union[int, float, np.ndarray]] = None,
+            raan: Optional[Union[int, float, np.ndarray]] = None,
+            ap: Optional[Union[int, float, np.ndarray]] = None,
+            M: Optional[Union[int, float, np.ndarray]] = None,
             times: Optional[Time] = None,
             covariances: Optional[np.ndarray] = None,
             sigma_a: Optional[np.ndarray] = None,
