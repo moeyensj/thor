@@ -569,12 +569,12 @@ class KeplerianCoordinates(Coordinates):
 
     @property
     def q(self):
-        # pericenter distance
+        # periapsis distance
         return self.a * (1 - self.e)
 
     @property
-    def p(self):
-        # apocenter distance
+    def Q(self):
+        # apoapsis distance
         return self.a * (1 + self.e)
 
     @property

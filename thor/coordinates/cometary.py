@@ -85,7 +85,7 @@ def _cartesian_to_cometary(
         tp : time of periapse passage in days.
     """
     coords_cometary = _cartesian_to_keplerian(coords_cartesian, t0, mu=mu)
-    return coords_cometary[jnp.array([1, 2, 3, 4, 5, -1])]
+    return coords_cometary[jnp.array([2, 4, 5, 6, 7, 12])]
 
 @jit
 def cartesian_to_cometary(
@@ -373,12 +373,12 @@ class CometaryCoordinates(Coordinates):
 
     @property
     def a(self):
-        # pericenter distance
+        # periapsis distance
         return self.q / (1 - self.e)
 
     @property
-    def p(self):
-        # apocenter distance
+    def Q(self):
+        # apoapsis distance
         return self.a * (1 + self.e)
 
     @property
