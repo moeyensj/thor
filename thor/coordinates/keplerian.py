@@ -5,7 +5,6 @@ from jax import (
     jit,
     lax
 )
-from jax.experimental import loops
 from astropy.time import Time
 from astropy import units as u
 from typing import (
@@ -17,7 +16,10 @@ from collections import OrderedDict
 config.update("jax_enable_x64", True)
 
 from ..constants import Constants as c
-from ..dynamics.kepler import solve_kepler
+from ..dynamics.kepler import (
+    calc_mean_anomaly,
+    solve_kepler,
+)
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
 from .covariances import transform_covariances_jacobian
@@ -74,10 +76,12 @@ def _cartesian_to_keplerian(
 
     Returns
     -------
-    coords_keplerian : `~jax.numpy.ndarray` (11)
-        11D Keplerian coordinate.
+    coords_keplerian : `~jax.numpy.ndarray` (13)
+        13D Keplerian coordinate.
         a : semi-major axis in au.
+        p : semi-latus rectum in au.
         q : periapsis distance in au.
+        Q : apoapsis distance in au.
         e : eccentricity.
         i : inclination in degrees.
         raan : Right ascension (longitude) of the ascending node in degrees.
@@ -87,88 +91,120 @@ def _cartesian_to_keplerian(
         n : mean motion in degrees per day.
         P : period in days.
         tp : time of pericenter passage in days.
+
+    References
+    ----------
+    [1] Bate, R. R; Mueller, D. D; White, J. E. (1971). Fundamentals of Astrodynamics. 1st ed.,
+        Dover Publications, Inc. ISBN-13: 978-0486600611
     """
-    with loops.Scope() as s:
+    coords_keplerian = jnp.zeros(13, dtype=jnp.float64)
+    r = coords_cartesian[0:3]
+    v = coords_cartesian[3:6]
 
-        s.arr = np.zeros(11, dtype=jnp.float64)
-        r = coords_cartesian[0:3]
-        v = coords_cartesian[3:6]
+    r_mag = jnp.linalg.norm(r)
+    v_mag = jnp.linalg.norm(v)
 
-        r_mag = jnp.linalg.norm(r)
-        v_mag = jnp.linalg.norm(v)
+    sme = v_mag**2 / 2 - mu / r_mag
 
-        sme = v_mag**2 / 2 - mu / r_mag
+    # Calculate the angular momentum vector
+    # Equation 2.4-1 in Bate, Mueller, & White [1]
+    h = jnp.cross(r, v)
+    h_mag = jnp.linalg.norm(h)
 
-        h = jnp.cross(r, v)
-        h_mag = jnp.linalg.norm(h)
+    # Calculate the vector which is perpendicular to the
+    # momentum vector and the Z-axis and points towards
+    # the direction of the ascending node.
+    # Equation 2.4-3 in Bate, Mueller, & White [1]
+    n = jnp.cross(Z_AXIS, h)
+    n_mag = jnp.linalg.norm(n)
 
-        n = jnp.cross(Z_AXIS, h)
-        n_mag = jnp.linalg.norm(n)
+    # Calculate the eccentricity vector which lies in the orbital plane
+    # and points toward periapse.
+    # Equation 2.4-5 in Bate, Mueller, & White [1]
+    e_vec = ((v_mag**2 - mu / r_mag) * r - (jnp.dot(r, v)) * v) / mu
+    e = jnp.linalg.norm(e_vec)
 
-        e_vec = ((v_mag**2 - mu / r_mag) * r - (jnp.dot(r, v)) * v) / mu
-        e = jnp.linalg.norm(e_vec)
+    # Calculate the semi-latus rectum
+    p = h_mag**2 / mu
 
-        for _ in s.cond_range(e != 1.0):
-            a1 = mu / (-2 * sme)
-            p1 = a1 * (1 - e**2)
-            q1 = a1 * (1 - e)
+    # Calculate the inclination
+    # Equation 2.4-7 inin Bate, Mueller, & White [1]
+    i = jnp.arccos(h[2] / h_mag)
 
-        for _ in s.cond_range(e == 1.0):
-            a2 = jnp.inf
-            p2 = -h_mag**2 / mu
-            q2 = a2
+    # Calculate the longitude of the ascending node
+    # Equation 2.4-8 in Bate, Mueller, & White [1]
+    raan = jnp.arccos(n[0] / n_mag)
+    raan = jnp.where(n[1] < 0, 2*jnp.pi - raan, raan)
 
-        a = jnp.where(e != 1.0, a1, a2)
-        p = jnp.where(e != 1.0, p1, p2)
-        q = jnp.where(e != 1.0, q1, q2)
+    # Calculate the argument of pericenter
+    # Equation 2.4-9 in Bate, Mueller, & White [1]
+    ap = jnp.arccos(jnp.dot(n, e_vec) / (n_mag * e))
+    ap = jnp.where(e_vec[2] < 0, 2*jnp.pi - ap, ap)
 
-        i = jnp.arccos(h[2] / h_mag)
+    # Calculate true anomaly (undefined for
+    # circular orbits)
+    # Equation 2.4-10 in Bate, Mueller, & White [1]
+    nu = jnp.arccos(jnp.dot(e_vec, r) / (e * r_mag))
+    nu = jnp.where(jnp.dot(r, v) < 0, 2*jnp.pi - nu, nu)
+    nu = jnp.where(e == 0.0, jnp.nan, nu)
 
-        raan = jnp.arccos(n[0] / n_mag)
-        raan = jnp.where(n[1] < 0, 2*jnp.pi - raan, raan)
+    # Calculate the semi-major axis (undefined for parabolic
+    # orbits)
+    a = jnp.where(e != 1.0, mu / (-2 * sme), jnp.nan)
 
-        ap = jnp.arccos(jnp.dot(n, e_vec) / (n_mag * e))
-        ap = jnp.where(e_vec[2] < 0, 2*jnp.pi - ap, ap)
+    # Calculate the periapsis distance
+    q = jnp.where(e != 1.0, a * (1 - e), p / 2)
 
-        nu = jnp.arccos(jnp.dot(e_vec, r) / (e * r_mag))
-        nu = jnp.where(jnp.dot(r, v) < 0, 2*jnp.pi - nu, nu)
+    # Calculate the apoapsis distance (infinite for
+    # parabolic and hyperbolic orbits)
+    Q = jnp.where(e < 1.0, a * (1 + e), jnp.inf)
 
-        n = jnp.sqrt(mu / jnp.abs(a)**3)
+    # Calculate the mean anomaly
+    M = calc_mean_anomaly(nu, e)
 
-        for _ in s.cond_range(e < 1.0):
-            E = jnp.arctan2(jnp.sqrt(1 - e**2) * jnp.sin(nu), e + jnp.cos(nu))
-            M_E = E - e * jnp.sin(E)
-            M_E = jnp.where(M_E < 0.0, M_E + 2*jnp.pi, M_E)
+    # Calculate the mean motion
+    n = lax.cond(
+        e != 1.0,
+        lambda a, q: jnp.sqrt(mu / jnp.abs(a)**3),
+        lambda a, q: jnp.sqrt(mu / (2 * q**3)),
+        a,
+        q,
+    )
 
-        for _ in s.cond_range(e > 1.0):
-            H = jnp.arcsinh(jnp.sin(nu) * jnp.sqrt(e**2 - 1) / (1 + e * jnp.cos(nu)))
-            M_H = e * jnp.sinh(H) - H
+    # Calculate the orbital period which for parabolic and hyperbolic
+    # orbits is infinite while for all closed orbits
+    # is well defined.
+    P = lax.cond(
+        e < 1.0,
+        lambda n: 2*jnp.pi / n,
+        lambda n: jnp.inf,
+        n
+    )
 
-        M = jnp.where(e < 1.0, M_E, M_H)
-        P = 2*jnp.pi / n
+    # In the case of closed orbits, if the mean anomaly is
+    # greater than 180 degrees then the orbit is
+    # approaching pericenter passage in which case
+    # the pericenter will occur in the future
+    # in less than half a period. If the mean anomaly is less
+    # than 180 degrees, then the orbit is ascending from pericenter
+    # passage and the most recent pericenter was in the past.
+    dtp = M / n
+    dtp = jnp.where((M > jnp.pi) & (e < 1.0), P - M / n, - M / n)
+    tp = t0 + dtp
 
-        # If the mean anomaly is greater than 180 degrees
-        # then the orbit is approaching pericenter passage
-        # in which case the pericenter will occur in the future
-        # in less than half a period. If the mean anomaly is less
-        # than 180 degrees, then the orbit is ascending from pericenter
-        # passage and the most recent pericenter was in the past.
-        dtp = jnp.where(M > jnp.pi, P - M / n, - M / n)
-        tp = t0 + dtp
-
-        s.arr = s.arr.at[0].set(a)
-        s.arr = s.arr.at[1].set(q)
-        s.arr = s.arr.at[2].set(e)
-        s.arr = s.arr.at[3].set(jnp.degrees(i))
-        s.arr = s.arr.at[4].set(jnp.degrees(raan))
-        s.arr = s.arr.at[5].set(jnp.degrees(ap))
-        s.arr = s.arr.at[6].set(jnp.degrees(M))
-        s.arr = s.arr.at[7].set(jnp.degrees(nu))
-        s.arr = s.arr.at[8].set(jnp.degrees(n))
-        s.arr = s.arr.at[9].set(P)
-        s.arr = s.arr.at[10].set(tp)
-
-        coords_keplerian = s.arr
+    coords_keplerian = coords_keplerian.at[0].set(a)
+    coords_keplerian = coords_keplerian.at[1].set(p)
+    coords_keplerian = coords_keplerian.at[2].set(q)
+    coords_keplerian = coords_keplerian.at[3].set(Q)
+    coords_keplerian = coords_keplerian.at[4].set(e)
+    coords_keplerian = coords_keplerian.at[5].set(jnp.degrees(i))
+    coords_keplerian = coords_keplerian.at[6].set(jnp.degrees(raan))
+    coords_keplerian = coords_keplerian.at[7].set(jnp.degrees(ap))
+    coords_keplerian = coords_keplerian.at[8].set(jnp.degrees(M))
+    coords_keplerian = coords_keplerian.at[9].set(jnp.degrees(nu))
+    coords_keplerian = coords_keplerian.at[10].set(jnp.degrees(n))
+    coords_keplerian = coords_keplerian.at[11].set(P)
+    coords_keplerian = coords_keplerian.at[12].set(tp)
 
     return coords_keplerian
 
@@ -209,7 +245,7 @@ def _cartesian_to_keplerian6(
         M : mean anomaly in degrees.
     """
     coords_keplerian = _cartesian_to_keplerian(coords_cartesian, t0=t0, mu=mu)
-    return coords_keplerian[jnp.array([0, 2, 3, 4, 5, 6])]
+    return coords_keplerian[jnp.array([0, 4, 5, 6, 7, 8])]
 
 @jit
 def cartesian_to_keplerian(
@@ -271,7 +307,7 @@ def cartesian_to_keplerian(
 def _keplerian_to_cartesian(
         coords_keplerian: Union[np.ndarray, jnp.ndarray],
         mu: float = MU,
-        max_iter: int = 100,
+        max_iter: int = 1000,
         tol: float = 1e-15
     ) -> jnp.ndarray:
     """
@@ -308,71 +344,74 @@ def _keplerian_to_cartesian(
         vy : y-velocity in units of au per day.
         vz : z-velocity in units of au per day.
     """
-    with loops.Scope() as s:
-        s.arr = jnp.zeros(6, dtype=jnp.float64)
+    coords_cartesian = jnp.zeros(6, dtype=jnp.float64)
 
-        a = coords_keplerian[0]
-        e = coords_keplerian[1]
-        i = jnp.radians(coords_keplerian[2])
-        raan = jnp.radians(coords_keplerian[3])
-        ap = jnp.radians(coords_keplerian[4])
-        M = jnp.radians(coords_keplerian[5])
-        p = a * (1 - e**2)
+    a = coords_keplerian[0]
+    e = coords_keplerian[1]
+    i = jnp.radians(coords_keplerian[2])
+    raan = jnp.radians(coords_keplerian[3])
+    ap = jnp.radians(coords_keplerian[4])
+    M = jnp.radians(coords_keplerian[5])
+    p = a * (1 - e**2)
+    # TODO : add q for parabolic orbits
 
-        nu = solve_kepler(e, M, max_iter=max_iter, tol=tol)
+    nu = lax.cond(
+        e != 1.0,
+        lambda e_i, M_i: solve_kepler(e_i, M_i, max_iter=max_iter, tol=tol),
+        lambda e_i, M_i: jnp.nan,
+        e, M
+    )
 
-        r_PQW = jnp.array([
-            p * jnp.cos(nu) / (1 + e * jnp.cos(nu)),
-            p * jnp.sin(nu) / (1 + e * jnp.cos(nu)),
-            0
-        ])
+    r_PQW = jnp.array([
+        p * jnp.cos(nu) / (1 + e * jnp.cos(nu)),
+        p * jnp.sin(nu) / (1 + e * jnp.cos(nu)),
+        0
+    ])
 
-        v_PQW = jnp.array([
-            -jnp.sqrt(mu/p) * jnp.sin(nu),
-            jnp.sqrt(mu/p) * (e + jnp.cos(nu)),
-            0
-        ])
+    v_PQW = jnp.array([
+        -jnp.sqrt(mu/p) * jnp.sin(nu),
+        jnp.sqrt(mu/p) * (e + jnp.cos(nu)),
+        0
+    ])
 
-        cos_raan = jnp.cos(raan)
-        sin_raan = jnp.sin(raan)
-        cos_ap = jnp.cos(ap)
-        sin_ap = jnp.sin(ap)
-        cos_i = jnp.cos(i)
-        sin_i = jnp.sin(i)
+    cos_raan = jnp.cos(raan)
+    sin_raan = jnp.sin(raan)
+    cos_ap = jnp.cos(ap)
+    sin_ap = jnp.sin(ap)
+    cos_i = jnp.cos(i)
+    sin_i = jnp.sin(i)
 
-        P1 = jnp.array([
-            [cos_ap, -sin_ap, 0.],
-            [sin_ap, cos_ap, 0.],
-            [0., 0., 1.],
-        ],  dtype=jnp.float64
-        )
+    P1 = jnp.array([
+        [cos_ap, -sin_ap, 0.],
+        [sin_ap, cos_ap, 0.],
+        [0., 0., 1.],
+    ],  dtype=jnp.float64
+    )
 
-        P2 = jnp.array([
-            [1., 0., 0.],
-            [0., cos_i, -sin_i],
-            [0., sin_i, cos_i],
-        ],  dtype=jnp.float64
-        )
+    P2 = jnp.array([
+        [1., 0., 0.],
+        [0., cos_i, -sin_i],
+        [0., sin_i, cos_i],
+    ],  dtype=jnp.float64
+    )
 
-        P3 = jnp.array([
-            [cos_raan, -sin_raan, 0.],
-            [sin_raan, cos_raan, 0.],
-            [0., 0., 1.],
-        ],  dtype=jnp.float64
-        )
+    P3 = jnp.array([
+        [cos_raan, -sin_raan, 0.],
+        [sin_raan, cos_raan, 0.],
+        [0., 0., 1.],
+    ],  dtype=jnp.float64
+    )
 
-        rotation_matrix = P3 @ P2 @ P1
-        r = rotation_matrix @ r_PQW
-        v = rotation_matrix @ v_PQW
+    rotation_matrix = P3 @ P2 @ P1
+    r = rotation_matrix @ r_PQW
+    v = rotation_matrix @ v_PQW
 
-        s.arr = s.arr.at[0].set(r[0])
-        s.arr = s.arr.at[1].set(r[1])
-        s.arr = s.arr.at[2].set(r[2])
-        s.arr = s.arr.at[3].set(v[0])
-        s.arr = s.arr.at[4].set(v[1])
-        s.arr = s.arr.at[5].set(v[2])
-
-        coords_cartesian = s.arr
+    coords_cartesian = coords_cartesian.at[0].set(r[0])
+    coords_cartesian = coords_cartesian.at[1].set(r[1])
+    coords_cartesian = coords_cartesian.at[2].set(r[2])
+    coords_cartesian = coords_cartesian.at[3].set(v[0])
+    coords_cartesian = coords_cartesian.at[4].set(v[1])
+    coords_cartesian = coords_cartesian.at[5].set(v[2])
 
     return coords_cartesian
 
