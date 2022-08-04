@@ -5,12 +5,13 @@ from jax import (
     lax
 )
 
+config.update("jax_enable_x64", True)
+
 __all__ = [
     "calc_mean_anomaly",
     "solve_kepler"
 ]
 
-config.update("jax_enable_x64", True)
 
 @jit
 def calc_mean_anomaly(
@@ -54,7 +55,8 @@ def _calc_elliptical_anomalies(
         nu: float,
         e: float
     ) -> float:
-    E = jnp.arctan2(jnp.sqrt(1 - e**2) * jnp.sin(nu), e + jnp.cos(nu))
+    nu_ = jnp.where(nu >= 2*jnp.pi, nu % (2*jnp.pi), nu)
+    E = jnp.arctan2(jnp.sqrt(1 - e**2) * jnp.sin(nu_), e + jnp.cos(nu_))
     M = E - e * jnp.sin(E)
     M = jnp.where(M < 0.0, M + 2*jnp.pi, M)
     return E, M
@@ -64,7 +66,8 @@ def _calc_hyperbolic_anomalies(
         nu: float,
         e: float
     ) -> float:
-    H = jnp.arcsinh(jnp.sin(nu) * jnp.sqrt(e**2 - 1) / (1 + e * jnp.cos(nu)))
+    nu_ = jnp.where(nu >= 2*jnp.pi, nu % (2*jnp.pi), nu)
+    H = 2 * jnp.arctanh(jnp.sqrt((e - 1)/(e + 1)) * jnp.tan(nu_/2))
     M = e * jnp.sinh(H) - H
     M = jnp.where(M < 0.0, M + 2*jnp.pi, M)
     return H, M
@@ -74,8 +77,9 @@ def _calc_parabolic_anomalies(
         nu: float,
         e: float
     ) -> float:
-    D = jnp.arctan(nu / 2)
-    M = D + D**3 / 3
+    nu_ = jnp.where(nu >= 2*jnp.pi, nu % (2*jnp.pi), nu)
+    D = jnp.arctan(nu_ / 2)
+    M = D + (D**3 / 3)
     M = jnp.where(M < 0.0, M + 2*jnp.pi, M)
     return D, M
 
@@ -212,4 +216,6 @@ def solve_kepler(
         p[1]
     )
 
+    # True anomaly should be in the range [0, 2*pi)
+    nu = jnp.where(nu >= 2*jnp.pi, nu % (2*jnp.pi), nu)
     return nu
