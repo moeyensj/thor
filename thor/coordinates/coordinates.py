@@ -203,14 +203,19 @@ class Coordinates(Indexable):
 
         self._values = coords
         if isinstance(times, Time):
-            if len(self.values) != len(times):
+            if isinstance(times.value, (int, float)):
+                times_ = Time([times.value], scale=times.scale, format=times.format)
+            else:
+                times_ = times
+
+            if len(self.values) != len(times_):
                 err = (
                     "coordinates (N = {}) and times (N = {}) do not have the same length.\n"
                     "If times are defined, each coordinate must have a corresponding time.\n"
                 )
-                raise ValueError(err.format(len(self._values), len(times)))
+                raise ValueError(err.format(len(self._values), len(times_)))
 
-            self._times = times
+            self._times = times_
         else:
             self._times = None
 
