@@ -387,6 +387,14 @@ class CometaryCoordinates(Coordinates):
 
     def to_cartesian(self) -> CartesianCoordinates:
 
+        if self.times is None:
+            err = (
+                "To convert Cometary coordinates to Cartesian coordinates, the times\n"
+                "at which the Coordinates coordinates are defined is required to give\n"
+                "the time of periapsis passage context."
+            )
+            raise ValueError(err)
+
         coords_cartesian = cometary_to_cartesian(
             self.values.filled(),
             t0=self.times.tdb.mjd,
@@ -426,6 +434,14 @@ class CometaryCoordinates(Coordinates):
 
     @classmethod
     def from_cartesian(cls, cartesian: CartesianCoordinates, mu=MU):
+
+        if cartesian.times is None:
+            err = (
+                "To convert Cometary coordinates to Cartesian coordinates, the times\n"
+                "at which the Cartesian coordinates are defined is required to calculate\n"
+                "the time of periapsis passage."
+            )
+            raise ValueError(err)
 
         coords_cometary = cartesian_to_cometary(
             cartesian.values.filled(),
