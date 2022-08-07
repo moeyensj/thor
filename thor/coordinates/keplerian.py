@@ -35,6 +35,8 @@ __all__ = [
     "KEPLERIAN_UNITS"
 ]
 
+FLOAT_TOLERANCE = 1e-15
+
 KEPLERIAN_COLS = OrderedDict()
 KEPLERIAN_UNITS = OrderedDict()
 for i in ["a", "e", "i", "raan", "ap", "M"]:
@@ -135,10 +137,21 @@ def _cartesian_to_keplerian(
     # Equation 2.4-8 in Bate, Mueller, & White [1]
     raan = jnp.arccos(n[0] / n_mag)
     raan = jnp.where(n[1] < 0, 2*jnp.pi - raan, raan)
+    # In certain conventions when the orbit is zero inclined or 180 inclined
+    # the ascending node is set to 0 as opposed to being undefined. This is what
+    # SPICE does so we will do the same.
+    raan = jnp.where(
+         (i < FLOAT_TOLERANCE) | ((i - 2*jnp.pi) < FLOAT_TOLERANCE),
+         0.,
+         raan
+    )
 
     # Calculate the argument of pericenter
     # Equation 2.4-9 in Bate, Mueller, & White [1]
     ap = jnp.arccos(jnp.dot(n, e_vec) / (n_mag * e))
+    # Adopt convention that if the orbit is circular the argument of
+    # periapsis is set to 0
+    ap = jnp.where(jnp.abs(e) < FLOAT_TOLERANCE, 0., ap)
     ap = jnp.where(e_vec[2] < 0, 2*jnp.pi - ap, ap)
 
     # Calculate true anomaly (undefined for
@@ -146,27 +159,39 @@ def _cartesian_to_keplerian(
     # Equation 2.4-10 in Bate, Mueller, & White [1]
     nu = jnp.arccos(jnp.dot(e_vec, r) / (e * r_mag))
     nu = jnp.where(jnp.dot(r, v) < 0, 2*jnp.pi - nu, nu)
-    nu = jnp.where(e == 0.0, jnp.nan, nu)
+    nu = jnp.where(jnp.abs(e) < FLOAT_TOLERANCE, jnp.nan, nu)
 
     # Calculate the semi-major axis (undefined for parabolic
     # orbits)
-    a = jnp.where(e != 1.0, mu / (-2 * sme), jnp.nan)
+    a = jnp.where(
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
+        jnp.nan,
+        mu / (-2 * sme)
+    )
 
     # Calculate the periapsis distance
-    q = jnp.where(e != 1.0, a * (1 - e), p / 2)
+    q = jnp.where(
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
+        p / 2,
+        a * (1 - e)
+    )
 
     # Calculate the apoapsis distance (infinite for
     # parabolic and hyperbolic orbits)
-    Q = jnp.where(e < 1.0, a * (1 + e), jnp.inf)
+    Q = jnp.where(
+        e < 1.0,
+        a * (1 + e),
+        jnp.inf
+    )
 
     # Calculate the mean anomaly
     M = calc_mean_anomaly(nu, e)
 
     # Calculate the mean motion
     n = lax.cond(
-        e != 1.0,
-        lambda a, q: jnp.sqrt(mu / jnp.abs(a)**3),
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
         lambda a, q: jnp.sqrt(mu / (2 * q**3)),
+        lambda a, q: jnp.sqrt(mu / jnp.abs(a)**3),
         a,
         q,
     )
@@ -355,19 +380,20 @@ def _keplerian_to_cartesian(
     p = a * (1 - e**2)
     # TODO : add q for parabolic orbits
 
+    # Calculate the true anomaly
     nu = lax.cond(
-        e != 1.0,
-        lambda e_i, M_i: solve_kepler(e_i, M_i, max_iter=max_iter, tol=tol),
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
         lambda e_i, M_i: jnp.nan,
+        lambda e_i, M_i: solve_kepler(e_i, M_i, max_iter=max_iter, tol=tol),
         e, M
     )
 
+    # Calculate the perifocal rotation matrices
     r_PQW = jnp.array([
         p * jnp.cos(nu) / (1 + e * jnp.cos(nu)),
         p * jnp.sin(nu) / (1 + e * jnp.cos(nu)),
         0
     ])
-
     v_PQW = jnp.array([
         -jnp.sqrt(mu/p) * jnp.sin(nu),
         jnp.sqrt(mu/p) * (e + jnp.cos(nu)),
