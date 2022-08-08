@@ -246,7 +246,7 @@ def _cartesian_to_keplerian(
     return coords_keplerian
 
 # Vectorization Map: _cartesian_to_keplerian
-_cartesian_to_keplerian = vmap(
+_cartesian_to_keplerian_vmap = vmap(
     _cartesian_to_keplerian,
     in_axes=(0, 0, None),
 )
@@ -287,7 +287,7 @@ def _cartesian_to_keplerian6(
         ap : argument of periapsis in degrees.
         M : mean anomaly in degrees.
     """
-    coords_keplerian = _cartesian_to_keplerian(
+    coords_keplerian = _cartesian_to_keplerian_vmap(
         coords_cartesian,
         t0,
         mu
@@ -336,7 +336,7 @@ def cartesian_to_keplerian(
         P : period in days.
         tp : time of pericenter passage in days.
     """
-    coords_keplerian = _cartesian_to_keplerian(
+    coords_keplerian = _cartesian_to_keplerian_vmap(
         coords_cartesian,
         t0,
         mu
@@ -486,7 +486,7 @@ def _keplerian_to_cartesian(
     return coords_cartesian
 
 # Vectorization Map: _keplerian_to_cartesian
-_keplerian_to_cartesian = vmap(
+_keplerian_to_cartesian_vmap = vmap(
     _keplerian_to_cartesian,
     in_axes=(0, None, None, None),
 )
@@ -569,7 +569,7 @@ def keplerian_to_cartesian(
         )
         raise ValueError(err)
 
-    coords_cartesian = _keplerian_to_cartesian(
+    coords_cartesian = _keplerian_to_cartesian_vmap(
         coords_keplerian,
         mu,
         max_iter,

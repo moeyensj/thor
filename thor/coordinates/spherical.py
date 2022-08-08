@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax import (
     config,
     jit,
-    lax
+    vmap
 )
 from astropy.time import Time
 from astropy import units as u
@@ -95,7 +95,12 @@ def _cartesian_to_spherical(coords_cartesian: Union[np.ndarray, jnp.ndarray]) ->
 
     return coords_spherical
 
-@jit
+# Vectorization Map: _cartesian_to_spherical
+_cartesian_to_spherical_vmap = vmap(
+    _cartesian_to_spherical,
+    in_axes=(0,),
+)
+
 def cartesian_to_spherical(coords_cartesian: Union[np.ndarray, jnp.ndarray]) -> jnp.ndarray:
     """
     Convert Cartesian coordinates to a spherical coordinates.
@@ -125,17 +130,7 @@ def cartesian_to_spherical(coords_cartesian: Union[np.ndarray, jnp.ndarray]) -> 
         vlat : Latitudinal velocity in degrees per arbitrary unit of time.
             (same unit of time as the x, y, and z velocities).
     """
-    N = len(coords_cartesian)
-    coords_spherical = lax.fori_loop(
-        0,
-        N,
-        lambda i, coords_spherical: coords_spherical.at[i].set(
-            _cartesian_to_spherical(
-                coords_cartesian[i]
-            )
-        ),
-        jnp.zeros((N, 6), dtype=jnp.float64)
-    )
+    coords_spherical = _cartesian_to_spherical_vmap(coords_cartesian)
     return coords_spherical
 
 @jit
@@ -198,7 +193,12 @@ def _spherical_to_cartesian(coords_spherical: Union[np.ndarray, jnp.ndarray]) ->
 
     return coords_cartesian
 
-@jit
+# Vectorization Map: _spherical_to_cartesian
+_spherical_to_cartesian_vmap = vmap(
+    _spherical_to_cartesian,
+    in_axes=(0,),
+)
+
 def spherical_to_cartesian(coords_spherical: Union[np.ndarray, jnp.ndarray]) -> jnp.ndarray:
     """
     Convert spherical coordinates to Cartesian coordinates.
@@ -228,17 +228,7 @@ def spherical_to_cartesian(coords_spherical: Union[np.ndarray, jnp.ndarray]) -> 
         vy : y-velocity in the same units of y per arbitrary unit of time.
         vz : z-velocity in the same units of z per arbitrary unit of time.
     """
-    N = len(coords_spherical)
-    coords_cartesian = lax.fori_loop(
-        0,
-        N,
-        lambda i, coords_cartesian: coords_cartesian.at[i].set(
-            _spherical_to_cartesian(
-                coords_spherical[i]
-            )
-        ),
-        jnp.zeros((N, 6), dtype=jnp.float64)
-    )
+    coords_cartesian = _spherical_to_cartesian_vmap(coords_spherical)
     return coords_cartesian
 
 class SphericalCoordinates(Coordinates):
