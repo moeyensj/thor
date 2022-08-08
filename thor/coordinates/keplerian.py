@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import jax.numpy as jnp
 from jax import (
@@ -35,6 +36,8 @@ __all__ = [
     "KEPLERIAN_COLS",
     "KEPLERIAN_UNITS"
 ]
+
+logger = logging.getLogger(__name__)
 
 FLOAT_TOLERANCE = 1e-15
 
@@ -150,7 +153,7 @@ def _cartesian_to_keplerian(
     # the ascending node is set to 0 as opposed to being undefined. This is what
     # SPICE does so we will do the same.
     raan = jnp.where(
-         (i < FLOAT_TOLERANCE) | ((i - 2*jnp.pi) < FLOAT_TOLERANCE),
+         (i < FLOAT_TOLERANCE) | (jnp.abs(i - 2*jnp.pi) < FLOAT_TOLERANCE),
          0.,
          raan
     )
@@ -160,15 +163,15 @@ def _cartesian_to_keplerian(
     ap = jnp.arccos(jnp.dot(n, e_vec) / (n_mag * e))
     # Adopt convention that if the orbit is circular the argument of
     # periapsis is set to 0
-    ap = jnp.where(jnp.abs(e) < FLOAT_TOLERANCE, 0., ap)
     ap = jnp.where(e_vec[2] < 0, 2*jnp.pi - ap, ap)
+    ap = jnp.where(jnp.abs(e) < FLOAT_TOLERANCE, 0., ap)
 
     # Calculate true anomaly (undefined for
     # circular orbits)
     # Equation 2.4-10 in Bate, Mueller, & White [1]
     nu = jnp.arccos(jnp.dot(e_vec, r) / (e * r_mag))
     nu = jnp.where(jnp.dot(r, v) < 0, 2*jnp.pi - nu, nu)
-    nu = jnp.where(jnp.abs(e) < FLOAT_TOLERANCE, jnp.nan, nu)
+    #nu = jnp.where(jnp.abs(e) < FLOAT_TOLERANCE, jnp.nan, nu)
 
     # Calculate the semi-major axis (undefined for parabolic
     # orbits)
@@ -350,6 +353,11 @@ def _keplerian_to_cartesian(
     """
     Convert a single Keplerian coordinate to a Cartesian coordinate.
 
+    Parabolic orbits (e = 1.0 +- 1e-15) with elements (a, e, i, raan, ap, M) cannot be converted
+    to Cartesian orbits since their semi-major axes are by definition undefined.
+    Please consider representing the orbits with Cometary elements
+    and using those to convert to Cartesian. See `~thor.coordinates.cometary._cometary_to_cartesian`.
+
     Parameters
     ----------
     coords_keplerian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (6)
@@ -492,6 +500,11 @@ def keplerian_to_cartesian(
     """
     Convert Keplerian coordinates to Cartesian coordinates.
 
+    Parabolic orbits (e = 1.0 +- 1e-15) with elements (a, e, i, raan, ap, M) cannot be converted
+    to Cartesian orbits since their semi-major axes are by definition undefined.
+    Please consider representing these orbits with Cometary elements
+    and using those to convert to Cartesian. See `~thor.coordinates.cometary.cometary_to_cartesian`.
+
     Parameters
     ----------
     coords_keplerian : {`~numpy.ndarray`, `~jax.numpy.ndarray`} (N, 6)
@@ -522,7 +535,40 @@ def keplerian_to_cartesian(
         vx : x-velocity in units of au per day.
         vy : y-velocity in units of au per day.
         vz : z-velocity in units of au per day.
+
+    Raises
+    ------
+    ValueError: When semi-major axis is less than 0 for elliptical orbits or when
+        semi-major axis is greater than 0 for hyperbolic orbits.
     """
+    a = coords_keplerian[:, 0]
+    e = coords_keplerian[:, 1]
+
+    parabolic = np.where((e < (1.0 + FLOAT_TOLERANCE)) & (e > (1.0 - FLOAT_TOLERANCE)))[0]
+    if len(parabolic) > 0:
+        msg = (
+            "Parabolic orbits (e = 1.0 +- 1e-15) are best represented using Cometary coordinates.\n"
+            "Conversion to Cartesian coordinates will not yield correct results as semi-major axis\n"
+            "for parabolic orbits is undefined."
+        )
+        logger.critical(msg)
+
+    hyperbolic_invalid = np.where((e > (1.0 + FLOAT_TOLERANCE)) & (a > 0))[0]
+    if len(hyperbolic_invalid) > 0:
+        err = (
+            "Semi-major axis (a) for hyperbolic orbits (e > 1 + 1e-15) should be negative. "
+            f"Instead found a = {a[hyperbolic_invalid][0]} with e = {e[hyperbolic_invalid][0]}."
+        )
+        raise ValueError(err)
+
+    elliptical_invalid = np.where((e < (1.0 - FLOAT_TOLERANCE)) & (a < 0))[0]
+    if len(elliptical_invalid) > 0:
+        err = (
+            "Semi-major axis (a) for elliptical orbits (e < 1 - 1e-15) should be positive. "
+            f"Instead found a = {a[elliptical_invalid][0]} with e = {e[elliptical_invalid][0]}."
+        )
+        raise ValueError(err)
+
     coords_cartesian = _keplerian_to_cartesian(
         coords_keplerian,
         mu,
