@@ -747,11 +747,11 @@ class KeplerianCoordinates(Coordinates):
 
         coords = cls(
             a=coords_keplerian[:, 0],
-            e=coords_keplerian[:, 2],
-            i=coords_keplerian[:, 3],
-            raan=coords_keplerian[:, 4],
-            ap=coords_keplerian[:, 5],
-            M=coords_keplerian[:, 6],
+            e=coords_keplerian[:, 4],
+            i=coords_keplerian[:, 5],
+            raan=coords_keplerian[:, 6],
+            ap=coords_keplerian[:, 7],
+            M=coords_keplerian[:, 8],
             times=cartesian.times,
             covariances=covariances_keplerian,
             origin=cartesian.origin,
