@@ -6,7 +6,7 @@ from ..constants import Constants as c
 from ..coordinates import transform_coordinates
 from ..utils import _check_times
 from ..utils import shift_states_origin
-from .universal_propagate import propagate_universal
+from .universal_propagate import propagate_2body
 from .aberrations import add_light_time
 from .aberrations import add_stellar_aberration
 
@@ -114,7 +114,7 @@ def generate_ephemeris_universal(
     _check_times(observation_times, "observation_times")
 
     # Propagate orbits to observer states
-    propagated_orbits_helio = propagate_universal(
+    propagated_orbits_helio = propagate_2body(
         orbits,
         t0.tdb.mjd,
         observation_times.tdb.mjd,

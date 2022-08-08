@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .universal_propagate import propagate_universal
+from .universal_propagate import _propagate_2body
 
 __all__ = [
     "add_light_time",
@@ -71,7 +71,7 @@ def add_light_time(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter
             dlt = np.abs(lt - lt_i)
 
             # Propagate backwards to new epoch
-            orbit = propagate_universal(orbits[i:i+1, :], t0[i:i+1], t0[i:i+1] - lt, mu=mu, max_iter=max_iter, tol=tol)
+            orbit = _propagate_2body(orbits[i:i+1, :], t0[i:i+1], t0[i:i+1] - lt, mu=mu, max_iter=max_iter, tol=tol)
 
             # Update running variables
             t0_i = orbit[:, 1]

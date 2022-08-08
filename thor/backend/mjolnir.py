@@ -7,7 +7,7 @@ from astropy.time import Time
 
 from ..constants import Constants as c
 from ..utils import _check_times
-from ..dynamics import propagate_universal
+from ..dynamics import propagate_2body
 from ..dynamics import generate_ephemeris_universal
 from ..utils import shift_states_origin
 from ..observers import get_observer_state
@@ -70,7 +70,7 @@ class MJOLNIR(Backend):
             )
             raise ValueError(err)
 
-        propagated = propagate_universal(
+        propagated = propagate_2body(
             orbits_,
             t0_tdb,
             t1_tdb,
