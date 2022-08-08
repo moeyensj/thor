@@ -3,7 +3,8 @@ import jax.numpy as jnp
 from jax import (
     config,
     jit,
-    lax
+    lax,
+    vmap
 )
 from astropy.time import Time
 from astropy import units as u
@@ -59,6 +60,14 @@ def _cartesian_to_keplerian(
     ) -> jnp.ndarray:
     """
     Convert a single Cartesian coordinate to a Keplerian coordinate.
+
+    If the orbit is found to be circular (e = 0 +- 1e-15) then
+    the argument of periapsis is set to 0. The anomalies are then accordingly
+    defined with this assumption.
+
+    If the orbit's inclination is zero or 180 degrees (i = 0 +- 1e-15 or i = 180 +- 1e-15),
+    then the longitude of the ascending node is set to 0 (located in the direction of
+    the reference axis).
 
     Parameters
     ----------
@@ -233,6 +242,12 @@ def _cartesian_to_keplerian(
 
     return coords_keplerian
 
+# Vectorization Map: _cartesian_to_keplerian
+_cartesian_to_keplerian = vmap(
+    _cartesian_to_keplerian,
+    in_axes=(0, 0, None),
+)
+
 @jit
 def _cartesian_to_keplerian6(
         coords_cartesian: Union[np.ndarray, jnp.ndarray],
@@ -269,10 +284,13 @@ def _cartesian_to_keplerian6(
         ap : argument of periapsis in degrees.
         M : mean anomaly in degrees.
     """
-    coords_keplerian = _cartesian_to_keplerian(coords_cartesian, t0=t0, mu=mu)
+    coords_keplerian = _cartesian_to_keplerian(
+        coords_cartesian,
+        t0,
+        mu
+    )
     return coords_keplerian[jnp.array([0, 4, 5, 6, 7, 8])]
 
-@jit
 def cartesian_to_keplerian(
         coords_cartesian: Union[np.ndarray, jnp.ndarray],
         t0: Union[np.ndarray, jnp.ndarray],
@@ -299,10 +317,12 @@ def cartesian_to_keplerian(
 
     Returns
     -------
-    coords_keplerian : `~jax.numpy.ndarray` (N, 11)
-        11D Keplerian coordinates.
+    coords_keplerian : `~jax.numpy.ndarray` (N, 13)
+        13D Keplerian coordinates.
         a : semi-major axis in au.
+        p : semi-latus rectum in au.
         q : periapsis distance in au.
+        Q : apoapsis distance in au.
         e : eccentricity.
         i : inclination in degrees.
         raan : Right ascension (longitude) of the ascending node in degrees.
@@ -313,18 +333,10 @@ def cartesian_to_keplerian(
         P : period in days.
         tp : time of pericenter passage in days.
     """
-    N = len(coords_cartesian)
-    coords_keplerian = lax.fori_loop(
-        0,
-        N,
-        lambda i, coords_keplerian: coords_keplerian.at[i].set(
-            _cartesian_to_keplerian(
-                coords_cartesian[i],
-                t0[i],
-                mu=mu
-            )
-        ),
-        jnp.zeros((N, 11), dtype=jnp.float64)
+    coords_keplerian = _cartesian_to_keplerian(
+        coords_cartesian,
+        t0,
+        mu
     )
     return coords_keplerian
 
@@ -377,8 +389,32 @@ def _keplerian_to_cartesian(
     raan = jnp.radians(coords_keplerian[3])
     ap = jnp.radians(coords_keplerian[4])
     M = jnp.radians(coords_keplerian[5])
-    p = a * (1 - e**2)
-    # TODO : add q for parabolic orbits
+
+    # Calculate semi-major axis (undefined for
+    # parabolic orbits)
+    # a = lax.cond(
+    #     (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
+    #     lambda e, q: jnp.nan,
+    #     lambda e, q: q / (1 - e),
+    #     e, q
+    # )
+    # Calculate the periapsis distance (for parabolic orbits this is the defining
+    # parameter and it cannot be calculated from any combination of the default
+    # Keplerian elements)
+    q = lax.cond(
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
+        lambda a, e: jnp.nan,
+        lambda a, e: a * (1 - e),
+        a, e
+    )
+
+    # Calculate the semi-latus rectum
+    p = lax.cond(
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
+        lambda a, e, q: 2*q,
+        lambda a, e, q: a * (1 - e**2),
+        a, e, q
+    )
 
     # Calculate the true anomaly
     nu = lax.cond(
@@ -441,7 +477,12 @@ def _keplerian_to_cartesian(
 
     return coords_cartesian
 
-@jit
+# Vectorization Map: _keplerian_to_cartesian
+_keplerian_to_cartesian = vmap(
+    _keplerian_to_cartesian,
+    in_axes=(0, None, None, None),
+)
+
 def keplerian_to_cartesian(
         coords_keplerian: Union[np.ndarray, jnp.ndarray],
         mu: float = MU,
@@ -482,19 +523,11 @@ def keplerian_to_cartesian(
         vy : y-velocity in units of au per day.
         vz : z-velocity in units of au per day.
     """
-    N = len(coords_keplerian)
-    coords_cartesian = lax.fori_loop(
-        0,
-        N,
-        lambda i, coords_cartesian: coords_cartesian.at[i].set(
-            _keplerian_to_cartesian(
-                coords_keplerian[i],
-                mu=mu,
-                max_iter=max_iter,
-                tol=tol
-            )
-        ),
-        jnp.zeros((N, 6), dtype=jnp.float64)
+    coords_cartesian = _keplerian_to_cartesian(
+        coords_keplerian,
+        mu,
+        max_iter,
+        tol
     )
     return coords_cartesian
 
@@ -616,7 +649,7 @@ class KeplerianCoordinates(Coordinates):
         coords_cartesian = keplerian_to_cartesian(
             self.values.filled(),
             mu=MU,
-            max_iter=100,
+            max_iter=1000,
             tol=1e-15,
         )
         coords_cartesian = np.array(coords_cartesian)
