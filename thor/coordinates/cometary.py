@@ -3,7 +3,8 @@ import jax.numpy as jnp
 from jax import (
     config,
     jit,
-    lax
+    lax,
+    vmap
 )
 from astropy.time import Time
 from astropy import units as u
@@ -19,8 +20,9 @@ from ..constants import Constants as c
 from .coordinates import Coordinates
 from .cartesian import CartesianCoordinates
 from .keplerian import (
+    FLOAT_TOLERANCE,
     _cartesian_to_keplerian,
-    _keplerian_to_cartesian
+    _keplerian_to_cartesian_q
 )
 from .covariances import transform_covariances_jacobian
 
@@ -87,7 +89,12 @@ def _cartesian_to_cometary(
     coords_cometary = _cartesian_to_keplerian(coords_cartesian, t0, mu=mu)
     return coords_cometary[jnp.array([2, 4, 5, 6, 7, 12])]
 
-@jit
+# Vectorization Map: _cartesian_to_cometary
+_cartesian_to_cometary_vmap = vmap(
+    _cartesian_to_cometary,
+    in_axes=(0, 0, None),
+)
+
 def cartesian_to_cometary(
         coords_cartesian: Union[np.ndarray, jnp.ndarray],
         t0: Union[np.ndarray, jnp.ndarray],
@@ -123,18 +130,10 @@ def cartesian_to_cometary(
         ap : argument of periapsis in degrees.
         tp : time of periapse passage in days.
     """
-    N = len(coords_cartesian)
-    coords_cometary = lax.fori_loop(
-        0,
-        N,
-        lambda i, coords_cometary: coords_cometary.at[i].set(
-            _cartesian_to_cometary(
-                coords_cartesian[i],
-                t0[i],
-                mu=mu
-            )
-        ),
-        jnp.zeros((N, 6), dtype=jnp.float64)
+    coords_cometary = _cartesian_to_cometary_vmap(
+        coords_cartesian,
+        t0,
+        mu
     )
     return coords_cometary
 
@@ -190,22 +189,48 @@ def _cometary_to_cartesian(
     raan = coords_cometary[3]
     ap = coords_cometary[4]
     tp = coords_cometary[5]
-    a = q / (1 - e)
 
-    n = jnp.sqrt(mu / jnp.abs(a)**3)
-    P = 2*jnp.pi / n
+    # Calculate the semi-major axis from the periapsis distance
+    # The semi-major axis for parabolic orbits is undefined
+    a = lax.cond(
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
+        lambda e, q: jnp.nan,
+        lambda e, q: q / (1 - e),
+        e,
+        q,
+    )
+
+    # Calculate the mean motion
+    n = lax.cond(
+        (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
+        lambda a, q: jnp.sqrt(mu / (2 * q**3)),
+        lambda a, q: jnp.sqrt(mu / jnp.abs(a)**3),
+        a,
+        q,
+    )
+
+    # Calculate the orbital period which for parabolic and hyperbolic
+    # orbits is infinite while for all closed orbits
+    # is well defined.
+    P = lax.cond(
+        e < (1.0 - FLOAT_TOLERANCE),
+        lambda n: 2*jnp.pi / n,
+        lambda n: jnp.inf,
+        n
+    )
+
+    # Calculate the mean anomaly
     dtp = tp - t0
-    M = jnp.where(dtp < 0, 2*jnp.pi * -dtp / P, 2 * jnp.pi * (P - dtp) / P)
-    M = jnp.degrees(M)
+    M = jnp.where(dtp > 0, 2 * jnp.pi - dtp * n, - dtp * n)
 
-    coords_keplerian = coords_keplerian.at[0].set(a)
+    coords_keplerian = coords_keplerian.at[0].set(q)
     coords_keplerian = coords_keplerian.at[1].set(e)
     coords_keplerian = coords_keplerian.at[2].set(i)
     coords_keplerian = coords_keplerian.at[3].set(raan)
     coords_keplerian = coords_keplerian.at[4].set(ap)
-    coords_keplerian = coords_keplerian.at[5].set(M)
+    coords_keplerian = coords_keplerian.at[5].set(jnp.degrees(M))
 
-    coords_cartesian = _keplerian_to_cartesian(
+    coords_cartesian = _keplerian_to_cartesian_q(
         coords_keplerian,
         mu=mu,
         max_iter=max_iter,
@@ -214,7 +239,12 @@ def _cometary_to_cartesian(
 
     return coords_cartesian
 
-@jit
+# Vectorization Map: _cometary_to_cartesian
+_cometary_to_cartesian_vmap = vmap(
+    _cometary_to_cartesian,
+    in_axes=(0, 0, None, None, None),
+)
+
 def cometary_to_cartesian(
         coords_cometary: Union[np.ndarray, jnp.ndarray],
         t0: Union[np.ndarray, jnp.ndarray],
@@ -258,20 +288,12 @@ def cometary_to_cartesian(
         vy : y-velocity in units of au per day.
         vz : z-velocity in units of au per day.
     """
-    N = len(coords_cometary)
-    coords_cartesian = lax.fori_loop(
-        0,
-        N,
-        lambda i, coords_cartesian: coords_cartesian.at[i].set(
-            _cometary_to_cartesian(
-                coords_cometary[i],
-                t0[i],
-                mu=mu,
-                max_iter=max_iter,
-                tol=tol
-            )
-        ),
-        jnp.zeros((N, 6), dtype=jnp.float64)
+    coords_cartesian = _cometary_to_cartesian_vmap(
+        coords_cometary,
+        t0,
+        mu,
+        max_iter,
+        tol
     )
     return coords_cartesian
 
