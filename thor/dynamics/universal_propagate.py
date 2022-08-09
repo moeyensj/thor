@@ -71,7 +71,8 @@ def _propagate_2body(
 
     return jnp.array([t1, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
 
-vmapped_propagate_2body = vmap(
+# Vectorization Map: _propagate_2body
+_propagate_2body_vmap = vmap(
     _propagate_2body,
     in_axes=(0, 0, 0, None, None, None),
     out_axes=(0)
@@ -120,7 +121,7 @@ def propagate_2body(
     t0_ = jnp.hstack([t0[i] for i in range(n_orbits) for j in range(n_times)])
     t1_ = jnp.hstack([t1 for i in range(n_orbits)])
 
-    orbits_propagated = vmapped_propagate_2body(
+    orbits_propagated = _propagate_2body_vmap(
         orbits_,
         t0_,
         t1_,
