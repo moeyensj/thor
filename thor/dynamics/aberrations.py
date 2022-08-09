@@ -1,5 +1,11 @@
 import numpy as np
-from numba import jit
+import jax.numpy as jnp
+from jax import (
+    config,
+    jit
+)
+
+config.update("jax_enable_x64", True)
 
 from ..constants import Constants as c
 from .universal_propagate import _propagate_2body
@@ -12,7 +18,6 @@ __all__ = [
 MU = c.MU
 C = c.C
 
-@jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True, cache=True)
 def add_light_time(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
     """
     When generating ephemeris, orbits need to be backwards propagated to the time
@@ -83,8 +88,11 @@ def add_light_time(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter
 
     return corrected_orbits, lts
 
-@jit(["f8[:,:](f8[:,:], f8[:,:])"], nopython=True, cache=True)
-def add_stellar_aberration(orbits, observer_states):
+@jit
+def add_stellar_aberration(
+        orbits: jnp.ndarray,
+        observer_states: jnp.ndarray
+    ) -> jnp.ndarray:
     """
     The motion of the observer in an inertial frame will cause an object
     to appear in a different location than its true geometric location. This
@@ -95,14 +103,14 @@ def add_stellar_aberration(orbits, observer_states):
 
     Parameters
     ----------
-    orbits : `~numpy.ndarray` (N, 6)
+    orbits : `~jax.numpy.ndarray` (N, 6)
         Orbits in barycentric cartesian elements.
-    observer_states : `~numpy.ndarray` (N, 6)
+    observer_states : `~jax.numpy.ndarray` (N, 6)
         Observer states in barycentric cartesian elements.
 
     Returns
     -------
-    rho_aberrated : `~numpy.ndarray` (N, 3)
+    rho_aberrated : `~jax.numpy.ndarray` (N, 3)
         The topocentric position vector for each orbit with
         added stellar aberration.
 
@@ -112,16 +120,17 @@ def add_stellar_aberration(orbits, observer_states):
         University Science Books. ISBN-13: 978-1891389856
     """
     topo_states = orbits - observer_states
-    rho_aberrated = topo_states[:, :3].copy()
-    for i in range(len(orbits)):
-        v_obs = observer_states[i, 3:]
-        beta = v_obs / C
-        gamma_inv = np.sqrt(1 - np.linalg.norm(beta)**2)
-        delta = np.linalg.norm(topo_states[i, :3])
+    rho_aberrated = jnp.zeros((len(topo_states), 3), dtype=jnp.float64)
+    rho_aberrated = rho_aberrated.at[:].set(topo_states[:, :3])
 
-        # Equation 7.40 in Urban & Seidelmann (2013) [1]
-        rho = topo_states[i, :3] / delta
-        rho_aberrated[i, :] = (gamma_inv * rho + beta + np.dot(rho, beta) * beta / (1 + gamma_inv)) / (1 + np.dot(rho, beta))
-        rho_aberrated[i, :] *= delta
+    v_obs = observer_states[:, 3:]
+    beta = v_obs / C
+    gamma_inv = jnp.sqrt(1 - jnp.linalg.norm(beta, axis=1, keepdims=True)**2)
+    delta = jnp.linalg.norm(topo_states[:, :3], axis=1, keepdims=True)
+
+    # Equation 7.40 in Urban & Seidelmann (2013) [1]
+    rho = topo_states[:, :3] / delta
+    rho_aberrated = rho_aberrated.at[:].set((gamma_inv * rho + beta + rho * beta * beta / (1 + gamma_inv)) / (1 + rho*beta))
+    rho_aberrated = rho_aberrated.at[:].multiply(delta)
 
     return rho_aberrated
