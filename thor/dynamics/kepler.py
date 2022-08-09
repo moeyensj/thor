@@ -217,5 +217,6 @@ def solve_kepler(
     )
 
     # True anomaly should be in the range [0, 2*pi)
+    nu = jnp.where(nu < 0., nu + 2*jnp.pi, nu)
     nu = jnp.where(nu >= 2*jnp.pi, nu % (2*jnp.pi), nu)
     return nu
