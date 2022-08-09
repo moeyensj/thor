@@ -18,6 +18,7 @@ from collections import OrderedDict
 config.update("jax_enable_x64", True)
 
 from ..constants import Constants as c
+from ..dynamics.barker import solve_barker
 from ..dynamics.kepler import (
     calc_mean_anomaly,
     solve_kepler,
@@ -214,7 +215,7 @@ def _cartesian_to_keplerian(
     # orbits is infinite while for all closed orbits
     # is well defined.
     P = lax.cond(
-        e < 1.0,
+        e < (1.0 - FLOAT_TOLERANCE),
         lambda n: 2*jnp.pi / n,
         lambda n: jnp.inf,
         n
@@ -228,7 +229,7 @@ def _cartesian_to_keplerian(
     # than 180 degrees, then the orbit is ascending from pericenter
     # passage and the most recent pericenter was in the past.
     dtp = M / n
-    dtp = jnp.where((M > jnp.pi) & (e < 1.0), P - M / n, - M / n)
+    dtp = jnp.where((M > jnp.pi) & (e < (1.0 - FLOAT_TOLERANCE)), P - M / n, - M / n)
     tp = t0 + dtp
 
     coords_keplerian = coords_keplerian.at[0].set(a)
@@ -403,7 +404,7 @@ def _keplerian_to_cartesian_p(
     # Calculate the true anomaly
     nu = lax.cond(
         (e > (1.0 - FLOAT_TOLERANCE)) & (e < (1.0 + FLOAT_TOLERANCE)),
-        lambda e_i, M_i: jnp.nan, # TODO: add call to Barker's equation
+        lambda e_i, M_i: solve_barker(M_i),
         lambda e_i, M_i: solve_kepler(e_i, M_i, max_iter=max_iter, tol=tol),
         e, M
     )

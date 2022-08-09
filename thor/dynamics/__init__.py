@@ -1,3 +1,4 @@
+from .barker import *
 from .kepler import *
 from .stumpff import *
 from .chi import *
