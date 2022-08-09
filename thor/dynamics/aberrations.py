@@ -1,9 +1,11 @@
-import numpy as np
 import jax.numpy as jnp
 from jax import (
     config,
-    jit
+    jit,
+    lax,
+    vmap
 )
+from typing import Tuple
 
 config.update("jax_enable_x64", True)
 
@@ -18,21 +20,30 @@ __all__ = [
 MU = c.MU
 C = c.C
 
-def add_light_time(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
+@jit
+def _add_light_time(
+        orbit: jnp.ndarray,
+        t0: float,
+        observer_position: jnp.ndarray,
+        lt_tol: float = 1e-10,
+        mu: float = MU,
+        max_iter: int = 1000,
+        tol: float = 1e-15
+    ) -> Tuple[jnp.ndarray, jnp.float64]:
     """
     When generating ephemeris, orbits need to be backwards propagated to the time
     at which the light emitted or relflected from the object towards the observer.
 
     Light time correction must be added to orbits in expressed in an inertial frame (ie, orbits
-    must be barycentric)
+    must be barycentric).
 
     Parameters
     ----------
-    orbits : `~numpy.ndarray` (N, 6)
-        Barycentric orbits in cartesian elements to correct for light time delay.
-    t0 : `~numpy.ndarray` (N)
+    orbit : `~jax.numpy.ndarray` (6)
+        Barycentric orbit in cartesian elements to correct for light time delay.
+    t0 : float
         Epoch at which orbits are defined.
-    observer_positions : `numpy.ndarray` (N, 3)
+    observer_positions : `~jax.numpy.ndarray` (3)
         Location of the observer in barycentric cartesian elements at the time of observation.
     lt_tol : float, optional
         Calculate aberration to within this value in time (units of days.)
@@ -47,46 +58,117 @@ def add_light_time(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter
 
     Returns
     -------
-    corrected_orbits : `~numpy.ndarray` (N, 6)
-        Orbits adjusted for light travel time.
-    lt : `~numpy.ndarray` (N)
+    corrected_orbit : `~jax.numpy.ndarray` (6)
+        Orbit adjusted for light travel time.
+    lt : float
         Light time correction (t0 - corrected_t0).
     """
-    corrected_orbits = np.zeros((len(orbits), 6))
-    lts = np.zeros(len(orbits))
-    num_orbits = len(orbits)
-    for i in range(num_orbits):
+    dlt = 1e30
+    lt = 1e30
 
-        # Set up running variables
-        orbit_i = orbits[i:i+1, :]
-        observer_position_i = observer_positions[i:i+1, :]
-        t0_i = t0[i:i+1]
-        dlt = 1e30
-        lt_i = 1e30
+    @jit
+    def _iterate_light_time(p):
 
-        while dlt > lt_tol:
-            # Calculate topocentric distance
-            rho = np.linalg.norm(orbit_i[:, :3] - observer_position_i)
+        orbit = p[0]
+        t0 = p[1]
+        lt0 = p[2]
+        dlt = p[3]
 
-            # Calculate initial guess of light time
-            lt = rho / C
+        # Calculate topocentric distance
+        rho = jnp.linalg.norm(orbit[:3] - observer_position)
 
-            # Calculate difference between previous light time correction
-            # and current guess
-            dlt = np.abs(lt - lt_i)
+        # Calculate initial guess of light time
+        lt = rho / C
 
-            # Propagate backwards to new epoch
-            orbit = _propagate_2body(orbits[i:i+1, :], t0[i:i+1], t0[i:i+1] - lt, mu=mu, max_iter=max_iter, tol=tol)
+        # Calculate difference between previous light time correction
+        # and current guess
+        dlt = jnp.abs(lt - lt0)
 
-            # Update running variables
-            t0_i = orbit[:, 1]
-            orbit_i = orbit[:, 2:]
-            lt_i = lt
+        # Propagate backwards to new epoch
+        orbit_propagated = _propagate_2body(orbit, t0, t0 - lt, mu=mu, max_iter=max_iter, tol=tol)
 
-        corrected_orbits[i, :] = orbit[0, 2:]
-        lts[i] = lt
+        p[0] = orbit_propagated[1:]
+        p[1] = orbit_propagated[0]
+        p[2] = lt
+        p[3] = dlt
+        return p
 
-    return corrected_orbits, lts
+    @jit
+    def _while_condition(p):
+        dlt = p[-1]
+        return dlt > lt_tol
+
+    p = [orbit, t0, lt, dlt]
+    p = lax.while_loop(
+        _while_condition,
+        _iterate_light_time,
+        p
+    )
+
+    orbit_aberrated = p[0]
+    t0_aberrated = p[1]
+    lt = p[2]
+    return orbit_aberrated, lt
+
+# Vectorization Map: _add_light_time
+_add_light_time_vmap = vmap(
+    _add_light_time,
+    in_axes=(0, 0, 0, None, None, None, None)
+)
+
+@jit
+def add_light_time(
+        orbits: jnp.ndarray,
+        t0: jnp.ndarray,
+        observer_positions: jnp.ndarray,
+        lt_tol: float = 1e-10,
+        mu: float = MU,
+        max_iter: int = 1000,
+        tol: float = 1e-15
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    When generating ephemeris, orbits need to be backwards propagated to the time
+    at which the light emitted or relflected from the object towards the observer.
+
+    Light time correction must be added to orbits in expressed in an inertial frame (ie, orbits
+    must be barycentric).
+
+    Parameters
+    ----------
+    orbits : `~jax.numpy.ndarray` (N, 6)
+        Barycentric orbits in cartesian elements to correct for light time delay.
+    t0 : `~jax.numpy.ndarray` (N)
+        Epoch at which orbits are defined.
+    observer_positions : `~jax.numpy.ndarray` (N, 3)
+        Location of the observer in barycentric cartesian elements at the time of observation.
+    lt_tol : float, optional
+        Calculate aberration to within this value in time (units of days.)
+    mu : float, optional
+        Gravitational parameter (GM) of the attracting body in units of
+        AU**3 / d**2.
+    max_iter : int, optional
+        Maximum number of iterations over which to converge for propagation.
+    tol : float, optional
+        Numerical tolerance to which to compute universal anomaly during propagation using the Newtown-Raphson
+        method.
+
+    Returns
+    -------
+    corrected_orbits : `~jax.numpy.ndarray` (N, 6)
+        Orbits adjusted for light travel time.
+    lt : `~jax.numpy.ndarray` (N)
+        Light time correction (t0 - corrected_t0).
+    """
+    orbits_aberrated, lts = _add_light_time_vmap(
+        orbits,
+        t0,
+        observer_positions,
+        lt_tol,
+        mu,
+        max_iter,
+        tol
+    )
+    return orbits_aberrated, lts
 
 @jit
 def add_stellar_aberration(
