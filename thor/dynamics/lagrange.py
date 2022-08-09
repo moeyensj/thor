@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 MU = C.MU
-LANGRANGE_TYPES = Tuple[np.float64, np.float64, np.float64, np.float64]
+LAGRANGE_TYPES = Tuple[jnp.float64, jnp.float64, jnp.float64, jnp.float64]
 
 @jit
 def calc_lagrange_coefficients(
@@ -28,7 +28,7 @@ def calc_lagrange_coefficients(
         mu: float = MU,
         max_iter: int = 100,
         tol: float = 1e-16
-    ) -> Tuple[LANGRANGE_TYPES, STUMPFF_TYPES, np.float64]:
+    ) -> Tuple[LAGRANGE_TYPES, STUMPFF_TYPES, np.float64]:
     """
     Calculate the exact Lagrange coefficients given an initial state defined at t0,
     and the change in time from t0 to t1 (dt = t1 - t0).

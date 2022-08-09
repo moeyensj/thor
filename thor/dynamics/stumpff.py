@@ -13,7 +13,7 @@ __all__ = [
     "calc_stumpff"
 ]
 
-STUMPFF_TYPES = Tuple[np.float64, np.float64, np.float64, np.float64, np.float64, np.float64]
+STUMPFF_TYPES = Tuple[jnp.float64, jnp.float64, jnp.float64, jnp.float64, jnp.float64, jnp.float64]
 
 @jit
 def _positive_psi(psi: np.float64) -> STUMPFF_TYPES:

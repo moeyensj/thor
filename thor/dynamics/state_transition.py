@@ -1,9 +1,18 @@
-import numpy as np
-from numba import jit
+import jax.numpy as jnp
+from jax import (
+    config,
+    jit
+)
+
+config.update("jax_enable_x64", True)
 
 from ..constants import Constants as c
-from .lagrange import calc_lagrange_coefficients
-from .lagrange import apply_lagrange_coefficients
+from .stumpff import STUMPFF_TYPES
+from .lagrange import (
+    LAGRANGE_TYPES,
+    calc_lagrange_coefficients,
+    apply_lagrange_coefficients
+)
 
 __all__ = [
     "_calc_M_matrix",
@@ -12,16 +21,24 @@ __all__ = [
 
 MU = c.MU
 
-@jit("f8[:,:](f8[:], f8[:], UniTuple(f8, 4), UniTuple(f8, 6), f8, f8, f8)", nopython=True, cache=True)
-def _calc_M_matrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
+@jit
+def _calc_M_matrix(
+        r0: jnp.ndarray,
+        r1: jnp.ndarray,
+        lagrange_coeffs: LAGRANGE_TYPES,
+        stumpff_coeffs: STUMPFF_TYPES,
+        chi: float,
+        alpha: float,
+        mu: float = MU
+    ) -> jnp.ndarray:
     """
     Calculate the M matrix proposed by S. W. Shepperd in 1985.
 
     Parameters
     ----------
-    r0 : `~numpy.ndarray` (3)
+    r0 : `~jax.numpy.ndarray` (3)
         Cartesian position vector at t0 in au.
-    r1 : `~numpy.ndarray` (3)
+    r1 : `~jax.numpy.ndarray` (3)
         Cartesian position vector at t1 in au.
     langrange_coeffs : (float x 4)
         The langrage coefficients f, g, f_dot, and g_dot from t0
@@ -38,7 +55,7 @@ def _calc_M_matrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
 
     Returns
     -------
-    M : `~numpy.ndarray` (3, 3)
+    M : `~jax.numpy.ndarray` (3, 3)
         The M matrix proposed by S. W. Shepperd in 1985 as a convenient way to
         package the quantities required to calculate the 2-body state transition
         matrix.
@@ -63,9 +80,9 @@ def _calc_M_matrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     # Extract relevant quanitities and calculate vector magnitudes
     c0, c1, c2, c3, c4, c5 = stumpff_coeffs
     f, g, f_dot, g_dot = lagrange_coeffs
-    r0_mag = np.linalg.norm(r0)
-    r1_mag = np.linalg.norm(r1)
-    sqrt_mu = np.sqrt(mu)
+    r0_mag = jnp.linalg.norm(r0)
+    r1_mag = jnp.linalg.norm(r1)
+    sqrt_mu = jnp.sqrt(mu)
 
     # Universal variables will differ between different texts and works in the literature.
     # c0, c1, c2, c3, c4, c5 are expected to follow the Battin formalism (adopted by both
@@ -102,22 +119,28 @@ def _calc_M_matrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     m33 = g * U2 - W
 
     # Combine elements into a 3 x 3 matrix
-    M = np.array([
+    M = jnp.array([
         [m11, m12, m13],
         [m21, m22, m23],
         [m31, m32, m33],
     ])
     return M
 
-@jit("f8[:,:](f8[:], f8, f8, i8, f8)", nopython=True, cache=True)
-def calc_state_transition_matrix(orbit, dt, mu=0.0002959122082855911, max_iter=100, tol=1e-15):
+@jit
+def calc_state_transition_matrix(
+        orbit: jnp.ndarray,
+        dt: float,
+        mu: float = MU,
+        max_iter: int = 1000,
+        tol: float = 1e-15
+    ) -> jnp.ndarray:
     """
     Calculate the state transition matrix for a given change in epoch. The state transition matrix
     maps deviations from a state at an epoch t0 to a different epoch t1 (dt = t1 - t0).
 
     Parameters
     ----------
-    orbit : `~numpy.ndarray` (6)
+    orbit : `~jax.numpy.ndarray` (6)
         Cartesian state vector in units of au and au per day.
     dt : float
         Time difference (dt = t1 - t0) at which to calculate the state transition matrix.
@@ -133,7 +156,7 @@ def calc_state_transition_matrix(orbit, dt, mu=0.0002959122082855911, max_iter=1
 
     Returns
     -------
-    Phi : `~numpy.ndarray` (6, 6)
+    Phi : `~jax.numpy.ndarray` (6, 6)
         The state transition matrix.
 
     References
@@ -144,8 +167,8 @@ def calc_state_transition_matrix(orbit, dt, mu=0.0002959122082855911, max_iter=1
     r0 = orbit[0:3]
     v0 = orbit[3:6]
 
-    r0_mag = np.linalg.norm(r0)
-    v0_mag = np.linalg.norm(v0)
+    r0_mag = jnp.linalg.norm(r0)
+    v0_mag = jnp.linalg.norm(v0)
 
     # Calculate the inverse semi-major axis
     # Note: the definition of alpha will change between different works in the literature.
@@ -167,26 +190,26 @@ def calc_state_transition_matrix(orbit, dt, mu=0.0002959122082855911, max_iter=1
     # Construct the 3 x 2 state matrices with the position vector
     # in the first column and the velocity vector in the second column
     # See equations A.42 - A.45 in Shepperd 1985 [1]
-    state_0 = np.zeros((3, 2))
-    state_0[:, 0] = r0
-    state_0[:, 1] = v0
-    state_1 = np.zeros((3, 2))
-    state_1[:, 0] = r1
-    state_1[:, 1] = v1
+    state_0 = jnp.zeros((3, 2))
+    state_0 = state_0.at[:, 0].set(r0)
+    state_0 = state_0.at[:, 1].set(v0)
+    state_1 = jnp.zeros((3, 2))
+    state_1 = state_1.at[:, 0].set(r1)
+    state_1 = state_1.at[:, 1].set(v1)
 
     # Construct the 4 3 x 3 submatrices that can form the
     # the 6 x 6 state transition matrix.
     # See equations A.42 - A.46 in Shepperd 1985 [1]
-    I = np.identity(3)
-    phi = np.zeros((6, 6))
+    I = jnp.identity(3)
+    phi = jnp.zeros((6, 6))
     phi11 = f * I + state_1 @ (M[1:3, 0:2] @ state_0.T)
     phi12 = g * I + state_1 @ (M[1:3, 1:3] @ state_0.T)
     phi21 = f_dot * I - state_1 @ (M[0:2, 0:2] @ state_0.T)
     phi22 = g_dot * I - state_1 @ (M[0:2, 1:3] @ state_0.T)
 
-    phi[0:3, 0:3] = phi11
-    phi[0:3, 3:6] = phi12
-    phi[3:6, 0:3] = phi21
-    phi[3:6, 3:6] = phi22
+    phi = phi.at[0:3, 0:3].set(phi11)
+    phi = phi.at[0:3, 3:6].set(phi12)
+    phi = phi.at[3:6, 0:3].set(phi21)
+    phi = phi.at[3:6, 3:6].set(phi22)
 
     return phi
