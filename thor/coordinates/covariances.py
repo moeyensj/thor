@@ -27,7 +27,7 @@ __all__ = [
     "covariances_to_table",
 ]
 
-COVARIANCE_FILL_VALUE = np.NaN
+COVARIANCE_FILL_VALUE = 0.0
 
 def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.masked_array]) -> np.ma.masked_array:
     """
@@ -66,7 +66,7 @@ def sigmas_to_covariance(sigmas: Union[np.ndarray, np.ma.masked_array]) -> np.ma
             dtype=np.float64,
             fill_value=COVARIANCE_FILL_VALUE
         )
-        covariances.mask = np.where(np.isnan(covariances) | (covariances == 0), 1, 0)
+        covariances.mask = np.where(np.isnan(covariances) | (covariances == COVARIANCE_FILL_VALUE), 1, 0)
 
     return covariances
 
