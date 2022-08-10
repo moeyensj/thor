@@ -209,30 +209,30 @@ class CartesianCoordinates(Coordinates):
         CartesianCoordinates : `~thor.coordinates.cartesian.CartesianCoordinates`
             Rotated Cartesian coordinates and their covariances.
         """
-        coords = deepcopy(np.ma.dot(self._values, matrix.T))
-        coords[self._values.mask] = np.NaN
+        coords_rotated = deepcopy(np.ma.dot(self._values, matrix.T))
+        coords_rotated[self._values.mask] = np.NaN
 
         if self._covariances is not None:
-            covariances = deepcopy(matrix @ self._covariances @ matrix.T)
-            near_zero = len(covariances[np.abs(covariances) < COVARIANCE_ROTATION_TOLERANCE])
+            covariances_rotated = deepcopy(matrix @ self._covariances @ matrix.T)
+            near_zero = len(covariances_rotated[np.abs(covariances_rotated) < COVARIANCE_ROTATION_TOLERANCE])
             if near_zero > 0:
                 logger.debug(f"{near_zero} covariance elements are within {COVARIANCE_ROTATION_TOLERANCE:.0e} of zero after rotation, setting these elements to 0.")
-                covariances = np.where(np.abs(covariances) < COVARIANCE_ROTATION_TOLERANCE, 0, covariances)
+                covariances_rotated = np.where(np.abs(covariances_rotated) < COVARIANCE_ROTATION_TOLERANCE, 0, covariances_rotated)
 
         else:
-            covariances = None
+            covariances_rotated = None
 
         data = {}
-        data["x"] = coords[:, 0]
-        data["y"] = coords[:, 1]
-        data["z"] = coords[:, 2]
-        data["vx"] = coords[:, 3]
-        data["vy"] = coords[:, 4]
-        data["vz"] = coords[:, 5]
-        data["times"] = self.times
-        data["covariances"] = covariances
-        data["origin"] = self.origin
-        data["frame"] = frame_out
+        data["x"] = coords_rotated[:, 0]
+        data["y"] = coords_rotated[:, 1]
+        data["z"] = coords_rotated[:, 2]
+        data["vx"] = coords_rotated[:, 3]
+        data["vy"] = coords_rotated[:, 4]
+        data["vz"] = coords_rotated[:, 5]
+        data["times"] = deepcopy(self.times)
+        data["covariances"] = covariances_rotated
+        data["origin"] = deepcopy(self.origin)
+        data["frame"] = deepcopy(frame_out)
         return CartesianCoordinates(**data)
 
     def to_equatorial(self):
@@ -246,6 +246,73 @@ class CartesianCoordinates(Coordinates):
             return self.rotate(TRANSFORM_EQ2EC, "ecliptic")
         elif self.frame == "ecliptic":
             return self
+
+    def translate(self,
+            vectors: Union[np.ndarray, np.ma.masked_array],
+            origin_out: str
+        ) -> "CartesianCoordinates":
+        """
+        Translate CartesianCoordinates by the given coordinate vector(s).
+        A copy is made of the coordinates and a new instance of the
+        CartesianCoordinates class is returned.
+
+        Parameters
+        ----------
+        vectors : {`~numpy.ndarray`, `~numpy.ma.masked_array`} (N, 6), (1, 6) or (6)
+            Translation vector(s) for each coordinate or a single vector with which
+            to translate all coordinates.
+        origin_out : str
+            Name of the origin to which coordinates are being translated.
+
+        Returns
+        -------
+        CartesianCoordinates : `~thor.coordinates.cartesian.CartesianCoordinates`
+            Translated Cartesian coordinates and their covariances.
+
+        Raises
+        ------
+        ValueError: If vectors does not have shape (N, 6), (1, 6), or (6)
+        TypeError: If vectors is not a `~numpy.ndarray` or a `~numpy.ma.masked_array`
+        """
+        if not isinstance(vectors, (np.ndarray, np.ma.masked_array)):
+            err = (
+                "coords should be one of {`~numpy.ndarray`, `~numpy.ma.masked_array`}"
+            )
+            raise TypeError(err)
+
+        if len(vectors.shape) == 2:
+            N, D = vectors.shape
+        elif len(vectors.shape) == 1:
+            N, D = vectors.shape[0], None
+        else:
+            err = (
+                f"vectors should be 2D or 1D, instead vectors is {len(vectors.shape)}D."
+            )
+            raise ValueError(err)
+
+        N_self, D_self = self.values.shape
+        if (N != len(self) and N != 1) and (D is None and N != D_self):
+            err = (
+                f"Translation vector(s) should have shape ({N_self}, {D_self}), (1, {D_self}) or ({D_self},).\n"
+                f"Given translation vector(s) have shape {vectors.shape}."
+            )
+            raise ValueError(err)
+
+        coords_translated = deepcopy(self.values) + vectors
+        covariances_translated = deepcopy(self.covariances)
+
+        data = {}
+        data["x"] = coords_translated[:, 0]
+        data["y"] = coords_translated[:, 1]
+        data["z"] = coords_translated[:, 2]
+        data["vx"] = coords_translated[:, 3]
+        data["vy"] = coords_translated[:, 4]
+        data["vz"] = coords_translated[:, 5]
+        data["times"] = deepcopy(self.times)
+        data["covariances"] = covariances_translated
+        data["origin"] = deepcopy(origin_out)
+        data["frame"] = deepcopy(self.frame)
+        return CartesianCoordinates(**data)
 
     @classmethod
     def from_df(cls,
