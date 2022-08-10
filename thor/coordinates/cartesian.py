@@ -233,6 +233,8 @@ class CartesianCoordinates(Coordinates):
         data["covariances"] = covariances_rotated
         data["origin"] = deepcopy(self.origin)
         data["frame"] = deepcopy(frame_out)
+        data["units"] = deepcopy(self.units)
+        data["names"] = deepcopy(self.names)
         return CartesianCoordinates(**data)
 
     def to_equatorial(self):
@@ -329,6 +331,8 @@ class CartesianCoordinates(Coordinates):
         data["covariances"] = covariances_translated
         data["origin"] = deepcopy(origin_out)
         data["frame"] = deepcopy(self.frame)
+        data["units"] = deepcopy(self.units)
+        data["names"] = deepcopy(self.names)
         return CartesianCoordinates(**data)
 
     @classmethod
