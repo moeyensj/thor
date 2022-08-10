@@ -256,6 +256,9 @@ class CartesianCoordinates(Coordinates):
         A copy is made of the coordinates and a new instance of the
         CartesianCoordinates class is returned.
 
+        Translation will only be applied to those coordinates that do not already
+        have the desired origin (self.origin != origin_out).
+
         Parameters
         ----------
         vectors : {`~numpy.ndarray`, `~numpy.ma.masked_array`} (N, 6), (1, 6) or (6)
@@ -294,11 +297,25 @@ class CartesianCoordinates(Coordinates):
         if (N != len(self) and N != 1) and (D is None and N != D_self):
             err = (
                 f"Translation vector(s) should have shape ({N_self}, {D_self}), (1, {D_self}) or ({D_self},).\n"
-                f"Given translation vector(s) have shape {vectors.shape}."
+                f"Given translation vector(s) has shape {vectors.shape}."
             )
             raise ValueError(err)
 
-        coords_translated = deepcopy(self.values) + vectors
+        coords_translated = deepcopy(self.values)
+
+        # Only apply translation to coordinates that do not already have the desired origin
+        origin_mask = np.where(self.origin != origin_out)[0]
+        if len(coords_translated[origin_mask]) != len(coords_translated):
+            info = (
+                f"Translation will not be applied to the {len(coords_translated[~origin_mask])} coordinate(s) that already has the desired origin."
+            )
+            logger.info(info)
+
+        if len(vectors.shape) == 2:
+            coords_translated[origin_mask] = coords_translated[origin_mask] + vectors[origin_mask]
+        else:
+            coords_translated[origin_mask] = coords_translated[origin_mask] + vectors
+
         covariances_translated = deepcopy(self.covariances)
 
         data = {}
