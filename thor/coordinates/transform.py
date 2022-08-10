@@ -1,9 +1,13 @@
 import logging
 import numpy as np
+from copy import deepcopy
 from typing import Optional
 
 from ..constants import Constants as c
-from .coordinates import Coordinates
+from .coordinates import (
+    COORD_FILL_VALUE,
+    Coordinates
+)
 from .conversions import convert_coordinates
 from .cartesian import (
     CartesianCoordinates,
@@ -121,51 +125,57 @@ def transform_coordinates(
         else:
             pass
 
-    # At this point, some form of transformation is going to occur so
-    # convert the coords to Cartesian if they aren't already and make sure
+    # At this point, some form of transformation is going to occur so make a
+    # copy of the coords and then convert the coords to Cartesian if they aren't already and make sure
     # the units match the default units assumed for each class
+    coords_ = deepcopy(coords)
+
     set_rho_nan = False
     set_vrho_nan = False
-    if isinstance(coords, CartesianCoordinates):
-        if not coords.has_units(CARTESIAN_UNITS):
+    if isinstance(coords_, CartesianCoordinates):
+        if not coords_.has_units(CARTESIAN_UNITS):
             logger.info("Cartesian coordinates do not have default units, converting units before transforming.")
-            coords = convert_coordinates(coords, CARTESIAN_UNITS)
-        cartesian = coords
+            coords_ = convert_coordinates(coords_, CARTESIAN_UNITS)
+        cartesian = coords_
 
-    elif isinstance(coords, SphericalCoordinates):
-        if not coords.has_units(SPHERICAL_UNITS):
+    elif isinstance(coords_, SphericalCoordinates):
+        if not coords_.has_units(SPHERICAL_UNITS):
             logger.info("Spherical coordinates do not have default units, converting units before transforming.")
-            coords = convert_coordinates(coords, SPHERICAL_UNITS)
+            coords_ = convert_coordinates(coords_, SPHERICAL_UNITS)
 
         if representation_out == "spherical" or representation_out == "cartesian":
             if unit_sphere:
-                if np.all(np.isnan(coords.rho.filled())):
-                    set_rho_nan = True
+                set_rho_nan = True
+                if np.all(np.isnan(coords_.rho.filled())):
                     logger.debug("Spherical coordinates have no defined radial distance (rho), assuming spherical coordinates lie on unit sphere.")
-                    coords.values[:, 0] = 1.0
+                    coords_.values[:, 0] = 1.0
+                    coords._values.mask[:, 0] = 0
 
-                if np.all(np.isnan(coords.vrho.filled())):
-                    set_vrho_nan = True
+                set_vrho_nan = True
+                if np.all(np.isnan(coords_.vrho.filled())):
                     logger.debug("Spherical coordinates have no defined radial velocity (vrho), assuming spherical coordinates lie on unit sphere with zero velocity.")
-                    coords.values[:, 3] = 0.0
+                    coords_.covariances[:, 3, :] = 0.0
+                    coords_.covariances[:, :, 3] = 0.0
 
-        cartesian = coords.to_cartesian()
+        cartesian = coords_.to_cartesian()
 
-    elif isinstance(coords, KeplerianCoordinates):
-        if not coords.has_units(KEPLERIAN_UNITS):
+    elif isinstance(coords_, KeplerianCoordinates):
+        if not coords_.has_units(KEPLERIAN_UNITS):
             logger.info("Keplerian coordinates do not have default units, converting units before transforming.")
-            coords = convert_coordinates(coords, KEPLERIAN_UNITS)
+            coords_ = convert_coordinates(coords_, KEPLERIAN_UNITS)
 
-        cartesian = coords.to_cartesian()
+        cartesian = coords_.to_cartesian()
 
-    elif isinstance(coords, CometaryCoordinates):
-        if not coords.has_units(COMETARY_UNITS):
+    elif isinstance(coords_, CometaryCoordinates):
+        if not coords_.has_units(COMETARY_UNITS):
             logger.info("Cometary coordinates do not have default units, converting units before transforming.")
-            coords = convert_coordinates(coords, COMETARY_UNITS)
+            coords_ = convert_coordinates(coords_, COMETARY_UNITS)
 
-        cartesian = coords.to_cartesian()
+        cartesian = coords_.to_cartesian()
 
-    if coords.frame != frame_out:
+    # TODO : Add call to cartesian translate to shit the origin of the coordinates
+
+    if coords_.frame != frame_out:
         if frame_out == "ecliptic":
             cartesian = cartesian.to_ecliptic()
         elif frame_out == "equatorial":
@@ -183,22 +193,12 @@ def transform_coordinates(
         # rho and vrho values were assumed then make sure the output coordinates
         # and covariances are set back to NaN values and masked
         if set_rho_nan:
-            coords_out.values[:, 0] = np.NaN
-            coords_out.values[:, 0].mask = 1
-            if coords_out.covariances is not None:
-                coords_out.covariances[:, 0] = np.NaN
-                coords_out.covariances[0, :] = np.NaN
-                coords_out.covariances[:, 0].mask = 1
-                coords_out.covariances[0, :].mask = 1
+            coords_out._values[:, 0] = COORD_FILL_VALUE
+            coords_out._values[:, 0].mask = 1
 
         if set_vrho_nan:
-            coords_out.values[:, 3] = np.NaN
-            coords_out.values[:, 3].mask = 1
-            if coords_out.covariances is not None:
-                coords_out.covariances[:, 3] = np.NaN
-                coords_out.covariances[3, :] = np.NaN
-                coords_out.covariances[:, 3].mask = 1
-                coords_out.covariances[3, :].mask = 1
+            coords_out._values[:, 3] = COORD_FILL_VALUE
+            coords_out._values[:, 3].mask = 1
 
     elif representation_out == "keplerian":
         coords_out = KeplerianCoordinates.from_cartesian(cartesian)
