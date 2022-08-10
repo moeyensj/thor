@@ -334,6 +334,9 @@ class CoordinateMembers(Indexable):
             keplerian: bool = True,
             cometary: bool = True,
             spherical: bool = True,
+            coord_cols: Optional[OrderedDict] = None,
+            origin_col: str = "origin",
+            frame_col: str = "frame"
         ) -> "CoordinateMembers":
         """
         Instantiate CoordinateMembers from a `pandas.DataFrame`. If all
@@ -375,6 +378,9 @@ class CoordinateMembers(Indexable):
             cartesian=cartesian,
             keplerian=keplerian,
             cometary=cometary,
-            spherical=spherical
+            spherical=spherical,
+            coord_cols=coord_cols,
+            origin_col=origin_col,
+            frame_col=frame_col
         )
         return cls(**data)
