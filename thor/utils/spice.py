@@ -1,6 +1,7 @@
 import os
 import logging
 import numpy as np
+import pandas as pd
 import spiceypy as sp
 
 from ..constants import KM_P_AU
@@ -248,12 +249,22 @@ def get_perturber_state(
     _check_times(times, "times")
 
     # Convert MJD epochs in TDB to ET in TDB
-    epochs_tdb = times.tdb
-    epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
+    epochs_tdb_jd = times.tdb.jd
 
-    # Get position of the body in heliocentric ecliptic J2000 coordinates
-    states = []
-    for epoch in epochs_et:
+    # Create a pandas index on the JD TDBs
+    index = pd.Index(epochs_tdb_jd)
+
+    # Get the unique times in the index
+    unique_times = index.unique().values
+
+    # For each unique time convert them to ephemeris times used by SPICE
+    epochs_et = np.array([sp.str2et(f'JD {i:.16f} TDB') for i in unique_times])
+
+    # Get position of the body in heliocentric ecliptic J2000 coordinates for each unique time
+    # and appropriate populate the output state vectors
+    N, D = len(times), 6
+    states = np.zeros((N, D), dtype=np.float64)
+    for i, epoch in enumerate(epochs_et):
         state, lt = sp.spkez(
             NAIF_MAPPING[body_name.lower()],
             epoch,
@@ -261,8 +272,8 @@ def get_perturber_state(
             'NONE',
             center
         )
-        states.append(state)
-    states = np.vstack(states)
+        mask = index.isin(unique_times[i:i+1])
+        states[mask] = state
 
     # Convert to AU and AU per day
     states = states / KM_P_AU
