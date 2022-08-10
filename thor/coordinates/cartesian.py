@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 from astropy.time import Time
 from astropy import units as u
@@ -5,6 +6,7 @@ from typing import (
     Optional,
     Union
 )
+from copy import deepcopy
 from collections import OrderedDict
 
 from ..constants import Constants as c
@@ -29,6 +31,10 @@ for i in ["x", "y", "z"]:
 for i in ["vx", "vy", "vz"]:
     CARTESIAN_COLS[i] = i
     CARTESIAN_UNITS[i] = u.au / u.d
+
+COVARIANCE_ROTATION_TOLERANCE = 1e-25
+
+logger = logging.getLogger(__name__)
 
 class CartesianCoordinates(Coordinates):
 
@@ -178,58 +184,68 @@ class CartesianCoordinates(Coordinates):
     def from_cartesian(cls, cartesian):
         return cartesian
 
-    def _rotate(self, matrix):
+    def rotate(self,
+            matrix: np.ndarray,
+            frame_out: str
+        ) -> "CartesianCoordinates":
+        """
+        Rotate Cartesian coordinates and their covariances by the
+        given rotation matrix. A copy is made of the coordinates and a new
+        instance of the CartesianCoordinates class is returned.
 
-        coords = self._values.dot(matrix.T)
-        coords.mask = self._values.mask
-        coords.fill_value = np.NaN
+        Covariance matrices are also rotated. Rotations will sometimes result
+        in covariance matrix elements very near zero but not exactly zero. Any
+        elements that are smaller than +-1e-25 are rounded down to 0.
+
+        Parameters
+        ----------
+        matrix : `~numpy.ndarray` (6, 6)
+            Rotation matrix.
+        frame_out : str
+            Name of the frame to which coordinates are being rotated.
+
+        Returns
+        -------
+        CartesianCoordinates : `~thor.coordinates.cartesian.CartesianCoordinates`
+            Rotated Cartesian coordinates and their covariances.
+        """
+        coords = deepcopy(np.ma.dot(self._values, matrix.T))
+        coords[self._values.mask] = np.NaN
 
         if self._covariances is not None:
-            covariances = matrix @ self._covariances @ matrix.T
+            covariances = deepcopy(matrix @ self._covariances @ matrix.T)
+            near_zero = len(covariances[np.abs(covariances) < COVARIANCE_ROTATION_TOLERANCE])
+            if near_zero > 0:
+                logger.debug(f"{near_zero} covariance elements are within {COVARIANCE_ROTATION_TOLERANCE:.0e} of zero after rotation, setting these elements to 0.")
+                covariances = np.where(np.abs(covariances) < COVARIANCE_ROTATION_TOLERANCE, 0, covariances)
+
         else:
             covariances = None
 
-        return coords, covariances
+        data = {}
+        data["x"] = coords[:, 0]
+        data["y"] = coords[:, 1]
+        data["z"] = coords[:, 2]
+        data["vx"] = coords[:, 3]
+        data["vy"] = coords[:, 4]
+        data["vz"] = coords[:, 5]
+        data["times"] = self.times
+        data["covariances"] = covariances
+        data["origin"] = self.origin
+        data["frame"] = frame_out
+        return CartesianCoordinates(**data)
 
     def to_equatorial(self):
-        if self.frame == "equatorial":
+        if self.frame == "ecliptic":
+            return self.rotate(TRANSFORM_EC2EQ, "equatorial")
+        elif self.frame == "equatorial":
             return self
-        elif self.frame == "ecliptic":
-            coords, covariances = self._rotate(TRANSFORM_EC2EQ)
-            data = {}
-            data["x"] = coords[:, 0].filled()
-            data["y"] = coords[:, 1].filled()
-            data["z"] = coords[:, 2].filled()
-            data["vx"] = coords[:, 3].filled()
-            data["vy"] = coords[:, 4].filled()
-            data["vz"] = coords[:, 5].filled()
-            data["times"] = self.times
-            data["covariances"] = covariances
-            data["origin"] = self.origin
-            data["frame"] = "equatorial"
-            return CartesianCoordinates(**data)
-        else:
-            raise ValueError
 
     def to_ecliptic(self):
         if self.frame == "equatorial":
-            coords, covariances = self._rotate(TRANSFORM_EQ2EC)
-            data = {}
-            data["x"] = coords[:, 0].filled()
-            data["y"] = coords[:, 1].filled()
-            data["z"] = coords[:, 2].filled()
-            data["vx"] = coords[:, 3].filled()
-            data["vy"] = coords[:, 4].filled()
-            data["vz"] = coords[:, 5].filled()
-            data["times"] = self.times
-            data["covariances"] = covariances
-            data["origin"] = self.origin
-            data["frame"] = "ecliptic"
-            return CartesianCoordinates(**data)
+            return self.rotate(TRANSFORM_EQ2EC, "ecliptic")
         elif self.frame == "ecliptic":
             return self
-        else:
-            raise ValueError
 
     @classmethod
     def from_df(cls,
