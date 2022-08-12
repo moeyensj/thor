@@ -1,71 +1,168 @@
-import numpy as np
+import jax.numpy as jnp
+from jax import (
+    config,
+    jit,
+    vmap
+)
+from typing import Tuple
 
-__all__ = ["angularToGnomonic",
-           "cartesianToGnomonic"]
+config.update("jax_enable_x64", True)
 
-def angularToGnomonic(coords_ang, coords_ang_center=np.array([0, 0])):
+__all__ = [
+    "_calc_gnomonic_rotation_matrix",
+    "_cartesian_to_gnomonic",
+    "cartesian_to_gnomonic"
+]
+
+Z_AXIS = jnp.array([0.0, 0.0, 1.0])
+
+
+@jit
+def _calc_gnomonic_rotation_matrix(
+        coords_cartesian: jnp.ndarray
+    ) -> jnp.ndarray:
     """
-    Project angular spherical coordinates onto a gnomonic tangent plane.
+    Calculate rotation matrix that aligns the position vector
+    of these 6D Coordinates to the x-axis, and the velocity vector in the x-y plane.
+
+    This is a two-fold rotation, first find the rotation matrix
+    that rotates the position vector to the x-y plane. Then rotate the
+    position vector from the x-y plane to the x-axis.
+
+    TODO: If the velocity vector is zero. The velocity is assumed to be a unit vector parallel to the
+    direction of the x-y plane.
 
     Parameters
     ----------
-    coords_ang : `~numpy.ndarray` (N, 2)
-        Longitude (between 0 and 2 pi) and latitude (between -pi/2 and pi/2)
-        in radians.
-    coords_ang_center : `~numpy.ndarray` (2), optional
-        Longitude (between 0 and 2 pi) and latitude (between -pi/2 and pi/2)
-        in radians about which to center projection.
-        [Default = np.array([0, 0])]
+    coords_cartesian : `~jax.numpy.ndarray` (6)
+        Cartesian coordinates to rotate so that they lie along the x-axis and its
+        velocity is in the x-y plane.
 
     Returns
     -------
-    coords_gnomonic : `~numpy.ndarray` (N, 2)
-        Gnomonic longitude and latitude in radians.
+    M : `~jax.numpy.ndarray` (6, 6)
+        Gnomonic rotation matrix.
     """
-    lon = coords_ang[:, 0]
-    lon = np.where(lon > np.pi, lon - 2*np.pi, lon)
-    lat = coords_ang[:, 1]
-    lon_0, lat_0 = coords_ang_center
+    r = coords_cartesian[0:3]
+    v = coords_cartesian[3:6]
 
-    c = np.sin(lat_0) * np.sin(lat) + np.cos(lat_0) * np.cos(lat) * np.cos(lon - lon_0)
-    u = np.cos(lat) * np.sin(lon - lon_0) / c
-    v = (np.cos(lat_0) * np.sin(lat) - np.sin(lat_0) * np.cos(lat) * np.cos(lon - lon_0)) / c
-    return np.array([u, v]).T
+    rv = jnp.cross(r, v)
+    n_hat = rv / jnp.linalg.norm(rv)
 
-def cartesianToGnomonic(coords_cart):
+    # Find the rotation axis nu
+    nu = jnp.cross(n_hat, Z_AXIS)
+
+    # Calculate the cosine of the rotation angle, equivalent to the cosine of the
+    # inclination
+    c = jnp.dot(n_hat, Z_AXIS)
+
+    # Compute the skew-symmetric cross-product of the rotation axis vector v
+    vp = jnp.array([
+        [0, -nu[2], nu[1]],
+        [nu[2], 0, -nu[0]],
+        [-nu[1], nu[0], 0]
+    ])
+    # Calculate R1
+    R1 = jnp.identity(3) + vp + jnp.linalg.matrix_power(vp, 2) * (1 / (1 + c))
+
+    r_xy = R1 @ r
+    r_xy = r_xy / jnp.linalg.norm(r_xy)
+
+    # Calculate R2
+    ca = r_xy[0]
+    sa = r_xy[1]
+    R2 = jnp.array([[ca, sa, 0.],
+                   [-sa, ca, 0.],
+                   [0., 0., 1.]])
+
+    M = jnp.zeros((6, 6), dtype=jnp.float64)
+    M = M.at[0:3, 0:3].set(R2 @ R1)
+    M = M.at[3:6, 3:6].set(R2 @ R1)
+    return M
+
+@jit
+def _cartesian_to_gnomonic(
+        coords_cartesian: jnp.ndarray,
+        center_cartesian: jnp.ndarray,
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
-    Project cartesian coordinates onto a gnomonic tangent plane centered about
-    the x-axis.
+    Project Cartesian coordinates onto a gnomonic tangent plane centered about
+    central Cartesian coordinate.
 
     Parameters
     ----------
-    coords_cart : `~numpy.ndarray` (N, 3) or (N, 6)
-        Cartesian x, y, z coordinates (can optionally include cartesian
-        velocities)
+    coords_cartesian : `~jax.numpy.ndarray` (6)
+        Cartesian coordinates to be projected onto a tangent plane centered at
+        the center Cartesian coordinate.
+    center_cartesian : `~jax.numpy.ndarray` (6)
+        Cartesian coordinate about which to center the tangent plane projection.
 
     Returns
     -------
-    coords_gnomonic : `~numpy.ndarray` (N, 2) or (N, 4)
-        Gnomonic longitude and latitude in radians.
+    coords_gnomonic : `~jax.numpy.ndarray` (4)
+        Gnomonic longitude, latitude and their velocities in radians and radians
+        per day.
+    M : `~jax.numpy.ndarray` (6, 6)
+        Gnomonic rotation matrix.
     """
-    x = coords_cart[:,0]
-    y = coords_cart[:,1]
-    z = coords_cart[:,2]
+    M = _calc_gnomonic_rotation_matrix(center_cartesian)
+    coords_cartesian_ = jnp.where(jnp.isnan(coords_cartesian), 0., coords_cartesian)
+    coords_rotated = M @ coords_cartesian_
 
+    x = coords_rotated[0]
+    y = coords_rotated[1]
+    z = coords_rotated[2]
+    vx = coords_rotated[3]
+    vy = coords_rotated[4]
+    vz = coords_rotated[5]
+
+    coords_gnomonic = jnp.zeros(4, dtype=jnp.float64)
     u = y / x
     v = z / x
+    vu = (x * vy - vx * y) / x**2
+    vv = (x * vz - vx * z) / x**2
 
-    if coords_cart.shape[1] == 6:
-        vx = coords_cart[:,3]
-        vy = coords_cart[:,4]
-        vz = coords_cart[:,5]
+    coords_gnomonic = coords_gnomonic.at[0].set(u)
+    coords_gnomonic = coords_gnomonic.at[1].set(v)
+    coords_gnomonic = coords_gnomonic.at[2].set(vu)
+    coords_gnomonic = coords_gnomonic.at[3].set(vv)
 
-        vu = (x * vy - vx * y) / x**2
-        vv = (x * vz - vx * z) / x**2
+    return coords_gnomonic, M
 
-        gnomonic_coords = np.array([u, v, vu, vv]).T
+# Vectorization Map: _cartesian_to_gnomonic
+_cartesian_to_gnomonic_vmap = vmap(
+    _cartesian_to_gnomonic,
+    in_axes=(0, None),
+    out_axes=(0, None)
+)
 
-    else:
-        gnomonic_coords = np.array([u, v]).T
+@jit
+def cartesian_to_gnomonic(
+        coords_cartesian: jnp.ndarray,
+        center_cartesian: jnp.ndarray,
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Project Cartesian coordinates onto a gnomonic tangent plane centered about
+    central Cartesian coordinate.
 
-    return gnomonic_coords
+    Parameters
+    ----------
+    coords_cartesian : `~jax.numpy.ndarray` (N, 6)
+        Cartesian coordinates to be projected onto a tangent plane centered at
+        the center Cartesian coordinate.
+    center_cartesian : `~jax.numpy.ndarray` (6)
+        Cartesian coordinate about which to center the tangent plane projection.
+
+    Returns
+    -------
+    coords_gnomonic : `~jax.numpy.ndarray` (N, 4)
+        Gnomonic longitude, latitude and their velocities in radians and radians
+        per day.
+    M : `~jax.numpy.ndarray` (6, 6)
+        Gnomonic rotation matrix.
+    """
+    coords_gnomonic, M_matrix = _cartesian_to_gnomonic_vmap(
+        coords_cartesian,
+        center_cartesian
+    )
+    return coords_gnomonic, M_matrix
