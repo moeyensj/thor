@@ -452,6 +452,8 @@ class Coordinates(Indexable):
         for i, (k, v) in enumerate(coord_cols.items()):
             if v in df.columns:
                 data[k] = df[v].values
+            else:
+                data[k] = None
 
         if origin_col in df.columns:
             data["origin"] = df[origin_col].values
