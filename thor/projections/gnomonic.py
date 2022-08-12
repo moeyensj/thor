@@ -100,7 +100,7 @@ def _cartesian_to_gnomonic(
     Returns
     -------
     coords_gnomonic : `~jax.numpy.ndarray` (4)
-        Gnomonic longitude, latitude and their velocities in radians and radians
+        Gnomonic longitude, latitude and their velocities in degrees and degrees
         per day.
     M : `~jax.numpy.ndarray` (6, 6)
         Gnomonic rotation matrix.
@@ -122,10 +122,10 @@ def _cartesian_to_gnomonic(
     vu = (x * vy - vx * y) / x**2
     vv = (x * vz - vx * z) / x**2
 
-    coords_gnomonic = coords_gnomonic.at[0].set(u)
-    coords_gnomonic = coords_gnomonic.at[1].set(v)
-    coords_gnomonic = coords_gnomonic.at[2].set(vu)
-    coords_gnomonic = coords_gnomonic.at[3].set(vv)
+    coords_gnomonic = coords_gnomonic.at[0].set(jnp.degrees(u))
+    coords_gnomonic = coords_gnomonic.at[1].set(jnp.degrees(v))
+    coords_gnomonic = coords_gnomonic.at[2].set(jnp.degrees(vu))
+    coords_gnomonic = coords_gnomonic.at[3].set(jnp.degrees(vv))
 
     return coords_gnomonic, M
 
@@ -156,7 +156,7 @@ def cartesian_to_gnomonic(
     Returns
     -------
     coords_gnomonic : `~jax.numpy.ndarray` (N, 4)
-        Gnomonic longitude, latitude and their velocities in radians and radians
+        Gnomonic longitude, latitude and their velocities in degrees and degrees
         per day.
     M : `~jax.numpy.ndarray` (6, 6)
         Gnomonic rotation matrix.
