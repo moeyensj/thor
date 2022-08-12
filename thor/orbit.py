@@ -1,8 +1,7 @@
 import logging
 import numpy as np
-from numba import jit
 
-from .projections import cartesianToGnomonic
+from .projections.gnomonic import cartesian_to_gnomonic
 from .coordinates import transform_coordinates
 from .coordinates import _spherical_to_cartesian
 
@@ -113,7 +112,7 @@ class TestOrbit:
         coords_cart_rotated = np.array(self.M @ x_a.T).T
 
         logger.debug("Performing gnomonic projection...")
-        gnomonic_coords = cartesianToGnomonic(coords_cart_rotated)
+        gnomonic_coords = cartesian_to_gnomonic(coords_cart_rotated)
 
         observations["obj_x'"] = x_a[:, 0]
         observations["obj_y'"] = x_a[:, 1]
@@ -157,7 +156,6 @@ class TestOrbit:
         """
         raise NotImplementedError
 
-#@jit("f8[:,:](f8[:,:])", nopython=True, cache=True)
 def calcNae(coords_ec_ang):
     """
     Convert angular ecliptic coordinates to
@@ -191,7 +189,6 @@ def calcNae(coords_ec_ang):
     n_ae = coords_cartesian[:, 0:3]
     return n_ae
 
-@jit("f8[:](f8, f8[:,:], f8[:,:])", nopython=True, cache=True)
 def calcDelta(r, x_e, n_ae):
     """
     Calculate topocentric distance to the asteroid.
@@ -221,7 +218,6 @@ def calcDelta(r, x_e, n_ae):
         delta[i] = - ndotxe + np.sqrt(ndotxe**2 + rsq - np.linalg.norm(x_e_i)**2)
     return delta
 
-@jit("f8[:,:](f8[:], f8[:,:])", nopython=True, cache=True)
 def calcXae(delta, n_ae):
     """
     Calculate the topocenter to asteroid position vector.
@@ -244,7 +240,6 @@ def calcXae(delta, n_ae):
         x_ae[i] = delta_i * n_ae_i
     return x_ae
 
-@jit("f8[:,:](f8[:,:],f8[:,:])", nopython=True, cache=True)
 def calcXa(x_ae, x_e):
     """
     Calculate the asteroid position vector.
@@ -263,7 +258,6 @@ def calcXa(x_ae, x_e):
     """
     return x_ae + x_e
 
-@jit("f8[:,:](f8[:,:])", nopython=True, cache=True)
 def calcNhat(state_vector):
     """
     Calculate the unit vector normal to the plane of the orbit.
@@ -291,7 +285,6 @@ def calcNhat(state_vector):
     n_hat = rv / rv_norm
     return n_hat
 
-@jit("f8[:,:](f8[:])", nopython=True, cache=True)
 def calcR1(n_hat):
     """
     Calculate the rotation matrix that would rotate the
@@ -321,7 +314,6 @@ def calcR1(n_hat):
     R1 = np.identity(3) + vp + np.linalg.matrix_power(vp, 2) * (1 / (1 + c))
     return R1
 
-@jit("f8[:,:](f8[:])", nopython=True, cache=True)
 def calcR2(x_a_xy):
     """
     Calculate the rotation matrix that would rotate a vector in
