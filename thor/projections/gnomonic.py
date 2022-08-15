@@ -3,6 +3,7 @@ import jax.numpy as jnp
 from jax import (
     config,
     jit,
+    lax,
     vmap
 )
 from astropy.time import Time
@@ -28,6 +29,8 @@ __all__ = [
     "GnomonicProjection"
 ]
 
+X_AXIS = jnp.array([1.0, 0.0, 0.0])
+Y_AXIS = jnp.array([0.0, 1.0, 1.0])
 Z_AXIS = jnp.array([0.0, 0.0, 1.0])
 GNOMONIC_COLS = OrderedDict()
 for col in ["theta_x", "theta_y", "vtheta_x", "vtheta_y"]:
@@ -50,8 +53,9 @@ def _calc_gnomonic_rotation_matrix(
     that rotates the position vector to the x-y plane. Then rotate the
     position vector from the x-y plane to the x-axis.
 
-    TODO: If the velocity vector is zero. The velocity is assumed to be a unit vector parallel to the
-    direction of the x-y plane.
+    If the velocity vector is found to be parallel to the position vector or the velocity vector has
+    zero magnitude, then the velocity vector is assumed to be a unit vector parallel to the x-y plane.
+    If this is assumed then the output gnomonic velocities will be set to zero.
 
     Parameters
     ----------
@@ -67,6 +71,16 @@ def _calc_gnomonic_rotation_matrix(
     r = coords_cartesian[0:3]
     v = coords_cartesian[3:6]
 
+    # If v is parallel to r, or v is within the float tolerance of 0 then
+    # assume that v is a unit parallel to the x-y plane.
+    r_dot_v = jnp.dot(r,v)
+    v_mag = jnp.linalg.norm(v)
+    v, vmag_set = lax.cond(
+        ((r_dot_v > (1 - FLOAT_TOLERANCE)) & (r_dot_v < (1 + FLOAT_TOLERANCE))) | (v_mag < FLOAT_TOLERANCE),
+        lambda v_i: (jnp.array([jnp.sqrt(2)/2, jnp.sqrt(2)/2, 0.0]), True),
+        lambda v_i: (v_i, False),
+        v
+    )
     rv = jnp.cross(r, v)
     n_hat = rv / jnp.linalg.norm(rv)
 
@@ -98,7 +112,14 @@ def _calc_gnomonic_rotation_matrix(
 
     M = jnp.zeros((6, 6), dtype=jnp.float64)
     M = M.at[0:3, 0:3].set(R2 @ R1)
-    M = M.at[3:6, 3:6].set(R2 @ R1)
+
+    # If we set the velocity then the output velocities should be set back to 0.
+    M = lax.cond(
+        vmag_set,
+        lambda M: M,
+        lambda M: M.at[3:6, 3:6].set(R2 @ R1),
+        M
+    )
     return M
 
 @jit
