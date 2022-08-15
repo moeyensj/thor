@@ -97,8 +97,14 @@ def _calc_gnomonic_rotation_matrix(
         [nu[2], 0, -nu[0]],
         [-nu[1], nu[0], 0]
     ])
-    # Calculate R1
-    R1 = jnp.identity(3) + vp + jnp.linalg.matrix_power(vp, 2) * (1 / (1 + c))
+    # Calculate R1. If the angle of the rotation axis is zero, then the position
+    # vector already lies in the xy-plane. In this case no R1 rotation needs to occur.
+    R1 = lax.cond(
+        jnp.linalg.norm(nu) < FLOAT_TOLERANCE,
+        lambda vp, c: jnp.identity(3),
+        lambda vp, c: jnp.identity(3) + vp + jnp.linalg.matrix_power(vp, 2) * (1 / (1 + c)),
+        vp, c
+    )
 
     r_xy = R1 @ r
     r_xy = r_xy / jnp.linalg.norm(r_xy)
