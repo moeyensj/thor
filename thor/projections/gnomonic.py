@@ -1,21 +1,42 @@
+import numpy as np
 import jax.numpy as jnp
 from jax import (
     config,
     jit,
     vmap
 )
-from typing import Tuple
+from astropy.time import Time
+from astropy import units as u
+from collections import OrderedDict
+from typing import (
+    Optional,
+    Tuple
+)
+
+from ..coordinates.coordinates import Coordinates
+from ..coordinates.cartesian import CartesianCoordinates
+from ..coordinates.keplerian import FLOAT_TOLERANCE
+from ..coordinates.covariances import transform_covariances_jacobian
+from .projection import Projection
 
 config.update("jax_enable_x64", True)
 
 __all__ = [
     "_calc_gnomonic_rotation_matrix",
     "_cartesian_to_gnomonic",
-    "cartesian_to_gnomonic"
+    "cartesian_to_gnomonic",
+    "GnomonicProjection"
 ]
 
 Z_AXIS = jnp.array([0.0, 0.0, 1.0])
-
+GNOMONIC_COLS = OrderedDict()
+for col in ["theta_x", "theta_y", "vtheta_x", "vtheta_y"]:
+    GNOMONIC_COLS[col] = col
+GNOMONIC_UNITS = OrderedDict()
+GNOMONIC_UNITS["theta_x"] = u.deg
+GNOMONIC_UNITS["theta_y"] = u.deg
+GNOMONIC_UNITS["vtheta_x"] = u.deg / u.d
+GNOMONIC_UNITS["vtheta_y"] = u.deg / u.d
 
 @jit
 def _calc_gnomonic_rotation_matrix(
@@ -166,3 +187,99 @@ def cartesian_to_gnomonic(
         center_cartesian
     )
     return coords_gnomonic, M_matrix
+
+class GnomonicProjection(Projection):
+
+    def __init__(self,
+            theta_x: Optional[np.ndarray] = None,
+            theta_y: Optional[np.ndarray] = None,
+            vtheta_x: Optional[np.ndarray] = None,
+            vtheta_y: Optional[np.ndarray] = None,
+            times: Optional[Time] = None,
+            covariances: Optional[np.ndarray] = None,
+            origin: str = "heliocentric",
+            frame: str = "ecliptic",
+            names: OrderedDict = GNOMONIC_COLS,
+            units: OrderedDict = GNOMONIC_UNITS,
+        ):
+
+        Coordinates.__init__(self,
+            theta_x=theta_x,
+            theta_y=theta_y,
+            vtheta_x=vtheta_x,
+            vtheta_y=vtheta_y,
+            covariances=covariances,
+            times=times,
+            origin=origin,
+            frame=frame,
+            names=names,
+            units=units
+        )
+
+        return
+
+    @property
+    def theta_x(self):
+        return self._values[:, 0]
+
+    @property
+    def theta_y(self):
+        return self._values[:, 1]
+
+    @property
+    def vtheta_x(self):
+        return self._values[:, 2]
+
+    @property
+    def vtheta_y(self):
+        return self._values[:, 3]
+
+    @classmethod
+    def from_cartesian(cls,
+            cartesian: CartesianCoordinates,
+            center_cartesian: Optional[CartesianCoordinates] = None
+        ):
+
+        if center_cartesian is None:
+            center_cartesian_ = CartesianCoordinates(
+                x=1.,
+                y=0.,
+                z=0.,
+                vx=0.,
+                vy=0.,
+                vz=0.,
+                frame=cartesian.frame,
+                origin="heliocenter",
+                units=cartesian.units,
+                names=cartesian.names,
+            )
+        else:
+            center_cartesian_ = center_cartesian
+
+        coords_gnomonic, M = cartesian_to_gnomonic(
+            cartesian.values.filled(),
+            center_cartesian=center_cartesian_.values.filled()[0],
+        )
+
+        if cartesian.covariances is not None:
+            covariances_gnomonic = transform_covariances_jacobian(
+                cartesian.values.filled(),
+                cartesian.covariances.filled(),
+                _cartesian_to_gnomonic,
+                in_axes=(0, None),
+                center_cartesian=center_cartesian_.values.filled()[0]
+            )
+        else:
+            covariances_gnomonic = None
+
+        coords = cls(
+            theta_x=coords_gnomonic[:, 0],
+            theta_y=coords_gnomonic[:, 1],
+            vtheta_x=coords_gnomonic[:, 2],
+            vtheta_y=coords_gnomonic[:, 3],
+            times=cartesian.times,
+            covariances=covariances_gnomonic,
+            origin=cartesian.origin,
+            frame=cartesian.frame,
+        )
+        return coords
