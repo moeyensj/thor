@@ -7,7 +7,9 @@ from astropy.table import Table
 from scipy.stats import multivariate_normal
 from typing import (
     Callable,
+    Hashable,
     List,
+    Optional,
     Union
 )
 
@@ -166,6 +168,8 @@ def transform_covariances_jacobian(
         coords: Union[np.ndarray, np.ma.masked_array],
         covariances: Union[np.ndarray, np.ma.masked_array],
         _func: Callable,
+        in_axes: Optional[Hashable] = (0,),
+        out_axes: Optional[int] = 0,
         **kwargs,
     ) -> np.ma.masked_array:
     """
@@ -182,6 +186,20 @@ def transform_covariances_jacobian(
         A function that takes a single coord (D) as input and return the transformed
         coordinate (D). See for example: `thor.coordinates._cartesian_to_spherical`
         or `thor.coordinates._cartesian_to_keplerian`.
+    in_axes : Optional[Hashable]
+        An integer or ``None`` indicates which array axis to map over for all arguments (with ``None``
+        indicating not to map any axis), and a tuple indicates which axis to map
+        for each corresponding positional argument. Axis integers must be in the
+        range ``[-ndim, ndim)`` for each array, where ``ndim`` is the number of
+        dimensions (axes) of the corresponding input array.
+
+        From: https://jax.readthedocs.io/en/latest/_autosummary/jax.vmap.html#jax.vmap
+    out_axes : Optional[int]
+        An integer, None, or (nested) standard Python container (tuple/list/dict) thereof
+        indicating where the mapped axis should appear in the output. All outputs with a
+        mapped axis must have a non-None out_axes specification.
+
+        From: https://jax.readthedocs.io/en/latest/_autosummary/jax.vmap.html#jax.vmap
 
     Returns
     -------
@@ -211,13 +229,16 @@ def transform_covariances_jacobian(
     jacobian = calc_jacobian(
         coords_,
         _func,
+        in_axes=in_axes,
+        out_axes=out_axes,
         **kwargs
     )
-    covariances = jacobian @ covariances_ @ np.transpose(jacobian, axes=(0, 2, 1))
+
+    covariances_out = jacobian @ covariances_ @ np.transpose(jacobian, axes=(0, 2, 1))
     covariances_out = np.ma.masked_array(
-        covariances,
-        fill_value = COVARIANCE_FILL_VALUE,
-        mask = np.isnan(covariances)
+        covariances_out,
+        fill_value=COVARIANCE_FILL_VALUE,
+        mask=np.isnan(covariances_out)
     )
     return covariances_out
 
