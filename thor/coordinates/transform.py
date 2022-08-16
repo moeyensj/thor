@@ -3,7 +3,6 @@ import numpy as np
 from copy import deepcopy
 from typing import Optional
 
-from ..constants import Constants as c
 from .coordinates import (
     COORD_FILL_VALUE,
     Coordinates
@@ -26,9 +25,6 @@ from .cometary import (
     COMETARY_UNITS
 )
 
-TRANSFORM_EQ2EC = c.TRANSFORM_EQ2EC
-TRANSFORM_EC2EQ = c.TRANSFORM_EC2EQ
-
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -39,6 +35,7 @@ def transform_coordinates(
         coords: Coordinates,
         representation_out: str,
         frame_out: Optional[str] = None,
+        origin_out: Optional[str] = None,
         unit_sphere: bool = True,
     ) -> Coordinates:
     """
@@ -52,6 +49,8 @@ def transform_coordinates(
         Desired coordinate type or representation of the output coordinates.
     frame_out : {'equatorial', 'ecliptic'}
         Desired reference frame of the output coordinates.
+    origin_out : {'heliocenter', 'barycenter'}
+        Desired origin of the output coordinates.
     unit_sphere : bool
         Assume the coordinates lie on a unit sphere. In many cases, spherical coordinates may not have a value
         for radial distance or radial velocity but transforms to other representations or frames are still meaningful.
@@ -102,6 +101,16 @@ def transform_coordinates(
     else:
         frame_out = coords.frame
 
+    origin_err = [
+        "{} should be one of:\n",
+        "'heliocenter' or 'barycenter'"
+    ]
+    if origin_out is not None:
+        if origin_out != "barycenter" and origin_out != "heliocenter":
+            raise ValueError("".join(origin_err).format("origin_out"))
+    else:
+        origin_out = coords.origin
+
     # Check that representation_in and representation_out are one of cartesian
     # or spherical, raise errors otherwise
     representation_err = [
@@ -111,9 +120,9 @@ def transform_coordinates(
     if representation_out not in ("cartesian", "spherical", "keplerian", "cometary"):
         raise ValueError("".join(representation_err).format("representation_out"))
 
-    # If coords are already in the desired frame and representation
+    # If coords are already in the desired frame, have the desired origin and representation
     # then return them unaltered
-    if coords.frame == frame_out:
+    if coords.frame == frame_out and origin_out is None and np.all(coords.origin == origin_out):
         if isinstance(coords, CartesianCoordinates) and representation_out == "cartesian":
             return coords
         elif isinstance(coords, SphericalCoordinates) and representation_out == "spherical":
@@ -173,18 +182,13 @@ def transform_coordinates(
 
         cartesian = coords_.to_cartesian()
 
-    # TODO : Add call to cartesian translate to shit the origin of the coordinates
+    # Translate coordinates to new origin (if different from current)
+    if origin_out is not None and np.all(cartesian.origin != origin_out):
+        cartesian = cartesian.to_origin(origin_out)
 
-    if coords_.frame != frame_out:
-        if frame_out == "ecliptic":
-            cartesian = cartesian.to_ecliptic()
-        elif frame_out == "equatorial":
-            cartesian = cartesian.to_equatorial()
-        else:
-            err = (
-                "frame should be one of {'ecliptic', 'equatorial'}"
-            )
-            raise ValueError(err)
+    # Rotate coordinates to new frame (if different from current)
+    if cartesian.frame != frame_out:
+        cartesian = cartesian.to_frame(frame_out)
 
     if representation_out == "spherical":
         coords_out = SphericalCoordinates.from_cartesian(cartesian)

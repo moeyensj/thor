@@ -224,6 +224,13 @@ def get_perturber_state(
         Heliocentric ecliptic J2000 state vector with postion in AU
         and velocity in AU per day.
     """
+    if body_name == "heliocenter":
+        body_name_ = "sun"
+    elif body_name == "barycenter":
+        body_name_ = "solar system barycenter"
+    else:
+        body_name_ = body_name
+
     if origin == "barycenter":
         center = 0 # Solar System Barycenter
     elif origin == "heliocenter":
@@ -266,7 +273,7 @@ def get_perturber_state(
     states = np.zeros((N, D), dtype=np.float64)
     for i, epoch in enumerate(epochs_et):
         state, lt = sp.spkez(
-            NAIF_MAPPING[body_name.lower()],
+            NAIF_MAPPING[body_name_.lower()],
             epoch,
             frame_spice,
             'NONE',

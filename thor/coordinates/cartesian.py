@@ -10,6 +10,7 @@ from copy import deepcopy
 from collections import OrderedDict
 
 from ..constants import Constants as c
+from ..utils.spice import get_perturber_state
 from .coordinates import Coordinates
 
 __all__ = [
@@ -237,17 +238,33 @@ class CartesianCoordinates(Coordinates):
         data["names"] = deepcopy(self.names)
         return CartesianCoordinates(**data)
 
-    def to_equatorial(self):
-        if self.frame == "ecliptic":
-            return self.rotate(TRANSFORM_EC2EQ, "equatorial")
-        elif self.frame == "equatorial":
-            return self
+    def to_frame(self, frame: str):
+        """
+        Rotate Cartesian coordinates and their covariances to the given frame.
 
-    def to_ecliptic(self):
-        if self.frame == "equatorial":
-            return self.rotate(TRANSFORM_EQ2EC, "ecliptic")
-        elif self.frame == "ecliptic":
+        Parameters
+        ----------
+        frame : {'ecliptic', 'equatorial'}
+            Desired reference frame of the output coordinates.
+
+        Returns
+        -------
+        CartesianCoordinates : `~thor.coordinates.cartesian.CartesianCoordinates`
+            Rotated Cartesian coordinates and their covariances.
+        """
+        if frame == "ecliptic" and self.frame != "ecliptic":
+            return self.rotate(TRANSFORM_EC2EQ, "ecliptic")
+        elif frame == "equatorial" and self.frame != "equatorial":
+            return self.rotate(TRANSFORM_EQ2EC, "equatorial")
+        elif frame == self.frame:
             return self
+        else:
+            err = (
+                "frame should be one of {'ecliptic', 'equatorial'}"
+            )
+            raise ValueError(err)
+
+        return
 
     def translate(self,
             vectors: Union[np.ndarray, np.ma.masked_array],
@@ -306,17 +323,18 @@ class CartesianCoordinates(Coordinates):
         coords_translated = deepcopy(self.values)
 
         # Only apply translation to coordinates that do not already have the desired origin
-        origin_mask = np.where(self.origin != origin_out)[0]
-        if len(coords_translated[origin_mask]) != len(coords_translated):
+        origin_different_mask = np.where(self.origin != origin_out)[0]
+        origin_same_mask = np.where(self.origin == origin_out)[0]
+        if len(coords_translated[origin_same_mask]) > 0:
             info = (
-                f"Translation will not be applied to the {len(coords_translated[~origin_mask])} coordinate(s) that already has the desired origin."
+                f"Translation will not be applied to the {len(coords_translated[origin_same_mask])} coordinates that already have the desired origin."
             )
             logger.info(info)
 
         if len(vectors.shape) == 2:
-            coords_translated[origin_mask] = coords_translated[origin_mask] + vectors[origin_mask]
+            coords_translated[origin_different_mask] = coords_translated[origin_different_mask] + vectors[origin_different_mask]
         else:
-            coords_translated[origin_mask] = coords_translated[origin_mask] + vectors
+            coords_translated[origin_different_mask] = coords_translated[origin_different_mask] + vectors
 
         covariances_translated = deepcopy(self.covariances)
 
@@ -334,6 +352,36 @@ class CartesianCoordinates(Coordinates):
         data["units"] = deepcopy(self.units)
         data["names"] = deepcopy(self.names)
         return CartesianCoordinates(**data)
+
+    def to_origin(self, origin: str):
+        """
+        Translate coordinates to a different origin.
+
+        Parameters
+        ----------
+        origin : {'heliocenter', 'barycenter'}
+            Name of the desired origin.
+
+        Returns
+        -------
+        CartesianCoordinates : `~thor.coordinates.cartesian.CartesianCoordinates`
+            Translated Cartesian coordinates and their covariances.
+        """
+        unique_origins = np.unique(self.origin)
+        vectors = np.zeros((len(self), 6), dtype=np.float64)
+
+        for origin_in in unique_origins:
+
+            mask = np.where(self.origin == origin_in)[0]
+
+            vectors[mask] = get_perturber_state(
+                origin_in,
+                self.times[mask],
+                frame=self.frame,
+                origin=origin
+            )
+
+        return self.translate(vectors, origin)
 
     @classmethod
     def from_df(cls,
