@@ -95,7 +95,13 @@ class Backend:
             times: Time,
             chunk_size: int = 100,
             num_jobs: int = 1,
-            parallel_backend: str = "mp"
+            parallel_backend: str = "mp",
+            covariance: bool = False,
+            covariance_method: str = "sampling",
+            covariance_method_kwargs: dict = {
+                "num_samples" : 100,
+                "percent" : 0.1
+            }
         ) -> Orbits:
         """
         Propagate each orbit in orbits to each time in times.
@@ -113,15 +119,18 @@ class Backend:
         parallel_backend : str, optional
             Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
             module ('mp').
+        covariance : bool, optional
+            Propagate covariances along with orbits. Covariances are sampled and each sample is propagated
+            to each time in times. The covariance of the samples is then calculated at each time.
+        covariance_method : str, optional
+            Method to use for calculating covariances.
+        covariance_method_kwargs : dict, optional
+            Keyword arguments to pass to the covariance method.
 
         Returns
         -------
-        propagated : `~pandas.DataFrame`
-            Propagated orbits with at least the following columns:
-                orbit_id : Input orbit ID.
-                mjd_tdb : Time at which state is defined in MJD TDB.
-                x, y, z, vx, vy, vz : Orbit as cartesian state vector with units
-                of au and au per day.
+        propagated : `~thor.orbits.orbits.Orbits`
+            Propagated orbits.
         """
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
         if parallel:
@@ -174,6 +183,49 @@ class Backend:
             ascending=[True, True],
             inplace=True
         )
+
+        if covariance:
+
+            if covariance_method == "sampling":
+                num_samples = covariance_method_kwargs["num_samples"]
+                percent = covariance_method_kwargs["percent"]
+
+                variants = orbits.generate_variants(
+                    num_samples=num_samples,
+                    percent=percent
+                )
+
+                propagated_variants = self.propagate_orbits(
+                    variants,
+                    times,
+                    chunk_size=chunk_size,
+                    num_jobs=num_jobs,
+                    parallel_backend=parallel_backend,
+                    covariance=False,
+                )
+
+                covariances = np.zeros((len(orbits) * len(times), 6, 6))
+                cartesian_coordinates = propagated_variants.cartesian.values.filled()
+                k_offset = 0
+                for i, orbit in enumerate(propagated_variants):
+                    for j in range(len(times)):
+                        k_min = (j * num_samples) + k_offset
+                        k_max = (j + 1) * num_samples + k_offset
+                        covariances_i_j = np.cov(cartesian_coordinates[k_min:k_max], rowvar=False)
+                        covariances[j + (i * len(times))] = covariances_i_j
+
+                    k_offset = k_max
+
+                propagated.cartesian._covariances = np.ma.masked_array(
+                    covariances,
+                    mask=np.zeros(covariances.shape),
+                    fill_value=COVARIANCE_FILL_VALUE,
+                )
+
+            else:
+                err = "Covariance method should be one of {'sampling'}."
+                raise ValueError(err)
+
         return propagated
 
     def _generate_ephemeris(
