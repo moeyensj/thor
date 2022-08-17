@@ -7,7 +7,7 @@ from astropy.time import Time
 from ..coordinates.cartesian import CartesianCoordinates
 from ..coordinates.spherical import SphericalCoordinates
 from ..orbits.orbits import Orbits
-from ..orbits.classes import Ephemeris
+from ..orbits.ephemeris import Ephemeris
 from ..observers.observers import Observers
 from ..utils.indexable import concatenate
 from .backend import Backend

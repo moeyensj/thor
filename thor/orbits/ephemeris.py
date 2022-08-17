@@ -1,11 +1,14 @@
 import warnings
+import numpy as np
+import pandas as pd
+from typing import Optional
 
-from ..backend import Backend
-from ..backend import PYOORB
-from ..backend import FINDORB
+from ..utils.indexable import Indexable
+from ..coordinates.members import CoordinateMembers
 
 __all__ = [
-    "generate_ephemeris"
+    "generate_ephemeris",
+    "Ephemeris"
 ]
 
 def generate_ephemeris(
@@ -50,10 +53,13 @@ def generate_ephemeris(
     ephemeris : `~pandas.DataFrame` (N x M, 21) or (N x M, 18)
         A DataFrame containing the generated ephemeris.
     """
+    from ..backend import Backend
     if backend == "PYOORB":
+        from ..backend import PYOORB
         backend = PYOORB(**backend_kwargs)
 
     elif backend == "FINDORB":
+        from ..backend import FINDORB
         backend = FINDORB(**backend_kwargs)
 
     elif isinstance(backend, Backend):
@@ -76,4 +82,64 @@ def generate_ephemeris(
         parallel_backend=parallel_backend
     )
     return ephemeris
+
+
+class Ephemeris(CoordinateMembers):
+
+
+    def __init__(self, coordinates, orbit_ids, object_ids=None):
+
+        CoordinateMembers.__init__(
+            self,
+            coordinates=coordinates,
+            cartesian=True,
+            spherical=True,
+            keplerian=False,
+            cometary=False
+        )
+
+        if object_ids is not None:
+            self._object_ids = object_ids
+        else:
+            self._object_ids = np.array(["None" for i in range(len(coordinates))])
+
+        self._orbit_ids = orbit_ids
+        Indexable.__init__(self, index="orbit_ids")
+        return
+
+    @property
+    def orbit_ids(self):
+        return self._orbit_ids
+
+    @property
+    def object_ids(self):
+        return self._object_ids
+
+    def to_df(self,
+            time_scale: str = "utc",
+            coordinate_type: Optional[str] = None,
+        ) -> pd.DataFrame:
+        """
+        Represent ephemeris as a `~pandas.DataFrame`.
+
+        Parameters
+        ----------
+        time_scale : {"tdb", "tt", "utc"}
+            Desired timescale of the output MJDs.
+        coordinate_type : {"cartesian", "spherical"}
+            Desired output representation of the orbits.
+
+        Returns
+        -------
+        df : `~pandas.DataFrame`
+            Pandas DataFrame containing orbits.
+        """
+        df = CoordinateMembers.to_df(self,
+            time_scale=time_scale,
+            coordinate_type=coordinate_type
+        )
+        df.insert(0, "orbit_id", self.orbit_ids)
+        df.insert(1, "object_id", self.object_ids)
+
+        return df
 

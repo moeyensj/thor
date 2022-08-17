@@ -8,12 +8,14 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import copy
 import logging
+import numpy as np
 import pandas as pd
 import multiprocessing as mp
 from astropy.time import Time
 
+from ..coordinates.covariances import COVARIANCE_FILL_VALUE
 from ..orbits.orbits import Orbits
-from ..orbits.classes import Ephemeris
+from ..orbits.ephemeris import Ephemeris
 from ..observers.observers import Observers
 from ..utils.indexable import concatenate
 from ..utils import Timeout
