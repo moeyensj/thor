@@ -181,7 +181,7 @@ class Orbits(CoordinateMembers):
 
     def generate_variants(
             self,
-            num_variants: int = 1000,
+            num_samples: int = 1000,
             percent: float = 0.1
         ) -> "Orbits":
         """
@@ -191,7 +191,7 @@ class Orbits(CoordinateMembers):
 
         Parameters
         ----------
-        num_variants : int
+        num_samples : int
             The number of variants to generate.
         percent : float
             The percentage of the state to use to populate the diagonals of the covariance matrices.
@@ -242,13 +242,7 @@ class Orbits(CoordinateMembers):
             kwargs["names"] = self.cometary.names
             kwargs["units"] = self.cometary.units
 
-
-        if np.all(covariances.mask):
-            covariances = sigmas_to_covariance(
-                percent * means
-            )
-
-        variants = np.zeros((num_variants * len(means), 6), dtype=np.float64)
+        variants = np.zeros((num_samples * len(means), 6), dtype=np.float64)
         orbit_ids = []
         object_ids = []
         times_mjd_tdb = []
@@ -257,15 +251,23 @@ class Orbits(CoordinateMembers):
                 zip(self.orbit_ids, self.object_ids, means, covariances, times, origin)
             ):
 
-            variants[i * num_variants:(i + 1) * num_variants] = sample_covariance(
+            if np.all(covariance.mask):
+                logger.info(f"{orbit_id} has a fully masked covariance matrix. Using {percent * 100}% of the state to populate the diagonals.")
+                covariance_i = sigmas_to_covariance(
+                    percent * means[i:i+1]
+                )[0]
+            else:
+                covariance_i = covariance
+
+            variants[i * num_samples:(i + 1) * num_samples] = sample_covariance(
                 mean,
-                covariance,
-                num_samples=num_variants
+                covariance_i,
+                num_samples=num_samples
             )
-            orbit_ids.append(np.hstack([orbit_id for i in range(num_variants)]))
-            object_ids.append(np.hstack([object_id for i in range(num_variants)]))
-            times_mjd_tdb.append(np.hstack([time for i in range(num_variants)]))
-            origins.append(np.hstack([origin_i for i in range(num_variants)]))
+            orbit_ids.append(np.hstack([orbit_id for i in range(num_samples)]))
+            object_ids.append(np.hstack([object_id for i in range(num_samples)]))
+            times_mjd_tdb.append(np.hstack([time for i in range(num_samples)]))
+            origins.append(np.hstack([origin_i for i in range(num_samples)]))
 
         orbit_ids = np.hstack(orbit_ids)
         object_ids = np.hstack(object_ids)
