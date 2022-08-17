@@ -22,7 +22,6 @@ from ..utils import yield_chunks
 from ..utils import calcChunkSize
 from ..utils import sortLinkages
 from ..backend import PYOORB
-from ..backend import MJOLNIR
 from ..orbits import Orbits
 from ..orbits.residuals import calcResiduals
 
@@ -112,10 +111,7 @@ def od(
         backend="PYOORB",
         backend_kwargs={},
     ):
-    if backend == "MJOLNIR":
-        backend = MJOLNIR(**backend_kwargs)
-
-    elif backend == "PYOORB":
+    if backend == "PYOORB":
         backend = PYOORB(**backend_kwargs)
 
     else:

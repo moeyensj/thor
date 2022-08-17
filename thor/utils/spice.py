@@ -25,7 +25,6 @@ __all__ = [
     "use_DE440",
     "use_default_DEXXX",
     "get_perturber_state",
-    "shift_states_origin"
 ]
 
 logger = logging.getLogger(__name__)
@@ -291,44 +290,3 @@ def get_perturber_state(
     states = states / KM_P_AU
     states[:, 3:] = states[:, 3:] * S_P_DAY
     return states
-
-def shift_states_origin(states, t0, origin_in="heliocenter", origin_out="barycenter"):
-    """
-    Shift the origin of the given Cartesian states. States should be expressed in
-    ecliptic J2000 cartesian coordinates.
-
-    Parameters
-    ----------
-    states : `~numpy.ndarray` (N, 6)
-        states to shift to a different coordinate frame.
-    t0 : `~astropy.time.core.Time` (N)
-        Epoch at which states are defined.
-    origin_in : {'heliocenter', 'barycenter'}
-        Origin of the input states.
-    origin_out : {'heliocenter', 'barycenter'}
-        Desired origin of the output states.
-
-    Returns
-    -------
-    states_shifted : `~numpy.ndarray` (N, 6)
-        states shifted to the desired output origin.
-    """
-    _check_times(t0, "t0")
-
-    states_shifted = states.copy()
-    bary_to_helio = get_perturber_state("sun", t0, origin="barycenter")
-    helio_to_bary = get_perturber_state("solar system barycenter", t0, origin="heliocenter")
-
-    if origin_in == origin_out:
-        return states_shifted
-    elif origin_in == "heliocenter" and origin_out == "barycenter":
-        states_shifted += bary_to_helio
-    elif origin_in == "barycenter" and origin_out == "heliocenter":
-        states_shifted += helio_to_bary
-    else:
-        err = (
-            "states_in and states_out should be one of {'heliocenter', 'barycenter'}"
-        )
-        raise ValueError(err)
-
-    return states_shifted

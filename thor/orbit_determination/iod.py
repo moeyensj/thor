@@ -22,7 +22,6 @@ from ..utils import yield_chunks
 from ..utils import calcChunkSize
 from ..utils import sortLinkages
 from ..utils import identifySubsetLinkages
-from ..backend import MJOLNIR
 from ..backend import PYOORB
 from .gauss import gauss_iod
 from ..orbits.residuals import calcResiduals
@@ -293,13 +292,7 @@ def iod(
             format="mjd"
         )
 
-    if backend == "MJOLNIR":
-        backend_kwargs["light_time"] = light_time
-
-        backend = MJOLNIR(**backend_kwargs)
-        #observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
-
-    elif backend == "PYOORB":
+    if backend == "PYOORB":
         if light_time == False:
             err = (
                 "PYOORB does not support turning light time correction off."
@@ -309,7 +302,7 @@ def iod(
         backend = PYOORB(**backend_kwargs)
     else:
         err = (
-            "backend should be one of 'MJOLNIR' or 'PYOORB'"
+            "backend should be one of 'PYOORB'"
         )
         raise ValueError(err)
 

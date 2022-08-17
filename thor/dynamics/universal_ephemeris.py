@@ -5,7 +5,6 @@ from astropy.time import Time
 from ..constants import Constants as c
 from ..coordinates import transform_coordinates
 from ..utils import _check_times
-from ..utils import shift_states_origin
 from .universal_propagate import propagate_2body
 from .aberrations import add_light_time
 from .aberrations import add_stellar_aberration

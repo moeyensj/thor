@@ -3,7 +3,6 @@ import warnings
 from ..backend import Backend
 from ..backend import PYOORB
 from ..backend import FINDORB
-from ..backend import MJOLNIR
 
 __all__ = [
     "generate_ephemeris"
@@ -12,7 +11,7 @@ __all__ = [
 def generate_ephemeris(
         orbits,
         observers,
-        backend="MJOLNIR",
+        backend="PYOORB",
         backend_kwargs={},
         chunk_size=1,
         num_jobs=1,
@@ -33,7 +32,7 @@ def generate_ephemeris(
         The expected data frame columns are obs_x, obs_y, obs_y and optionally the velocity columns obs_vx, obs_vy, obs_vz.
         If no velocities are not correctly given, then sky-plane velocities will all be zero.
         (See: `~thor.observers.getObserverState`)
-    backend : {'MJOLNIR', 'PYOORB'}, optional
+    backend : {'PYOORB', 'FINDORB'}, optional
         Which backend to use.
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
@@ -51,10 +50,7 @@ def generate_ephemeris(
     ephemeris : `~pandas.DataFrame` (N x M, 21) or (N x M, 18)
         A DataFrame containing the generated ephemeris.
     """
-    if backend == "MJOLNIR":
-        backend = MJOLNIR(**backend_kwargs)
-
-    elif backend == "PYOORB":
+    if backend == "PYOORB":
         backend = PYOORB(**backend_kwargs)
 
     elif backend == "FINDORB":
@@ -68,7 +64,7 @@ def generate_ephemeris(
 
     else:
         err = (
-            "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB' or an instantiated Backend class"
+            "backend should be one of 'PYOORB', 'FINDORB' or an instantiated Backend class"
         )
         raise ValueError(err)
 
