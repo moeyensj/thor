@@ -3,6 +3,11 @@ import logging
 import numpy as np
 import pandas as pd
 import spiceypy as sp
+from astropy.time import Time
+from typing import (
+    Callable,
+    List
+)
 
 from ..constants import KM_P_AU
 from ..constants import S_P_DAY
@@ -64,7 +69,7 @@ KERNELS_DE430 = BASEKERNELS + ["de430.bsp"]
 KERNELS_DE440 = BASEKERNELS + ["de440.bsp"]
 
 def get_SPICE_kernels(
-        kernels=KERNELS_DE440
+        kernels: List[str] = KERNELS_DE440
     ):
     """
     Download SPICE kernels. If any already exist, check if they have been updated. If so, replace the
@@ -102,8 +107,8 @@ def get_SPICE_kernels(
     return
 
 def setup_SPICE(
-        kernels=KERNELS_DE440,
-        force=False
+        kernels: List[str] = KERNELS_DE440,
+        force: bool = False
     ):
     """
     Loads the leapsecond, the Earth planetary constants and the planetary ephemerides kernels into SPICE.
@@ -163,7 +168,7 @@ def setup_SPICE(
         logger.debug("SPICE enabled.")
     return
 
-def use_DE430(func):
+def use_DE430(func: Callable):
     """
     Decorator: Configures SPICE (via spiceypy) to
     use the DE430 planetary ephemerides.
@@ -176,7 +181,7 @@ def use_DE430(func):
 
     return wrap
 
-def use_DE440(func):
+def use_DE440(func: Callable):
     """
     Decorator: Configures SPICE (via spiceypy) to
     use the DE440 planetary ephemerides.
@@ -193,10 +198,10 @@ def use_DE440(func):
 use_default_DEXXX = use_DE430
 
 def get_perturber_state(
-        body_name,
-        times,
-        frame="ecliptic",
-        origin="heliocenter"
+        body_name: str,
+        times: Time,
+        frame: str = "ecliptic",
+        origin: str = "heliocenter"
     ):
     """
     Query the JPL ephemeris files loaded in SPICE for the state vectors of desired perturbers.
