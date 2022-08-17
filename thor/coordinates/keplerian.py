@@ -728,7 +728,7 @@ class KeplerianCoordinates(Coordinates):
             sigma_raan: Optional[np.ndarray] = None,
             sigma_ap: Optional[np.ndarray] = None,
             sigma_M: Optional[np.ndarray] = None,
-            origin: str = "heliocentric",
+            origin: str = "heliocenter",
             frame: str = "ecliptic",
             names: OrderedDict = KEPLERIAN_COLS,
             units: OrderedDict = KEPLERIAN_UNITS,

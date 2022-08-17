@@ -249,7 +249,7 @@ class SphericalCoordinates(Coordinates):
             sigma_vrho: Optional[np.ndarray] = None,
             sigma_vlon: Optional[np.ndarray] = None,
             sigma_vlat: Optional[np.ndarray] = None,
-            origin: str = "heliocentric",
+            origin: str = "heliocenter",
             frame: str = "ecliptic",
             names: OrderedDict = SPHERICAL_COLS,
             units: OrderedDict = SPHERICAL_UNITS

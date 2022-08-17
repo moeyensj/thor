@@ -316,7 +316,7 @@ class CometaryCoordinates(Coordinates):
             sigma_raan: Optional[np.ndarray] = None,
             sigma_ap: Optional[np.ndarray] = None,
             sigma_tp: Optional[np.ndarray] = None,
-            origin: str = "heliocentric",
+            origin: str = "heliocenter",
             frame: str = "ecliptic",
             names: OrderedDict = COMETARY_COLS,
             units: OrderedDict = COMETARY_UNITS,

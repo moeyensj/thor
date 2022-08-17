@@ -55,7 +55,7 @@ class CartesianCoordinates(Coordinates):
             sigma_vx: Optional[np.ndarray] = None,
             sigma_vy: Optional[np.ndarray] = None,
             sigma_vz: Optional[np.ndarray] = None,
-            origin: str = "heliocentric",
+            origin: str = "heliocenter",
             frame: str = "ecliptic",
             names: OrderedDict = CARTESIAN_COLS,
             units: OrderedDict = CARTESIAN_UNITS,
