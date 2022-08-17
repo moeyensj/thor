@@ -290,7 +290,7 @@ def _cartesian_to_keplerian6(
         ap : argument of periapsis in degrees.
         M : mean anomaly in degrees.
     """
-    coords_keplerian = _cartesian_to_keplerian_vmap(
+    coords_keplerian = _cartesian_to_keplerian(
         coords_cartesian,
         t0,
         mu
@@ -872,6 +872,8 @@ class KeplerianCoordinates(Coordinates):
                 cartesian.values,
                 cartesian.covariances,
                 _cartesian_to_keplerian6,
+                in_axes=(0, 0, None),
+                out_axes=0,
                 t0=cartesian.times.tdb.mjd,
                 mu=mu,
             )
