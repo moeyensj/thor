@@ -123,8 +123,8 @@ class PYOORB(Backend):
             orbit_type = [1 for i in range(num_orbits)]
         elif orbit_type == "cometary":
             orbit_type = [2 for i in range(num_orbits)]
-            H = M1
-            G = K1
+            #H = M1
+            #G = K1
             orbits_[:, 1:5] = np.radians(orbits_[:, 1:5])
         elif orbit_type == "keplerian":
             orbit_type = [3 for i in range(num_orbits)]
@@ -297,8 +297,8 @@ class PYOORB(Backend):
         else:
             object_ids = None
 
-        if orbits.ids is not None:
-            orbit_ids = orbits.ids[orbit_ids_]
+        if orbits.orbit_ids is not None:
+            orbit_ids = orbits.orbit_ids[orbit_ids_]
         else:
             orbit_ids = None
 
@@ -311,10 +311,10 @@ class PYOORB(Backend):
                 vy=vy,
                 vz=vz,
                 times=times_,
-                origin="heliocentric",
+                origin="heliocenter",
                 frame="ecliptic"
             ),
-            ids=orbit_ids,
+            orbit_ids=orbit_ids,
             object_ids=object_ids
         )
         return propagated_orbits
@@ -414,8 +414,8 @@ class PYOORB(Backend):
             else:
                 object_ids = None
 
-            if orbits.ids is not None:
-                orbit_ids = orbits.ids[orbit_ids]
+            if orbits.orbit_ids is not None:
+                orbit_ids = orbits.orbit_ids[orbit_ids]
 
             ephemeris = Ephemeris(
                 SphericalCoordinates(
