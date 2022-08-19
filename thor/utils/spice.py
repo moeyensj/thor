@@ -225,8 +225,7 @@ def get_perturber_state(
     Returns
     -------
     states : `~numpy.ndarray` (N, 6)
-        Heliocentric ecliptic J2000 state vector with postion in AU
-        and velocity in AU per day.
+        State vector with postion in au and velocity in au per day.
     """
     if body_name == "heliocenter":
         body_name_ = "sun"
@@ -262,18 +261,15 @@ def get_perturber_state(
     # Convert MJD epochs in TDB to ET in TDB
     epochs_tdb_jd = times.tdb.jd
 
-    # Create a pandas index on the JD TDBs
-    index = pd.Index(epochs_tdb_jd)
-
-    # Get the unique times in the index
-    unique_times = index.unique().values
+    # Get the unique times
+    unique_times = pd.unique(epochs_tdb_jd)
 
     # For each unique time convert them to ephemeris times used by SPICE
     epochs_et = np.array([sp.str2et(f'JD {i:.16f} TDB') for i in unique_times])
 
     # Get position of the body in heliocentric ecliptic J2000 coordinates for each unique time
-    # and appropriate populate the output state vectors
-    N, D = len(times), 6
+    # and appropriately populate the output state vectors
+    N, D = len(unique_times), 6
     states = np.zeros((N, D), dtype=np.float64)
     for i, epoch in enumerate(epochs_et):
         state, lt = sp.spkez(
@@ -283,10 +279,31 @@ def get_perturber_state(
             'NONE',
             center
         )
-        mask = index.isin(unique_times[i:i+1])
-        states[mask] = state
+        states[i] = state
 
     # Convert to AU and AU per day
     states = states / KM_P_AU
     states[:, 3:] = states[:, 3:] * S_P_DAY
-    return states
+
+    # Create a dataframe with the unique states
+    df_unique_states = pd.DataFrame({
+        "jd_tdb": unique_times,
+        "x": states[:, 0],
+        "y": states[:, 1],
+        "z": states[:, 2],
+        "vx": states[:, 3],
+        "vy": states[:, 4],
+        "vz": states[:, 5],
+    })
+
+    # Create a dataframe with the full list of times
+    df_states = pd.DataFrame({
+        "jd_tdb" : epochs_tdb_jd
+    })
+
+    # Perform a merge to duplicate the states as necessary for any
+    # duplicated times (this is orders of magnitude faster than a numpy
+    # equivalent solution)
+    df_states = df_states.merge(df_unique_states, on="jd_tdb", how="left")
+
+    return df_states[["x", "y", "z", "vx", "vy", "vz"]].values
