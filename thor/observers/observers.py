@@ -133,60 +133,23 @@ class Observers(CoordinateMembers):
 
         if self._cartesian is None:
 
-            # Get observatory states for each unique observatory code
-            # and their corresponding unique observation times
-            codes = []
-            unique_states = []
-            for code, times in self.iterate_unique():
-                codes_i, states_i = get_observer_state(
-                    [code],
-                    times,
-                    origin="heliocenter",
-                    frame="ecliptic"
-                )
-                codes.append(codes_i)
-                unique_states.append(states_i)
-
-            codes = np.hstack(codes)
-            unique_states = np.vstack(unique_states)
-
-            # Duplicate unique observer states for each repeated observation time
-            # using pandas merge (significantly easier and faster than iterating over a numpy
-            # array using a for loop and np.where)
-            # TODO: evaluate https://stackoverflow.com/questions/49495344/numpy-equivalent-of-merge
-            # as a potential alternative
-            unique_states_df = pd.DataFrame({
-                "observatory_code" : codes,
-                "mjd_utc" : unique_states[:, 0],
-                "x" : unique_states[:, 1],
-                "y" : unique_states[:, 2],
-                "z" : unique_states[:, 3],
-                "vx" : unique_states[:, 4],
-                "vy" : unique_states[:, 5],
-                "vz" : unique_states[:, 6],
-                })
-            states_df = pd.DataFrame({
-                "observatory_code" : self.codes,
-                "mjd_utc" : self.times.utc.mjd,
-                })
-            states_df = states_df.merge(unique_states_df, on=["observatory_code", "mjd_utc"])
-            states_df.sort_values(
-                by=["mjd_utc", "observatory_code"],
-                inplace=True
+            # Get observer states
+            states = get_observer_state(
+                self.codes,
+                self.times,
+                origin="heliocenter",
+                frame="ecliptic"
             )
 
+            # Instantiate Cartesian coordinates
             cartesian = CartesianCoordinates(
-                times=Time(
-                    states_df["mjd_utc"].values,
-                    scale="utc",
-                    format="mjd"
-                ),
-                x=states_df["x"].values,
-                y=states_df["y"].values,
-                z=states_df["z"].values,
-                vx=states_df["vx"].values,
-                vy=states_df["vy"].values,
-                vz=states_df["vz"].values,
+                x=states[:, 1],
+                y=states[:, 2],
+                z=states[:, 3],
+                vx=states[:, 4],
+                vy=states[:, 5],
+                vz=states[:, 6],
+                times=self.times,
                 origin="heliocenter",
                 frame="ecliptic"
             )
