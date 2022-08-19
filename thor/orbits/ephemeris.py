@@ -4,6 +4,7 @@ import pandas as pd
 from typing import Optional
 
 from ..utils.indexable import Indexable
+from ..coordinates.coordinates import Coordinates
 from ..coordinates.members import CoordinateMembers
 
 __all__ = [
@@ -87,8 +88,13 @@ def generate_ephemeris(
 class Ephemeris(CoordinateMembers):
 
 
-    def __init__(self, coordinates, orbit_ids, object_ids=None):
-
+    def __init__(
+            self,
+            coordinates: Coordinates,
+            orbit_ids: np.ndarray,
+            object_ids: Optional[np.ndarray] = None,
+            light_time: Optional[np.ndarray] = None,
+        ):
         CoordinateMembers.__init__(
             self,
             coordinates=coordinates,
@@ -103,6 +109,11 @@ class Ephemeris(CoordinateMembers):
         else:
             self._object_ids = np.array(["None" for i in range(len(coordinates))])
 
+        if isinstance(light_time, np.ndarray):
+            self._light_time = light_time
+        else:
+            self._light_time = None
+
         self._orbit_ids = orbit_ids
         Indexable.__init__(self, index="orbit_ids")
         return
@@ -115,9 +126,15 @@ class Ephemeris(CoordinateMembers):
     def object_ids(self):
         return self._object_ids
 
+    @property
+    def light_time(self):
+        return self._light_time
+
     def to_df(self,
             time_scale: str = "utc",
             coordinate_type: Optional[str] = None,
+            sigmas: bool = False,
+            covariances: bool = False,
         ) -> pd.DataFrame:
         """
         Represent ephemeris as a `~pandas.DataFrame`.
@@ -126,8 +143,13 @@ class Ephemeris(CoordinateMembers):
         ----------
         time_scale : {"tdb", "tt", "utc"}
             Desired timescale of the output MJDs.
-        coordinate_type : {"cartesian", "spherical"}
-            Desired output representation of the orbits.
+        coordinate_type : {None, "cartesian", "spherical", "keplerian", "cometary"}
+            Desired output representation of the coordinates. If None, will default
+            to coordinate type that was given at class initialization.
+        sigmas : bool, optional
+            Include 1-sigma uncertainty columns.
+        covariances : bool, optional
+            Include lower triangular covariance matrix columns.
 
         Returns
         -------
@@ -136,10 +158,12 @@ class Ephemeris(CoordinateMembers):
         """
         df = CoordinateMembers.to_df(self,
             time_scale=time_scale,
-            coordinate_type=coordinate_type
+            coordinate_type=coordinate_type,
+            sigmas=sigmas,
+            covariances=covariances,
         )
         df.insert(0, "orbit_id", self.orbit_ids)
         df.insert(1, "object_id", self.object_ids)
-
+        df.insert(len(df.columns), "light_time", self.light_time)
         return df
 
