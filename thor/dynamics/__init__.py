@@ -5,6 +5,6 @@ from .chi import *
 from .lagrange import *
 from .tisserand import *
 from .state_transition import *
-from .universal_propagate import *
+from .propagate_2body import *
 from .aberrations import *
-from .universal_ephemeris import *
+from .ephemeris_2body import *

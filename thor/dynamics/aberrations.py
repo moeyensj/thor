@@ -10,7 +10,7 @@ from typing import Tuple
 config.update("jax_enable_x64", True)
 
 from ..constants import Constants as c
-from .universal_propagate import _propagate_2body
+from .propagate_2body import _propagate_2body
 
 __all__ = [
     "add_light_time",
@@ -85,10 +85,11 @@ def _add_light_time(
         dlt = jnp.abs(lt - lt0)
 
         # Propagate backwards to new epoch
-        orbit_propagated = _propagate_2body(orbit, t0, t0 - lt, mu=mu, max_iter=max_iter, tol=tol)
+        t1 = t0 - lt
+        orbit_propagated = _propagate_2body(orbit, t0, t1, mu=mu, max_iter=max_iter, tol=tol)
 
-        p[0] = orbit_propagated[1:]
-        p[1] = orbit_propagated[0]
+        p[0] = orbit_propagated
+        p[1] = t1
         p[2] = lt
         p[3] = dlt
         return p
