@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from copy import deepcopy
+from copy import copy, deepcopy
 from typing import (
     List,
     Optional,
@@ -27,32 +27,51 @@ class Indexable:
         self.set_index(index)
         return
 
-    def _handle_index(self, i: Union[int, slice, tuple, list, np.ndarray]):
+    def _handle_index(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
+        """
+        Given a integer, slice, list, `~numpy.ndarray`, appropriately slice
+        the class index and return the correct index for this class's underlying
+        members.
 
-        if isinstance(i, int):
-            if i < 0:
-                _i = i + len(self)
+        Parameters
+        ----------
+        class_ind : Union[int, slice, tuple, list, np.ndarray]
+            Slice of the class index.
+
+        Returns
+        -------
+        member_ind : np.ndarray
+            Slice into this class's members.
+        """
+        if isinstance(class_ind, int):
+            if class_ind < 0:
+                _i = class_ind + len(self._class_index_unique)
             else:
-                _i = i
+                _i = class_ind
             ind = slice(_i, _i+1)
 
-        elif isinstance(i, tuple):
-            ind = list(i)
+        elif isinstance(class_ind, tuple):
+            ind = list(class_ind)
 
-        elif isinstance(i, (slice, np.ndarray, list)):
-            ind = i
+        elif isinstance(class_ind, (slice, np.ndarray, list)):
+            ind = class_ind
         else:
             raise IndexError("Index should be either an int or a slice.")
 
         if isinstance(ind, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
-        unique_ind = self.index.unique(level="class_index")
-        return self.index.get_locs([unique_ind[ind], slice(None)])
+        member_ind = self._member_index[
+            np.in1d(
+                self._class_index,
+                self._class_index_unique[ind],
+            )
+        ]
+        return member_ind, ind
 
     def __len__(self):
         if self.index is not None:
-            return len(self.index.unique(level="class_index"))
+            return len(self._class_index_unique)
         else:
             err = (
                 "Length is not defined for this class."
@@ -61,80 +80,85 @@ class Indexable:
 
     @property
     def index(self):
-        return self._index
+        return self._class_index
 
     def set_index(self, index: Union[str, np.ndarray]):
 
         if isinstance(index, str):
             class_index = getattr(self, index)
             self._index_attribute = index
-            array_index = np.arange(0, len(class_index), dtype=int)
+            member_index = np.arange(0, len(class_index), dtype=int)
 
         elif isinstance(index, np.ndarray):
             class_index = index
             self._index_attribute = None
-            array_index = np.arange(0, len(index), dtype=int)
+            member_index = np.arange(0, len(index), dtype=int)
 
         else:
             err = ("index must be a str, numpy.ndarray")
             raise ValueError(err)
 
-        self._index = pd.MultiIndex.from_arrays(
-            [class_index, array_index],
-            names=["class_index", "array_index"]
-        )
-
+        self._class_index = class_index
+        self._class_index_unique = pd.unique(class_index)
+        self._member_index = member_index
         return
 
-    def __getitem__(self, i: Union[int, slice, tuple, list, np.ndarray, pd.MultiIndex]):
+    def __getitem__(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
 
-        ind = self._handle_index(i)
-        copy = deepcopy(self)
+        member_ind, class_ind_ = self._handle_index(class_ind)
+        copy_self = copy(self)
+
+        for k, v in copy_self.__dict__.items():
+            if k != "_class_index_unique":
+                if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable)):
+                    copy_self.__dict__[k] = v[member_ind]
+                elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
+                    copy_self.__dict__[k] = v
+                elif v is None:
+                    pass
+                else:
+                    err = (
+                        f"{type(v)} are not supported."
+                    )
+                    raise NotImplementedError(err)
+            else:
+                copy_self.__dict__[k] = v[class_ind_]
+
+        return copy_self
+
+    def __delitem__(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
+
+        member_ind, class_ind_ = self._handle_index(class_ind)
 
         for k, v in self.__dict__.items():
-            if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable, pd.MultiIndex)):
-                copy.__dict__[k] = v[ind]
-            elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
-                copy.__dict__[k] = v
-            elif v is None:
-                pass
+            # Everything but the class index of unique values is sliced as normal
+            if k != "_class_index_unique":
+                if isinstance(v, np.ma.masked_array):
+                    self.__dict__[k] = np.delete(v, np.s_[member_ind], axis=0)
+                    self.__dict__[k].mask = np.delete(v.mask, np.s_[member_ind], axis=0)
+                elif isinstance(v, np.ndarray):
+                    self.__dict__[k] = np.delete(v, np.s_[member_ind], axis=0)
+                elif isinstance(v, Time):
+                    self.__dict__[k] = Time(
+                        np.delete(v.mjd, np.s_[member_ind], axis=0),
+                        scale=v.scale,
+                        format="mjd"
+                    )
+                elif isinstance(v, (list, Indexable)):
+                    del v[member_ind]
+                elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
+                    self.__dict__[k] = v
+                elif v is None:
+                    pass
+                else:
+                    err = (
+                        f"{type(v)} are not supported."
+                    )
+                    raise NotImplementedError(err)
+
             else:
-                err = (
-                    f"{type(v)} are not supported."
-                )
-                raise NotImplementedError(err)
+                self.__dict__[k] = np.delete(v, np.s_[class_ind_], axis=0)
 
-        return copy
-
-    def __delitem__(self, i: Union[int, slice, tuple, list, np.ndarray, pd.MultiIndex]):
-
-        ind = self._handle_index(i)
-
-        for k, v in self.__dict__.items():
-            if isinstance(v, np.ma.masked_array):
-                self.__dict__[k] = np.delete(v, np.s_[ind], axis=0)
-                self.__dict__[k].mask = np.delete(v.mask, np.s_[ind], axis=0)
-            elif isinstance(v, np.ndarray):
-                self.__dict__[k] = np.delete(v, np.s_[ind], axis=0)
-            elif isinstance(v, Time):
-                self.__dict__[k] = Time(
-                    np.delete(v.mjd, np.s_[ind], axis=0),
-                    scale=v.scale,
-                    format="mjd"
-                )
-            elif isinstance(v, (list, Indexable)):
-                del v[ind]
-            elif isinstance(v, pd.MultiIndex):
-                self.__dict__[k] = v.delete(ind)
-            elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
-                self.__dict__[k] = v
-            elif v is None:
-                pass
-            else:
-                err = (
-                    f"{type(v)} are not supported."
-                )
-                raise NotImplementedError(err)
         return
 
     def __iter__(self):
@@ -170,9 +194,6 @@ class Indexable:
 
             elif isinstance(v, (list, Indexable)):
                 self_v.append(v)
-
-            elif isinstance(v, pd.MultiIndex):
-                self.set_index(index=self._index_attribute)
 
             elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                 assert v == self_v
