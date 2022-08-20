@@ -9,7 +9,10 @@ from collections import OrderedDict
 from ..utils.indexable import Indexable
 from ..coordinates.coordinates import Coordinates
 from ..coordinates.members import CoordinateMembers
-from ..observers import Observers
+from ..observers.observers import (
+    OBSERVER_CARTESIAN_COLS,
+    Observers
+)
 
 __all__ = ["Observations"]
 
@@ -117,7 +120,7 @@ class Observations(CoordinateMembers):
             coord_cols: Optional[OrderedDict] = None,
             origin_col: str = "origin",
             frame_col: str = "frame",
-            observer_cols: Optional[OrderedDict] = None,
+            observer_cols: Optional[OrderedDict] = OBSERVER_CARTESIAN_COLS,
             observer_origin_col: str = "obs_origin",
             observer_frame_col: str = "obs_frame",
             obs_ids_col: str = "obs_id",
@@ -141,12 +144,12 @@ class Observations(CoordinateMembers):
             frame_col=frame_col
         )["coordinates"]
 
-        #data["observers"] = Observers.from_df(
-        #    df,
-        #    coord_cols=observer_cols,
-        #    origin_col=observer_origin_col,
-        #    frame_col=observer_frame_col,
-        #)
+        data["observers"] = Observers.from_df(
+            df,
+            coord_cols=observer_cols,
+            origin_col=observer_origin_col,
+            frame_col=observer_frame_col,
+        )
 
         return cls(**data)
 
