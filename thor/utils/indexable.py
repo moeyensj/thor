@@ -98,6 +98,15 @@ class Indexable:
             err = ("index must be a str, numpy.ndarray")
             raise ValueError(err)
 
+        # If the index is to be set on an attribute that has an object dtype (like a string)
+        # then we map the unique values of the index to integers. This will make querying the
+        # index significantly faster.
+        if isinstance(class_index, np.ndarray) and isinstance(class_index, (object, float)):
+            df = pd.DataFrame({"class_index_object" : class_index})
+            df_unique = df.drop_duplicates(keep="first").copy()
+            df_unique["class_index"] = np.arange(0, len(df_unique))
+            class_index = df.merge(df_unique, on="class_index_object", how="left")["class_index"].values
+
         self._class_index = class_index
         self._class_index_unique = pd.unique(class_index)
         self._member_index = member_index
