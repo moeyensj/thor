@@ -27,7 +27,7 @@ class Indexable:
         self.set_index(index)
         return
 
-    def _handle_index(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
+    def query_index(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
         """
         Given a integer, slice, list, `~numpy.ndarray`, appropriately slice
         the class index and return the correct index for this class's underlying
@@ -61,12 +61,16 @@ class Indexable:
         if isinstance(ind, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
-        member_ind = self._member_index[
-            np.in1d(
-                self._class_index,
-                self._class_index_unique[ind],
-            )
-        ]
+        if self._index_type == "numpy":
+            member_ind = self._member_index[
+                np.in1d(
+                    self._class_index,
+                    self._class_index_unique[ind],
+                )
+            ]
+        else:
+            member_ind = self._member_index[self._class_index.isin(self._class_index_unique[ind])]
+
         return member_ind, ind
 
     def __len__(self):
@@ -82,7 +86,7 @@ class Indexable:
     def index(self):
         return self._class_index
 
-    def set_index(self, index: Union[str, np.ndarray]):
+    def set_index(self, index: Union[str, np.ndarray], type: str = "numpy"):
 
         if isinstance(index, str):
             class_index = getattr(self, index)
@@ -107,19 +111,30 @@ class Indexable:
             df_unique["class_index"] = np.arange(0, len(df_unique))
             class_index = df.merge(df_unique, on="class_index_object", how="left")["class_index"].values
 
-        self._class_index = class_index
-        self._class_index_unique = pd.unique(class_index)
-        self._member_index = member_index
+        if type == "numpy":
+            self._class_index = class_index
+            self._class_index_unique = pd.unique(class_index)
+            self._member_index = member_index
+            self._index_type = "numpy"
+        elif type == "pandas":
+            self._class_index = pd.Index(class_index, dtype=np.int64)
+            self._class_index_unique = pd.unique(class_index)
+            self._member_index = member_index
+            self._index_type = "pandas"
+        else:
+            err = ("type must be either 'numpy' or 'pandas'")
+            raise ValueError(err)
+
         return
 
     def __getitem__(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
 
-        member_ind, class_ind_ = self._handle_index(class_ind)
+        member_ind, class_ind_ = self.query_index(class_ind)
         copy_self = copy(self)
 
         for k, v in copy_self.__dict__.items():
             if k != "_class_index_unique":
-                if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable)):
+                if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable, pd.Index)):
                     copy_self.__dict__[k] = v[member_ind]
                 elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                     copy_self.__dict__[k] = v
@@ -135,9 +150,9 @@ class Indexable:
 
         return copy_self
 
-    def __delitem__(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
+    def __delitem__(self, class_ind: Union[int, slice, tuple, list, np.ndarray, pd.Index]):
 
-        member_ind, class_ind_ = self._handle_index(class_ind)
+        member_ind, class_ind_ = self.query_index(class_ind)
 
         for k, v in self.__dict__.items():
             # Everything but the class index of unique values is sliced as normal
@@ -153,6 +168,8 @@ class Indexable:
                         scale=v.scale,
                         format="mjd"
                     )
+                elif isinstance(v, pd.Index):
+                    self.__dict__[k] = v.delete(class_ind_)
                 elif isinstance(v, (list, Indexable)):
                     del v[member_ind]
                 elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
