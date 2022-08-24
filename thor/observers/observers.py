@@ -159,15 +159,15 @@ class Observers(CoordinateMembers):
         return self._cartesian
 
     def to_df(self,
-            time_scale: str = "utc"
+            time_scale: Optional[str] = None
         ) -> pd.DataFrame:
         """
         Represent Observers as a `~pandas.DataFrame`.
 
         Parameters
         ----------
-        time_scale : {"tdb", "tt", "utc"}
-            Desired timescale of the output MJDs.
+        time_scale : {"tdb", "tt", "utc"}, optional
+            Desired timescale of the output MJDs. If None, will default to the time scale of the current instance.
 
         Returns
         -------

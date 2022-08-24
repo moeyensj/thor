@@ -358,7 +358,7 @@ class Coordinates(Indexable):
         raise NotImplementedError
 
     def to_df(self,
-            time_scale: str = "utc",
+            time_scale: Optional[str] = None,
             sigmas: bool = False,
             covariances: bool = False,
         ) -> pd.DataFrame:
@@ -367,8 +367,8 @@ class Coordinates(Indexable):
 
         Parameters
         ----------
-        time_scale : {"tdb", "tt", "utc"}
-            Desired timescale of the output MJDs.
+        time_scale : {"tdb", "tt", "utc"}, optional
+            Desired timescale of the output MJDs. If None, will default to the time scale of the current instance.
         sigmas : bool, optional
             Include 1-sigma uncertainty columns.
         covariances : bool, optional
@@ -384,7 +384,11 @@ class Coordinates(Indexable):
         N, D = self.values.shape
 
         if self.times is not None:
-            df = times_to_df(self.times, time_scale=time_scale)
+            if isinstance(time_scale, str):
+                time_scale_ = time_scale
+            else:
+                time_scale_ = self.times.scale
+            df = times_to_df(self.times, time_scale=time_scale_)
         else:
             df = pd.DataFrame(index=np.arange(0, len(self)))
 

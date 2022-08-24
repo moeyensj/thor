@@ -153,7 +153,7 @@ class CoordinateMembers(Indexable):
         return self._cometary
 
     def to_df(self,
-            time_scale: str = "tdb",
+            time_scale: Optional[str] = None,
             coordinate_type: Optional[str] = None,
             sigmas: bool = False,
             covariances: bool = False,
@@ -163,9 +163,9 @@ class CoordinateMembers(Indexable):
 
         Parameters
         ----------
-        time_scale : {"tdb", "tt", "utc"}
-            Desired timescale of the output MJDs.
-        coordinate_type : {None, "cartesian", "spherical", "keplerian", "cometary"}
+        time_scale : {"tdb", "tt", "utc"}, optional
+            Desired timescale of the output MJDs. If None, will default to the time scale of the current instance.
+        coordinate_type : {None, "cartesian", "spherical", "keplerian", "cometary"}, optional
             Desired output representation of the coordinates. If None, will default
             to coordinate type that was given at class initialization.
         sigmas : bool, optional
