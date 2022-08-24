@@ -2,6 +2,7 @@ from .indexable import *
 from .file_manager import *
 from .spice import *
 from .astropy import *
+from .sbdb import *
 from .horizons import *
 from .mpc import *
 from .ades import *
