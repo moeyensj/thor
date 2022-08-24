@@ -44,7 +44,11 @@ class Observers(CoordinateMembers):
         if isinstance(coordinates, Coordinates) and times is not None:
             if coordinates.times is not None:
                 try:
-                    np.testing.assert_equal(coordinates.times.tdb.mjd, times.tdb.mjd)
+                    if coordinates.times.scale == times.scale:
+                        np.testing.assert_equal(coordinates.times.mjd, times.mjd)
+                    else:
+                        np.testing.assert_equal(coordinates.times.utc.mjd, times.utc.mjd)
+
                 except AssertionError as e:
                     err = (
                         "Coordinates times do not match the given times."
