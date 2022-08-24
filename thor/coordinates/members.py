@@ -157,6 +157,8 @@ class CoordinateMembers(Indexable):
             coordinate_type: Optional[str] = None,
             sigmas: bool = False,
             covariances: bool = False,
+            origin_col: str = "origin",
+            frame_col: str = "frame",
         ) -> pd.DataFrame:
         """
         Represent coordinates as a `~pandas.DataFrame`.
@@ -172,6 +174,10 @@ class CoordinateMembers(Indexable):
             Include 1-sigma uncertainty columns.
         covariances : bool, optional
             Include lower triangular covariance matrix columns.
+        origin_col : str
+            Name of the column to store the origin of each coordinate.
+        frame_col : str
+            Name of the column to store the coordinate frame.
 
         Returns
         -------
@@ -191,7 +197,9 @@ class CoordinateMembers(Indexable):
         kwargs = {
             "time_scale" : time_scale,
             "sigmas" : sigmas,
-            "covariances" : covariances
+            "covariances" : covariances,
+            "origin_col" : origin_col,
+            "frame_col" : frame_col
         }
         if coordinate_type_ == "cartesian":
             df = self.cartesian.to_df(**kwargs)

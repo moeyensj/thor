@@ -132,7 +132,6 @@ class Observers(CoordinateMembers):
     def cartesian(self):
 
         if self._cartesian is None:
-
             # Get observer states
             states = get_observer_state(
                 self.codes,
@@ -151,7 +150,8 @@ class Observers(CoordinateMembers):
                 vz=states[:, 6],
                 times=self.times,
                 origin="heliocenter",
-                frame="ecliptic"
+                frame="ecliptic",
+                names=OBSERVER_CARTESIAN_COLS,
             )
             self._cartesian = cartesian
             self.default_coordinate_type = "cartesian"
@@ -177,11 +177,11 @@ class Observers(CoordinateMembers):
         df = CoordinateMembers.to_df(
             self,
             time_scale=time_scale,
-            coordinate_type="cartesian"
+            coordinate_type="cartesian",
+            origin_col="obs_origin",
+            frame_col="obs_frame",
         )
-        obs_cols = {col : f"obs_{col}" for col in df.columns[1:]}
         df.insert(1, "observatory_code", self.codes)
-        df.rename(columns=obs_cols, inplace=True)
         return df
 
     @classmethod

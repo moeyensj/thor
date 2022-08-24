@@ -361,6 +361,8 @@ class Coordinates(Indexable):
             time_scale: Optional[str] = None,
             sigmas: bool = False,
             covariances: bool = False,
+            origin_col: str = "origin",
+            frame_col: str = "frame",
         ) -> pd.DataFrame:
         """
         Represent Coordinates as a `~pandas.DataFrame`.
@@ -373,6 +375,10 @@ class Coordinates(Indexable):
             Include 1-sigma uncertainty columns.
         covariances : bool, optional
             Include lower triangular covariance matrix columns.
+        origin_col : str
+            Name of the column to store the origin of each coordinate.
+        frame_col : str
+            Name of the column to store the coordinate frame.
 
         Returns
         -------
@@ -412,8 +418,8 @@ class Coordinates(Indexable):
             )
             df = df.join(df_covariances)
 
-        df.insert(len(df.columns), "origin", self.origin)
-        df.insert(len(df.columns), "frame", self.frame)
+        df.insert(len(df.columns), origin_col, self.origin)
+        df.insert(len(df.columns), frame_col, self.frame)
         return df
 
     @staticmethod
