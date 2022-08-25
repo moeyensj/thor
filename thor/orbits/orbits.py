@@ -14,8 +14,12 @@ from ..utils.horizons import (
     get_Horizons_vectors,
     get_Horizons_elements
 )
-
+from ..utils.sbdb import (
+    convert_SBDB_covariances,
+    get_SBDB_elements
+)
 from ..coordinates.members import CoordinateMembers
+from ..coordinates.covariances import sigmas_to_covariance
 from ..coordinates.cartesian import CartesianCoordinates
 from ..coordinates.keplerian import KeplerianCoordinates
 from ..coordinates.cometary import CometaryCoordinates
@@ -78,6 +82,94 @@ class Orbits(CoordinateMembers):
             self._classes = calc_orbit_class(self.keplerian)
 
         return self._classes
+
+    @classmethod
+    def from_SBDB(cls,
+            ids: List,
+        ):
+        """
+        Query JPL's Small-Body Database (SBDB) for orbits. The epoch at
+        which the orbits are returned are near the epoch as published by the
+        Minor Planet Center.
+
+        By default, the orbit's covariance matrices are also queried for. If they
+        are not available, then the 1-sigma uncertainties are used to construct
+        the covariance matrices.
+
+        Parameters
+        ----------
+        ids : list
+            List of object IDs to query.
+
+        Returns
+        -------
+        orbits : `~thor.orbits.orbits.Orbits`
+            Orbits object containing the queried orbits.
+        """
+        results = get_SBDB_elements(ids)
+
+        object_ids = []
+        classes = []
+        coords_cometary = np.zeros((len(results), 6), dtype=np.float64)
+        covariances_sbdb = np.zeros((len(results), 6, 6), dtype=np.float64)
+        times = np.zeros((len(results)), dtype=np.float64)
+
+        for i, result in enumerate(results):
+            object_ids.append(result["object"]["fullname"])
+            classes.append(result["object"]["orbit_class"]["code"])
+
+            if "covariance" in result["orbit"]:
+
+                result_i  = result["orbit"]["covariance"]
+
+                coords_cometary[i, 0] = result_i["elements"]["q"].value
+                coords_cometary[i, 1] = result_i["elements"]["e"]
+                coords_cometary[i, 2] = result_i["elements"]["i"].value
+                coords_cometary[i, 3] = result_i["elements"]["om"].value
+                coords_cometary[i, 4] = result_i["elements"]["w"].value
+                coords_cometary[i, 5] = Time(result_i["elements"]["tp"].value, scale="tdb", format="jd").mjd
+
+                covariances_sbdb[i, :, :] = result_i["data"]
+
+                times[i] = result_i["epoch"].value
+
+            else:
+
+                result_i  = result["orbit"]
+
+                coords_cometary[i, 0] = result_i["elements"]["q"].value
+                coords_cometary[i, 1] = result_i["elements"]["e"]
+                coords_cometary[i, 2] = result_i["elements"]["i"].value
+                coords_cometary[i, 3] = result_i["elements"]["om"].value
+                coords_cometary[i, 4] = result_i["elements"]["w"].value
+                coords_cometary[i, 5] = Time(result_i["elements"]["tp"].value, scale="tdb", format="jd").mjd
+
+                sigmas = np.array([[
+                    result_i["elements"]["e_sig"], result_i["elements"]["q_sig"].value, result_i["elements"]["tp_sig"].value,
+                    result_i["elements"]["om_sig"].value, result_i["elements"]["w_sig"].value, result_i["elements"]["i_sig"].value
+                ]])
+
+                covariances_sbdb[i, :, :] = sigmas_to_covariance(sigmas).filled()[0]
+
+                times[i] = result_i["epoch"].value
+
+        covariances_cometary = convert_SBDB_covariances(covariances_sbdb)
+        times = Time(times, scale="tdb", format="jd")
+
+        coordinates = CometaryCoordinates(
+            times=times,
+            q=coords_cometary[:, 0],
+            e=coords_cometary[:, 1],
+            i=coords_cometary[:, 2],
+            raan=coords_cometary[:, 3],
+            ap=coords_cometary[:, 4],
+            tp=coords_cometary[:, 5],
+            covariances=covariances_cometary)
+
+        object_ids = np.array(object_ids)
+        classes = np.array(classes)
+
+        return cls(coordinates, object_ids=object_ids, classes=classes)
 
     @classmethod
     def from_Horizons(cls,

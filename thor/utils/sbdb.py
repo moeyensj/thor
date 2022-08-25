@@ -1,8 +1,14 @@
 
 import numpy as np
+from astroquery.jplsbdb import SBDB
+from typing import (
+    List,
+    OrderedDict
+)
 
 __all___ = [
-    "convert_SBDB_covariances"
+    "convert_SBDB_covariances",
+    "get_SBDB_elements",
 ]
 
 def convert_SBDB_covariances(sbdb_covariances):
@@ -55,3 +61,31 @@ def convert_SBDB_covariances(sbdb_covariances):
 
 
     return covariances
+
+def get_SBDB_elements(obj_ids: List[str]) -> List[OrderedDict]:
+    """
+    Get orbital elements and other object properties
+    from JPL's Small Body Database Browser.
+
+    Parameters
+    ----------
+    obj_ids : List
+        Object IDs to query.
+
+    Returns
+    -------
+    results : List
+        List of dictionaries containing orbital elements and other object properties.
+    """
+    results = []
+    for obj_id in obj_ids:
+        result = SBDB.query(
+            obj_id,
+            covariance="mat",
+            id_type="search",
+            full_precision=True,
+            solution_epoch=False,
+        )
+        results.append(result)
+
+    return results
