@@ -1,9 +1,9 @@
+import logging
 import numpy as np
 import pandas as pd
 from copy import copy, deepcopy
 from typing import (
     List,
-    Optional,
     Union
 )
 from astropy.time import Time
@@ -13,6 +13,8 @@ __all__ = [
     "Indexable",
     "concatenate"
 ]
+
+logger = logging.getLogger(__name__)
 
 UNSLICEABLE_DATA_STRUCTURES = (str, int, float, dict, bool, set, OrderedDict)
 
@@ -48,7 +50,13 @@ class Indexable:
                 _i = class_ind + len(self._class_index_unique)
             else:
                 _i = class_ind
-            ind = slice(_i, _i+1)
+
+            # If the class index is an array of slices then
+            # lets not convert class_ind to a slice yet.
+            if self._class_index_is_slice:
+                ind = _i
+            else:
+                ind = slice(_i, _i+1)
 
         elif isinstance(class_ind, tuple):
             ind = list(class_ind)
@@ -61,15 +69,48 @@ class Indexable:
         if isinstance(ind, slice) and ind.start is not None and ind.start >= len(self):
             raise IndexError(f"Index {ind.start} is out of bounds.")
 
-        if self._index_type == "numpy":
+        if isinstance(ind, int) and self._class_index_is_slice:
+            member_ind = self._class_index_unique[ind]
+
+        elif isinstance(ind, slice) and self._class_index_is_slice:
+
+            # Check if the array of slices are consecutive and share
+            # the same step size. If so, create a single slice that
+            # combines all of the slices.
+            slices = self._class_index_unique[ind]
+            is_consecutive = True
+            for i, s_i in enumerate(slices[:-1]):
+                if s_i.stop != slices[i + 1].start:
+                    is_consecutive = False
+                    break
+                if s_i.step is not None and (s_i.step != slices[i + 1].step):
+                    is_consecutive = False
+                    break
+
+            if is_consecutive:
+                logger.debug(
+                    "Slices are consecutive and share the same step. " \
+                    f"Combining slices a single slice with start {slices[0].start}, end {slices[-1].stop} and step {slices[0].step}."
+                )
+                member_ind = slice(slices[0].start, slices[-1].stop, slices[0].step)
+            else:
+                logger.debug(
+                    "Slices are not consecutive. " \
+                    f"Combining slices a concatenating the members index for each slice."
+                )
+                member_ind = np.concatenate([self._class_index_unique[s] for s in slices])
+
+        elif self._use_class_index:
+            logger.debug("Using class index to index member arrays.")
+            member_ind = self._class_index_unique[ind]
+        else:
+            logger.debug("Using unique class index to index member arrays with np.isin.")
             member_ind = self._member_index[
-                np.in1d(
+                np.isin(
                     self._class_index,
                     self._class_index_unique[ind],
                 )
             ]
-        else:
-            member_ind = self._member_index[self._class_index.isin(self._class_index_unique[ind])]
 
         return member_ind, ind
 
@@ -86,7 +127,12 @@ class Indexable:
     def index(self):
         return self._class_index
 
-    def set_index(self, index: Union[str, np.ndarray], type: str = "numpy"):
+    def set_index(self, index: Union[str, np.ndarray]):
+
+        # Assume by default that the class index is not going
+        # to be an array of slices.
+        self._class_index_is_slice = False
+        self._use_class_index = False
 
         if isinstance(index, str):
             class_index = getattr(self, index)
@@ -111,19 +157,32 @@ class Indexable:
             df_unique["class_index"] = np.arange(0, len(df_unique))
             class_index = df.merge(df_unique, on="class_index_object", how="left")["class_index"].values
 
-        if type == "numpy":
-            self._class_index = class_index
-            self._class_index_unique = pd.unique(class_index)
-            self._member_index = member_index
-            self._index_type = "numpy"
-        elif type == "pandas":
-            self._class_index = pd.Index(class_index, dtype=np.int64)
-            self._class_index_unique = pd.unique(class_index)
-            self._member_index = member_index
-            self._index_type = "pandas"
-        else:
-            err = ("type must be either 'numpy' or 'pandas'")
-            raise ValueError(err)
+        self._class_index = class_index
+        self._class_index_unique = pd.unique(class_index)
+        self._member_index = member_index
+
+        # If the class index is monotonically increasing and the class index and member index
+        # are identical then we can convert the class index into an array of slices into the
+        # array members. This will make __getitem__ significantly faster.
+        is_sorted = np.all((self._class_index_unique[1:] - self._class_index_unique[:-1]) == 1)
+        is_same = np.all(self._class_index_unique == member_index)
+        if is_sorted and not is_same:
+            logger.debug(
+                "Class index is sorted and not the same as the member index. " \
+                "Converting class index to an array of slices."
+            )
+            slices = []
+            slice_start = 0
+            for i in self._class_index_unique:
+                mask = class_index[class_index == i]
+                slices.append(slice(slice_start, slice_start + len(mask)))
+                slice_start += len(mask)
+
+            self._class_index_unique = np.array(slices)
+            self._class_index_is_slice = True
+
+        if is_same:
+            self._use_class_index = True
 
         return
 
@@ -134,7 +193,7 @@ class Indexable:
 
         for k, v in copy_self.__dict__.items():
             if k != "_class_index_unique":
-                if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable, pd.Index)):
+                if isinstance(v, (np.ndarray, np.ma.masked_array, list, Time, Indexable)):
                     copy_self.__dict__[k] = v[member_ind]
                 elif isinstance(v, UNSLICEABLE_DATA_STRUCTURES):
                     copy_self.__dict__[k] = v
@@ -146,11 +205,15 @@ class Indexable:
                     )
                     raise NotImplementedError(err)
             else:
-                copy_self.__dict__[k] = v[class_ind_]
+                if self._use_class_index:
+                    copy_self.__dict__[k] = v[member_ind]
+                else:
+                    copy_self.__dict__[k] = v[class_ind_]
 
+        copy_self.__dict__["idx"] = 0
         return copy_self
 
-    def __delitem__(self, class_ind: Union[int, slice, tuple, list, np.ndarray, pd.Index]):
+    def __delitem__(self, class_ind: Union[int, slice, tuple, list, np.ndarray]):
 
         member_ind, class_ind_ = self.query_index(class_ind)
 
@@ -187,9 +250,19 @@ class Indexable:
 
         return
 
+    def __next__(self):
+        try:
+            self._class_index_unique[self.idx]
+        except IndexError:
+            raise StopIteration
+        else:
+            next = self[self.idx]
+            self.idx += 1
+            return next
+
     def __iter__(self):
-        for i in range(len(self)):
-            yield self[i]
+        self.idx = 0
+        return self
 
     def yield_chunks(self, chunk_size):
         for c in range(0, len(self), chunk_size):
