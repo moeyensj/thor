@@ -5,6 +5,8 @@ from jax import (
     lax
 )
 
+from .barker import solve_barker
+
 config.update("jax_enable_x64", True)
 
 __all__ = [
@@ -92,9 +94,9 @@ def solve_kepler(
     ) -> float:
     """
     Solve Kepler's equation for true anomaly (nu) given eccentricity
-    and mean anomaly using Newton-Raphson. This is only valid for orbits
-    with eccentricity < 1.0 and eccentricity > 1.0. For parabolic orbits see
-    `~thor.dynamics.barker.solve_barker`.
+    and mean anomaly using Newton-Raphson. Technically, this is only valid for orbits
+    with eccentricity < 1.0 and eccentricity > 1.0. However, for parabolic orbits (e = 1.0)
+    this function will call the `solve_barker` function from `thor.dynamics.barker`.
 
     Parameters
     ----------
@@ -196,6 +198,8 @@ def solve_kepler(
                 _hyperbolic_newton_raphson,
                 p,
             ),
+            # For parabolic orbits return the parameters as is since
+            # no iteration is needed for parabolic orbits
             lambda p: p,
             p
         ),
@@ -204,16 +208,18 @@ def solve_kepler(
 
     nu = lax.cond(
         e < 1.0,
-        lambda E, e: 2 * jnp.arctan2(jnp.sqrt(1 + e) * jnp.sin(E/2), jnp.sqrt(1 - e) * jnp.cos(E/2)),
-        lambda E, e: lax.cond(
+        lambda E, e, M: 2 * jnp.arctan2(jnp.sqrt(1 + e) * jnp.sin(E/2), jnp.sqrt(1 - e) * jnp.cos(E/2)),
+        lambda E, e, M: lax.cond(
             e > 1.0,
-            lambda H, e: 2 * jnp.arctan(jnp.sqrt(e + 1) * jnp.sinh(H / 2) / (jnp.sqrt(e - 1) * jnp.cosh(H / 2))),
-            lambda H, e: jnp.nan, # TODO: replace with Barker's equation
+            lambda H, e, M: 2 * jnp.arctan(jnp.sqrt(e + 1) * jnp.sinh(H / 2) / (jnp.sqrt(e - 1) * jnp.cosh(H / 2))),
+            lambda P, e, M: solve_barker(M),
             p[0],
-            p[1]
+            p[1],
+            p[2]
         ),
         p[0],
-        p[1]
+        p[1],
+        p[2]
     )
 
     # True anomaly should be in the range [0, 2*pi)

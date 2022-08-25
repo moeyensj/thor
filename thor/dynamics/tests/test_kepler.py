@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 import numpy.testing as npt
+
 from ..kepler import (
     calc_mean_anomaly,
     _calc_elliptical_anomalies,
@@ -12,7 +13,7 @@ from ..kepler import (
 RELATIVE_TOLERANCE = 0.
 ABSOLUTE_TOLERANCE = 1e-16
 
-### Tests last updated: 2022-08-04
+### Tests last updated: 2022-08-25
 
 def test_calc_mean_anomaly_elliptical():
     ### Test mean anomaly calculations for elliptical orbits
