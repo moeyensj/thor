@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import jax.numpy as jnp
 from jax import (
     config,
@@ -295,50 +296,86 @@ class SphericalCoordinates(Coordinates):
 
     @property
     def rho(self):
+        """
+        Radial distance
+        """
         return self._values[:, 0]
 
     @property
     def lon(self):
+        """
+        Longitude
+        """
         return self._values[:, 1]
 
     @property
     def lat(self):
+        """
+        Latitude
+        """
         return self._values[:, 2]
 
     @property
     def vrho(self):
+        """
+        Radial velocity
+        """
         return self._values[:, 3]
 
     @property
     def vlon(self):
+        """
+        Longitudinal velocity
+        """
         return self._values[:, 4]
 
     @property
     def vlat(self):
+        """
+        Latitudinal velocity
+        """
         return self._values[:, 5]
 
     @property
     def sigma_rho(self):
+        """
+        1-sigma uncertainty in radial distance
+        """
         return self.sigmas[:, 0]
 
     @property
     def sigma_lon(self):
+        """
+        1-sigma uncertainty in longitude
+        """
         return self.sigmas[:, 1]
 
     @property
     def sigma_lat(self):
+        """
+        1-sigma uncertainty in latitude
+        """
         return self.sigmas[:, 2]
 
     @property
     def sigma_vrho(self):
+        """
+        1-sigma uncertainty in radial velocity
+        """
         return self.sigmas[:, 3]
 
     @property
     def sigma_vlon(self):
+        """
+        1-sigma uncertainty in longitudinal velocity
+        """
         return self.sigmas[:, 4]
 
     @property
     def sigma_vlat(self):
+        """
+        1-sigma uncertainty in latitudinal velocity
+        """
         return self.sigmas[:, 5]
 
     def to_cartesian(self) -> CartesianCoordinates:
@@ -370,7 +407,9 @@ class SphericalCoordinates(Coordinates):
         return coords
 
     @classmethod
-    def from_cartesian(cls, cartesian: CartesianCoordinates):
+    def from_cartesian(cls,
+            cartesian: CartesianCoordinates
+        ) -> "SphericalCoordinates":
 
         coords_spherical = cartesian_to_spherical(cartesian.values.filled())
         coords_spherical = np.array(coords_spherical)
@@ -401,11 +440,11 @@ class SphericalCoordinates(Coordinates):
 
     @classmethod
     def from_df(cls,
-            df,
-            coord_cols=SPHERICAL_COLS,
-            origin_col="origin",
-            frame_col="frame"
-        ):
+            df: pd.DataFrame,
+            coord_cols: OrderedDict = SPHERICAL_COLS,
+            origin_col: str = "origin",
+            frame_col: str = "frame"
+        ) -> "SphericalCoordinates":
         """
         Create a SphericalCoordinates class from a dataframe.
 

@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import jax.numpy as jnp
 from jax import (
     config,
@@ -347,64 +348,121 @@ class CometaryCoordinates(Coordinates):
 
     @property
     def q(self):
+        """
+        Periapsis distance
+        """
         return self._values[:, 0]
 
     @property
     def e(self):
+        """
+        Eccentricity
+        """
         return self._values[:, 1]
 
     @property
     def i(self):
+        """
+        Inclination
+        """
         return self._values[:, 2]
 
     @property
     def raan(self):
+        """
+        Right ascension of the ascending node
+        """
         return self._values[:, 3]
 
     @property
     def ap(self):
+        """
+        Argument of periapsis
+        """
         return self._values[:, 4]
 
     @property
     def tp(self):
+        """
+        Time of periapse passage
+        """
         return self._values[:, 5]
 
     @property
     def sigma_q(self):
+        """
+        1-sigma uncertainty in periapsis distance
+        """
         return self.sigmas[:, 0]
 
     @property
     def sigma_e(self):
+        """
+        1-sigma uncertainty in eccentricity
+        """
         return self.sigmas[:, 1]
 
     @property
     def sigma_i(self):
+        """
+        1-sigma uncertainty in inclination
+        """
         return self.sigmas[:, 2]
 
     @property
     def sigma_raan(self):
+        """
+        1-sigma uncertainty in right ascension of the ascending node
+        """
         return self.sigmas[:, 3]
 
     @property
     def sigma_ap(self):
+        """
+        1-sigma uncertainty in argument of periapsis
+        """
         return self.sigmas[:, 4]
 
     @property
     def sigma_tp(self):
+        """
+        1-sigma uncertainty in time of periapse passage
+        """
         return self.sigmas[:, 5]
 
     @property
     def a(self):
-        # periapsis distance
+        """
+        Semi-major axis
+        """
         return self.q / (1 - self.e)
 
     @property
     def Q(self):
-        # apoapsis distance
+        """
+        Apoapsis distance
+        """
         return self.a * (1 + self.e)
 
     @property
+    def p(self):
+        """
+        Semi-latus rectum
+        """
+        return self.a / (1 - self.e**2)
+
+    @property
+    def P(self):
+        """
+        Period
+        """
+        return np.sqrt(4 * np.pi**2 * self.a**3 / self.mu)
+
+    @property
     def mu(self):
+        """
+        Gravitational parameter
+        """
         return self._mu
 
     def to_cartesian(self) -> CartesianCoordinates:
@@ -431,6 +489,8 @@ class CometaryCoordinates(Coordinates):
                 self.values,
                 self.covariances,
                 _cometary_to_cartesian,
+                in_axes=(0, 0, None, None, None),
+                out_axes=0,
                 t0=self.times.tdb.mjd,
                 mu=self.mu,
                 max_iter=100,
@@ -455,7 +515,10 @@ class CometaryCoordinates(Coordinates):
         return coords
 
     @classmethod
-    def from_cartesian(cls, cartesian: CartesianCoordinates, mu=MU):
+    def from_cartesian(cls,
+            cartesian: CartesianCoordinates,
+            mu: float = MU
+        ) -> "CometaryCoordinates":
 
         if cartesian.times is None:
             err = (
@@ -501,11 +564,11 @@ class CometaryCoordinates(Coordinates):
 
     @classmethod
     def from_df(cls,
-            df,
-            coord_cols=COMETARY_COLS,
-            origin_col="origin",
-            frame_col="frame"
-        ):
+            df: pd.DataFrame,
+            coord_cols: OrderedDict = COMETARY_COLS,
+            origin_col: str = "origin",
+            frame_col: str = "frame"
+        ) -> "CometaryCoordinates":
         """
         Create a KeplerianCoordinates class from a dataframe.
 

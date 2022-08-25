@@ -459,9 +459,13 @@ def covariances_to_table(
 
     data = {}
     for i, j in zip(ii, jj):
-        data[f"cov_{coord_names[i]}_{coord_names[j]}"] = covariances[:, i, j] * coord_units[i] * coord_units[j]
+        data[f"cov_{coord_names[i]}_{coord_names[j]}"] = covariances[:, i, j]
 
-    return Table(data)
+    table = Table(data)
+    for i, j in zip(ii, jj):
+        table[f"cov_{coord_names[i]}_{coord_names[j]}"].unit = coord_units[i] * coord_units[j]
+
+    return table
 
 def covariances_from_table(
         table: Table,
