@@ -1,10 +1,13 @@
 import pytest
 import numpy as np
+import numpy.testing as npt
 from astropy.time import Time
 
 from ..coordinates import _ingest_coordinate
-from ..coordinates import CartesianCoordinates
-from ..coordinates import SphericalCoordinates
+from ..cartesian import CartesianCoordinates
+from ..spherical import SphericalCoordinates
+
+### Tests last updated: 2022-08-25
 
 def test__ingest_coordinate():
     # Create 6 random arrays and test that
@@ -21,7 +24,7 @@ def test__ingest_coordinate():
         coords = _ingest_coordinate(q, d, coords=coords)
 
     for d in range(D):
-        np.testing.assert_equal(coords[:, d], coord_arrays[d])
+        npt.assert_equal(coords[:, d], coord_arrays[d])
 
     return
 
@@ -72,8 +75,8 @@ def test__ingest_coordinate_masks():
         coords = _ingest_coordinate(q, d, coords=coords)
 
     for d in range(D):
-        np.testing.assert_equal(coords[:, d], coord_arrays[d])
-        np.testing.assert_equal(coords.mask[:, d], mask_arrays[d])
+        npt.assert_equal(coords[:, d], coord_arrays[d])
+        npt.assert_equal(coords.mask[:, d], mask_arrays[d])
 
     return
 
@@ -86,23 +89,22 @@ def test_CartesianCoordinates_slicing():
     for i, c in enumerate(["x", "y", "z", "vx", "vy", "vz"]):
         data[c] = np.arange(i * N, (i + 1)*N)
 
-    data["time"] = Time(np.linspace(59000, 59000 + N, N), scale="utc", format="mjd")
+    data["times"] = Time(np.linspace(59000, 59000 + N, N), scale="utc", format="mjd")
 
     coords = CartesianCoordinates(**data)
     for s in [slice(0, N, 1), slice(2, 4, 1), slice(-5, -2, 1)]:
-        print(s)
         # Test coordinate axes for each slice
         for i, c in enumerate(["x", "y", "z", "vx", "vy", "vz"]):
-            np.testing.assert_equal(coords[s].values[:, i], coords.values[s, i])
-            np.testing.assert_equal(coords[s].values.mask[:, i], coords.values.mask[s, i])
-            np.testing.assert_equal(coords[s].values.filled()[:, i], coords.values.filled()[s, i])
+            npt.assert_equal(coords[s].values[:, i], coords.values[s, i])
+            npt.assert_equal(coords[s].values.mask[:, i], coords.values.mask[s, i])
+            npt.assert_equal(coords[s].values.filled()[:, i], coords.values.filled()[s, i])
 
         # Test times (which are astropy time objects)
-        np.testing.assert_equal(coords[s].time.value, coords.time[s].value)
+        npt.assert_equal(coords[s].times.value, coords.times[s].value)
 
         # Test frames and origins are correct
         assert coords[s].frame == coords.frame
-        assert coords[s].origin == coords.origin
+        assert np.all(coords[s].origin == coords.origin[0])
 
 def test_SphericalCoordinates_slicing():
     # Create Spherical coordinates and test that slicing the SphericalCoordinates
@@ -113,19 +115,19 @@ def test_SphericalCoordinates_slicing():
     for i, c in enumerate(["rho", "lon", "lat", "vrho", "vlon", "vlat"]):
         data[c] = np.arange(i * N, (i + 1)*N)
 
-    data["time"] = Time(np.linspace(59000, 59000 + N, N), scale="utc", format="mjd")
+    data["times"] = Time(np.linspace(59000, 59000 + N, N), scale="utc", format="mjd")
 
     coords = SphericalCoordinates(**data)
     for s in [slice(0, N, 1), slice(2, 4, 1), slice(-5, -2, 1)]:
         # Test coordinate axes for each slice
         for i, c in enumerate(["rho", "lon", "lat", "vrho", "vlon", "vlat"]):
-            np.testing.assert_equal(coords[s].values[:, i], coords.values[s, i])
-            np.testing.assert_equal(coords[s].values.mask[:, i], coords.values.mask[s, i])
-            np.testing.assert_equal(coords[s].values.filled()[:, i], coords.values.filled()[s, i])
+            npt.assert_equal(coords[s].values[:, i], coords.values[s, i])
+            npt.assert_equal(coords[s].values.mask[:, i], coords.values.mask[s, i])
+            npt.assert_equal(coords[s].values.filled()[:, i], coords.values.filled()[s, i])
 
         # Test times (which are astropy time objects)
-        np.testing.assert_equal(coords[s].time.value, coords.time[s].value)
+        npt.assert_equal(coords[s].times.value, coords.times[s].value)
 
         # Test frames and origins are correct
         assert coords[s].frame == coords.frame
-        assert coords[s].origin == coords.origin
+        assert np.all(coords[s].origin == coords.origin[0])
