@@ -119,39 +119,24 @@ class Orbits(CoordinateMembers):
             classes.append(result["object"]["orbit_class"]["code"])
 
             if "covariance" in result["orbit"]:
-
                 result_i  = result["orbit"]["covariance"]
-
-                coords_cometary[i, 0] = result_i["elements"]["q"].value
-                coords_cometary[i, 1] = result_i["elements"]["e"]
-                coords_cometary[i, 2] = result_i["elements"]["i"].value
-                coords_cometary[i, 3] = result_i["elements"]["om"].value
-                coords_cometary[i, 4] = result_i["elements"]["w"].value
-                coords_cometary[i, 5] = Time(result_i["elements"]["tp"].value, scale="tdb", format="jd").mjd
-
                 covariances_sbdb[i, :, :] = result_i["data"]
 
-                times[i] = result_i["epoch"].value
-
             else:
-
                 result_i  = result["orbit"]
-
-                coords_cometary[i, 0] = result_i["elements"]["q"].value
-                coords_cometary[i, 1] = result_i["elements"]["e"]
-                coords_cometary[i, 2] = result_i["elements"]["i"].value
-                coords_cometary[i, 3] = result_i["elements"]["om"].value
-                coords_cometary[i, 4] = result_i["elements"]["w"].value
-                coords_cometary[i, 5] = Time(result_i["elements"]["tp"].value, scale="tdb", format="jd").mjd
-
                 sigmas = np.array([[
                     result_i["elements"]["e_sig"], result_i["elements"]["q_sig"].value, result_i["elements"]["tp_sig"].value,
                     result_i["elements"]["om_sig"].value, result_i["elements"]["w_sig"].value, result_i["elements"]["i_sig"].value
                 ]])
-
                 covariances_sbdb[i, :, :] = sigmas_to_covariance(sigmas).filled()[0]
 
-                times[i] = result_i["epoch"].value
+            times[i] = result_i["epoch"].value
+            coords_cometary[i, 0] = result_i["elements"]["q"].value
+            coords_cometary[i, 1] = result_i["elements"]["e"]
+            coords_cometary[i, 2] = result_i["elements"]["i"].value
+            coords_cometary[i, 3] = result_i["elements"]["om"].value
+            coords_cometary[i, 4] = result_i["elements"]["w"].value
+            coords_cometary[i, 5] = Time(result_i["elements"]["tp"].value, scale="tdb", format="jd").mjd
 
         covariances_cometary = convert_SBDB_covariances(covariances_sbdb)
         times = Time(times, scale="tdb", format="jd")
