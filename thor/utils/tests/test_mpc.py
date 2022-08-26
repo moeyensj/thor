@@ -1,9 +1,11 @@
 import numpy as np
 from astropy.time import Time
 
-from ..mpc import convertMPCPackedDates
-from ..mpc import packMPCDesignation
-from ..mpc import unpackMPCDesignation
+from ..mpc import convert_MPC_packed_dates
+from ..mpc import pack_MPC_designation
+from ..mpc import unpack_MPC_designation
+
+### Tests last updated: 2022-08-26
 
 DESIGNATIONS_UP2P = {
     # Packed : Unpacked
@@ -40,7 +42,7 @@ DESIGNATIONS_UP2P = {
 DESIGNATIONS_P2UP = {v : k for k, v in DESIGNATIONS_UP2P.items()}
 
 
-def test_convertMPCPackedDates():
+def test_convert_MPC_packed_dates():
     # Use a few modified examples from https://minorplanetcenter.net/iau/info/PackedDates.html
     # and test conversion from packed form to MJDs
     isot_tt = np.array([
@@ -67,18 +69,18 @@ def test_convertMPCPackedDates():
         "J969U78125"
     ])
 
-    mjd_tt = convertMPCPackedDates(pf_tt)
+    mjd_tt = convert_MPC_packed_dates(pf_tt)
     mjd = Time(isot_tt, format="isot", scale="tt")
 
     np.testing.assert_equal(mjd_tt, mjd.tt.mjd)
     return
 
-def test_unpackMPCDesignation():
+def test_unpack_MPC_designation():
     # Test unpacking of packed form designations
     for designation_pf, designation in DESIGNATIONS_P2UP.items():
-        assert unpackMPCDesignation(designation_pf) == designation
+        assert unpack_MPC_designation(designation_pf) == designation
 
-def test_packMPCDesignation():
+def test_pack_MPC_designation():
     # Test packing of unpacked designations
     for designation, designation_pf in DESIGNATIONS_UP2P.items():
-        assert packMPCDesignation(designation) == designation_pf
+        assert pack_MPC_designation(designation) == designation_pf
