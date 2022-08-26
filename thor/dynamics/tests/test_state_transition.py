@@ -9,7 +9,7 @@ from ..state_transition import calc_state_transition_matrix
 
 MU = c.MU
 
-def test_calcStateTransitionMatrix_zerodt():
+def test_calc_state_transition_matrix_zerodt():
 
     orbit = np.array([1., 0., 0., 0.0002, 0.0002, 0.])
     dt = 0.0
