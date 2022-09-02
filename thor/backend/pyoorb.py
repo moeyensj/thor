@@ -431,7 +431,7 @@ class PYOORB(Backend):
                         format="mjd"
                     ),
                     origin=observatory_codes,
-                    frame="ecliptic"
+                    frame="equatorial"
                 ),
                 orbit_ids=orbit_ids,
                 object_ids=object_ids
