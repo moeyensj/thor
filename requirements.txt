@@ -1,7 +1,7 @@
 numpy
 numba
 pandas
-jax=0.2.25
+jax
 difi
 astropy
 astroquery
