@@ -60,7 +60,9 @@ def assignPatchesSquare(
 def assignPatchesHEALPix(
         ra: np.ndarray,
         dec: np.ndarray,
-        nside: int = 1024
+        nside: int = 1024,
+        nest: bool = True,
+        lonlat: bool = True,
     ) -> np.ndarray:
     """
     Assign patches using a HEALPix schema.
@@ -86,6 +88,6 @@ def assignPatchesHEALPix(
         HEALPix: A Framework for High-Resolution Discretization and Fast Analysis of Data Distributed on the Sphere.
         The Astrophysical Journal, 622(2), 759. https://doi.org/10.1086/427976
     """
-    patch_ids = hp.ang2pix(nside, ra, dec, nest=False, lonlat=True)
+    patch_ids = hp.ang2pix(nside, ra, dec, nest=nest, lonlat=lonlat)
 
     return patch_ids

@@ -5,6 +5,7 @@ from astropy.time import Time
 
 from .orbits import Orbits
 from .utils import assignPatchesSquare
+from .utils import assignPatchesHEALPix
 
 __all__ = [
     "findAverageOrbits",
@@ -205,8 +206,12 @@ def findTestOrbits_worker(ephemeris_list: List[pd.DataFrame]) -> pd.DataFrame:
 def selectTestOrbits(
         observations: pd.DataFrame,
         ephemeris: pd.DataFrame,
-        ra_width: int = 15,
-        dec_width: int = 15
+        patch_algorithm: str = "healpix",
+        patch_algorithm_kwargs: dict = {
+            "nside": 32,
+            "nest": True,
+            "lonlat": True
+        }
     ) -> pd.DataFrame:
     """
     Select test orbits from ephemerides. Both the observations and the ephemerides
@@ -224,10 +229,10 @@ def selectTestOrbits(
         and the astrometry ('RA_deg', 'Dec_deg'), and the cartesian state vector of the
         orbit at the time of the observation (must be correctly aberrated)
         ('obj_x', 'obj_y', 'obj_z', 'obj_vx', 'obj_vy', 'obj_vz').
-    ra_width : int
-        Width of patches in RA in degrees.
-    dec_width : int
-        Width of patches in Dec in degrees.
+    patch_algorithm : str, optional
+        Algorithm to use for dividing the observations and ephemerides into patches.
+    patch_algorithm_kwargs : dict, optional
+        Keyword arguments to pass to the patch algorithm.
 
     Returns
     -------
@@ -238,12 +243,19 @@ def selectTestOrbits(
     observations_ = observations[["mjd_utc", "RA_deg", "Dec_deg"]].copy()
     ephemeris_ = ephemeris.copy()
 
+    if patch_algorithm == "healpix":
+        patch_func = assignPatchesHEALPix
+    elif patch_algorithm == "square":
+        patch_func = assignPatchesSquare
+    else:
+        err = "patch_algorithm should be one of {'healpix', 'square'}"
+        raise ValueError(err)
+
     # Divide the observations into patches of size ra_width x dec_width
-    patch_ids = assignPatchesSquare(
+    patch_ids = patch_func(
         observations_["RA_deg"].values,
         observations_["Dec_deg"].values,
-        ra_width=ra_width,
-        dec_width=dec_width,
+        **patch_algorithm_kwargs
     )
     observations_["patch_id"] = patch_ids
     observations_.sort_values(
@@ -252,11 +264,10 @@ def selectTestOrbits(
     )
 
     # Divide the ephemrides into patches of size ra_width x dec_width
-    ephemeris_["patch_id"] = assignPatchesSquare(
+    ephemeris_["patch_id"] = patch_func(
         ephemeris_["RA_deg"].values,
         ephemeris_["Dec_deg"].values,
-        ra_width=ra_width,
-        dec_width=dec_width,
+        **patch_algorithm_kwargs
     )
 
     # Keep only ephemerides within the same patches as the observations
