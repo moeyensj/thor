@@ -253,38 +253,6 @@ class Orbits(CoordinateMembers):
 
         return cls(coordinates, object_ids=object_ids)
 
-    def to_frame(self, frame: str):
-        """
-        Rotate coordinates to desired frame. Rotation is applied to the Cartesian coordinates.
-        All other coordinate types are reset to None.
-
-        Parameters
-        ----------
-        frame : {'ecliptic', 'equatorial'}
-            Desired reference frame of the output coordinates.
-        """
-        self._cartesian = self.cartesian.to_frame(frame)
-        self._keplerian = None
-        self._cometary = None
-        self._spherical = None
-        return
-
-    def to_origin(self, origin: str):
-        """
-        Translate coordinates to a different origin. Translation is applied to the Cartesian coordinates.
-        All other coordinate types are reset to None.
-
-        Parameters
-        ----------
-        origin : {'heliocenter', 'barycenter'}
-            Name of the desired origin.
-        """
-        self._cartesian = self.cartesian.to_origin(origin)
-        self._keplerian = None
-        self._cometary = None
-        self._spherical = None
-        return
-
     def to_df(
             self,
             time_scale: str = "tdb",
