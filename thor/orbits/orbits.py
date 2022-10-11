@@ -47,7 +47,8 @@ class Orbits(CoordinateMembers):
             cartesian=True,
             keplerian=True,
             spherical=True,
-            cometary=True
+            cometary=True,
+            bernstein_khushalani=True
         )
         if orbit_ids is not None:
             self._orbit_ids = orbit_ids
@@ -267,7 +268,7 @@ class Orbits(CoordinateMembers):
         ----------
         time_scale : {"tdb", "tt", "utc"}
             Desired timescale of the output MJDs.
-        coordinate_type : {"cartesian", "spherical", "keplerian", "cometary"}
+        coordinate_type : {"cartesian", "spherical", "keplerian", "cometary", "bernstein-khushalani"}
             Desired output representation of the orbits.
         sigmas : bool, optional
             Include 1-sigma uncertainty columns.
@@ -332,6 +333,7 @@ class Orbits(CoordinateMembers):
             keplerian=True,
             cometary=True,
             spherical=True,
+            bernstein_khushalani=True,
             coord_cols=coord_cols,
             origin_col=origin_col,
             frame_col=frame_col

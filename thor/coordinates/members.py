@@ -22,6 +22,10 @@ from .cometary import (
     CometaryCoordinates,
     COMETARY_COLS,
 )
+from .bernstein_khushalani import (
+    BernsteinKhushalaniCoordinates,
+    BERNSTEIN_KHUSHALANI_COLS,
+)
 from .transform import transform_coordinates
 
 __all__ = ["CoordinateMembers"]
@@ -30,16 +34,17 @@ class CoordinateMembers(Indexable):
 
     def __init__(self,
             coordinates: Optional[Coordinates] = None,
-            cartesian=True,
-            keplerian=True,
-            spherical=True,
-            cometary=True
-
+            cartesian: bool = True,
+            keplerian: bool = True,
+            spherical: bool = True,
+            cometary: bool = True,
+            bernstein_khushalani: bool = True,
     ):
         self._cartesian = None
         self._spherical = None
         self._keplerian = None
         self._cometary = None
+        self._bernstein_khushalani = None
         self.default_coordinate_type = None
 
         allowed_coordinate_types = set()
@@ -51,6 +56,8 @@ class CoordinateMembers(Indexable):
             allowed_coordinate_types.add("KeplerianCoordinates")
         if cometary:
             allowed_coordinate_types.add("CometaryCoordinates")
+        if bernstein_khushalani:
+            allowed_coordinate_types.add("BernsteinKhushalaniCoordinates")
         self.__allowed_coordinate_types = allowed_coordinate_types
 
         if isinstance(coordinates, CartesianCoordinates) and cartesian:
@@ -65,6 +72,9 @@ class CoordinateMembers(Indexable):
         elif isinstance(coordinates, CometaryCoordinates) and cometary:
             self._cometary = deepcopy(coordinates)
             self.default_coordinate_type = "cometary"
+        elif isinstance(coordinates, BernsteinKhushalaniCoordinates) and bernstein_khushalani:
+            self._bernstein_khushalani = deepcopy(coordinates)
+            self.default_coordinate_type = "bernstein-khushalani"
         elif coordinates is None:
             pass
         else:
@@ -95,6 +105,8 @@ class CoordinateMembers(Indexable):
                 self._cartesian = transform_coordinates(self._cometary, "cartesian")
             elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
                 self._cartesian = transform_coordinates(self._spherical, "cartesian")
+            elif self._bernstein_khushalani is not None and "BernsteinKhushalaniCoordinates" in self.__allowed_coordinate_types:
+                self._cartesian = transform_coordinates(self._bernstein_khushalani, "cartesian")
 
         return self._cartesian
 
@@ -113,6 +125,8 @@ class CoordinateMembers(Indexable):
                 self._spherical = transform_coordinates(self._keplerian, "spherical")
             elif self._cometary is not None and "CometaryCoordinates" in self.__allowed_coordinate_types:
                 self._spherical = transform_coordinates(self._cometary, "spherical")
+            elif self._bernstein_khushalani is not None and "BernsteinKhushalaniCoordinates" in self.__allowed_coordinate_types:
+                self._spherical = transform_coordinates(self._bernstein_khushalani, "spherical")
 
         return self._spherical
 
@@ -131,6 +145,8 @@ class CoordinateMembers(Indexable):
                 self._keplerian = transform_coordinates(self._cometary, "keplerian")
             elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
                 self._keplerian = transform_coordinates(self._spherical, "keplerian")
+            elif self._bernstein_khushalani is not None and "BernsteinKhushalaniCoordinates" in self.__allowed_coordinate_types:
+                self._keplerian = transform_coordinates(self._bernstein_khushalani, "keplerian")
 
         return self._keplerian
 
@@ -149,8 +165,30 @@ class CoordinateMembers(Indexable):
                 self._cometary = transform_coordinates(self._keplerian, "cometary")
             elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
                 self._cometary = transform_coordinates(self._spherical, "cometary")
+            elif self._bernstein_khushalani is not None and "BernsteinKhushalaniCoordinates" in self.__allowed_coordinate_types:
+                self._cometary = transform_coordinates(self._bernstein_khushalani, "cometary")
 
         return self._cometary
+
+    @property
+    def bernstein_khushalani(self):
+
+        if "BernsteinKhushalaniCoordinates" not in self.__allowed_coordinate_types:
+            err = ("Keplerian coordinates are not supported by this class.")
+            raise ValueError(err)
+
+        if self._bernstein_khushalani is None:
+
+            if self._cartesian is not None and "CartesianCoordinates" in self.__allowed_coordinate_types:
+                self._bernstein_khushalani = transform_coordinates(self._cartesian, "bernstein-khushalani")
+            elif self._keplerian is not None and "KeplerianCoordinates" in self.__allowed_coordinate_types:
+                self._bernstein_khushalani = transform_coordinates(self._keplerian, "bernstein-khushalani")
+            elif self._spherical is not None and "SphericalCoordinates" in self.__allowed_coordinate_types:
+                self._bernstein_khushalani = transform_coordinates(self._spherical, "bernstein-khushalani")
+            elif self._cometary is not None and "CometaryCoordinates" in self.__allowed_coordinate_types:
+                self._bernstein_khushalani = transform_coordinates(self._cometary, "bernstein-khushalani")
+
+        return self._bernstein_khushalani
 
     def to_frame(self, frame: str):
         """
@@ -166,6 +204,7 @@ class CoordinateMembers(Indexable):
         self._keplerian = None
         self._cometary = None
         self._spherical = None
+        self._bernstein_khushalani = None
         return
 
     def to_origin(self, origin: str):
@@ -182,6 +221,7 @@ class CoordinateMembers(Indexable):
         self._keplerian = None
         self._cometary = None
         self._spherical = None
+        self._bernstein_khushalani = None
         return
 
     def to_df(self,
@@ -219,7 +259,7 @@ class CoordinateMembers(Indexable):
         Raises
         ------
         ValueError: If coordinate_type is not one of {'cartesian', 'keplerian',
-            'cometary', 'spherical'}.
+            'cometary', 'spherical', 'bernstein-khushalani'}.
         """
         if coordinate_type is None:
             coordinate_type_ = self.default_coordinate_type
@@ -241,6 +281,8 @@ class CoordinateMembers(Indexable):
             df = self.cometary.to_df(**kwargs)
         elif coordinate_type_ == "spherical":
             df = self.spherical.to_df(**kwargs)
+        elif coordinate_type_ == "bernstein-khushalani":
+            df = self.bernstein_khushalani.to_df(**kwargs)
         else:
             err = (
                 "coordinate_type should be one of:\n"
@@ -248,6 +290,7 @@ class CoordinateMembers(Indexable):
                 "  spherical\n"
                 "  keplerian\n"
                 "  cometary\n"
+                "  bernstein-khushalani\n"
             )
             raise ValueError(err)
 
@@ -260,6 +303,7 @@ class CoordinateMembers(Indexable):
             keplerian: bool = True,
             cometary: bool = True,
             spherical: bool = True,
+            bernstein_khushalani: bool = True,
             coord_cols: Optional[OrderedDict] = None,
             origin_col: str = "origin",
             frame_col: str = "frame"
@@ -282,6 +326,8 @@ class CoordinateMembers(Indexable):
             Look for Cometary coordinates.
         spherical : bool, optional
             Look for Spherical coordinates.
+        bernstein_khushalani : bool, optional
+            Look for Bernstein-Khushalani coordinates.
         coord_cols : OrderedDict, optional
             Ordered dictionary containing the coordinate dimensions as keys and their equivalent columns
             as values. If None, this function will use the default dictionaries for each coordinate class.
@@ -290,6 +336,7 @@ class CoordinateMembers(Indexable):
                 Keplerian columns: a, e, i, raan, ap, M
                 Cometary columns: q, e, i, raan, ap, tp
                 Spherical columns: rho, lon, lat, vrho, vlon, vlat
+                Bernstein-Khushalani columns: gamma, alpha, beta, vgamma, valpha, vbeta
         origin_col : str
             Name of the column containing the origin of each coordinate.
         frame_col : str
@@ -315,6 +362,9 @@ class CoordinateMembers(Indexable):
             elif spherical and np.all(np.in1d(list(SPHERICAL_COLS.values()), columns)):
                 coord_class = SphericalCoordinates
                 coord_cols_ = SPHERICAL_COLS
+            elif bernstein_khushalani and np.all(np.in1d(list(BERNSTEIN_KHUSHALANI_COLS.values()), columns)):
+                coord_class = BernsteinKhushalaniCoordinates
+                coord_cols_ = BERNSTEIN_KHUSHALANI_COLS
             else:
                 err = "No supported coordinates could be found in the given dataframe.\n" \
                     "The following coordinate columns were searched for:\n"
@@ -326,6 +376,8 @@ class CoordinateMembers(Indexable):
                     err += f" Cometary columns: {', '.join(COMETARY_COLS.keys())}\n"
                 if spherical:
                     err += f" Spherical columns: {', '.join(SPHERICAL_COLS.keys())}\n"
+                if bernstein_khushalani:
+                    err += f" Bernstein-Khushalani columns: {', '.join(BERNSTEIN_KHUSHALANI_COLS.keys())}\n"
                 raise ValueError(err)
 
         elif isinstance(coord_cols, OrderedDict):
@@ -337,6 +389,8 @@ class CoordinateMembers(Indexable):
                 coord_class = CometaryCoordinates
             elif spherical and coord_cols.keys() == SPHERICAL_COLS.keys():
                 coord_class = SphericalCoordinates
+            elif bernstein_khushalani and coord_cols.keys() == BERNSTEIN_KHUSHALANI_COLS.keys():
+                coord_class = BernsteinKhushalaniCoordinates
             else:
                 err = "Coordinate column dictionary keys could not be\n" \
                     "matched to any of the supported coordinates for this class:\n"
@@ -348,6 +402,8 @@ class CoordinateMembers(Indexable):
                     err += f" Cometary columns: {', '.join(COMETARY_COLS.keys())}\n"
                 if spherical:
                     err += f" Spherical columns: {', '.join(SPHERICAL_COLS.keys())}\n"
+                if bernstein_khushalani:
+                    err += f" Bernstein-Khushalani columns: {', '.join(BERNSTEIN_KHUSHALANI_COLS.keys())}\n"
                 raise ValueError(err)
 
             coord_cols_ = coord_cols
@@ -374,6 +430,7 @@ class CoordinateMembers(Indexable):
             keplerian: bool = True,
             cometary: bool = True,
             spherical: bool = True,
+            bernstein_khushalani: bool = True,
             coord_cols: Optional[OrderedDict] = None,
             origin_col: str = "origin",
             frame_col: str = "frame"
@@ -395,6 +452,8 @@ class CoordinateMembers(Indexable):
             Look for Cometary coordinates.
         spherical : bool, optional
             Look for Spherical coordinates.
+        bernstein_khushalani : bool, optional
+            Look for Bernstein-Khushalani coordinates.
         coord_cols : OrderedDict, optional
             Ordered dictionary containing the coordinate dimensions as keys and their equivalent columns
             as values. If None, this function will use the default dictionaries for each coordinate class.
@@ -403,6 +462,7 @@ class CoordinateMembers(Indexable):
                 Keplerian columns: a, e, i, raan, ap, M
                 Cometary columns: q, e, i, raan, ap, tp
                 Spherical columns: rho, lon, lat, vrho, vlon, vlat
+                Bernstein-Khushalani columns: gamma, alpha, beta, vgamma, valpha, vbeta
         origin_col : str
             Name of the column containing the origin of each coordinate.
         frame_col : str
@@ -419,6 +479,7 @@ class CoordinateMembers(Indexable):
             keplerian=keplerian,
             cometary=cometary,
             spherical=spherical,
+            bernstein_khushalani=bernstein_khushalani,
             coord_cols=coord_cols,
             origin_col=origin_col,
             frame_col=frame_col

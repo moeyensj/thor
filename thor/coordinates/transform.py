@@ -24,6 +24,10 @@ from .cometary import (
     CometaryCoordinates,
     COMETARY_UNITS
 )
+from .bernstein_khushalani import (
+    BernsteinKhushalaniCoordinates,
+    BERNSTEIN_KHUSHALANI_UNITS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +78,9 @@ def transform_coordinates(
             CartesianCoordinates,
             SphericalCoordinates,
             KeplerianCoordinates,
-            CometaryCoordinates)
+            CometaryCoordinates,
+            BernsteinKhushalaniCoordinates,
+            )
         ):
         err = (
             "Coords of type {} are not supported.\n"
@@ -83,6 +89,7 @@ def transform_coordinates(
             "  SphericalCoordinates\n"
             "  KeplerianCoordinates\n"
             "  CometaryCoordinates\n"
+            "  BernsteinKhushalaniCoordinates\n"
         )
         raise TypeError(err)
 
@@ -115,9 +122,9 @@ def transform_coordinates(
     # or spherical, raise errors otherwise
     representation_err = [
         "{} should be one of:\n",
-        "'cartesian', 'spherical', 'keplerian', 'cometary'"
+        "'cartesian', 'spherical', 'keplerian', 'cometary', 'bernstein-khushalani'"
     ]
-    if representation_out not in ("cartesian", "spherical", "keplerian", "cometary"):
+    if representation_out not in ("cartesian", "spherical", "keplerian", "cometary", "bernstein-khushalani"):
         raise ValueError("".join(representation_err).format("representation_out"))
 
     # If coords are already in the desired frame, have the desired origin and representation
@@ -130,6 +137,8 @@ def transform_coordinates(
         elif isinstance(coords, KeplerianCoordinates) and representation_out == "keplerian":
             return coords
         elif isinstance(coords, CometaryCoordinates) and representation_out == "cometary":
+            return coords
+        elif isinstance(coords, BernsteinKhushalaniCoordinates) and representation_out == "bernstein-khushalani":
             return coords
         else:
             pass
@@ -182,6 +191,13 @@ def transform_coordinates(
 
         cartesian = coords_.to_cartesian()
 
+    elif isinstance(coords_, BernsteinKhushalaniCoordinates):
+        if not coords_.has_units(BERNSTEIN_KHUSHALANI_UNITS):
+            logger.info("Bernstein-Khushalani coordinates do not have default units, converting units before transforming.")
+            coords_ = convert_coordinates(coords_, BERNSTEIN_KHUSHALANI_UNITS)
+
+        cartesian = coords_.to_cartesian()
+
     # Translate coordinates to new origin (if different from current)
     if origin_out is not None and np.all(cartesian.origin != origin_out):
         cartesian = cartesian.to_origin(origin_out)
@@ -210,6 +226,8 @@ def transform_coordinates(
         coords_out = CometaryCoordinates.from_cartesian(cartesian)
     elif representation_out == "cartesian":
         coords_out = cartesian
+    elif representation_out == "bernstein-khushalani":
+        coords_out = BernsteinKhushalaniCoordinates.from_cartesian(cartesian)
 
     return coords_out
 
