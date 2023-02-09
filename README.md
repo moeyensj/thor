@@ -12,6 +12,26 @@ Tracklet-less Heliocentric Orbit Recovery
 [![Anaconda-Server Badge](https://anaconda.org/moeyensj/thor/badges/platforms.svg)](https://anaconda.org/moeyensj/thor)
 [![Anaconda-Server Badge](https://anaconda.org/moeyensj/thor/badges/downloads.svg)](https://anaconda.org/moeyensj/thor)  
 
+
+## Table of Contents
+
+1. What THOR Does
+2. Installation
+    a. Anaconda
+    b. Docker
+    c. Source
+3. Running the Project
+4. Motivation Behind Technologies
+
+## What THOR Does
+THOR stands for Tracklet-less Heliocentric Orbit Recovery. Let's break it down.
+ * Tracklet: A short track between frames of consecutive observations in time
+ * Heliocentric: A model of the solar system having the sun as the center
+ * Orbit: the curved trajectory of an object around a celestial object
+ * Recovery: Regaining knowledge of information that was lost
+
+Esentially, this project helps us to learn more about different objects orbiting in a sun-centered solar system, including but not limited to information regarding the object's time, velocity, range, and shifts in space. The project uses trained models and a wide range of datasets to accomplish this tracklet-less recovery, and with more test data to train the models, the better the program can predict the orbit data. 
+
 ## Installation
 
 Warning: The THOR code is still in very active development. 
@@ -81,5 +101,14 @@ Type "help", "copyright", "credits" or "license" for more information.
 >>> import thor
 >>> 
 ```
+
+## Running the Project
+To run the project, follow the installation steps above. Then, navigate to your favorite python IDE and run runTHOR.py with relevant arguments as listed in the runTHOR.py file. 
+
+## Motivation Behind Technologies
+
+* Python: Rapid application development, high-level data structures built in to the language, simple
+* Anaconda: Helps to create environment for various versions of Python (makes sharing/distributing the code easier)
+* Docker: Allows for fast and efficient project delivery and updates
 
 **If you would like to run Jupyter Notebook or Juptyter Lab with THOR please see the installation instructions in the THOR notebooks repository.**
