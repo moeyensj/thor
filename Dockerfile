@@ -3,18 +3,21 @@ FROM continuumio/miniconda3
 # Set shell to bash
 SHELL ["/bin/bash", "-c"]
 
-# Update apps
+# Update system dependencies
 RUN apt-get update \
 	&& apt-get upgrade -y
 
 # Update conda
 RUN conda update -n base -c defaults conda
 
-# Download THOR and install
-RUN mkdir projects \
-	&& cd projects \
-	&& git clone https://github.com/moeyensj/thor.git --depth=1 \
-	&& cd thor \
-	&& conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt python=3.8 --y \
-	&& python -m ipykernel install --user --name thor_py38 --display-name "THOR (Python 3.8)" \
-	&& python setup.py install
+# Upgrade pip to the latest version
+RUN pip install --upgrade pip
+
+# Install openorb from conda
+RUN conda install -c defaults -c conda-forge openorb --y
+
+# Install THOR
+RUN mkdir /code/
+ADD . /code/
+WORKDIR /code/
+RUN pip install -e .[tests]
