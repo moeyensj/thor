@@ -23,5 +23,7 @@ jobs:
           install: true
       - name: Build
         run: docker build --load -t thor:$IMAGE_TAG .
+      - name: Lint
+        run: docker run -i thor:$IMAGE_TAG pre-commit run --all-files
       - name: Test
         run: docker run -i thor:$IMAGE_TAG pytest . --cov

@@ -33,5 +33,7 @@ jobs:
           conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt --yes
       - name: Build and install
         run: pip install . --no-deps
+      - name: Lint
+        run: pre-commit run --all-files
       - name: Test
         run: pytest . --cov

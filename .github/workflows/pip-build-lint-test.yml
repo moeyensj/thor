@@ -36,5 +36,7 @@ jobs:
           cache: 'pip' # caching pip dependencies
       - name: Build and install
         run: pip install .[tests]
+      - name: Lint
+        run: pre-commit run --all-files
       - name: Test
         run: pytest . --cov
