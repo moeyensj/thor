@@ -1,4 +1,4 @@
-name: Python Package with conda
+name: conda - Build, Lint, and Test
 
 on:
   push:
@@ -12,14 +12,14 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: [3.7, 3.8, 3.9]
+        python-version: ["3.9", "3.10"]
     defaults:
       run:
         shell: bash -l {0}
 
     steps:
       - name: Checkout git repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Get git tags
         run:  git fetch --prune --unshallow --tags
       - name: Set up miniconda
@@ -31,9 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt --yes
-      - name: Install THOR
-        run: |
-          python setup.py install
-      - name: Test with pytest
-        run: |
-          pytest . --cov=.
+      - name: Build and install
+        run: pip install . --no-deps
+      - name: Test
+        run: pytest . --cov
