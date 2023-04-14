@@ -17,7 +17,7 @@ plotly
 ipykernel
 pytest
 pytest-cov
-coveralls
+pre-commit
 setuptools>=45
 wheel
 setuptools_scm>=6.0

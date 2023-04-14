@@ -21,3 +21,6 @@ RUN mkdir /code/
 ADD . /code/
 WORKDIR /code/
 RUN pip install -e .[tests]
+
+# Install pre-commit hooks
+RUN pre-commit install
