@@ -4,16 +4,20 @@ from numba import jit
 from ..constants import Constants as c
 from .universal_propagate import propagateUniversal
 
-__all__ = [
-    "addLightTime",
-    "addStellarAberration"
-]
+__all__ = ["addLightTime", "addStellarAberration"]
 
 MU = c.MU
 C = c.C
 
-@jit(["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"], nopython=True, cache=True)
-def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15):
+
+@jit(
+    ["Tuple((f8[:,:], f8[:]))(f8[:,:], f8[:], f8[:,:], f8, f8, i8, f8)"],
+    nopython=True,
+    cache=True,
+)
+def addLightTime(
+    orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1000, tol=1e-15
+):
     """
     When generating ephemeris, orbits need to be backwards propagated to the time
     at which the light emitted or relflected from the object towards the observer.
@@ -53,9 +57,9 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
     for i in range(num_orbits):
 
         # Set up running variables
-        orbit_i = orbits[i:i+1, :]
-        observer_position_i = observer_positions[i:i+1, :]
-        t0_i = t0[i:i+1]
+        orbit_i = orbits[i : i + 1, :]
+        observer_position_i = observer_positions[i : i + 1, :]
+        t0_i = t0[i : i + 1]
         dlt = 1e30
         lt_i = 1e30
 
@@ -71,7 +75,14 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
             dlt = np.abs(lt - lt_i)
 
             # Propagate backwards to new epoch
-            orbit = propagateUniversal(orbits[i:i+1, :], t0[i:i+1], t0[i:i+1] - lt, mu=mu, max_iter=max_iter, tol=tol)
+            orbit = propagateUniversal(
+                orbits[i : i + 1, :],
+                t0[i : i + 1],
+                t0[i : i + 1] - lt,
+                mu=mu,
+                max_iter=max_iter,
+                tol=tol,
+            )
 
             # Update running variables
             t0_i = orbit[:, 1]
@@ -82,6 +93,7 @@ def addLightTime(orbits, t0, observer_positions, lt_tol=1e-10, mu=MU, max_iter=1
         lts[i] = lt
 
     return corrected_orbits, lts
+
 
 @jit(["f8[:,:](f8[:,:], f8[:,:])"], nopython=True, cache=True)
 def addStellarAberration(orbits, observer_states):
@@ -116,12 +128,14 @@ def addStellarAberration(orbits, observer_states):
     for i in range(len(orbits)):
         v_obs = observer_states[i, 3:]
         beta = v_obs / C
-        gamma_inv = np.sqrt(1 - np.linalg.norm(beta)**2)
+        gamma_inv = np.sqrt(1 - np.linalg.norm(beta) ** 2)
         delta = np.linalg.norm(topo_states[i, :3])
 
         # Equation 7.40 in Urban & Seidelmann (2013) [1]
         rho = topo_states[i, :3] / delta
-        rho_aberrated[i, :] = (gamma_inv * rho + beta + np.dot(rho, beta) * beta / (1 + gamma_inv)) / (1 + np.dot(rho, beta))
+        rho_aberrated[i, :] = (
+            gamma_inv * rho + beta + np.dot(rho, beta) * beta / (1 + gamma_inv)
+        ) / (1 + np.dot(rho, beta))
         rho_aberrated[i, :] *= delta
 
     return rho_aberrated

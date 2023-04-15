@@ -1,14 +1,12 @@
+import logging
 import os
 import sys
 import time
-import logging
 
-__all__ = [
-    "setupLogger",
-    "Timer"
-]
+__all__ = ["setupLogger", "Timer"]
 
 logger = logging.getLogger(__name__)
+
 
 def setupLogger(name, out_dir=None):
     """
@@ -39,36 +37,41 @@ def setupLogger(name, out_dir=None):
     if add_stream_handler:
         stream_handler = logging.StreamHandler(stream=sys.stdout)
         stream_handler.setLevel(logging.INFO)
-        stream_format = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s - %(message)s', datefmt='%H:%M:%S')
+        stream_format = logging.Formatter(
+            "%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s - %(message)s",
+            datefmt="%H:%M:%S",
+        )
         stream_handler.setFormatter(stream_format)
         logger.addHandler(stream_handler)
 
     if add_file_handler:
         file_handler = logging.FileHandler(
-            os.path.join(out_dir, "thor.log"),
-            encoding="utf-8",
-            delay=False
+            os.path.join(out_dir, "thor.log"), encoding="utf-8", delay=False
         )
         file_handler.setLevel(logging.DEBUG)
-        file_format = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)s] %(message)s (%(filename)s, %(funcName)s, %(lineno)d)', datefmt='%Y-%m-%d %H:%M:%S')
+        file_format = logging.Formatter(
+            "%(asctime)s.%(msecs)03d [%(levelname)s] %(message)s (%(filename)s, %(funcName)s, %(lineno)d)",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
         file_handler.setFormatter(file_format)
         logger.addHandler(file_handler)
 
     return logger
 
+
 class Timer:
     def __init__(
-            self,
-            file_name=None,
-            file_dir="/tmp/thor/",
-            prepend_data=[],
-            sep=",",
-            open_kwargs={
-                "mode": "a",
-                "buffering": -1,
-                "encoding" : "utf-8",
-            },
-        ):
+        self,
+        file_name=None,
+        file_dir="/tmp/thor/",
+        prepend_data=[],
+        sep=",",
+        open_kwargs={
+            "mode": "a",
+            "buffering": -1,
+            "encoding": "utf-8",
+        },
+    ):
         """
         Timing context manager that stores timing results and given user
         data to a file if desired.

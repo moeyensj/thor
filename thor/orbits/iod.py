@@ -6,40 +6,35 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import logging
+import multiprocessing as mp
 import time
 import uuid
-import logging
+from functools import partial
+from itertools import combinations
+
 import numpy as np
 import pandas as pd
-import multiprocessing as mp
 from astropy.time import Time
-from itertools import combinations
-from functools import partial
 
-from ..utils import _initWorker
-from ..utils import _checkParallel
-from ..utils import yieldChunks
-from ..utils import calcChunkSize
-from ..utils import sortLinkages
-from ..utils import identifySubsetLinkages
-from ..backend import MJOLNIR
-from ..backend import PYOORB
+from ..backend import MJOLNIR, PYOORB
+from ..utils import (
+    _checkParallel,
+    _initWorker,
+    calcChunkSize,
+    identifySubsetLinkages,
+    sortLinkages,
+    yieldChunks,
+)
 from .gauss import gaussIOD
 from .residuals import calcResiduals
 
 logger = logging.getLogger(__name__)
 
-__all__ = [
-    "selectObservations",
-    "iod",
-    "iod_worker",
-    "initialOrbitDetermination"
-]
+__all__ = ["selectObservations", "iod", "iod_worker", "initialOrbitDetermination"]
 
-def selectObservations(
-        observations,
-        method="combinations"
-    ):
+
+def selectObservations(observations, method="combinations"):
     """
     Selects which three observations to use for IOD depending on the method.
 
@@ -72,28 +67,31 @@ def selectObservations(
     times = observations["mjd_utc"].values
 
     if method == "first+middle+last":
-        selected_times = np.percentile(times,
-                                 [0, 50, 100],
-                                 interpolation="nearest")
+        selected_times = np.percentile(times, [0, 50, 100], interpolation="nearest")
         selected_index = np.intersect1d(times, selected_times, return_indices=True)[1]
         selected_index = np.array([selected_index])
 
     elif method == "thirds":
-        selected_times = np.percentile(times,
-                                 [1/6*100, 50, 5/6*100],
-                                 interpolation="nearest")
+        selected_times = np.percentile(
+            times, [1 / 6 * 100, 50, 5 / 6 * 100], interpolation="nearest"
+        )
         selected_index = np.intersect1d(times, selected_times, return_indices=True)[1]
         selected_index = np.array([selected_index])
 
     elif method == "combinations":
         # Make all possible combinations of 3 observations
-        selected_index = np.array([np.array(index) for index in combinations(indexes, 3)])
+        selected_index = np.array(
+            [np.array(index) for index in combinations(indexes, 3)]
+        )
 
         # Calculate arc length
         arc_length = times[selected_index][:, 2] - times[selected_index][:, 0]
 
         # Calculate distance of second observation from middle point (last + first) / 2
-        time_from_mid = np.abs((times[selected_index][:, 2] + times[selected_index][:, 0])/2 - times[selected_index][:, 1])
+        time_from_mid = np.abs(
+            (times[selected_index][:, 2] + times[selected_index][:, 0]) / 2
+            - times[selected_index][:, 1]
+        )
 
         # Sort by descending arc length and ascending time from midpoint
         sort = np.lexsort((time_from_mid, -arc_length))
@@ -118,23 +116,26 @@ def selectObservations(
 
     return obs_ids[selected_index]
 
+
 def iod_worker(
-        observations_list,
-        observation_selection_method="combinations",
-        min_obs=6,
-        min_arc_length=1.0,
-        rchi2_threshold=10**3,
-        contamination_percentage=0.0,
-        iterate=False,
-        light_time=True,
-        linkage_id_col="cluster_id",
-        backend="PYOORB",
-        backend_kwargs={}
-    ):
+    observations_list,
+    observation_selection_method="combinations",
+    min_obs=6,
+    min_arc_length=1.0,
+    rchi2_threshold=10**3,
+    contamination_percentage=0.0,
+    iterate=False,
+    light_time=True,
+    linkage_id_col="cluster_id",
+    backend="PYOORB",
+    backend_kwargs={},
+):
     iod_orbits_dfs = []
     iod_orbit_members_dfs = []
     for observations in observations_list:
-        assert np.all(sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values)
+        assert np.all(
+            sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values
+        )
 
         time_start = time.time()
         linkage_id = observations[linkage_id_col].unique()[0]
@@ -150,7 +151,7 @@ def iod_worker(
             iterate=iterate,
             light_time=light_time,
             backend=backend,
-            backend_kwargs=backend_kwargs
+            backend_kwargs=backend_kwargs,
         )
         if len(iod_orbit) > 0:
             iod_orbit.insert(1, linkage_id_col, linkage_id)
@@ -162,28 +163,23 @@ def iod_worker(
         iod_orbits_dfs.append(iod_orbit)
         iod_orbit_members_dfs.append(iod_orbit_members)
 
-    iod_orbits = pd.concat(
-        iod_orbits_dfs,
-        ignore_index=True
-    )
-    iod_orbit_members = pd.concat(
-        iod_orbit_members_dfs,
-        ignore_index=True
-    )
+    iod_orbits = pd.concat(iod_orbits_dfs, ignore_index=True)
+    iod_orbit_members = pd.concat(iod_orbit_members_dfs, ignore_index=True)
     return iod_orbits, iod_orbit_members
 
+
 def iod(
-        observations,
-        min_obs=6,
-        min_arc_length=1.0,
-        contamination_percentage=0.0,
-        rchi2_threshold=200,
-        observation_selection_method="combinations",
-        iterate=False,
-        light_time=True,
-        backend="PYOORB",
-        backend_kwargs={}
-    ):
+    observations,
+    min_obs=6,
+    min_arc_length=1.0,
+    contamination_percentage=0.0,
+    rchi2_threshold=200,
+    observation_selection_method="combinations",
+    iterate=False,
+    light_time=True,
+    backend="PYOORB",
+    backend_kwargs={},
+):
     """
     Run initial orbit determination on a set of observations believed to belong to a single
     object.
@@ -290,27 +286,23 @@ def iod(
         observers[code] = Time(
             observations[observations[obs_code_col] == code][time_col].values,
             scale="utc",
-            format="mjd"
+            format="mjd",
         )
 
     if backend == "MJOLNIR":
         backend_kwargs["light_time"] = light_time
 
         backend = MJOLNIR(**backend_kwargs)
-        #observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
+        # observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
 
     elif backend == "PYOORB":
         if light_time == False:
-            err = (
-                "PYOORB does not support turning light time correction off."
-            )
+            err = "PYOORB does not support turning light time correction off."
             raise ValueError(err)
 
         backend = PYOORB(**backend_kwargs)
     else:
-        err = (
-            "backend should be one of 'MJOLNIR' or 'PYOORB'"
-        )
+        err = "backend should be one of 'MJOLNIR' or 'PYOORB'"
         raise ValueError(err)
 
     chi2_sol = 1e10
@@ -322,7 +314,7 @@ def iod(
     num_obs = len(observations)
     if num_obs < min_obs:
         processable = False
-    num_outliers = int(num_obs * contamination_percentage / 100.)
+    num_outliers = int(num_obs * contamination_percentage / 100.0)
     num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
 
     # Select observation IDs to use for IOD
@@ -330,7 +322,7 @@ def iod(
         observations,
         method=observation_selection_method,
     )
-    obs_ids = obs_ids[:(3 * (num_outliers + 1))]
+    obs_ids = obs_ids[: (3 * (num_outliers + 1))]
 
     if len(obs_ids) == 0:
         processable = False
@@ -357,17 +349,14 @@ def iod(
             light_time=light_time,
             iterate=iterate,
             max_iter=100,
-            tol=1e-15
+            tol=1e-15,
         )
         if len(iod_orbits) == 0:
             j += 1
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = backend._generateEphemeris(
-            iod_orbits,
-            observers
-        )
+        ephemeris = backend._generateEphemeris(iod_orbits, observers)
 
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
@@ -383,7 +372,7 @@ def iod(
                 coords_all,
                 ephemeris_orbit[["RA_deg", "Dec_deg"]].values,
                 sigmas_actual=sigmas_all,
-                include_probabilistic=False
+                include_probabilistic=False,
             )
             chi2 = stats[0]
             chi2_total = np.sum(chi2)
@@ -405,7 +394,7 @@ def iod(
             # If the total reduced chi2 is less than the threshold accept the orbit
             elif rchi2 <= rchi2_threshold:
                 logger.debug("Potential solution orbit has been found.")
-                orbit_sol = iod_orbits[i:i+1]
+                orbit_sol = iod_orbits[i : i + 1]
                 obs_ids_sol = ids
                 chi2_total_sol = chi2_total
                 chi2_sol = chi2
@@ -426,7 +415,7 @@ def iod(
                 for o in range(num_outliers):
                     # Select i highest observations that contribute to
                     # chi2 (and thereby the residuals)
-                    remove = chi2[~mask].argsort()[-(o+1):]
+                    remove = chi2[~mask].argsort()[-(o + 1) :]
 
                     # Grab the obs_ids for these outliers
                     obs_id_outlier = obs_ids_all[~mask][remove]
@@ -440,12 +429,15 @@ def iod(
                     rchi2_new = chi2_new / (2 * num_obs_new - 6)
 
                     ids_mask = np.isin(obs_ids_all, obs_id_outlier, invert=True)
-                    arc_length = times_all[ids_mask].utc.mjd.max() - times_all[ids_mask].utc.mjd.min()
+                    arc_length = (
+                        times_all[ids_mask].utc.mjd.max()
+                        - times_all[ids_mask].utc.mjd.min()
+                    )
 
                     # If the updated reduced chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
                     if rchi2_new <= rchi2_threshold and arc_length >= min_arc_length:
-                        orbit_sol = iod_orbits[i:i+1]
+                        orbit_sol = iod_orbits[i : i + 1]
                         obs_ids_sol = ids
                         chi2_total_sol = chi2_new
                         rchi2_sol = rchi2_new
@@ -453,7 +445,10 @@ def iod(
                         outliers = obs_id_outlier
                         num_obs = num_obs_new
                         ids_mask = np.isin(obs_ids_all, outliers, invert=True)
-                        arc_length = times_all[ids_mask].utc.mjd.max() - times_all[ids_mask].utc.mjd.min()
+                        arc_length = (
+                            times_all[ids_mask].utc.mjd.max()
+                            - times_all[ids_mask].utc.mjd.min()
+                        )
                         chi2_sol = chi2
                         converged = True
                         break
@@ -478,7 +473,7 @@ def iod(
                 "arc_length",
                 "num_obs",
                 "chi2",
-                "rchi2"
+                "rchi2",
             ]
         )
 
@@ -490,7 +485,7 @@ def iod(
                 "residual_dec_arcsec",
                 "chi2",
                 "gauss_sol",
-                "outlier"
+                "outlier",
             ]
         )
 
@@ -501,15 +496,17 @@ def iod(
         orbit["chi2"] = chi2_total_sol
         orbit["rchi2"] = rchi2_sol
 
-        orbit_members = pd.DataFrame({
-            "orbit_id" : [orbit_sol.ids[0] for i in range(len(obs_ids_all))],
-            "obs_id" : obs_ids_all,
-            "residual_ra_arcsec" : residuals_sol[:, 0] * 3600,
-            "residual_dec_arcsec" : residuals_sol[:, 1] * 3600,
-            "chi2" : chi2_sol,
-            "gauss_sol" : np.zeros(len(obs_ids_all), dtype=int),
-            "outlier" : np.zeros(len(obs_ids_all), dtype=int)
-        })
+        orbit_members = pd.DataFrame(
+            {
+                "orbit_id": [orbit_sol.ids[0] for i in range(len(obs_ids_all))],
+                "obs_id": obs_ids_all,
+                "residual_ra_arcsec": residuals_sol[:, 0] * 3600,
+                "residual_dec_arcsec": residuals_sol[:, 1] * 3600,
+                "chi2": chi2_sol,
+                "gauss_sol": np.zeros(len(obs_ids_all), dtype=int),
+                "outlier": np.zeros(len(obs_ids_all), dtype=int),
+            }
+        )
         orbit_members.loc[orbit_members["obs_id"].isin(outliers), "outlier"] = 1
         orbit_members.loc[orbit_members["obs_id"].isin(obs_ids_sol), "gauss_sol"] = 1
 
@@ -517,23 +514,23 @@ def iod(
 
 
 def initialOrbitDetermination(
-        observations,
-        linkage_members,
-        min_obs=6,
-        min_arc_length=1.0,
-        contamination_percentage=20.0,
-        rchi2_threshold=10**3,
-        observation_selection_method="combinations",
-        iterate=False,
-        light_time=True,
-        linkage_id_col="cluster_id",
-        identify_subsets=True,
-        backend="PYOORB",
-        backend_kwargs={},
-        chunk_size=1,
-        num_jobs=1,
-        parallel_backend="mp"
-    ):
+    observations,
+    linkage_members,
+    min_obs=6,
+    min_arc_length=1.0,
+    contamination_percentage=20.0,
+    rchi2_threshold=10**3,
+    observation_selection_method="combinations",
+    iterate=False,
+    light_time=True,
+    linkage_id_col="cluster_id",
+    identify_subsets=True,
+    backend="PYOORB",
+    backend_kwargs={},
+    chunk_size=1,
+    num_jobs=1,
+    parallel_backend="mp",
+):
     """
     Run initial orbit determination on linkages found in observations.
 
@@ -634,9 +631,7 @@ def initialOrbitDetermination(
         linked_observations = linkage_members.merge(observations, on="obs_id")
         logger.debug("Sorting observations by linkage ID and mjd_utc...")
         linked_observations.sort_values(
-            by=[linkage_id_col, "mjd_utc"],
-            inplace=True,
-            ignore_index=True
+            by=[linkage_id_col, "mjd_utc"], inplace=True, ignore_index=True
         )
         duration = time.time() - start
         logger.debug(f"Merging and sorting completed in {duration:.3f}s.")
@@ -645,10 +640,12 @@ def initialOrbitDetermination(
         logger.debug("Grouping observations by linkage ID...")
         grouped_observations = linked_observations.groupby(by=[linkage_id_col])
         logger.debug("Splitting grouped observations by linkage ID...")
-        observations_split = [grouped_observations.get_group(g).reset_index(drop=True) for g in grouped_observations.groups]
+        observations_split = [
+            grouped_observations.get_group(g).reset_index(drop=True)
+            for g in grouped_observations.groups
+        ]
         duration = time.time() - start
         logger.debug(f"Grouping and splitting completed in {duration:.3f}s.")
-
 
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
         if parallel:
@@ -659,18 +656,20 @@ def initialOrbitDetermination(
             if parallel_backend == "ray":
 
                 import ray
+
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
                 iod_worker_ray = ray.remote(iod_worker)
-                iod_worker_ray = iod_worker_ray.options(
-                    num_returns=2,
-                    num_cpus=1
-                )
+                iod_worker_ray = iod_worker_ray.options(num_returns=2, num_cpus=1)
 
                 # Send up to chunk_size linkages to each IOD worker for processing
-                chunk_size_ = calcChunkSize(num_linkages, num_workers, chunk_size, min_chunk_size=1)
-                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers.")
+                chunk_size_ = calcChunkSize(
+                    num_linkages, num_workers, chunk_size, min_chunk_size=1
+                )
+                logger.info(
+                    f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers."
+                )
 
                 # Put the observations into ray's local object storage ("plasma")
                 observation_oids = []
@@ -682,17 +681,17 @@ def initialOrbitDetermination(
                 for observations_oid in observation_oids:
 
                     iod_orbits_oid, iod_orbit_members_oid = iod_worker_ray.remote(
-                            observations_oid,
-                            observation_selection_method=observation_selection_method,
-                            rchi2_threshold=rchi2_threshold,
-                            min_obs=min_obs,
-                            min_arc_length=min_arc_length,
-                            contamination_percentage=contamination_percentage,
-                            iterate=iterate,
-                            light_time=light_time,
-                            linkage_id_col=linkage_id_col,
-                            backend=backend,
-                            backend_kwargs=backend_kwargs
+                        observations_oid,
+                        observation_selection_method=observation_selection_method,
+                        rchi2_threshold=rchi2_threshold,
+                        min_obs=min_obs,
+                        min_arc_length=min_arc_length,
+                        contamination_percentage=contamination_percentage,
+                        iterate=iterate,
+                        light_time=light_time,
+                        linkage_id_col=linkage_id_col,
+                        backend=backend,
+                        backend_kwargs=backend_kwargs,
                     )
                     iod_orbits_oids.append(iod_orbits_oid)
                     iod_orbit_members_oids.append(iod_orbit_members_oid)
@@ -700,10 +699,14 @@ def initialOrbitDetermination(
                 iod_orbits_dfs = ray.get(iod_orbits_oids)
                 iod_orbit_members_dfs = ray.get(iod_orbit_members_oids)
 
-            else: # parallel_backend == "mp"
+            else:  # parallel_backend == "mp"
 
-                chunk_size_ = calcChunkSize(num_linkages, num_workers, chunk_size, min_chunk_size=1)
-                logger.info(f"Distributing linkages in chunks of {chunk_size_} to {num_workers} workers.")
+                chunk_size_ = calcChunkSize(
+                    num_linkages, num_workers, chunk_size, min_chunk_size=1
+                )
+                logger.info(
+                    f"Distributing linkages in chunks of {chunk_size_} to {num_workers} workers."
+                )
 
                 p = mp.Pool(
                     processes=num_workers,
@@ -722,7 +725,7 @@ def initialOrbitDetermination(
                         light_time=light_time,
                         linkage_id_col=linkage_id_col,
                         backend=backend,
-                        backend_kwargs=backend_kwargs
+                        backend_kwargs=backend_kwargs,
                     ),
                     zip(yieldChunks(observations_split, chunk_size_)),
                 )
@@ -746,19 +749,13 @@ def initialOrbitDetermination(
                     light_time=light_time,
                     linkage_id_col=linkage_id_col,
                     backend=backend,
-                    backend_kwargs=backend_kwargs
+                    backend_kwargs=backend_kwargs,
                 )
                 iod_orbits_dfs.append(iod_orbits_df)
                 iod_orbit_members_dfs.append(iod_orbit_members_df)
 
-        iod_orbits = pd.concat(
-            iod_orbits_dfs,
-            ignore_index=True
-        )
-        iod_orbit_members = pd.concat(
-            iod_orbit_members_dfs,
-            ignore_index=True
-        )
+        iod_orbits = pd.concat(iod_orbits_dfs, ignore_index=True)
+        iod_orbit_members = pd.concat(iod_orbit_members_dfs, ignore_index=True)
 
     else:
         iod_orbits = pd.DataFrame(
@@ -774,7 +771,7 @@ def initialOrbitDetermination(
                 "arc_length",
                 "num_obs",
                 "chi2",
-                "rchi2"
+                "rchi2",
             ]
         )
 
@@ -786,7 +783,7 @@ def initialOrbitDetermination(
                 "residual_dec_arcsec",
                 "chi2",
                 "gauss_sol",
-                "outlier"
+                "outlier",
             ]
         )
 
@@ -799,20 +796,23 @@ def initialOrbitDetermination(
 
     if identify_subsets and len(iod_orbits) > 0:
         iod_orbits, iod_orbit_members = identifySubsetLinkages(
-            iod_orbits,
-            iod_orbit_members,
-            linkage_id_col="orbit_id"
+            iod_orbits, iod_orbit_members, linkage_id_col="orbit_id"
         )
-        logger.info("{} subset orbits identified.".format(len(iod_orbits[~iod_orbits["subset_of"].isna()])))
+        logger.info(
+            "{} subset orbits identified.".format(
+                len(iod_orbits[~iod_orbits["subset_of"].isna()])
+            )
+        )
 
     iod_orbits, iod_orbit_members = sortLinkages(
-        iod_orbits,
-        iod_orbit_members,
-        observations,
-        linkage_id_col="orbit_id"
+        iod_orbits, iod_orbit_members, observations, linkage_id_col="orbit_id"
     )
 
     time_end = time.time()
-    logger.info("Initial orbit determination completed in {:.3f} seconds.".format(time_end - time_start))
+    logger.info(
+        "Initial orbit determination completed in {:.3f} seconds.".format(
+            time_end - time_start
+        )
+    )
 
     return iod_orbits, iod_orbit_members

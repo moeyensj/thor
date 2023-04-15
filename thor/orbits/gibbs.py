@@ -6,6 +6,7 @@ __all__ = ["calcGibbs"]
 
 MU = c.MU
 
+
 def calcGibbs(r1, r2, r3):
     """
     Calculates the velocity vector at the location of the second position vector (r2) using the

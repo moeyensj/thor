@@ -10,6 +10,7 @@ __all__ = [
 
 MU = c.MU
 
+
 @jit(["UniTuple(f8, 7)(f8[:], f8[:], f8, f8, i8, f8)"], nopython=True, cache=True)
 def calcChi(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     """
@@ -54,7 +55,7 @@ def calcChi(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     sqrt_mu = np.sqrt(mu)
 
     # Equations 3.48 and 3.50 in Curtis (2014) [1]
-    alpha = -v_mag**2 / mu + 2 / r_mag
+    alpha = -(v_mag**2) / mu + 2 / r_mag
 
     # Equation 3.66 in Curtis (2014) [1]
     chi = sqrt_mu * np.abs(alpha) * dt
@@ -68,13 +69,17 @@ def calcChi(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
 
         # Newton-Raphson
         # Equation 3.65 in Curtis (2014) [1]
-        f = (r_mag * rv_mag / sqrt_mu * chi2 * c2
-             + (1 - alpha*r_mag) * chi**3 * c3
-             + r_mag * chi
-             - sqrt_mu * dt)
-        fp = (r_mag * rv_mag / sqrt_mu * chi * (1 - alpha * chi2 * c3)
-              + (1 - alpha * r_mag) * chi2 * c2
-              + r_mag)
+        f = (
+            r_mag * rv_mag / sqrt_mu * chi2 * c2
+            + (1 - alpha * r_mag) * chi**3 * c3
+            + r_mag * chi
+            - sqrt_mu * dt
+        )
+        fp = (
+            r_mag * rv_mag / sqrt_mu * chi * (1 - alpha * chi2 * c3)
+            + (1 - alpha * r_mag) * chi2 * c2
+            + r_mag
+        )
 
         ratio = f / fp
         chi -= ratio

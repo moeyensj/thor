@@ -1,18 +1,19 @@
 import numpy as np
 
 from ...constants import Constants as c
-from ..lagrange import calcLagrangeCoeffs
-from ..lagrange import applyLagrangeCoeffs
-
+from ..lagrange import applyLagrangeCoeffs, calcLagrangeCoeffs
 
 MU = c.MU
 
+
 def test_calcLangrangeCoeffs_zerodt():
-    r = np.array([1., 0., 0.])
-    v = np.array([0.0002, 0.0002, 0.])
+    r = np.array([1.0, 0.0, 0.0])
+    v = np.array([0.0002, 0.0002, 0.0])
     dt = 0.0
 
-    lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16)
+    lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
+        r, v, dt, mu=MU, max_iter=100, tol=1e-16
+    )
     f, g, f_dot, g_dot = lagrange_coeffs
     assert f == 1.0
     assert g == 0.0
@@ -20,9 +21,10 @@ def test_calcLangrangeCoeffs_zerodt():
     assert g_dot == 1.0
     return
 
+
 def test_applyLagrangeCoeffs_zerodt():
-    r0 = np.array([1., 0., 0.])
-    v0 = np.array([0.0002, 0.0002, 0.])
+    r0 = np.array([1.0, 0.0, 0.0])
+    v0 = np.array([0.0002, 0.0002, 0.0])
 
     f, g, f_dot, g_dot = (1.0, 0.0, 0.0, 1.0)
 

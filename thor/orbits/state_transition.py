@@ -2,17 +2,18 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .lagrange import calcLagrangeCoeffs
-from .lagrange import applyLagrangeCoeffs
+from .lagrange import applyLagrangeCoeffs, calcLagrangeCoeffs
 
-__all__ = [
-    "calcMMatrix",
-    "calcStateTransitionMatrix"
-]
+__all__ = ["calcMMatrix", "calcStateTransitionMatrix"]
 
 MU = c.MU
 
-@jit("f8[:,:](f8[:], f8[:], UniTuple(f8, 4), UniTuple(f8, 6), f8, f8, f8)", nopython=True, cache=True)
+
+@jit(
+    "f8[:,:](f8[:], f8[:], UniTuple(f8, 4), UniTuple(f8, 6), f8, f8, f8)",
+    nopython=True,
+    cache=True,
+)
 def calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     """
     Calculate the M matrix proposed by S. W. Shepperd in 1985.
@@ -74,13 +75,13 @@ def calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     # Everhart & Pitkin 1983 [3].
     # TODO : These conversions were not robustly tested and needed further investigation
     w = chi / sqrt_mu
-    alpha_alt = - mu * alpha
+    alpha_alt = -mu * alpha
     U0 = (1 - alpha * chi**2) * c2
     U1 = (chi - alpha * chi**3) * c3 / sqrt_mu
     U2 = chi**2 * c2 / mu
-    U3 = chi**3 * c3 / mu**(3/2)
-    U4 = chi**4 * c2 / mu**(2)
-    U5 = chi**5 * c3 / mu**(5/2)
+    U3 = chi**3 * c3 / mu ** (3 / 2)
+    U4 = chi**4 * c2 / mu ** (2)
+    U5 = chi**5 * c3 / mu ** (5 / 2)
 
     F = f_dot
     G = g_dot
@@ -91,7 +92,9 @@ def calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
 
     # Calculate elements of the M matrix
     # See equation A.41 in Shepperd 1985 [4]
-    m11 = (U0 / (r1_mag * r0_mag) + 1 / r0_mag**2 + 1 / r1_mag**2) * F - (mu**2 * W) / (r1_mag * r0_mag)**3
+    m11 = (U0 / (r1_mag * r0_mag) + 1 / r0_mag**2 + 1 / r1_mag**2) * F - (
+        mu**2 * W
+    ) / (r1_mag * r0_mag) ** 3
     m12 = F * U1 / r1_mag + (G - 1) / r1_mag**2
     m13 = (G - 1) * U1 / r1_mag - (mu * W) / r1_mag**3
     m21 = -F * U1 / r0_mag - (f - 1) / r0_mag**2
@@ -102,15 +105,20 @@ def calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     m33 = g * U2 - W
 
     # Combine elements into a 3 x 3 matrix
-    M = np.array([
-        [m11, m12, m13],
-        [m21, m22, m23],
-        [m31, m32, m33],
-    ])
+    M = np.array(
+        [
+            [m11, m12, m13],
+            [m21, m22, m23],
+            [m31, m32, m33],
+        ]
+    )
     return M
 
+
 @jit("f8[:,:](f8[:], f8, f8, i8, f8)", nopython=True, cache=True)
-def calcStateTransitionMatrix(orbit, dt, mu=0.0002959122082855911, max_iter=100, tol=1e-15):
+def calcStateTransitionMatrix(
+    orbit, dt, mu=0.0002959122082855911, max_iter=100, tol=1e-15
+):
     """
     Calculate the state transition matrix for a given change in epoch. The state transition matrix
     maps deviations from a state at an epoch t0 to a different epoch t1 (dt = t1 - t0).
@@ -150,15 +158,10 @@ def calcStateTransitionMatrix(orbit, dt, mu=0.0002959122082855911, max_iter=100,
     # Calculate the inverse semi-major axis
     # Note: the definition of alpha will change between different works in the literature.
     #   Here alpha is defined as 1 / a where a is the semi-major axis of the orbit
-    alpha = -v0_mag**2 / mu + 2 / r0_mag
+    alpha = -(v0_mag**2) / mu + 2 / r0_mag
 
     lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
-        r0,
-        v0,
-        dt,
-        mu=mu,
-        max_iter=max_iter,
-        tol=tol
+        r0, v0, dt, mu=mu, max_iter=max_iter, tol=tol
     )
     f, g, f_dot, g_dot = lagrange_coeffs
     r1, v1 = applyLagrangeCoeffs(r0, v0, *lagrange_coeffs)

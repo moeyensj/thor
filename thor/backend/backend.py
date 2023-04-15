@@ -8,60 +8,77 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import copy
 import logging
-import pandas as pd
 import multiprocessing as mp
 
+import pandas as pd
+
 from ..orbit import TestOrbit
-from ..utils import Timeout
-from ..utils import _initWorker
-from ..utils import _checkParallel
+from ..utils import Timeout, _checkParallel, _initWorker
 
 logger = logging.getLogger(__name__)
 
-__all__ = [
-    "Backend"
-]
+__all__ = ["Backend"]
 
 TIMEOUT = 30
+
 
 def propagation_worker(orbits, t1, backend):
     with Timeout(seconds=TIMEOUT):
         try:
             propagated = backend._propagateOrbits(orbits, t1)
         except TimeoutError:
-            logger.critical("Propagation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            logger.critical(
+                "Propagation timed out on orbit IDs (showing first 5): {}".format(
+                    orbits.ids[:5]
+                )
+            )
             propagated = pd.DataFrame()
     return propagated
+
 
 def ephemeris_worker(orbits, observers, backend):
     with Timeout(seconds=TIMEOUT):
         try:
             ephemeris = backend._generateEphemeris(orbits, observers)
         except TimeoutError:
-            logger.critical("Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(orbits.ids[:5]))
+            logger.critical(
+                "Ephemeris generation timed out on orbit IDs (showing first 5): {}".format(
+                    orbits.ids[:5]
+                )
+            )
             ephemeris = pd.DataFrame()
     return ephemeris
+
 
 def orbitDetermination_worker(observations, backend):
     with Timeout(seconds=TIMEOUT):
         try:
             orbits = backend._orbitDetermination(observations)
         except TimeoutError:
-            logger.critical("Orbit determination timed out on observations (showing first 5): {}".format(observations["obs_id"].values[:5]))
+            logger.critical(
+                "Orbit determination timed out on observations (showing first 5): {}".format(
+                    observations["obs_id"].values[:5]
+                )
+            )
             orbits = pd.DataFrame()
     return orbits
+
 
 def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
 
     assert len(ephemeris["mjd_utc"].unique()) == 1
     assert len(test_orbit_ephemeris["mjd_utc"].unique()) == 1
-    assert ephemeris["mjd_utc"].unique()[0] == test_orbit_ephemeris["mjd_utc"].unique()[0]
+    assert (
+        ephemeris["mjd_utc"].unique()[0] == test_orbit_ephemeris["mjd_utc"].unique()[0]
+    )
     observation_time = ephemeris["mjd_utc"].unique()[0]
 
     # Create test orbit with state of orbit at visit time
     test_orbit = TestOrbit(
-        test_orbit_ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values[0],
-        observation_time
+        test_orbit_ephemeris[
+            ["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]
+        ].values[0],
+        observation_time,
     )
 
     # Prepare rotation matrices
@@ -73,8 +90,8 @@ def projectEphemeris_worker(ephemeris, test_orbit_ephemeris):
 
     return ephemeris
 
-class Backend:
 
+class Backend:
     def __init__(self, name="Backend", **kwargs):
         self.__dict__.update(kwargs)
         self.name = name
@@ -91,19 +108,12 @@ class Backend:
         THIS FUNCTION SHOULD BE DEFINED BY THE USER.
 
         """
-        err = (
-            "This backend does not have orbit propagation implemented."
-        )
+        err = "This backend does not have orbit propagation implemented."
         raise NotImplementedError(err)
 
     def propagateOrbits(
-            self,
-            orbits,
-            t1,
-            chunk_size=100,
-            num_jobs=1,
-            parallel_backend="mp"
-        ):
+        self, orbits, t1, chunk_size=100, num_jobs=1, parallel_backend="mp"
+    ):
         """
         Propagate each orbit in orbits to each time in t1.
 
@@ -136,24 +146,21 @@ class Backend:
             t1_duplicated = [copy.deepcopy(t1) for i in range(len(orbits_split))]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
-
             if parallel_backend == "ray":
                 import ray
+
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
                 propagation_worker_ray = ray.remote(propagation_worker)
-                propagation_worker_ray.options(
-                    num_returns=1,
-                    num_cpus=1
-                )
+                propagation_worker_ray.options(num_returns=1, num_cpus=1)
 
                 p = []
                 for o, t, b in zip(orbits_split, t1_duplicated, backend_duplicated):
                     p.append(propagation_worker_ray.remote(o, t, b))
                 propagated_dfs = ray.get(p)
 
-            else: # parallel_backend == "mp"
+            else:  # parallel_backend == "mp"
                 p = mp.Pool(
                     processes=num_workers,
                     initializer=_initWorker,
@@ -165,20 +172,14 @@ class Backend:
                         orbits_split,
                         t1_duplicated,
                         backend_duplicated,
-                    )
+                    ),
                 )
                 p.close()
 
             propagated = pd.concat(propagated_dfs)
-            propagated.reset_index(
-                drop=True,
-                inplace=True
-            )
+            propagated.reset_index(drop=True, inplace=True)
         else:
-            propagated = self._propagateOrbits(
-                orbits,
-                t1
-            )
+            propagated = self._propagateOrbits(orbits, t1)
 
         return propagated
 
@@ -190,20 +191,18 @@ class Backend:
         THIS FUNCTION SHOULD BE DEFINED BY THE USER.
 
         """
-        err = (
-            "This backend does not have ephemeris generation implemented."
-        )
+        err = "This backend does not have ephemeris generation implemented."
         raise NotImplementedError(err)
 
     def generateEphemeris(
-            self,
-            orbits,
-            observers,
-            test_orbit=None,
-            chunk_size=100,
-            num_jobs=1,
-            parallel_backend="mp"
-        ):
+        self,
+        orbits,
+        observers,
+        test_orbit=None,
+        chunk_size=100,
+        num_jobs=1,
+        parallel_backend="mp",
+    ):
         """
         Generate ephemerides for each orbit in orbits as observed by each observer
         in observers.
@@ -237,26 +236,28 @@ class Backend:
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
         if parallel:
             orbits_split = orbits.split(chunk_size)
-            observers_duplicated = [copy.deepcopy(observers) for i in range(len(orbits_split))]
+            observers_duplicated = [
+                copy.deepcopy(observers) for i in range(len(orbits_split))
+            ]
             backend_duplicated = [copy.deepcopy(self) for i in range(len(orbits_split))]
 
             if parallel_backend == "ray":
                 import ray
+
                 if not ray.is_initialized():
                     ray.init(address="auto")
 
                 ephemeris_worker_ray = ray.remote(ephemeris_worker)
-                ephemeris_worker_ray.options(
-                    num_returns=1,
-                    num_cpus=1
-                )
+                ephemeris_worker_ray.options(num_returns=1, num_cpus=1)
 
                 p = []
-                for o, t, b in zip(orbits_split, observers_duplicated, backend_duplicated):
+                for o, t, b in zip(
+                    orbits_split, observers_duplicated, backend_duplicated
+                ):
                     p.append(ephemeris_worker_ray.remote(o, t, b))
                 ephemeris_dfs = ray.get(p)
 
-            else: # parallel_backend == "mp"
+            else:  # parallel_backend == "mp"
                 p = mp.Pool(
                     processes=num_workers,
                     initializer=_initWorker,
@@ -268,32 +269,30 @@ class Backend:
                         orbits_split,
                         observers_duplicated,
                         backend_duplicated,
-                    )
+                    ),
                 )
                 p.close()
 
             ephemeris = pd.concat(ephemeris_dfs)
-            ephemeris.reset_index(
-                drop=True,
-                inplace=True
-            )
+            ephemeris.reset_index(drop=True, inplace=True)
         else:
-            ephemeris = self._generateEphemeris(
-                orbits,
-                observers
-            )
+            ephemeris = self._generateEphemeris(orbits, observers)
 
         if test_orbit is not None:
 
-            test_orbit_ephemeris = self._generateEphemeris(
-                test_orbit,
-                observers
-            )
+            test_orbit_ephemeris = self._generateEphemeris(test_orbit, observers)
             ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
-            ephemeris_split = [ephemeris_grouped.get_group(g).copy() for g in ephemeris_grouped.groups]
+            ephemeris_split = [
+                ephemeris_grouped.get_group(g).copy() for g in ephemeris_grouped.groups
+            ]
 
-            test_orbit_ephemeris_grouped = test_orbit_ephemeris.groupby(by=["observatory_code", "mjd_utc"])
-            test_orbit_ephemeris_split = [test_orbit_ephemeris_grouped.get_group(g) for g in test_orbit_ephemeris_grouped.groups]
+            test_orbit_ephemeris_grouped = test_orbit_ephemeris.groupby(
+                by=["observatory_code", "mjd_utc"]
+            )
+            test_orbit_ephemeris_split = [
+                test_orbit_ephemeris_grouped.get_group(g)
+                for g in test_orbit_ephemeris_grouped.groups
+            ]
 
             if num_jobs > 1:
 
@@ -301,8 +300,7 @@ class Backend:
 
                     projectEphemeris_worker_ray = ray.remote(projectEphemeris_worker)
                     projectEphemeris_worker_ray = projectEphemeris_worker_ray.options(
-                        num_returns=1,
-                        num_cpus=1
+                        num_returns=1, num_cpus=1
                     )
 
                     p = []
@@ -310,7 +308,7 @@ class Backend:
                         p.append(projectEphemeris_worker_ray.remote(e, te))
                     ephemeris_dfs = ray.get(p)
 
-                else: # parallel_backend == "mp"
+                else:  # parallel_backend == "mp"
                     p = mp.Pool(
                         processes=num_workers,
                         initializer=_initWorker,
@@ -318,10 +316,7 @@ class Backend:
 
                     ephemeris_dfs = p.starmap(
                         projectEphemeris_worker,
-                        zip(
-                            ephemeris_split,
-                            test_orbit_ephemeris_split
-                        )
+                        zip(ephemeris_split, test_orbit_ephemeris_split),
                     )
                     p.close()
 
@@ -332,31 +327,22 @@ class Backend:
                     ephemeris_dfs.append(ephemeris_df)
 
             ephemeris = pd.concat(ephemeris_dfs)
-            ephemeris.reset_index(
-                drop=True,
-                inplace=True
-            )
+            ephemeris.reset_index(drop=True, inplace=True)
 
         ephemeris.sort_values(
             by=["orbit_id", "observatory_code", "mjd_utc"],
             inplace=True,
-            ignore_index=True
+            ignore_index=True,
         )
         return ephemeris
 
     def _orbitDetermination(self):
-        err = (
-            "This backend does not have orbit determination implemented."
-        )
+        err = "This backend does not have orbit determination implemented."
         raise NotImplementedError(err)
 
     def orbitDetermination(
-            self,
-            observations,
-            chunk_size=10,
-            num_jobs=1,
-            parallel_backend="mp"
-        ):
+        self, observations, chunk_size=10, num_jobs=1, parallel_backend="mp"
+    ):
         """
         Run orbit determination on the input observations. These observations
         must at least contain the following columns:
@@ -378,27 +364,34 @@ class Backend:
             module ('mp').
         """
         unique_objs = observations["obj_id"].unique()
-        observations_split = [observations[observations["obj_id"].isin(unique_objs[i:i+chunk_size])].copy() for i in range(0, len(unique_objs), chunk_size)]
-        backend_duplicated = [copy.deepcopy(self) for i in range(len(observations_split))]
+        observations_split = [
+            observations[
+                observations["obj_id"].isin(unique_objs[i : i + chunk_size])
+            ].copy()
+            for i in range(0, len(unique_objs), chunk_size)
+        ]
+        backend_duplicated = [
+            copy.deepcopy(self) for i in range(len(observations_split))
+        ]
 
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
         if parallel_backend == "ray":
             import ray
+
             if not ray.is_initialized():
                 ray.init(address="auto")
 
             orbitDetermination_worker_ray = ray.remote(orbitDetermination_worker)
             orbitDetermination_worker_ray = orbitDetermination_worker_ray.options(
-                num_returns=1,
-                num_cpus=1
+                num_returns=1, num_cpus=1
             )
 
             od = []
-            for o,  b in zip(observations_split, backend_duplicated):
+            for o, b in zip(observations_split, backend_duplicated):
                 od.append(orbitDetermination_worker_ray.remote(o, b))
             od_orbits_dfs = ray.get(od)
 
-        else: # parallel_backend == "mp"
+        else:  # parallel_backend == "mp"
             p = mp.Pool(
                 processes=num_workers,
                 initializer=_initWorker,
@@ -409,7 +402,7 @@ class Backend:
                 zip(
                     observations_split,
                     backend_duplicated,
-                )
+                ),
             )
             p.close()
 
@@ -417,7 +410,5 @@ class Backend:
         return od_orbits
 
     def _getObserverState(self, observers, origin="heliocenter"):
-        err = (
-            "This backend does not have observer state calculations implemented."
-        )
+        err = "This backend does not have observer state calculations implemented."
         raise NotImplementedError(err)

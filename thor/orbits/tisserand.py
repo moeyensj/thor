@@ -1,8 +1,6 @@
 import numpy as np
 
-__all__ = [
-    "calcTisserandParameter"
-]
+__all__ = ["calcTisserandParameter"]
 
 # This code generates the dictionary of semi-major axes for the
 # third body needed for the Tisserand parameter
@@ -21,15 +19,16 @@ __all__ = [
 #
 
 MAJOR_BODIES = {
-    'mercury': 0.3870970330236769,
-    'venus': 0.723341974974844,
-    'earth': 0.9997889954736553,
-    'mars': 1.523803685638066,
-    'jupiter': 5.203719697535582,
-    'saturn': 9.579110220472034,
-    'uranus': 19.18646168457971,
-    'neptune': 30.22486701698071
+    "mercury": 0.3870970330236769,
+    "venus": 0.723341974974844,
+    "earth": 0.9997889954736553,
+    "mars": 1.523803685638066,
+    "jupiter": 5.203719697535582,
+    "saturn": 9.579110220472034,
+    "uranus": 19.18646168457971,
+    "neptune": 30.22486701698071,
 }
+
 
 def calcTisserandParameter(a, e, i, third_body="jupiter"):
     """
@@ -59,13 +58,10 @@ def calcTisserandParameter(a, e, i, third_body="jupiter"):
 
     major_bodies = MAJOR_BODIES.keys()
     if third_body not in major_bodies:
-        err = (
-            f"third_body should be one of {','.join(major_bodies)}"
-        )
+        err = f"third_body should be one of {','.join(major_bodies)}"
         raise ValueError(err)
 
     ap = MAJOR_BODIES[third_body]
     Tp = ap / a + 2 * np.cos(i_rad) * np.sqrt(a / ap * (1 - e**2))
 
     return Tp
-

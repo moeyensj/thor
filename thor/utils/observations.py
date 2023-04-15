@@ -3,15 +3,10 @@ from astropy.time import Time
 
 from .astropy import _checkTime
 
-__all__ = [
-    "calcLinkingWindow",
-    "calcNight"
-]
+__all__ = ["calcLinkingWindow", "calcNight"]
 
-def calcLinkingWindow(
-        times: Time,
-        length: float
-    ) -> np.ndarray:
+
+def calcLinkingWindow(times: Time, length: float) -> np.ndarray:
     """
     Calculate the linking window for each given time. Linking windows are counted
     from the earliest time. For example, if given the following times and a defined
@@ -45,10 +40,8 @@ def calcLinkingWindow(
     window = np.floor(dt / length) + 1
     return window.astype(int)
 
-def calcNight(
-        times: Time,
-        local_midnight: float
-    ) -> np.ndarray:
+
+def calcNight(times: Time, local_midnight: float) -> np.ndarray:
     """
     Given a set of observation times, calculates the night
     on which those observations were made.
@@ -76,6 +69,6 @@ def calcNight(
     # Observations that occur after midnight should be assigned the night value
     # of the observations that occurred before midnight, so shift all the observations
     # 12 hours earlier and use that as the night value
-    nights = local_mjd - 12/24
+    nights = local_mjd - 12 / 24
     nights = nights.astype(int)
     return nights

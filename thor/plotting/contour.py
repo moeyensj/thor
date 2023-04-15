@@ -1,36 +1,28 @@
-import numpy as np
 import matplotlib.pyplot as plt
-
+import numpy as np
 from scipy.stats import binned_statistic_2d
 
-__all__ = [
-    "plotBinnedContour",
-    "plotScatterContour"
-]
+__all__ = ["plotBinnedContour", "plotScatterContour"]
+
 
 def plotBinnedContour(
-        dataframe,
-        x_column,
-        y_column,
-        z_column,
-        statistic="median",
-        log_statistic=False,
-        plot_counts=False,
-        log_counts=False,
-        count_levels=10,
-        bins=100,
-        mask=None,
-        x_label=None,
-        y_label=None,
-        z_label=None,
-        contour_kwargs={
-            "colors": "red",
-            "linewidths": 1
-        },
-        imshow_kwargs={
-            "aspect": "auto"
-            }
-        ):
+    dataframe,
+    x_column,
+    y_column,
+    z_column,
+    statistic="median",
+    log_statistic=False,
+    plot_counts=False,
+    log_counts=False,
+    count_levels=10,
+    bins=100,
+    mask=None,
+    x_label=None,
+    y_label=None,
+    z_label=None,
+    contour_kwargs={"colors": "red", "linewidths": 1},
+    imshow_kwargs={"aspect": "auto"},
+):
     """
     Plots a binned 2D histogram with optional contours.
 
@@ -105,7 +97,7 @@ def plotBinnedContour(
         dataframe[y_column].values,
         dataframe[z_column].values,
         statistic=statistic,
-        bins=bins
+        bins=bins,
     )
 
     if log_statistic == True:
@@ -114,10 +106,12 @@ def plotBinnedContour(
         stat = X.statistic.T
 
     fig, ax = plt.subplots(1, 1, dpi=600)
-    cm = ax.imshow(stat,
-                   origin="lower",
-                   extent=[X.x_edge[0], X.x_edge[-1], X.y_edge[0], X.y_edge[-1]],
-                   **imshow_kwargs)
+    cm = ax.imshow(
+        stat,
+        origin="lower",
+        extent=[X.x_edge[0], X.x_edge[-1], X.y_edge[0], X.y_edge[-1]],
+        **imshow_kwargs
+    )
     cb = fig.colorbar(cm)
 
     if z_label == None:
@@ -131,17 +125,20 @@ def plotBinnedContour(
             dataframe[y_column].values,
             dataframe[z_column].values,
             statistic="count",
-            bins=bins)
+            bins=bins,
+        )
         if log_counts == True:
             counts = np.log10(N.statistic.T)
         else:
             counts = N.statistic.T
 
-        cs = ax.contour(counts,
-                   count_levels,
-                   origin="lower",
-                   extent=[N.x_edge[0], N.x_edge[-1], N.y_edge[0], N.y_edge[-1]],
-                   **contour_kwargs)
+        cs = ax.contour(
+            counts,
+            count_levels,
+            origin="lower",
+            extent=[N.x_edge[0], N.x_edge[-1], N.y_edge[0], N.y_edge[-1]],
+            **contour_kwargs
+        )
         plt.clabel(cs, inline=1, fontsize=5)
 
     if x_label == None:
@@ -156,26 +153,23 @@ def plotBinnedContour(
 
     return fig, ax
 
+
 def plotScatterContour(
-        dataframe,
-        x_column,
-        y_column,
-        z_column,
-        plot_counts=False,
-        log_counts=False,
-        count_levels=10,
-        bins=100,
-        mask=None,
-        x_label=None,
-        y_label=None,
-        z_label=None,
-        contour_kwargs={
-            "colors": "red",
-            "linewidths": 1
-        },
-        scatterKwargs={
-            "s": 0.1
-        }):
+    dataframe,
+    x_column,
+    y_column,
+    z_column,
+    plot_counts=False,
+    log_counts=False,
+    count_levels=10,
+    bins=100,
+    mask=None,
+    x_label=None,
+    y_label=None,
+    z_label=None,
+    contour_kwargs={"colors": "red", "linewidths": 1},
+    scatterKwargs={"s": 0.1},
+):
     """
     Plots a scatter plot with optional contours.
 
@@ -258,17 +252,20 @@ def plotScatterContour(
             dataframe[y_column].values,
             dataframe[z_column].values,
             statistic="count",
-            bins=bins)
+            bins=bins,
+        )
         if log_counts == True:
             counts = np.log10(N.statistic.T)
         else:
             counts = N.statistic.T
 
-        cs = ax.contour(counts,
-                   count_levels,
-                   origin="lower",
-                   extent=[N.x_edge[0], N.x_edge[-1], N.y_edge[0], N.y_edge[-1]],
-                   **contour_kwargs)
+        cs = ax.contour(
+            counts,
+            count_levels,
+            origin="lower",
+            extent=[N.x_edge[0], N.x_edge[-1], N.y_edge[0], N.y_edge[-1]],
+            **contour_kwargs
+        )
         plt.clabel(cs, inline=1, fontsize=5)
 
     if x_label == None:

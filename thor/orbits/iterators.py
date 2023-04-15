@@ -1,18 +1,30 @@
 import numpy as np
 
 from ..constants import Constants as c
-from .lagrange import calcLagrangeCoeffs
-from .lagrange import applyLagrangeCoeffs
+from .lagrange import applyLagrangeCoeffs, calcLagrangeCoeffs
 from .state_transition import calcStateTransitionMatrix
 
-__all__ = [
-    "iterateStateTransition"
-]
+__all__ = ["iterateStateTransition"]
 
 MU = c.MU
 C = c.C
 
-def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_time=True, mu=MU, max_iter=10, tol=1e-15):
+
+def iterateStateTransition(
+    orbit,
+    t21,
+    t32,
+    q1,
+    q2,
+    q3,
+    rho1,
+    rho2,
+    rho3,
+    light_time=True,
+    mu=MU,
+    max_iter=10,
+    tol=1e-15,
+):
     """
     Improve an initial orbit by iteratively solving for improved Langrange coefficients and minimizing the phi error vector
     by calculating the state transition matrix required to achieve this minimization.
@@ -89,17 +101,14 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
             #   d\chi / dt = \sqrt{mu} / r
             # and the corresponding state vector
             lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
-                r,
-                v,
-                dt,
-                mu=mu,
-                max_iter=max_iter,
-                tol=tol
+                r, v, dt, mu=mu, max_iter=max_iter, tol=tol
             )
             r_new, v_new = applyLagrangeCoeffs(r, v, *lagrange_coeffs)
 
             # Calculate the state transition matrix
-            STM = calcStateTransitionMatrix(orbit_iter, dt, mu=mu, max_iter=100, tol=1e-15)
+            STM = calcStateTransitionMatrix(
+                orbit_iter, dt, mu=mu, max_iter=100, tol=1e-15
+            )
 
             if j == 0:
                 STM1 = STM
@@ -112,33 +121,36 @@ def iterateStateTransition(orbit, t21, t32, q1, q2, q3, rho1, rho2, rho3, light_
 
         # Create phi error vector: as the estimate of the orbit
         # improves the elements in this vector should approach 0.
-        phi = np.hstack((
-            r1 - q1 - rho1_mag * rho1_hat,
-            r - q2 - rho2_mag * rho2_hat,
-            r3 - q3 - rho3_mag * rho3_hat))
+        phi = np.hstack(
+            (
+                r1 - q1 - rho1_mag * rho1_hat,
+                r - q2 - rho2_mag * rho2_hat,
+                r3 - q3 - rho3_mag * rho3_hat,
+            )
+        )
         phi_mag_iter = np.linalg.norm(phi)
         if phi_mag_iter < 1e-15:
             break
 
         dphi = np.zeros((9, 9), dtype=float)
-        dphi[0:3, 0:3] = STM1[0:3, 0:3]   # dr1/dr2
-        dphi[3:6, 0:3] = np.identity(3)   # dr2/dr2
-        dphi[6:9, 0:3] = STM3[0:3, 0:3]   # dr3/dr2
+        dphi[0:3, 0:3] = STM1[0:3, 0:3]  # dr1/dr2
+        dphi[3:6, 0:3] = np.identity(3)  # dr2/dr2
+        dphi[6:9, 0:3] = STM3[0:3, 0:3]  # dr3/dr2
 
-        dphi[0:3, 3:6] = STM1[0:3, 3:6]   # dr1/dv2
-        dphi[3:6, 3:6] = np.zeros((3, 3)) # dr2/dv2
-        dphi[6:9, 3:6] = STM3[0:3, 3:6]   # dr3/dv2
+        dphi[0:3, 3:6] = STM1[0:3, 3:6]  # dr1/dv2
+        dphi[3:6, 3:6] = np.zeros((3, 3))  # dr2/dv2
+        dphi[6:9, 3:6] = STM3[0:3, 3:6]  # dr3/dv2
 
         if light_time is True:
-            dphi[0:3,6] = -v1 / C - rho1_hat
-            dphi[0:3,7] = v1 / C
-            dphi[3:6,7] = -rho2_hat
-            dphi[6:9,7] = v3 / C
-            dphi[6:9,8] = -v3 / C - rho3_hat
+            dphi[0:3, 6] = -v1 / C - rho1_hat
+            dphi[0:3, 7] = v1 / C
+            dphi[3:6, 7] = -rho2_hat
+            dphi[6:9, 7] = v3 / C
+            dphi[6:9, 8] = -v3 / C - rho3_hat
         else:
-            dphi[0:3,6] = -rho1_hat
-            dphi[3:6,7] = -rho2_hat
-            dphi[6:9,8] = -rho3_hat
+            dphi[0:3, 6] = -rho1_hat
+            dphi[3:6, 7] = -rho2_hat
+            dphi[6:9, 8] = -rho3_hat
 
         delta = np.linalg.solve(dphi, phi)
         orbit_iter -= delta[0:6]

@@ -1,24 +1,20 @@
 import warnings
 
+from ..backend import FINDORB, MJOLNIR, PYOORB, Backend
 from ..utils import _checkTime
-from ..backend import Backend
-from ..backend import PYOORB
-from ..backend import FINDORB
-from ..backend import MJOLNIR
 
-__all__ = [
-    "propagateOrbits"
-]
+__all__ = ["propagateOrbits"]
+
 
 def propagateOrbits(
-        orbits,
-        t1,
-        backend="MJOLNIR",
-        backend_kwargs={},
-        chunk_size=1,
-        num_jobs=1,
-        parallel_backend="mp"
-    ):
+    orbits,
+    t1,
+    backend="MJOLNIR",
+    backend_kwargs={},
+    chunk_size=1,
+    num_jobs=1,
+    parallel_backend="mp",
+):
     """
     Propagate orbits using desired backend.
 
@@ -66,12 +62,12 @@ def propagateOrbits(
         backend = backend
 
         if len(backend_kwargs) > 0:
-            warnings.warn("backend_kwargs will be ignored since a instantiated backend class has been given.")
+            warnings.warn(
+                "backend_kwargs will be ignored since a instantiated backend class has been given."
+            )
 
     else:
-        err = (
-            "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB'"
-        )
+        err = "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB'"
         raise ValueError(err)
 
     propagated = backend.propagateOrbits(
@@ -79,6 +75,6 @@ def propagateOrbits(
         t1,
         chunk_size=chunk_size,
         num_jobs=num_jobs,
-        parallel_backend=parallel_backend
+        parallel_backend=parallel_backend,
     )
     return propagated

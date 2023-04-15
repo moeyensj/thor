@@ -1,24 +1,20 @@
 import warnings
 
-from ..backend import Backend
-from ..backend import PYOORB
-from ..backend import FINDORB
-from ..backend import MJOLNIR
+from ..backend import FINDORB, MJOLNIR, PYOORB, Backend
 
-__all__ = [
-    "generateEphemeris"
-]
+__all__ = ["generateEphemeris"]
+
 
 def generateEphemeris(
-        orbits,
-        observers,
-        backend="MJOLNIR",
-        backend_kwargs={},
-        test_orbit=None,
-        chunk_size=1,
-        num_jobs=1,
-        parallel_backend="mp"
-    ):
+    orbits,
+    observers,
+    backend="MJOLNIR",
+    backend_kwargs={},
+    test_orbit=None,
+    chunk_size=1,
+    num_jobs=1,
+    parallel_backend="mp",
+):
     """
     Generate ephemeris for the orbits and the given observatories.
 
@@ -65,12 +61,12 @@ def generateEphemeris(
         backend = backend
 
         if len(backend_kwargs) > 0:
-            warnings.warn("backend_kwargs will be ignored since a instantiated backend class has been given.")
+            warnings.warn(
+                "backend_kwargs will be ignored since a instantiated backend class has been given."
+            )
 
     else:
-        err = (
-            "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB' or an instantiated Backend class"
-        )
+        err = "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB' or an instantiated Backend class"
         raise ValueError(err)
 
     ephemeris = backend.generateEphemeris(
@@ -79,7 +75,6 @@ def generateEphemeris(
         test_orbit=test_orbit,
         chunk_size=chunk_size,
         num_jobs=num_jobs,
-        parallel_backend=parallel_backend
+        parallel_backend=parallel_backend,
     )
     return ephemeris
-

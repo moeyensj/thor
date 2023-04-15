@@ -1,14 +1,14 @@
 import logging
+
 import numpy as np
 from numba import jit
 
+from .coordinates import _convertSphericalToCartesian, transformCoordinates
 from .projections import cartesianToGnomonic
-from .coordinates import transformCoordinates
-from .coordinates import _convertSphericalToCartesian
 
-X_AXIS = np.array([1., 0., 0.])
-Y_AXIS = np.array([0., 1., 0.])
-Z_AXIS = np.array([0., 0., 1.])
+X_AXIS = np.array([1.0, 0.0, 0.0])
+Y_AXIS = np.array([0.0, 1.0, 0.0])
+Z_AXIS = np.array([0.0, 0.0, 1.0])
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,9 @@ __all__ = [
     "calcNhat",
     "calcR1",
     "calcR2",
-    "TestOrbit"
+    "TestOrbit",
 ]
+
 
 class TestOrbit:
     """
@@ -37,6 +38,7 @@ class TestOrbit:
     t0 : `~astropy.time.core.Time` (1)
         Epoch at which orbital elements are defined.
     """
+
     def __init__(self, cartesian, epoch):
         self.cartesian = cartesian
         self.epoch = epoch
@@ -88,11 +90,12 @@ class TestOrbit:
         logger.debug("Converting to ecliptic coordinates...")
         coords_eq = observations[["RA_deg", "Dec_deg"]].values
         coords_eq = np.hstack([np.ones((len(coords_eq), 1)), coords_eq])
-        coords_ec = transformCoordinates(coords_eq,
+        coords_ec = transformCoordinates(
+            coords_eq,
             "equatorial",
             "ecliptic",
             representation_in="spherical",
-            representation_out="spherical"
+            representation_out="spherical",
         )
 
         logger.debug("Calculating object to observer unit vector...")
@@ -109,7 +112,9 @@ class TestOrbit:
         logger.debug("Calculating heliocentric object position vector...")
         x_a = calcXa(x_ae, x_e)
 
-        logger.debug("Applying rotation matrix M to heliocentric object position vector...")
+        logger.debug(
+            "Applying rotation matrix M to heliocentric object position vector..."
+        )
         coords_cart_rotated = np.array(self.M @ x_a.T).T
 
         logger.debug("Performing gnomonic projection...")
@@ -157,6 +162,7 @@ class TestOrbit:
         """
         raise NotImplementedError
 
+
 @jit("f8[:,:](f8[:,:])", nopython=True, cache=True)
 def calcNae(coords_ec_ang):
     """
@@ -186,13 +192,16 @@ def calcNae(coords_ec_ang):
     lon = np.radians(coords_ec_ang[:, 0])
     lat = np.radians(coords_ec_ang[:, 1])
     velocities = np.zeros(len(rho))
-    x, y, z, vx, vy, vz = _convertSphericalToCartesian(rho, lon, lat, velocities, velocities, velocities)
+    x, y, z, vx, vy, vz = _convertSphericalToCartesian(
+        rho, lon, lat, velocities, velocities, velocities
+    )
 
     n_ae = np.zeros((N, 3))
     n_ae[:, 0] = x
     n_ae[:, 1] = y
     n_ae[:, 2] = z
     return n_ae
+
 
 @jit("f8[:](f8, f8[:,:], f8[:,:])", nopython=True, cache=True)
 def calcDelta(r, x_e, n_ae):
@@ -221,8 +230,9 @@ def calcDelta(r, x_e, n_ae):
         n_ae_i = np.ascontiguousarray(n_ae[i])
         x_e_i = np.ascontiguousarray(x_e[i])
         ndotxe = np.dot(n_ae_i, x_e_i)
-        delta[i] = - ndotxe + np.sqrt(ndotxe**2 + rsq - np.linalg.norm(x_e_i)**2)
+        delta[i] = -ndotxe + np.sqrt(ndotxe**2 + rsq - np.linalg.norm(x_e_i) ** 2)
     return delta
+
 
 @jit("f8[:,:](f8[:], f8[:,:])", nopython=True, cache=True)
 def calcXae(delta, n_ae):
@@ -247,6 +257,7 @@ def calcXae(delta, n_ae):
         x_ae[i] = delta_i * n_ae_i
     return x_ae
 
+
 @jit("f8[:,:](f8[:,:],f8[:,:])", nopython=True, cache=True)
 def calcXa(x_ae, x_e):
     """
@@ -265,6 +276,7 @@ def calcXa(x_ae, x_e):
         Asteroid position vector in units of x_ae.
     """
     return x_ae + x_e
+
 
 @jit("f8[:,:](f8[:,:])", nopython=True, cache=True)
 def calcNhat(state_vector):
@@ -294,6 +306,7 @@ def calcNhat(state_vector):
     n_hat = rv / rv_norm
     return n_hat
 
+
 @jit("f8[:,:](f8[:])", nopython=True, cache=True)
 def calcR1(n_hat):
     """
@@ -317,12 +330,11 @@ def calcR1(n_hat):
     # inclination
     c = np.dot(n_hat_, Z_AXIS)
     # Compute the skew-symmetric cross-product of the rotation axis vector v
-    vp = np.array([[0, -v[2], v[1]],
-                   [v[2], 0, -v[0]],
-                   [-v[1], v[0], 0]])
+    vp = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     # Calculate R1
     R1 = np.identity(3) + vp + np.linalg.matrix_power(vp, 2) * (1 / (1 + c))
     return R1
+
 
 @jit("f8[:,:](f8[:])", nopython=True, cache=True)
 def calcR2(x_a_xy):
@@ -344,7 +356,5 @@ def calcR2(x_a_xy):
     # Assuming the vector x_a_xy has been normalized, and is in the xy plane.
     ca = x_a_xy[0]
     sa = x_a_xy[1]
-    R2 = np.array([[ca, sa, 0.],
-                   [-sa, ca, 0.],
-                   [0., 0., 1.]])
+    R2 = np.array([[ca, sa, 0.0], [-sa, ca, 0.0], [0.0, 0.0, 1.0]])
     return R2

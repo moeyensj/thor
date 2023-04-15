@@ -1,20 +1,19 @@
 import os
 import warnings
+
 import pandas as pd
 from astropy import units as u
 
 from ...constants import DE44X as c
-from ...utils import KERNELS_DE440
-from ...utils import getSPICEKernels
-from ...utils import setupSPICE
 from ...testing import testOrbits
+from ...utils import KERNELS_DE440, getSPICEKernels, setupSPICE
 from ..kepler import convertOrbitalElements
 
 MU = c.MU
 DATA_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "../../testing/data"
+    os.path.dirname(os.path.abspath(__file__)), "../../testing/data"
 )
+
 
 def test_convertOrbitalElements_elliptical():
     """
@@ -27,21 +26,15 @@ def test_convertOrbitalElements_elliptical():
     setupSPICE(KERNELS_DE440, force=True)
 
     # Read vectors and elements from test data set
-    vectors_df = pd.read_csv(
-        os.path.join(DATA_DIR, "vectors.csv")
-    )
-    elements_df = pd.read_csv(
-        os.path.join(DATA_DIR, "elements.csv")
-    )
+    vectors_df = pd.read_csv(os.path.join(DATA_DIR, "vectors.csv"))
+    elements_df = pd.read_csv(os.path.join(DATA_DIR, "elements.csv"))
 
     # Limit vectors and elements to elliptical orbits only
-    elliptical_vectors = (
-        (~vectors_df["orbit_class"].str.contains("Hyperbolic"))
-        & (~vectors_df["orbit_class"].str.contains("Parabolic"))
+    elliptical_vectors = (~vectors_df["orbit_class"].str.contains("Hyperbolic")) & (
+        ~vectors_df["orbit_class"].str.contains("Parabolic")
     )
-    elliptical_elements = (
-        (~elements_df["orbit_class"].str.contains("Hyperbolic"))
-        & (~elements_df["orbit_class"].str.contains("Parabolic"))
+    elliptical_elements = (~elements_df["orbit_class"].str.contains("Hyperbolic")) & (
+        ~elements_df["orbit_class"].str.contains("Parabolic")
     )
     vectors_df = vectors_df[elliptical_vectors]
     elements_df = elements_df[elliptical_elements]
@@ -52,18 +45,12 @@ def test_convertOrbitalElements_elliptical():
 
     # Convert the keplerian states to cartesian states using THOR
     orbits_cartesian_converted = convertOrbitalElements(
-        elements,
-        "keplerian",
-        "cartesian",
-        mu=MU
+        elements, "keplerian", "cartesian", mu=MU
     )
 
     # Convert the cartesian states to keplerian states using THOR
     orbits_keplerian_converted = convertOrbitalElements(
-        vectors,
-        "cartesian",
-        "keplerian",
-        mu=MU
+        vectors, "cartesian", "keplerian", mu=MU
     )
 
     # Conversion of cartesian orbits to keplerian orbits
@@ -72,9 +59,9 @@ def test_convertOrbitalElements_elliptical():
         orbits_keplerian_converted,
         elements,
         orbit_type="keplerian",
-        position_tol=(1*u.cm),
-        angle_tol=(10*u.nanoarcsecond),
-        unitless_tol=(1e-12*u.dimensionless_unscaled)
+        position_tol=(1 * u.cm),
+        angle_tol=(10 * u.nanoarcsecond),
+        unitless_tol=(1e-12 * u.dimensionless_unscaled),
     )
 
     # Conversion of keplerian orbits to cartesian orbits
@@ -83,18 +70,20 @@ def test_convertOrbitalElements_elliptical():
         orbits_cartesian_converted,
         vectors,
         orbit_type="cartesian",
-        position_tol=(1*u.cm),
-        velocity_tol=(1*u.mm/u.s),
-        magnitude=True
+        position_tol=(1 * u.cm),
+        velocity_tol=(1 * u.mm / u.s),
+        magnitude=True,
     )
 
     return
+
 
 def test_convertOrbitalElements_parabolilic():
     getSPICEKernels(KERNELS_DE440)
     setupSPICE(KERNELS_DE440, force=True)
     warnings.warn("Need to implement and test parabolic conversions!!!")
     return
+
 
 def test_convertOrbitalElements_hyperbolic():
     """
@@ -107,12 +96,8 @@ def test_convertOrbitalElements_hyperbolic():
     setupSPICE(KERNELS_DE440, force=True)
 
     # Read vectors and elements from test data set
-    vectors_df = pd.read_csv(
-        os.path.join(DATA_DIR, "vectors.csv")
-    )
-    elements_df = pd.read_csv(
-        os.path.join(DATA_DIR, "elements.csv")
-    )
+    vectors_df = pd.read_csv(os.path.join(DATA_DIR, "vectors.csv"))
+    elements_df = pd.read_csv(os.path.join(DATA_DIR, "elements.csv"))
 
     # Limit vectors and elements to elliptical orbits only
     hyperbolic_vectors = vectors_df["orbit_class"].str.contains("Hyperbolic")
@@ -126,18 +111,12 @@ def test_convertOrbitalElements_hyperbolic():
 
     # Convert the keplerian states to cartesian states using THOR
     orbits_cartesian_converted = convertOrbitalElements(
-        elements,
-        "keplerian",
-        "cartesian",
-        mu=MU
+        elements, "keplerian", "cartesian", mu=MU
     )
 
     # Convert the cartesian states to keplerian states using THOR
     orbits_keplerian_converted = convertOrbitalElements(
-        vectors,
-        "cartesian",
-        "keplerian",
-        mu=MU
+        vectors, "cartesian", "keplerian", mu=MU
     )
 
     # Conversion of cartesian orbits to keplerian orbits
@@ -146,9 +125,9 @@ def test_convertOrbitalElements_hyperbolic():
         orbits_keplerian_converted,
         elements,
         orbit_type="keplerian",
-        position_tol=(1*u.cm),
-        angle_tol=(10*u.nanoarcsecond),
-        unitless_tol=(1e-12*u.dimensionless_unscaled)
+        position_tol=(1 * u.cm),
+        angle_tol=(10 * u.nanoarcsecond),
+        unitless_tol=(1e-12 * u.dimensionless_unscaled),
     )
 
     # Conversion of keplerian orbits to cartesian orbits
@@ -157,8 +136,8 @@ def test_convertOrbitalElements_hyperbolic():
         orbits_cartesian_converted,
         vectors,
         orbit_type="cartesian",
-        position_tol=(1*u.cm),
-        velocity_tol=(1*u.mm/u.s),
-        magnitude=True
+        position_tol=(1 * u.cm),
+        velocity_tol=(1 * u.mm / u.s),
+        magnitude=True,
     )
     return

@@ -1,8 +1,7 @@
 from astropy.time import Time
 
-__all__ = [
-    "_checkTime"
-]
+__all__ = ["_checkTime"]
+
 
 def _checkTime(time, arg_name):
     """

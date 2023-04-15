@@ -6,29 +6,27 @@ from numba import jit
 from ..constants import Constants as c
 from ..coordinates import transformCoordinates
 from ..utils import _checkTime
+from .aberrations import addLightTime, addStellarAberration
 from .state import shiftOrbitsOrigin
 from .universal_propagate import propagateUniversal
-from .aberrations import addLightTime
-from .aberrations import addStellarAberration
 
-__all__ = [
-    "generateEphemerisUniversal"
-]
+__all__ = ["generateEphemerisUniversal"]
 
 MU = c.MU
 
+
 def generateEphemerisUniversal(
-        orbits,
-        t0,
-        observer_states,
-        observation_times,
-        light_time=True,
-        lt_tol=1e-10,
-        stellar_aberration=False,
-        mu=MU,
-        max_iter=1000,
-        tol=1e-15
-    ):
+    orbits,
+    t0,
+    observer_states,
+    observation_times,
+    light_time=True,
+    lt_tol=1e-10,
+    stellar_aberration=False,
+    mu=MU,
+    max_iter=1000,
+    tol=1e-15,
+):
     """
     Generate ephemeris for orbits relative to the location of the observer.
 
@@ -116,19 +114,14 @@ def generateEphemerisUniversal(
 
     # Propagate orbits to observer states
     propagated_orbits_helio = propagateUniversal(
-        orbits,
-        t0.tdb.mjd,
-        observation_times.tdb.mjd,
-        mu=mu,
-        max_iter=max_iter,
-        tol=tol
+        orbits, t0.tdb.mjd, observation_times.tdb.mjd, mu=mu, max_iter=max_iter, tol=tol
     )
 
     # Stack observation times and observer states (so we can add/subtract arrays later instead of looping)
     observation_times_stacked = Time(
         np.hstack([observation_times.utc.mjd for i in range(len(orbits))]),
         scale="utc",
-        format="mjd"
+        format="mjd",
     )
     observer_states_stacked_ = np.vstack([observer_states for i in range(len(orbits))])
 
@@ -139,9 +132,7 @@ def generateEphemerisUniversal(
     elif observer_states_stacked_.shape[1] == 6:
         observer_states_stacked_helio = observer_states_stacked_
     else:
-        err = (
-            "observer_states should have shape (M, 3) or (M, 6).\n"
-        )
+        err = "observer_states should have shape (M, 3) or (M, 6).\n"
         raise ValueError(err)
 
     # Shift states to the barycenter
@@ -150,13 +141,13 @@ def generateEphemerisUniversal(
         propagated_orbits_helio[:, 2:],
         observation_times_stacked,
         origin_in="heliocenter",
-        origin_out="barycenter"
+        origin_out="barycenter",
     )
     observer_states_stacked_bary = shiftOrbitsOrigin(
         observer_states_stacked_helio,
         observation_times_stacked,
         origin_in="heliocenter",
-        origin_out="barycenter"
+        origin_out="barycenter",
     )
 
     # Add light time correction
@@ -178,7 +169,9 @@ def generateEphemerisUniversal(
     delta_state_bary = propagated_orbits_bary[:, 2:] - observer_states_stacked_bary
 
     if stellar_aberration is True:
-        delta_state_bary[:, :3] = addStellarAberration(propagated_orbits_bary[:, 2:], observer_states_stacked_bary)
+        delta_state_bary[:, :3] = addStellarAberration(
+            propagated_orbits_bary[:, 2:], observer_states_stacked_bary
+        )
 
     # Convert topocentric to target state to spherical coordinates
     # including velocities
@@ -187,7 +180,7 @@ def generateEphemerisUniversal(
         "ecliptic",
         "equatorial",
         representation_in="cartesian",
-        representation_out="spherical"
+        representation_out="spherical",
     )
 
     # Output results
@@ -197,7 +190,9 @@ def generateEphemerisUniversal(
     ephemeris[:, 2] = state_spherical[:, 1]
     ephemeris[:, 3] = state_spherical[:, 2]
     if observer_states_stacked_.shape[1] == 6:
-        ephemeris[:, 4] = state_spherical[:, 4] * np.cos(np.radians(state_spherical[:, 5]))
+        ephemeris[:, 4] = state_spherical[:, 4] * np.cos(
+            np.radians(state_spherical[:, 5])
+        )
         ephemeris[:, 5] = state_spherical[:, 5]
     else:
         ephemeris[:, 4] = np.zeros(len(state_spherical), dtype=float)
@@ -233,15 +228,9 @@ def generateEphemerisUniversal(
             "obs_vx",
             "obs_vy",
             "obs_vz",
-        ]
+        ],
     )
     ephemeris["orbit_id"] = ephemeris["orbit_id"].astype(int)
-    ephemeris.sort_values(
-        by=["orbit_id", "mjd_utc"],
-        inplace=True
-    )
-    ephemeris.reset_index(
-        inplace=True,
-        drop=True
-    )
+    ephemeris.sort_values(by=["orbit_id", "mjd_utc"], inplace=True)
+    ephemeris.reset_index(inplace=True, drop=True)
     return ephemeris

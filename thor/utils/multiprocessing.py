@@ -1,31 +1,31 @@
-import signal
 import logging
+import multiprocessing as mp
+import signal
+
 import numpy as np
 import pandas as pd
-import multiprocessing as mp
 
-__all__ = [
-    "Timeout",
-    "yieldChunks",
-    "calcChunkSize",
-    "_initWorker",
-    "_checkParallel"
-]
+__all__ = ["Timeout", "yieldChunks", "calcChunkSize", "_initWorker", "_checkParallel"]
 
 logger = logging.getLogger(__name__)
 
+
 class Timeout:
     ### Taken from https://stackoverflow.com/a/22348885
-    def __init__(self, seconds=30, error_message='Timeout'):
+    def __init__(self, seconds=30, error_message="Timeout"):
         self.seconds = seconds
         self.error_message = error_message
+
     def handle_timeout(self, signum, frame):
         raise TimeoutError(self.error_message)
+
     def __enter__(self):
         signal.signal(signal.SIGALRM, self.handle_timeout)
         signal.alarm(self.seconds)
+
     def __exit__(self, type, value, traceback):
         signal.alarm(0)
+
 
 def yieldChunks(indexable, chunk_size):
     """
@@ -51,10 +51,9 @@ def yieldChunks(indexable, chunk_size):
         for c in range(0, len(indexable), chunk_size):
             yield indexable.iloc[c : c + chunk_size]
     else:
-        err = (
-            "Indexable should be one of {list, `~numpy.ndarray`, `~pandas.DataFrame`, `~pandas.Series`}"
-        )
+        err = "Indexable should be one of {list, `~numpy.ndarray`, `~pandas.DataFrame`, `~pandas.Series`}"
         raise ValueError(err)
+
 
 def calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=1):
     """
@@ -86,6 +85,7 @@ def calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=1):
     chunk_size = np.minimum(c, max_chunk_size)
     return chunk_size
 
+
 def _initWorker():
     """
     Tell multiprocessing worker to ignore signals, will only
@@ -93,6 +93,7 @@ def _initWorker():
     """
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     return
+
 
 def _checkParallel(num_jobs, parallel_backend):
     """
@@ -126,16 +127,17 @@ def _checkParallel(num_jobs, parallel_backend):
         # Check that pareallel_backend is one of the support types
         backends = ["ray", "mp"]
         if parallel_backend not in backends:
-            err = (
-                "parallel_backend should be one of {'ray', 'mp'}"
-            )
+            err = "parallel_backend should be one of {'ray', 'mp'}"
             raise ValueError(err)
 
         enable_parallel = True
         if parallel_backend == "ray":
             import ray
+
             if not num_jobs == "auto" or num_jobs is not None:
-                logger.warning("This process is running with the ray parallelization backend: num_jobs parameter will be ignored.")
+                logger.warning(
+                    "This process is running with the ray parallelization backend: num_jobs parameter will be ignored."
+                )
 
             num_workers = int(ray.cluster_resources()["CPU"])
 

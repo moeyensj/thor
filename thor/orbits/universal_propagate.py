@@ -2,14 +2,14 @@ import numpy as np
 from numba import jit
 
 from ..constants import Constants as c
-from .lagrange import calcLagrangeCoeffs
-from .lagrange import applyLagrangeCoeffs
+from .lagrange import applyLagrangeCoeffs, calcLagrangeCoeffs
 
 __all__ = [
     "propagateUniversal",
 ]
 
 MU = c.MU
+
 
 @jit(["f8[:,:](f8[:,:], f8[:], f8[:], f8, i8, f8)"], nopython=True, cache=True)
 def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
@@ -53,15 +53,12 @@ def propagateUniversal(orbits, t0, t1, mu=MU, max_iter=100, tol=1e-14):
             dt = t - t0[i]
 
             lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
-                r,
-                v,
-                dt,
-                mu=mu,
-                max_iter=max_iter,
-                tol=tol
+                r, v, dt, mu=mu, max_iter=max_iter, tol=tol
             )
             r_new, v_new = applyLagrangeCoeffs(r, v, *lagrange_coeffs)
 
-            new_orbits.append([i, t, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]])
+            new_orbits.append(
+                [i, t, r_new[0], r_new[1], r_new[2], v_new[0], v_new[1], v_new[2]]
+            )
 
     return np.array(new_orbits)

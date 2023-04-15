@@ -6,6 +6,7 @@ __all__ = ["calcHerrickGibbs"]
 
 MU = c.MU
 
+
 def calcHerrickGibbs(r1, r2, r3, t1, t2, t3):
     """
     Calculates the velocity vector at the location of the second position vector (r2) using the
@@ -53,7 +54,9 @@ def calcHerrickGibbs(r1, r2, r3, t1, t2, t3):
     t32 = t3 - t2
     t21 = t2 - t1
 
-    v2 = (-t32 * (1 / (t21 * t31) + MU / (12 * np.linalg.norm(r1)**3)) * r1
-          + (t32 - t21) * (1 / (t21 * t32) + MU / (12 * np.linalg.norm(r2)**3)) * r2
-          + t21 * (1 / (t32 * t31) + MU / (12 * np.linalg.norm(r3)**3)) * r3)
+    v2 = (
+        -t32 * (1 / (t21 * t31) + MU / (12 * np.linalg.norm(r1) ** 3)) * r1
+        + (t32 - t21) * (1 / (t21 * t32) + MU / (12 * np.linalg.norm(r2) ** 3)) * r2
+        + t21 * (1 / (t32 * t31) + MU / (12 * np.linalg.norm(r3) ** 3)) * r3
+    )
     return v2

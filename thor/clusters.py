@@ -89,9 +89,11 @@ def filter_clusters_by_length(clusters, dt, min_samples, min_arc_length):
         dt_in_cluster = dt[cluster]
         num_obs = len(dt_in_cluster)
         arc_length = dt_in_cluster.max() - dt_in_cluster.min()
-        if ((num_obs == len(np.unique(dt_in_cluster)))
+        if (
+            (num_obs == len(np.unique(dt_in_cluster)))
             and ((num_obs >= min_samples))
-            and (arc_length >= min_arc_length)):
+            and (arc_length >= min_arc_length)
+        ):
             filtered_clusters.append(cluster)
     return filtered_clusters
 
@@ -135,7 +137,7 @@ def _hotspot_2d_inner(points, eps, min_samples):
     points, sort them, find runs in the sorted list, and label each point with
     an ID from the runs that have been found.
     """
-    points_quantized = _quantize_points(_make_points_nonzero(points), 2*eps)
+    points_quantized = _quantize_points(_make_points_nonzero(points), 2 * eps)
     sort_order = _sort_order_2d(points_quantized)
     sorted_points = points_quantized[:, sort_order]
     runs = _find_runs(sorted_points, min_samples)
@@ -266,7 +268,7 @@ def _sort_order_2d(points):
     integers, and then sorting that 1D sequence.
     """
     scale = points.max() + 1
-    return np.argsort(points[0, :]*scale + points[1, :])
+    return np.argsort(points[0, :] * scale + points[1, :])
 
 
 @numba.njit
@@ -283,7 +285,7 @@ def _find_runs(sorted_points, min_samples, expected_n_clusters=16):
     memory than necessary. If it's too high, we will have to spend time growing
     that array.
     """
-    result = np.empty((2, expected_n_clusters*2), dtype="float64")
+    result = np.empty((2, expected_n_clusters * 2), dtype="float64")
     n_hit = 0
 
     n_consecutive = 1
@@ -295,7 +297,7 @@ def _find_runs(sorted_points, min_samples, expected_n_clusters=16):
             n_consecutive += 1
             if n_consecutive == min_samples:
                 if n_hit == result.shape[1]:
-                    result = _extend_2d_array(result, result.shape[1]*2)
+                    result = _extend_2d_array(result, result.shape[1] * 2)
                 result[0, n_hit] = sorted_points[0, i]
                 result[1, n_hit] = sorted_points[1, i]
                 n_hit = n_hit + 1
@@ -324,7 +326,10 @@ def _label_clusters(runs, points_quantized):
     labels = np.full(points_quantized.shape[1], -1, np.int64)
     for i in range(points_quantized.shape[1]):
         for j in range(runs.shape[1]):
-            if runs[0, j] == points_quantized[0, i] and runs[1, j] == points_quantized[1, i]:
+            if (
+                runs[0, j] == points_quantized[0, i]
+                and runs[1, j] == points_quantized[1, i]
+            ):
                 labels[i] = j
                 break
     return labels

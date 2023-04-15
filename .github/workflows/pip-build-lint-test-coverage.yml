@@ -1,0 +1,47 @@
+name: pip - Build, Lint, Test, and Coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-lint-test-coverage:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10"]
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v3
+      - name: Get git tags
+        run:  git fetch --prune --unshallow --tags
+      - name: Set up miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: "thor"
+          auto-update-conda: true
+          python-version: ${{ matrix.python-version }}
+      - name: Install openorb using conda
+        run: conda install -c defaults -c conda-forge openorb --yes
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip' # caching pip dependencies
+      - name: Build and install
+        run: pip install .[tests]
+      - name: Lint
+        run: pre-commit run --all-files
+      - name: Test
+        run: pytest . --cov --cov-report xml
+      - name: Coverage
+        uses: coverallsapp/github-action@v2.0.0
+        with:
+          github-token: ${{ secrets.COVERALLS_TOKEN }}
+          path-to-lcov: coverage.xml

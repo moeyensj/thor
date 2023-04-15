@@ -1,18 +1,19 @@
 import os
+
 import numpy as np
 import pandas as pd
-from astropy.time import Time
 from astropy import units as u
+from astropy.time import Time
 
 from ...testing import testOrbits
 from ..orbits import Orbits
 from ..propagate import propagateOrbits
 
 DATA_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "../../testing/data"
+    os.path.dirname(os.path.abspath(__file__)), "../../testing/data"
 )
 DT = np.arange(-1000, 1000, 5)
+
 
 def test_propagateOrbits():
     """
@@ -21,19 +22,13 @@ def test_propagateOrbits():
     Compare the resulting states and test how well they agree.
     """
     # Read vectors and elements from test data set
-    vectors_df = pd.read_csv(
-        os.path.join(DATA_DIR, "vectors.csv")
-    )
+    vectors_df = pd.read_csv(os.path.join(DATA_DIR, "vectors.csv"))
 
     # Get the target names
     targets = vectors_df["targetname"].unique()
 
     # Get the initial epochs
-    t0 = Time(
-        vectors_df["mjd_tdb"].values,
-        scale="tdb",
-        format="mjd"
-    )
+    t0 = Time(vectors_df["mjd_tdb"].values, scale="tdb", format="mjd")
 
     # Set propagation epochs
     t1 = t0[0] + DT
@@ -42,20 +37,11 @@ def test_propagateOrbits():
     vectors = vectors_df[["x", "y", "z", "vx", "vy", "vz"]].values
 
     # Create orbits class
-    orbits = Orbits(
-        vectors,
-        t0,
-        ids=targets
-    )
+    orbits = Orbits(vectors, t0, ids=targets)
 
     # Propagate the state at T0 to all T1 using MJOLNIR 2-body
     states_mjolnir = propagateOrbits(
-        orbits,
-        t1,
-        backend="MJOLNIR",
-        backend_kwargs={},
-        num_jobs=1,
-        chunk_size=1
+        orbits, t1, backend="MJOLNIR", backend_kwargs={}, num_jobs=1, chunk_size=1
     )
     states_mjolnir = states_mjolnir[["x", "y", "z", "vx", "vy", "vz"]].values
 
@@ -64,19 +50,19 @@ def test_propagateOrbits():
         orbits,
         t1,
         backend="PYOORB",
-        backend_kwargs={"dynamical_model" : "2"},
+        backend_kwargs={"dynamical_model": "2"},
         num_jobs=1,
-        chunk_size=1
+        chunk_size=1,
     )
     states_pyoorb = states_pyoorb[["x", "y", "z", "vx", "vy", "vz"]].values
 
     # Test that the propagated states agree to within the tolerances below
     testOrbits(
-       states_mjolnir,
-       states_pyoorb,
-       orbit_type="cartesian",
-       position_tol=200*u.m,
-       velocity_tol=(1*u.cm/u.s),
-       magnitude=True
+        states_mjolnir,
+        states_pyoorb,
+        orbit_type="cartesian",
+        position_tol=200 * u.m,
+        velocity_tol=(1 * u.cm / u.s),
+        magnitude=True,
     )
     return

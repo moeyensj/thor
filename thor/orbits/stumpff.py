@@ -1,9 +1,8 @@
 import numpy as np
 from numba import jit
 
-__all__ = [
-    "calcStumpff"
-]
+__all__ = ["calcStumpff"]
+
 
 @jit("UniTuple(f8, 6)(f8)", nopython=True, cache=True)
 def calcStumpff(psi):
@@ -57,10 +56,10 @@ def calcStumpff(psi):
         # Equation 6.9.16 in Danby (1992) [1]
         # states the recursion relation for higher
         # order Stumpff functions
-        c2 = (1. - c0) / psi
-        c3 = (1. - c1) / psi
-        c4 = (1/2. - c2) / psi
-        c5 = (1/6. - c3) / psi
+        c2 = (1.0 - c0) / psi
+        c3 = (1.0 - c1) / psi
+        c4 = (1 / 2.0 - c2) / psi
+        c5 = (1 / 6.0 - c3) / psi
     elif psi < 0.0:
         # Equation 6.9.15 in Danby (1992) [1]
         sqrt_npsi = np.sqrt(-psi)
@@ -70,17 +69,17 @@ def calcStumpff(psi):
         # Equation 6.9.16 in Danby (1992) [1]
         # states the recursion relation for higher
         # order Stumpff functions
-        c2 = (1. - c0) / psi
-        c3 = (1. - c1) / psi
-        c4 = (1/2. - c2) / psi
-        c5 = (1/6. - c3) / psi
+        c2 = (1.0 - c0) / psi
+        c3 = (1.0 - c1) / psi
+        c4 = (1 / 2.0 - c2) / psi
+        c5 = (1 / 6.0 - c3) / psi
     else:
         # Equation 6.9.14 in Danby (1992) [1]
-        c0 = 1.
-        c1 = 1.
-        c2 = 1/2.
-        c3 = 1/6.
-        c4 = 1/24.
-        c5 = 1/120.
+        c0 = 1.0
+        c1 = 1.0
+        c2 = 1 / 2.0
+        c3 = 1 / 6.0
+        c4 = 1 / 24.0
+        c5 = 1 / 120.0
 
     return c0, c1, c2, c3, c4, c5

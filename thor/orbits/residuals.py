@@ -1,20 +1,17 @@
 import numpy as np
-from scipy.stats import chi2
 from scipy.spatial.distance import mahalanobis
+from scipy.stats import chi2
 
-__all__ = [
-    "calcResiduals",
-    "calcSimpleResiduals",
-    "calcProbabilisticResiduals"
-]
+__all__ = ["calcResiduals", "calcSimpleResiduals", "calcProbabilisticResiduals"]
+
 
 def calcResiduals(
-        coords_actual,
-        coords_desired,
-        sigmas_actual=None,
-        covariances_actual=None,
-        include_probabilistic=True,
-    ):
+    coords_actual,
+    coords_desired,
+    sigmas_actual=None,
+    covariances_actual=None,
+    include_probabilistic=True,
+):
     """
     Calculate residuals (actual - desired) and the associated chi2 if the
     1-sigma uncertainties on the actual quantities are provided. If desired,
@@ -56,7 +53,11 @@ def calcResiduals(
             The Mahalanobis distance of each coordinate compared to the desired
             coordinates.
     """
-    if covariances_actual is None and sigmas_actual is not None and include_probabilistic:
+    if (
+        covariances_actual is None
+        and sigmas_actual is not None
+        and include_probabilistic
+    ):
         covariances_actual_ = [np.diag(i**2) for i in sigmas_actual]
         sigmas_actual_ = sigmas_actual
     elif covariances_actual is not None and sigmas_actual is None:
@@ -69,16 +70,12 @@ def calcResiduals(
         sigmas_actual_ = sigmas_actual
 
     residuals, chi2 = calcSimpleResiduals(
-        coords_actual,
-        coords_desired,
-        sigmas_actual=sigmas_actual_
+        coords_actual, coords_desired, sigmas_actual=sigmas_actual_
     )
 
     if include_probabilistic:
         p, d = calcProbabilisticResiduals(
-            coords_actual,
-            coords_desired,
-            covariances_actual_
+            coords_actual, coords_desired, covariances_actual_
         )
         stats = (chi2, p, d)
     else:
@@ -89,10 +86,10 @@ def calcResiduals(
 
 
 def calcSimpleResiduals(
-        coords_actual,
-        coords_desired,
-        sigmas_actual=None,
-    ):
+    coords_actual,
+    coords_desired,
+    sigmas_actual=None,
+):
     """
     Calculate residuals and the associated chi2 if the
     1-sigma uncertainties on the actual quantities are provided.
@@ -123,8 +120,8 @@ def calcSimpleResiduals(
     dec_pred = coords_desired[:, 1]
 
     # Calculate residuals in RA, make sure to fix any potential wrap around errors
-    residual_ra = (ra - ra_pred)
-    residual_ra = np.where(residual_ra > 180., 360. - residual_ra, residual_ra)
+    residual_ra = ra - ra_pred
+    residual_ra = np.where(residual_ra > 180.0, 360.0 - residual_ra, residual_ra)
     residual_ra *= np.cos(np.radians(dec_pred))
 
     # Calculate residuals in Dec
@@ -135,8 +132,7 @@ def calcSimpleResiduals(
         sigma_dec = sigmas_actual[:, 1]
 
         # Calculate chi2
-        chi2 = ((residual_ra**2 / sigma_ra**2)
-            + (residual_dec**2 / sigma_dec**2))
+        chi2 = (residual_ra**2 / sigma_ra**2) + (residual_dec**2 / sigma_dec**2)
     else:
         chi2 = np.NaN
 
@@ -145,11 +141,8 @@ def calcSimpleResiduals(
 
     return residuals, chi2
 
-def calcProbabilisticResiduals(
-        coords_actual,
-        coords_desired,
-        covariances_actual
-    ):
+
+def calcProbabilisticResiduals(coords_actual, coords_desired, covariances_actual):
     """
     Calculate the probabilistic residual.
 
@@ -178,16 +171,14 @@ def calcProbabilisticResiduals(
     d = np.zeros(len(coords_actual))
     p = np.zeros(len(coords_actual))
 
-    for i, (actual, desired, covar) in enumerate(zip(coords_actual, coords_desired, covariances_actual)):
+    for i, (actual, desired, covar) in enumerate(
+        zip(coords_actual, coords_desired, covariances_actual)
+    ):
         # Calculate the degrees of freedom
         k = len(actual)
 
         # Calculate the mahalanobis distance between the two coordinates
-        d_i = mahalanobis(
-            actual,
-            desired,
-            np.linalg.inv(covar)
-        )
+        d_i = mahalanobis(actual, desired, np.linalg.inv(covar))
 
         # Calculate the probability that both sets of coordinates are drawn from
         # the same multivariate normal

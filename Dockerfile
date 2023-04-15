@@ -3,18 +3,29 @@ FROM continuumio/miniconda3
 # Set shell to bash
 SHELL ["/bin/bash", "-c"]
 
-# Update apps
+# Update system dependencies
 RUN apt-get update \
 	&& apt-get upgrade -y
 
 # Update conda
 RUN conda update -n base -c defaults conda
+RUN conda install pip python=3.10
 
-# Download THOR and install
-RUN mkdir projects \
-	&& cd projects \
-	&& git clone https://github.com/moeyensj/thor.git --depth=1 \
-	&& cd thor \
-	&& conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt python=3.8 --y \
-	&& python -m ipykernel install --user --name thor_py38 --display-name "THOR (Python 3.8)" \
-	&& python setup.py install
+# Upgrade pip to the latest version and install pre-commit
+RUN pip install --upgrade pip pre-commit
+
+# Install openorb from conda
+RUN conda install -c defaults -c conda-forge openorb --y
+
+# Install pre-commit hooks (before THOR is installed to cache this step)
+RUN mkdir /code/
+COPY .pre-commit-config.yaml /code/
+WORKDIR /code/
+RUN git init . \
+	&& git add .pre-commit-config.yaml \
+	&& pre-commit install-hooks \
+	&& rm -rf .git
+
+# Install THOR
+ADD . /code/
+RUN SETUPTOOLS_SCM_PRETEND_VERSION=1 pip install -e .[tests]

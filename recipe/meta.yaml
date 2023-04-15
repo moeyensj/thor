@@ -33,6 +33,7 @@ requirements:
     - ipykernel
     - pytest
     - pytest-cov
+    - pre-commit
 
 build:
   script: python setup.py install --single-version-externally-managed --record=record.txt

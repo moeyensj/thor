@@ -1,33 +1,29 @@
 import numpy as np
 import spiceypy as sp
 
-from ..constants import KM_P_AU
-from ..constants import S_P_DAY
-from ..utils import setupSPICE
-from ..utils import _checkTime
+from ..constants import KM_P_AU, S_P_DAY
+from ..utils import _checkTime, setupSPICE
 
 NAIF_MAPPING = {
-    "solar system barycenter" : 0,
-    "mercury barycenter" : 1,
-    "venus barycenter" : 2,
-    "earth barycenter" : 3,
-    "mars barycenter" : 4,
-    "jupiter barycenter" : 5,
-    "saturn barycenter" : 6,
-    "uranus barycenter" : 7,
-    "neptune barycenter" : 8,
-    "pluto barycenter" : 9,
-    "sun" : 10,
-    "mercury" : 199,
-    "venus" : 299,
-    "earth" : 399,
-    "moon" : 301
+    "solar system barycenter": 0,
+    "mercury barycenter": 1,
+    "venus barycenter": 2,
+    "earth barycenter": 3,
+    "mars barycenter": 4,
+    "jupiter barycenter": 5,
+    "saturn barycenter": 6,
+    "uranus barycenter": 7,
+    "neptune barycenter": 8,
+    "pluto barycenter": 9,
+    "sun": 10,
+    "mercury": 199,
+    "venus": 299,
+    "earth": 399,
+    "moon": 301,
 }
 
-__all__ = [
-    "getPerturberState",
-    "shiftOrbitsOrigin"
-]
+__all__ = ["getPerturberState", "shiftOrbitsOrigin"]
+
 
 def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     """
@@ -57,11 +53,11 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
         and velocity in AU per day.
     """
     if origin == "barycenter":
-        center = 0 # Solar System Barycenter
+        center = 0  # Solar System Barycenter
     elif origin == "heliocenter":
-        center = 10 # Heliocenter
+        center = 10  # Heliocenter
     else:
-        err = ("origin should be one of 'heliocenter' or 'barycenter'")
+        err = "origin should be one of 'heliocenter' or 'barycenter'"
         raise ValueError(err)
 
     if frame == "ecliptic":
@@ -69,9 +65,7 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     elif frame == "equatorial":
         frame_spice = "J2000"
     else:
-        err = (
-            "frame should be one of {'equatorial', 'ecliptic'}"
-        )
+        err = "frame should be one of {'equatorial', 'ecliptic'}"
         raise ValueError(err)
 
     # Make sure SPICE is ready to roll
@@ -82,17 +76,13 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
 
     # Convert MJD epochs in TDB to ET in TDB
     epochs_tdb = times.tdb
-    epochs_et = np.array([sp.str2et('JD {:.16f} TDB'.format(i)) for i in epochs_tdb.jd])
+    epochs_et = np.array([sp.str2et("JD {:.16f} TDB".format(i)) for i in epochs_tdb.jd])
 
     # Get position of the body in heliocentric ecliptic J2000 coordinates
     states = []
     for epoch in epochs_et:
         state, lt = sp.spkez(
-            NAIF_MAPPING[body_name.lower()],
-            epoch,
-            frame_spice,
-            'NONE',
-            center
+            NAIF_MAPPING[body_name.lower()], epoch, frame_spice, "NONE", center
         )
         states.append(state)
     states = np.vstack(states)
@@ -101,6 +91,7 @@ def getPerturberState(body_name, times, frame="ecliptic", origin="heliocenter"):
     states = states / KM_P_AU
     states[:, 3:] = states[:, 3:] * S_P_DAY
     return states
+
 
 def shiftOrbitsOrigin(orbits, t0, origin_in="heliocenter", origin_out="barycenter"):
     """
@@ -127,7 +118,9 @@ def shiftOrbitsOrigin(orbits, t0, origin_in="heliocenter", origin_out="barycente
 
     orbits_shifted = orbits.copy()
     bary_to_helio = getPerturberState("sun", t0, origin="barycenter")
-    helio_to_bary = getPerturberState("solar system barycenter", t0, origin="heliocenter")
+    helio_to_bary = getPerturberState(
+        "solar system barycenter", t0, origin="heliocenter"
+    )
 
     if origin_in == origin_out:
         return orbits_shifted
@@ -136,9 +129,7 @@ def shiftOrbitsOrigin(orbits, t0, origin_in="heliocenter", origin_out="barycente
     elif origin_in == "barycenter" and origin_out == "heliocenter":
         orbits_shifted += helio_to_bary
     else:
-        err = (
-            "origin_in and origin_out should be one of {'heliocenter', 'barycenter'}"
-        )
+        err = "origin_in and origin_out should be one of {'heliocenter', 'barycenter'}"
         raise ValueError(err)
 
     return orbits_shifted

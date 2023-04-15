@@ -1,5 +1,6 @@
-import time
 import logging
+import time
+
 import numpy as np
 import pandas as pd
 
@@ -9,17 +10,13 @@ __all__ = [
     "identifySubsetLinkages",
     "removeDuplicateLinkages",
     "removeDuplicateObservations",
-    "calcDeltas"
+    "calcDeltas",
 ]
 
 logger = logging.getLogger(__name__)
 
-def generateCombinations(
-        x,
-        idx=None,
-        ct=None,
-        reps=None
-    ):
+
+def generateCombinations(x, idx=None, ct=None, reps=None):
     # Magic from the wizard himself: Mario Juric
     # recursively generate all combinations of idx, assuming
     # ct is the list of repeat counts of idx
@@ -36,12 +33,8 @@ def generateCombinations(
         yield from generateCombinations(None, idx, ct, reps[1:])
         idx[i] += 1
 
-def sortLinkages(
-        linkages,
-        linkage_members,
-        observations,
-        linkage_id_col="orbit_id"
-    ):
+
+def sortLinkages(linkages, linkage_members, observations, linkage_id_col="orbit_id"):
     """
     Check that linkages and linkage_members have their linkage IDs in the same order. If not,
     sort both by linkage ID. Second, check that linkage_members is additionally sorted by
@@ -76,19 +69,18 @@ def sortLinkages(
     linkage_members_verified = linkage_members.copy()
 
     reset_index = False
-    id_sorted = np.all(linkages_verified[linkage_id_col].values == linkage_members_verified[linkage_id_col].unique())
+    id_sorted = np.all(
+        linkages_verified[linkage_id_col].values
+        == linkage_members_verified[linkage_id_col].unique()
+    )
     if not id_sorted:
-        logger.debug(f"Linkages and linkage_members dataframes are not equally sorted by {linkage_id_col}. Sorting...")
+        logger.debug(
+            f"Linkages and linkage_members dataframes are not equally sorted by {linkage_id_col}. Sorting..."
+        )
         # Sort by linkage_id
         sort_start = time.time()
-        linkages_verified.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
-        linkage_members_verified.sort_values(
-            by=[linkage_id_col],
-            inplace=True
-        )
+        linkages_verified.sort_values(by=[linkage_id_col], inplace=True)
+        linkage_members_verified.sort_values(by=[linkage_id_col], inplace=True)
         sort_end = time.time()
         duration = sort_end - sort_start
         logger.debug(f"Sorting completed in {duration:.3f}s.")
@@ -96,29 +88,36 @@ def sortLinkages(
 
     time_present = True
     if "mjd_utc" not in linkage_members_verified.columns:
-        logger.debug("Observation time column ('mjd_utc') is not in linkage_members, merging with observations...")
+        logger.debug(
+            "Observation time column ('mjd_utc') is not in linkage_members, merging with observations..."
+        )
 
         # Merge with observations to get the observation time for each observation in linkage_members
         merge_start = time.time()
-        linkage_members_verified = linkage_members_verified.merge(observations[["obs_id", "mjd_utc"]],
-            on="obs_id",
-            how="left"
+        linkage_members_verified = linkage_members_verified.merge(
+            observations[["obs_id", "mjd_utc"]], on="obs_id", how="left"
         )
         merge_end = time.time()
         duration = merge_end - merge_start
         logger.debug(f"Merging completed in {duration:.3f}s.")
         time_present = False
 
-    linkage_members_verified_ = linkage_members_verified.sort_values(by=[linkage_id_col, "mjd_utc"])
-    time_sorted = np.all(linkage_members_verified_[[linkage_id_col, "obs_id"]].values == linkage_members_verified[[linkage_id_col, "obs_id"]].values)
+    linkage_members_verified_ = linkage_members_verified.sort_values(
+        by=[linkage_id_col, "mjd_utc"]
+    )
+    time_sorted = np.all(
+        linkage_members_verified_[[linkage_id_col, "obs_id"]].values
+        == linkage_members_verified[[linkage_id_col, "obs_id"]].values
+    )
     if not time_sorted:
-        logger.debug(f"Linkage_members is not sorted by {linkage_id_col} and mjd_utc. Sorting...")
+        logger.debug(
+            f"Linkage_members is not sorted by {linkage_id_col} and mjd_utc. Sorting..."
+        )
 
         # Sort by linkage_id, mjd_utc, and finally obs_id
         sort_start = time.time()
         linkage_members_verified.sort_values(
-            by=[linkage_id_col, "mjd_utc", "obs_id"],
-            inplace=True
+            by=[linkage_id_col, "mjd_utc", "obs_id"], inplace=True
         )
         sort_end = time.time()
         duration = sort_end - sort_start
@@ -127,21 +126,16 @@ def sortLinkages(
 
     if reset_index:
         for df in [linkages_verified, linkage_members_verified]:
-            df.reset_index(
-                inplace=True,
-                drop=True
-            )
+            df.reset_index(inplace=True, drop=True)
 
     if not time_present:
-        linkage_members_verified.drop(
-            columns=["mjd_utc"],
-            inplace=True
-        )
+        linkage_members_verified.drop(columns=["mjd_utc"], inplace=True)
 
     time_end = time.time()
     duration = time_end - time_start
     logger.debug(f"Linkages verified in {duration:.3f}s.")
     return linkages_verified, linkage_members_verified
+
 
 def identifySubsetLinkages(linkage_members, linkage_id_col="orbit_id"):
     """
@@ -171,7 +165,9 @@ def identifySubsetLinkages(linkage_members, linkage_id_col="orbit_id"):
     time_start = time.time()
     linkage_dict = {}
     for linkage_id in linkage_members[linkage_id_col].unique():
-        obs_ids = linkage_members[linkage_members[linkage_id_col] == linkage_id]["obs_id"].values
+        obs_ids = linkage_members[linkage_members[linkage_id_col] == linkage_id][
+            "obs_id"
+        ].values
         linkage_dict[linkage_id] = set(obs_ids)
     time_end = time.time()
     duration = time_end - time_start
@@ -208,21 +204,15 @@ def identifySubsetLinkages(linkage_members, linkage_id_col="orbit_id"):
     for linkage_id, subset_ids in subset_dict.items():
         subset_linkages += subset_ids
         linkage_ids += [linkage_id for i in range(len(subset_ids))]
-    subsets = pd.DataFrame({
-        "linkage_id" : linkage_ids,
-        "subset_ids" : subset_linkages
-    })
+    subsets = pd.DataFrame({"linkage_id": linkage_ids, "subset_ids": subset_linkages})
     time_end = time.time()
     duration = time_end - time_start
     logger.debug(f"Subset dataframe created in {duration:.3f}s.")
 
     return subsets
 
-def removeDuplicateLinkages(
-        linkages,
-        linkage_members,
-        linkage_id_col="orbit_id"
-    ):
+
+def removeDuplicateLinkages(linkages, linkage_members, linkage_id_col="orbit_id"):
     """
     Removes linkages that have identical observations as another linkage. Linkage quality is not taken
     into account.
@@ -248,29 +238,34 @@ def removeDuplicateLinkages(
     linkage_members_ = linkage_members.copy()
 
     # Expand observation IDs into columns, then remove duplicates using pandas functionality
-    expanded = linkage_members_[[linkage_id_col, "obs_id"]].groupby(by=[linkage_id_col])["obs_id"].apply(list).to_frame(name="obs_ids")
+    expanded = (
+        linkage_members_[[linkage_id_col, "obs_id"]]
+        .groupby(by=[linkage_id_col])["obs_id"]
+        .apply(list)
+        .to_frame(name="obs_ids")
+    )
     expanded = expanded["obs_ids"].apply(pd.Series)
     linkage_ids = expanded.drop_duplicates().index.values
 
     linkages_ = linkages_[linkages_[linkage_id_col].isin(linkage_ids)]
-    linkage_members_ = linkage_members_[linkage_members_[linkage_id_col].isin(linkage_ids)]
+    linkage_members_ = linkage_members_[
+        linkage_members_[linkage_id_col].isin(linkage_ids)
+    ]
 
     for df in [linkages_, linkage_members_]:
-        df.reset_index(
-            inplace=True,
-            drop=True
-        )
+        df.reset_index(inplace=True, drop=True)
 
     return linkages_, linkage_members_
 
+
 def removeDuplicateObservations(
-        linkages,
-        linkage_members,
-        min_obs=5,
-        linkage_id_col="orbit_id",
-        filter_cols=["num_obs", "arc_length"],
-        ascending=[False, False]
-    ):
+    linkages,
+    linkage_members,
+    min_obs=5,
+    linkage_id_col="orbit_id",
+    filter_cols=["num_obs", "arc_length"],
+    ascending=[False, False],
+):
     """
     Removes duplicate observations using the filter columns. The filter columns are used to sort the linkages
     as desired by the user. The first instance of the observation is kept and all other instances are removed.
@@ -304,10 +299,7 @@ def removeDuplicateObservations(
 
     # Sort linkages by the desired columns
     linkages_.sort_values(
-        by=filter_cols,
-        ascending=ascending,
-        inplace=True,
-        ignore_index=True
+        by=filter_cols, ascending=ascending, inplace=True, ignore_index=True
     )
 
     # Set both dataframe's indices to the linkage ID for
@@ -324,24 +316,26 @@ def removeDuplicateObservations(
 
     # Make sure that the remaining linkages have enough observations (>= min_obs)
     linkage_occurences = linkage_members_[linkage_id_col].value_counts()
-    linkages_to_keep = linkage_occurences.index.values[linkage_occurences.values >= min_obs]
+    linkages_to_keep = linkage_occurences.index.values[
+        linkage_occurences.values >= min_obs
+    ]
     linkages_ = linkages_[linkages_.index.isin(linkages_to_keep)]
-    linkage_members_ = linkage_members_[linkage_members_[linkage_id_col].isin(linkages_to_keep)]
+    linkage_members_ = linkage_members_[
+        linkage_members_[linkage_id_col].isin(linkages_to_keep)
+    ]
 
     # Reset indices
     linkages_.reset_index(inplace=True)
-    linkage_members_.reset_index(
-        inplace=True,
-        drop=True
-    )
+    linkage_members_.reset_index(inplace=True, drop=True)
     return linkages_, linkage_members_
 
+
 def calcDeltas(
-        linkage_members,
-        observations=None,
-        groupby_cols=["orbit_id", "night_id"],
-        delta_cols=["mjd_utc", "RA_deg", "Dec_deg", "mag"]
-    ):
+    linkage_members,
+    observations=None,
+    groupby_cols=["orbit_id", "night_id"],
+    delta_cols=["mjd_utc", "RA_deg", "Dec_deg", "mag"],
+):
     """
     Calculate deltas for the desired columns. For example, if groupby columns are given to be orbit_id and night id, then
     the linkages are grouped first by orbit_id then night_id, and then the difference in quantities are calculated for
@@ -374,29 +368,20 @@ def calcDeltas(
     for col in delta_cols + groupby_cols:
         if col not in linkage_members_.columns:
             if col not in observations.columns or observations is None:
-                err = (
-                    f"{col} could not be found in either linkage_members or observations."
-                )
+                err = f"{col} could not be found in either linkage_members or observations."
                 raise ValueError(err)
 
             cols.append(col)
 
     if len(cols) > 0:
         linkage_members_ = linkage_members_.merge(
-            observations[["obs_id"] + cols],
-            on="obs_id",
-            how="left"
+            observations[["obs_id"] + cols], on="obs_id", how="left"
         )
 
-    nightly = linkage_members_.groupby(
-        by=groupby_cols
-    )
+    nightly = linkage_members_.groupby(by=groupby_cols)
 
     deltas = nightly[delta_cols].diff()
-    deltas.rename(
-        columns={c : f"d{c}" for c in delta_cols},
-        inplace=True
-    )
+    deltas.rename(columns={c: f"d{c}" for c in delta_cols}, inplace=True)
     linkage_members_ = linkage_members_.join(deltas)
 
     return linkage_members_

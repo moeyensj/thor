@@ -1,7 +1,7 @@
 import numpy as np
 
-__all__ = ["angularToGnomonic",
-           "cartesianToGnomonic"]
+__all__ = ["angularToGnomonic", "cartesianToGnomonic"]
+
 
 def angularToGnomonic(coords_ang, coords_ang_center=np.array([0, 0])):
     """
@@ -23,14 +23,17 @@ def angularToGnomonic(coords_ang, coords_ang_center=np.array([0, 0])):
         Gnomonic longitude and latitude in radians.
     """
     lon = coords_ang[:, 0]
-    lon = np.where(lon > np.pi, lon - 2*np.pi, lon)
+    lon = np.where(lon > np.pi, lon - 2 * np.pi, lon)
     lat = coords_ang[:, 1]
     lon_0, lat_0 = coords_ang_center
 
     c = np.sin(lat_0) * np.sin(lat) + np.cos(lat_0) * np.cos(lat) * np.cos(lon - lon_0)
     u = np.cos(lat) * np.sin(lon - lon_0) / c
-    v = (np.cos(lat_0) * np.sin(lat) - np.sin(lat_0) * np.cos(lat) * np.cos(lon - lon_0)) / c
+    v = (
+        np.cos(lat_0) * np.sin(lat) - np.sin(lat_0) * np.cos(lat) * np.cos(lon - lon_0)
+    ) / c
     return np.array([u, v]).T
+
 
 def cartesianToGnomonic(coords_cart):
     """
@@ -48,17 +51,17 @@ def cartesianToGnomonic(coords_cart):
     coords_gnomonic : `~numpy.ndarray` (N, 2) or (N, 4)
         Gnomonic longitude and latitude in radians.
     """
-    x = coords_cart[:,0]
-    y = coords_cart[:,1]
-    z = coords_cart[:,2]
+    x = coords_cart[:, 0]
+    y = coords_cart[:, 1]
+    z = coords_cart[:, 2]
 
     u = y / x
     v = z / x
 
     if coords_cart.shape[1] == 6:
-        vx = coords_cart[:,3]
-        vy = coords_cart[:,4]
-        vz = coords_cart[:,5]
+        vx = coords_cart[:, 3]
+        vy = coords_cart[:, 4]
+        vz = coords_cart[:, 5]
 
         vu = (x * vy - vx * y) / x**2
         vv = (x * vz - vx * z) / x**2

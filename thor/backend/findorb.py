@@ -1,9 +1,10 @@
-import os
 import json
+import os
 import shutil
+import subprocess
 import tempfile
 import warnings
-import subprocess
+
 import numpy as np
 import pandas as pd
 from astropy.time import Time
@@ -12,34 +13,28 @@ from ..utils import writeToADES
 from .backend import Backend
 
 FINDORB_CONFIG = {
-    "config_file" : os.path.join(os.path.dirname(__file__), "data", "environ.dat"),
+    "config_file": os.path.join(os.path.dirname(__file__), "data", "environ.dat"),
 }
 ADES_KWARGS = {
-    "mjd_scale" : "utc",
-    "seconds_precision" : 9,
-    "columns_precision" : {
-        "ra" : 16,
-        "dec" : 16,
-        "mag" : 2,
-        "rmsMag" : 2,
-        "rmsTime" : 2
-    },
-    "observatory_code" : "",
-    "submitter" : "",
-    "telescope_design" : "",
-    "telescope_aperture" : "",
-    "telescope_detector" :  "",
-    "observers" : [""],
-    "measurers" : [""],
-    "observatory_name" : "",
-    "submitter_institution" : None,
-    "telescope_name" : None,
-    "telescope_fratio" : None,
-    "comment" : None
+    "mjd_scale": "utc",
+    "seconds_precision": 9,
+    "columns_precision": {"ra": 16, "dec": 16, "mag": 2, "rmsMag": 2, "rmsTime": 2},
+    "observatory_code": "",
+    "submitter": "",
+    "telescope_design": "",
+    "telescope_aperture": "",
+    "telescope_detector": "",
+    "observers": [""],
+    "measurers": [""],
+    "observatory_name": "",
+    "submitter_institution": None,
+    "telescope_name": None,
+    "telescope_fratio": None,
+    "comment": None,
 }
 
-class FINDORB(Backend):
 
+class FINDORB(Backend):
     def __init__(self, **kwargs):
 
         # Make sure only the correct kwargs
@@ -76,12 +71,7 @@ class FINDORB(Backend):
         with open(file_name, "w") as f:
             f.write("OPTION {}\n".format(time_scale.upper()))
             f.write("OPTION ASCENDING\n")
-            np.savetxt(
-                f,
-                times.jd,
-                newline="\n",
-                fmt="%.16f"
-            )
+            np.savetxt(f, times.jd, newline="\n", fmt="%.16f")
             f.close()
         return
 
@@ -109,14 +99,14 @@ class FINDORB(Backend):
                 "elem_short.json",
                 "combined.json",
                 "linux_p1550p2650.430t",
-                "asteroid_ephemeris.txt"
-            )
+                "asteroid_ephemeris.txt",
+            ),
         )
 
         # Create a symlink for the DE 430 file that was not copied
         os.symlink(
             os.path.expanduser("~/.find_orb/linux_p1550p2650.430t"),
-            os.path.join(temp_dir, ".find_orb/linux_p1550p2650.430t")
+            os.path.join(temp_dir, ".find_orb/linux_p1550p2650.430t"),
         )
 
         # If the asteroid ephemeris file is present, also create a symlink for this file
@@ -124,7 +114,7 @@ class FINDORB(Backend):
         if os.path.exists(asteroid_ephem_file):
             os.symlink(
                 asteroid_ephem_file,
-                os.path.join(temp_dir, ".find_orb/asteroid_ephemeris.txt")
+                os.path.join(temp_dir, ".find_orb/asteroid_ephemeris.txt"),
             )
 
         # Create a copy of the environment and set the HOME directory to the
@@ -167,11 +157,7 @@ class FINDORB(Backend):
 
             # Write the desired times out to a file that find_orb understands
             times_in_file = os.path.join(temp_dir, "propagation", "times_prop.in")
-            self._writeTimes(
-                times_in_file,
-                t1.tt,
-                "tt"
-            )
+            self._writeTimes(times_in_file, t1.tt, "tt")
 
             for i in range(orbits.num_orbits):
 
@@ -186,8 +172,7 @@ class FINDORB(Backend):
 
                 # Format the state vector into the type understood by find_orb
                 fo_orbit = "-v{},{}".format(
-                    orbits.epochs[i].tt.jd,
-                    ",".join(orbits.cartesian[i].astype("str"))
+                    orbits.epochs[i].tt.jd, ",".join(orbits.cartesian[i].astype("str"))
                 )
 
                 # Run fo
@@ -206,7 +191,7 @@ class FINDORB(Backend):
                     vectors_txt,
                     "-D",
                     self.config_file,
-                    f"EPHEM_STEP_SIZE=t{times_in_file}"
+                    f"EPHEM_STEP_SIZE=t{times_in_file}",
                 ]
                 ret = subprocess.run(
                     call,
@@ -218,7 +203,7 @@ class FINDORB(Backend):
                 )
                 process_returns.append(ret)
 
-                if (ret.returncode != 0):
+                if ret.returncode != 0:
                     warning = (
                         "fo returned a non-zero error code.\n"
                         "Command: \n"
@@ -228,12 +213,12 @@ class FINDORB(Backend):
                     )
                     warnings.warn(warning)
 
-                if (os.path.exists(vectors_txt)):
+                if os.path.exists(vectors_txt):
                     df = pd.read_csv(
                         vectors_txt,
                         header=0,
                         delim_whitespace=True,
-                        names=["jd_tt", "x", "y", "z", "vx", "vy", "vz"]
+                        names=["jd_tt", "x", "y", "z", "vx", "vy", "vz"],
                     )
                     df["orbit_id"] = [i for _ in range(len(df))]
                 else:
@@ -249,13 +234,9 @@ class FINDORB(Backend):
                     script_out = os.path.join(out_dir_, f"run_{orbit_id_path}.sh")
                     for i in [9, 11, 13, 14]:
                         call[i] = f'"{call[i]}"'
-                    call_out = " ".join(call).replace(
-                        out_dir_ + "/",
-                        ""
-                    )
+                    call_out = " ".join(call).replace(out_dir_ + "/", "")
                     call_out = call_out.replace(
-                        os.path.dirname(self.config_file) + "/",
-                        ""
+                        os.path.dirname(self.config_file) + "/", ""
                     )
                     with open(script_out, "w") as file_out:
                         file_out.write("#!/bin/sh\n")
@@ -269,7 +250,7 @@ class FINDORB(Backend):
                         ignore=shutil.ignore_patterns(
                             ".find_orb",
                         ),
-                        dirs_exist_ok=True
+                        dirs_exist_ok=True,
                     )
 
             # Save the configuration file to the user defined output directory (do
@@ -280,11 +261,11 @@ class FINDORB(Backend):
 
             propagated = pd.concat(propagated_dfs, ignore_index=True)
             propagated["mjd_tdb"] = Time(
-                propagated["jd_tt"].values,
-                scale="tt",
-                format="jd"
+                propagated["jd_tt"].values, scale="tt", format="jd"
             ).tdb.mjd
-            propagated = propagated[["orbit_id", "mjd_tdb", "x", "y", "z", "vx", "vy", "vz"]]
+            propagated = propagated[
+                ["orbit_id", "mjd_tdb", "x", "y", "z", "vx", "vy", "vz"]
+            ]
 
             if orbits.ids is not None:
                 propagated["orbit_id"] = orbits.ids[propagated["orbit_id"].values]
@@ -328,28 +309,45 @@ class FINDORB(Backend):
 
                 # Write the desired times out to a file that find_orb understands
                 times_in_file = os.path.join(out_dir_, "times_eph.in")
-                self._writeTimes(
-                    times_in_file,
-                    observation_times.tt,
-                    "tt"
-                )
+                self._writeTimes(times_in_file, observation_times.tt, "tt")
 
                 # Certain observatories are dealt with differently, so appropriately
                 # define the columns
-                if (observatory_code == "500"):
+                if observatory_code == "500":
                     columns = [
-                        "jd_utc", "RA_deg", "Dec_deg", "delta_au", "r_au",
-                        "elong", "ph_ang", "mag",
-                        "'/hr", "PA", "rvel",
-                        "lon", "lat", "altitude_km"
+                        "jd_utc",
+                        "RA_deg",
+                        "Dec_deg",
+                        "delta_au",
+                        "r_au",
+                        "elong",
+                        "ph_ang",
+                        "mag",
+                        "'/hr",
+                        "PA",
+                        "rvel",
+                        "lon",
+                        "lat",
+                        "altitude_km",
                     ]
                 else:
                     columns = [
-                        "jd_utc", "RA_deg", "Dec_deg", "delta_au", "r_au",
-                        "elong", "ph_ang", "mag",
-                        "RA_'/hr", "dec_'/hr",
-                        "alt",  "az",  "rvel",
-                        "lon", "lat", "altitude_km"
+                        "jd_utc",
+                        "RA_deg",
+                        "Dec_deg",
+                        "delta_au",
+                        "r_au",
+                        "elong",
+                        "ph_ang",
+                        "mag",
+                        "RA_'/hr",
+                        "dec_'/hr",
+                        "alt",
+                        "az",
+                        "rvel",
+                        "lon",
+                        "lat",
+                        "altitude_km",
                     ]
 
                 # For each orbit calculate their ephemerides
@@ -367,7 +365,7 @@ class FINDORB(Backend):
                     # Format the state vector into the type understood by find_orb
                     fo_orbit = "-v{},{}".format(
                         orbits.epochs[i].tt.jd,
-                        ",".join(orbits.cartesian[i].astype("str"))
+                        ",".join(orbits.cartesian[i].astype("str")),
                     )
                     if orbits.H is not None:
                         fo_orbit += ",H={}".format(orbits.H[i])
@@ -390,7 +388,7 @@ class FINDORB(Backend):
                         f"JSON_EPHEM_NAME={os.path.join(out_dir_i, 'eph.json')}",
                         f"JSON_ELEMENTS_NAME={os.path.join(out_dir_i, 'ele.json')}",
                         f"JSON_SHORT_ELEMENTS={os.path.join(out_dir_i, 'short.json')}",
-                        f"JSON_COMBINED_NAME={os.path.join(out_dir_i, 'com.json')}"
+                        f"JSON_COMBINED_NAME={os.path.join(out_dir_i, 'com.json')}",
                     ]
 
                     ret = subprocess.run(
@@ -399,11 +397,11 @@ class FINDORB(Backend):
                         env=env,
                         cwd=temp_dir,
                         check=False,
-                        capture_output=True
+                        capture_output=True,
                     )
                     process_returns.append(ret)
 
-                    if (ret.returncode != 0):
+                    if ret.returncode != 0:
                         warning = (
                             "fo returned a non-zero error code.\n"
                             "Command: \n"
@@ -413,17 +411,18 @@ class FINDORB(Backend):
                         )
                         warnings.warn(warning)
 
-                    if (os.path.exists(ephemeris_txt)):
+                    if os.path.exists(ephemeris_txt):
                         ephemeris = pd.read_csv(
                             ephemeris_txt,
                             header=0,
                             delim_whitespace=True,
                             names=columns,
-                            float_precision="round_trip"
-
+                            float_precision="round_trip",
                         )
                         ephemeris["orbit_id"] = [i for _ in range(len(ephemeris))]
-                        ephemeris["observatory_code"] = [observatory_code for _ in range(len(ephemeris))]
+                        ephemeris["observatory_code"] = [
+                            observatory_code for _ in range(len(ephemeris))
+                        ]
 
                     else:
                         ephemeris = pd.DataFrame(
@@ -437,13 +436,9 @@ class FINDORB(Backend):
                         script_out = os.path.join(out_dir_, f"run_{orbit_id_path}.sh")
                         for i in [7, 9, 11, 12, 13, 14, 15, 16]:
                             call[i] = f'"{call[i]}"'
-                        call_out = " ".join(call).replace(
-                            out_dir_ + "/",
-                            ""
-                        )
+                        call_out = " ".join(call).replace(out_dir_ + "/", "")
                         call_out = call_out.replace(
-                            os.path.dirname(self.config_file) + "/",
-                            ""
+                            os.path.dirname(self.config_file) + "/", ""
                         )
                         with open(script_out, "w") as file_out:
                             file_out.write("#!/bin/sh\n")
@@ -461,11 +456,8 @@ class FINDORB(Backend):
                 shutil.copytree(
                     temp_dir,
                     out_dir,
-                    ignore=shutil.ignore_patterns(
-                        ".find_orb",
-                        "eph_json.txt"
-                    ),
-                    dirs_exist_ok=True
+                    ignore=shutil.ignore_patterns(".find_orb", "eph_json.txt"),
+                    dirs_exist_ok=True,
                 )
 
         # Combine ephemeris data frames and sort by orbit ID,
@@ -475,23 +467,20 @@ class FINDORB(Backend):
         ephemeris.sort_values(
             by=["orbit_id", "observatory_code", "jd_utc"],
             inplace=True,
-            ignore_index=True
+            ignore_index=True,
         )
 
         # Extract observation times and convert them to MJDs
-        times = Time(
-            ephemeris["jd_utc"].values,
-            format="jd",
-            scale="utc"
-        )
+        times = Time(ephemeris["jd_utc"].values, format="jd", scale="utc")
         ephemeris["mjd_utc"] = times.utc.mjd
-        ephemeris.drop(
-            columns=["jd_utc"],
-            inplace=True
-        )
+        ephemeris.drop(columns=["jd_utc"], inplace=True)
 
         # Sort the columns into a more user friendly order
-        cols = ['orbit_id', 'observatory_code', 'mjd_utc'] + [col for col in ephemeris.columns if col not in ['orbit_id', 'observatory_code', 'mjd_utc']]
+        cols = ["orbit_id", "observatory_code", "mjd_utc"] + [
+            col
+            for col in ephemeris.columns
+            if col not in ["orbit_id", "observatory_code", "mjd_utc"]
+        ]
         ephemeris = ephemeris[cols]
 
         # If orbits have their IDs defined replace the orbit IDs
@@ -514,24 +503,21 @@ class FINDORB(Backend):
         _observations = observations.copy()
         _observations.rename(
             columns={
-                "mjd_utc" : "mjd",
-                "RA_deg" : "ra",
-                "Dec_deg" : "dec",
-                "RA_sigma_deg" : "rmsRA",
-                "Dec_sigma_deg" : "rmsDec",
-                "mag_sigma" : "rmsMag",
-                "mjd_sigma_seconds" : "rmsTime",
-                "filter" : "band",
-                "observatory_code" : "stn",
+                "mjd_utc": "mjd",
+                "RA_deg": "ra",
+                "Dec_deg": "dec",
+                "RA_sigma_deg": "rmsRA",
+                "Dec_sigma_deg": "rmsDec",
+                "mag_sigma": "rmsMag",
+                "mjd_sigma_seconds": "rmsTime",
+                "filter": "band",
+                "observatory_code": "stn",
             },
-            inplace=True
+            inplace=True,
         )
         _observations["rmsRA"] = _observations["rmsRA"].values * 3600
         _observations["rmsDec"] = _observations["rmsDec"].values * 3600
-        _observations.sort_values(
-            by=["mjd", "stn"],
-            inplace=True
-        )
+        _observations.sort_values(by=["mjd", "stn"], inplace=True)
 
         id_present = False
         id_col = None
@@ -557,7 +543,6 @@ class FINDORB(Backend):
         if "astCat" not in _observations.columns:
             _observations.loc[:, "astCat"] = "None"
 
-
         for i, orbit_id in enumerate(_observations[id_col].unique()):
 
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -580,23 +565,19 @@ class FINDORB(Backend):
                 out_dir_i = os.path.join(out_dir_, orbit_id_i)
                 os.makedirs(out_dir_i, exist_ok=True)
 
-                observations_file = os.path.join(out_dir_, f"observations_{orbit_id_i}.psv")
+                observations_file = os.path.join(
+                    out_dir_, f"observations_{orbit_id_i}.psv"
+                )
 
                 mask = _observations[id_col].isin([orbit_id])
                 object_observations = _observations[mask].copy()
                 object_observations.loc[:, id_col] = orbit_id_short
                 object_observations.reset_index(inplace=True, drop=True)
 
-                writeToADES(
-                    object_observations,
-                    observations_file,
-                    **ades_kwargs
-                )
+                writeToADES(object_observations, observations_file, **ades_kwargs)
 
                 last_observation = Time(
-                    object_observations["mjd"].max(),
-                    scale="utc",
-                    format="mjd"
+                    object_observations["mjd"].max(), scale="utc", format="mjd"
                 )
                 call = [
                     "fo",
@@ -615,11 +596,11 @@ class FINDORB(Backend):
                     env=env,
                     cwd=temp_dir,
                     check=False,
-                    capture_output=True
+                    capture_output=True,
                 )
                 process_returns.append(ret)
 
-                if (ret.returncode != 0):
+                if ret.returncode != 0:
                     warning = (
                         "fo returned a non-zero error code.\n"
                         "Command: \n"
@@ -639,7 +620,7 @@ class FINDORB(Backend):
                 else:
                     epoch = np.NaN
                     state = np.zeros(6) * np.NaN
-                    covariance_matrix = np.zeros((6,6)) * np.NaN
+                    covariance_matrix = np.zeros((6, 6)) * np.NaN
 
                 total_json = os.path.join(out_dir_i, "total.json")
                 if (os.path.exists(total_json)) and ret.returncode == 0:
@@ -648,10 +629,7 @@ class FINDORB(Backend):
                         residuals = pd.DataFrame(
                             data["objects"][orbit_id_short]["observations"]["residuals"]
                         )
-                        residuals.sort_values(
-                            by=["JD", "obscode"],
-                            inplace=True
-                        )
+                        residuals.sort_values(by=["JD", "obscode"], inplace=True)
                         residuals = object_observations[["obs_id"]].join(residuals)
 
                     residual_dfs.append(residuals)
@@ -664,15 +642,11 @@ class FINDORB(Backend):
                 if out_dir is not None:
                     # Write a bash script to the temporary directory
                     script_out = os.path.join(out_dir_, f"run_{orbit_id_i}.sh")
-                    for i in [1,3,7]:
+                    for i in [1, 3, 7]:
                         call[i] = f'"{call[i]}"'
-                    call_out = " ".join(call).replace(
-                        out_dir_ + "/",
-                        ""
-                    )
+                    call_out = " ".join(call).replace(out_dir_ + "/", "")
                     call_out = call_out.replace(
-                        os.path.dirname(self.config_file) + "/",
-                        ""
+                        os.path.dirname(self.config_file) + "/", ""
                     )
                     with open(script_out, "w") as file_out:
                         file_out.write("#!/bin/sh\n")
@@ -683,11 +657,8 @@ class FINDORB(Backend):
                     shutil.copytree(
                         temp_dir,
                         out_dir,
-                        ignore=shutil.ignore_patterns(
-                            ".find_orb",
-                            "eph_json.txt"
-                        ),
-                        dirs_exist_ok=True
+                        ignore=shutil.ignore_patterns(".find_orb", "eph_json.txt"),
+                        dirs_exist_ok=True,
                     )
 
         if out_dir is not None:
@@ -698,36 +669,30 @@ class FINDORB(Backend):
 
         orbits = np.vstack(orbits)
 
-        od_orbits = pd.DataFrame({
-            "orbit_id" : ids,
-            "jd_tt" : epochs,
-            "x" : orbits[:, 0],
-            "y" : orbits[:, 1],
-            "z" : orbits[:, 2],
-            "vx" : orbits[:, 3],
-            "vy" : orbits[:, 4],
-            "vz" : orbits[:, 5],
-            "covariance" : covariances
-        })
+        od_orbits = pd.DataFrame(
+            {
+                "orbit_id": ids,
+                "jd_tt": epochs,
+                "x": orbits[:, 0],
+                "y": orbits[:, 1],
+                "z": orbits[:, 2],
+                "vx": orbits[:, 3],
+                "vy": orbits[:, 4],
+                "vz": orbits[:, 5],
+                "covariance": covariances,
+            }
+        )
 
         od_orbits["mjd_tdb"] = np.NaN
         od_orbits.loc[~od_orbits["jd_tt"].isna(), "mjd_tdb"] = Time(
             od_orbits[~od_orbits["jd_tt"].isna()]["jd_tt"].values,
             scale="tt",
-            format="jd"
+            format="jd",
         ).tdb.mjd
 
-        od_orbits = od_orbits[[
-            "orbit_id",
-            "mjd_tdb",
-            "x",
-            "y",
-            "z",
-            "vx",
-            "vy",
-            "vz",
-            "covariance"
-        ]]
+        od_orbits = od_orbits[
+            ["orbit_id", "mjd_tdb", "x", "y", "z", "vx", "vy", "vz", "covariance"]
+        ]
         od_orbit_members = pd.concat(residual_dfs, ignore_index=True)
 
         return od_orbits, od_orbit_members, process_returns

@@ -1,0 +1,10 @@
+version: "3.8"
+
+services:
+  thor:
+    container_name: thor
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ".:/code"

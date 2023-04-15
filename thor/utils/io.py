@@ -1,14 +1,14 @@
-import io
-import os
-import yaml
+import datetime
 import gzip
+import io
+import logging
+import os
 import shutil
 import urllib
-import requests
-import datetime
-import dateutil
-import logging
 
+import dateutil
+import requests
+import yaml
 from astropy.time import Time
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ __all__ = [
     "_writeFileLog",
     "_checkUpdate",
     "_downloadFile",
-    "_removeDownloadedFiles"
+    "_removeDownloadedFiles",
 ]
 
 
@@ -40,9 +40,13 @@ def _readFileLog(log_file=None):
     """
     if log_file is None:
         log_file = os.path.join(os.path.dirname(__file__), "..", "data/log.yaml")
+    if not os.path.isfile(log_file):
+        with open(log_file, "w") as f:
+            yaml.dump({}, f)
     with open(log_file) as file:
         log = yaml.load(file, Loader=yaml.FullLoader)
     return log
+
 
 def _writeFileLog(log, log_file=None):
     """
@@ -69,6 +73,7 @@ def _writeFileLog(log, log_file=None):
         yaml.dump(log, f)
     return
 
+
 def _checkUpdate(url):
     """
     Query url for "Last-modified" argument in header. If "Last-modified" argument
@@ -86,10 +91,11 @@ def _checkUpdate(url):
 
     """
     response = requests.head(url)
-    last_modified = response.headers.get('Last-Modified')
+    last_modified = response.headers.get("Last-Modified")
     if last_modified:
         last_modified = Time(dateutil.parser.parse(last_modified))
     return last_modified
+
 
 def _downloadFile(to_dir, url, log_file=None):
     """
@@ -160,7 +166,7 @@ def _downloadFile(to_dir, url, log_file=None):
 
         response = urllib.request.urlopen(url)
         f = io.BytesIO(response.read())
-        with open(file_path, 'wb') as f_out:
+        with open(file_path, "wb") as f_out:
             f_out.write(f.read())
 
         logger.info("Download complete.")
@@ -171,8 +177,8 @@ def _downloadFile(to_dir, url, log_file=None):
             logger.info("Downloaded file is gzipped. Decompressing...")
             log[file_name]["compressed_location"] = file_path
             uncompressed_file_path = os.path.splitext(file_path)[0]
-            with gzip.open(file_path, 'r') as f_in:
-                with open(uncompressed_file_path, 'wb') as f_out:
+            with gzip.open(file_path, "r") as f_in:
+                with open(uncompressed_file_path, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
             file_path = uncompressed_file_path
             logger.info("Decompression complete.")
@@ -190,6 +196,7 @@ def _downloadFile(to_dir, url, log_file=None):
         logger.info("No download needed.")
 
     return
+
 
 def _removeDownloadedFiles(file_names=None):
     """
@@ -220,7 +227,11 @@ def _removeDownloadedFiles(file_names=None):
             logger.info("Removing {} ({}).".format(file, log[file]["location"]))
             os.remove(log[file]["location"])
             if "compressed_location" in log[file].keys():
-                logger.info("Removing compressed {} ({}).".format(file, log[file]["compressed_location"]))
+                logger.info(
+                    "Removing compressed {} ({}).".format(
+                        file, log[file]["compressed_location"]
+                    )
+                )
                 os.remove(log[file]["compressed_location"])
 
             del log[file]
@@ -228,4 +239,3 @@ def _removeDownloadedFiles(file_names=None):
         _writeFileLog(log, log_file=log_file)
         logger.info("Log updated.")
     return
-

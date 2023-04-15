@@ -1,20 +1,18 @@
 import os
 import warnings
+
 import numpy as np
-import pyoorb as oo
 import pandas as pd
+import pyoorb as oo
 from astropy.time import Time
 
 from ..utils import _checkTime
 from .backend import Backend
 
-PYOORB_CONFIG = {
-    "dynamical_model" : "N",
-    "ephemeris_file" : "de430.dat"
-}
+PYOORB_CONFIG = {"dynamical_model": "N", "ephemeris_file": "de430.dat"}
+
 
 class PYOORB(Backend):
-
     def __init__(self, **kwargs):
         # Make sure only the correct kwargs
         # are passed to the constructor
@@ -44,9 +42,11 @@ class PYOORB(Backend):
             pass
         else:
             if os.environ.get("OORB_DATA") == None:
-                os.environ["OORB_DATA"] = os.path.join(os.environ["CONDA_PREFIX"], "share/openorb")
+                os.environ["OORB_DATA"] = os.path.join(
+                    os.environ["CONDA_PREFIX"], "share/openorb"
+                )
             # Prepare pyoorb
-            ephfile = os.path.join(os.getenv('OORB_DATA'), self.ephemeris_file)
+            ephfile = os.path.join(os.getenv("OORB_DATA"), self.ephemeris_file)
             err = oo.pyoorb.oorb_init(ephfile)
             if err == 0:
                 os.environ[env_var] = "True"
@@ -126,7 +126,9 @@ class PYOORB(Backend):
             orbit_type = [3 for i in range(num_orbits)]
             orbits_[:, 1:] = np.radians(orbits_[:, 1:])
         else:
-            raise ValueError("orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}")
+            raise ValueError(
+                "orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}"
+            )
 
         if time_scale == "UTC":
             time_scale = [1 for i in range(num_orbits)]
@@ -155,31 +157,35 @@ class PYOORB(Backend):
 
         if num_orbits > 1:
             orbits_pyoorb = np.array(
-                np.array([
-                    ids,
-                    *list(orbits_.T),
-                     orbit_type,
-                     t0,
-                     time_scale,
-                     magnitude,
-                     slope
-                ]).T,
+                np.array(
+                    [
+                        ids,
+                        *list(orbits_.T),
+                        orbit_type,
+                        t0,
+                        time_scale,
+                        magnitude,
+                        slope,
+                    ]
+                ).T,
                 dtype=np.double,
-                order='F'
+                order="F",
             )
         else:
-            orbits_pyoorb = np.array([
+            orbits_pyoorb = np.array(
                 [
-                    ids[0],
-                    *list(orbits_.T),
-                    orbit_type[0],
-                    t0[0],
-                    time_scale[0],
-                    magnitude[0],
-                    slope[0]]
+                    [
+                        ids[0],
+                        *list(orbits_.T),
+                        orbit_type[0],
+                        t0[0],
+                        time_scale[0],
+                        magnitude[0],
+                        slope[0],
+                    ]
                 ],
                 dtype=np.double,
-                order='F'
+                order="F",
             )
 
         return orbits_pyoorb
@@ -212,7 +218,9 @@ class PYOORB(Backend):
         else:
             raise ValueError("time_scale should be one of {'UTC', 'UT1', 'TT', 'TAI'}")
 
-        epochs_pyoorb = np.array(list(np.vstack([epochs, time_scale]).T), dtype=np.double, order='F')
+        epochs_pyoorb = np.array(
+            list(np.vstack([epochs, time_scale]).T), dtype=np.double, order="F"
+        )
         return epochs_pyoorb
 
     def _propagateOrbits(self, orbits, t1):
@@ -273,7 +281,7 @@ class PYOORB(Backend):
             "cartesian",
             "TT",
             orbits.H,
-            orbits.G
+            orbits.G,
         )
 
         # Convert epochs into PYOORB format
@@ -287,7 +295,7 @@ class PYOORB(Backend):
             orbits_pyoorb_i, err = oo.pyoorb.oorb_propagation(
                 in_orbits=orbits_pyoorb_i,
                 in_epoch=epoch,
-                in_dynmodel=self.dynamical_model
+                in_dynmodel=self.dynamical_model,
             )
             states.append(orbits_pyoorb_i)
 
@@ -296,9 +304,9 @@ class PYOORB(Backend):
         # state vectors
         elements = ["x", "y", "z", "vx", "vy", "vz"]
         # Other PYOORB state vector representations:
-        #"keplerian":
+        # "keplerian":
         #    elements = ["a", "e", "i", "Omega", "omega", "M0"]
-        #"cometary":
+        # "cometary":
         #    elements = ["q", "e", "i", "Omega", "omega", "T0"]
 
         # Create pandas data frame
@@ -309,40 +317,25 @@ class PYOORB(Backend):
             "epoch_mjd",
             "time_scale",
             "H/M1",
-            "G/K1"
+            "G/K1",
         ]
-        propagated = pd.DataFrame(
-            np.concatenate(states),
-            columns=columns
-        )
+        propagated = pd.DataFrame(np.concatenate(states), columns=columns)
         propagated["orbit_id"] = propagated["orbit_id"].astype(int)
 
         # Convert output epochs to TDB
-        epochs = Time(
-            propagated["epoch_mjd"].values,
-            format="mjd",
-            scale="tt"
-        )
+        epochs = Time(propagated["epoch_mjd"].values, format="mjd", scale="tt")
         propagated["mjd_tdb"] = epochs.tdb.value
 
         # Drop PYOORB specific columns (may want to consider this option later on.)
         propagated.drop(
-            columns=[
-                "epoch_mjd",
-                "orbit_type",
-                "time_scale",
-                "H/M1",
-                "G/K1"
-            ],
-            inplace=True
+            columns=["epoch_mjd", "orbit_type", "time_scale", "H/M1", "G/K1"],
+            inplace=True,
         )
 
         # Re-order columns and sort
         propagated = propagated[["orbit_id", "mjd_tdb"] + elements]
         propagated.sort_values(
-            by=["orbit_id", "mjd_tdb"],
-            inplace=True,
-            ignore_index=True
+            by=["orbit_id", "mjd_tdb"], inplace=True, ignore_index=True
         )
 
         if orbits.ids is not None:
@@ -405,7 +398,7 @@ class PYOORB(Backend):
             "cartesian",
             "TT",
             orbits.H,
-            orbits.G
+            orbits.G,
         )
 
         columns = [
@@ -442,7 +435,7 @@ class PYOORB(Backend):
             "obs_x",
             "obs_y",
             "obs_z",
-            "TrueAnom"
+            "TrueAnom",
         ]
 
         ephemeris_dfs = []
@@ -454,23 +447,22 @@ class PYOORB(Backend):
 
             # Generate ephemeris
             ephemeris, err = oo.pyoorb.oorb_ephemeris_full(
-              in_orbits=orbits_pyoorb,
-              in_obscode=observatory_code,
-              in_date_ephems=epochs_pyoorb,
-              in_dynmodel=self.dynamical_model
+                in_orbits=orbits_pyoorb,
+                in_obscode=observatory_code,
+                in_date_ephems=epochs_pyoorb,
+                in_dynmodel=self.dynamical_model,
             )
 
             if err == 1:
                 warnings.warn("PYOORB has returned an error!", UserWarning)
 
-            ephemeris = pd.DataFrame(
-                np.vstack(ephemeris),
-                columns=columns
-            )
+            ephemeris = pd.DataFrame(np.vstack(ephemeris), columns=columns)
 
             ids = np.arange(0, orbits.num_orbits)
             ephemeris["orbit_id"] = [i for i in ids for j in observation_times.utc.mjd]
-            ephemeris["observatory_code"] = [observatory_code for i in range(len(ephemeris))]
+            ephemeris["observatory_code"] = [
+                observatory_code for i in range(len(ephemeris))
+            ]
             ephemeris = ephemeris[["orbit_id", "observatory_code"] + columns]
 
             ephemeris_dfs.append(ephemeris)
@@ -479,7 +471,7 @@ class PYOORB(Backend):
         ephemeris.sort_values(
             by=["orbit_id", "observatory_code", "mjd_utc"],
             inplace=True,
-            ignore_index=True
+            ignore_index=True,
         )
 
         if orbits.ids is not None:
