@@ -1,4 +1,4 @@
-name: pip - Build, Lint, and Test
+name: pip - Build, Lint, Test, and Coverage
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build-lint-test:
+  build-lint-test-coverage:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -39,4 +39,9 @@ jobs:
       - name: Lint
         run: pre-commit run --all-files
       - name: Test
-        run: pytest . --cov
+        run: pytest . --cov --cov-report xml
+      - name: Coverage
+        uses: coverallsapp/github-action@v2.0.0
+        with:
+          github-token: ${{ secrets.COVERALLS_TOKEN }}
+          path-to-lcov: coverage.xml
