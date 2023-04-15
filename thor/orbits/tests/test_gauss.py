@@ -1,19 +1,17 @@
 import os
+
 import numpy as np
 import pandas as pd
-from astropy.time import Time
 from astropy import units as u
+from astropy.time import Time
 
 from ...constants import Constants as c
-from ...utils import KERNELS_DE430
-from ...utils import getSPICEKernels
-from ...utils import setupSPICE
 from ...testing import testOrbits
+from ...utils import KERNELS_DE430, getSPICEKernels, setupSPICE
 from ..gauss import gaussIOD
 
 DATA_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "../../testing/data"
+    os.path.dirname(os.path.abspath(__file__)), "../../testing/data"
 )
 
 
@@ -41,22 +39,18 @@ def selectBestIOD(iod_orbits, true_orbit):
     delta_position = np.linalg.norm(delta_state[:, :3], axis=1)
     nearest_iod = np.argmin(delta_position)
 
-    return iod_orbits[nearest_iod:nearest_iod+1]
+    return iod_orbits[nearest_iod : nearest_iod + 1]
+
 
 def test_gaussIOD():
 
     getSPICEKernels(KERNELS_DE430)
     setupSPICE(KERNELS_DE430, force=True)
 
-    vectors_df = pd.read_csv(
-        os.path.join(DATA_DIR, "vectors.csv")
-    )
-    ephemeris_df = pd.read_csv(
-        os.path.join(DATA_DIR, "ephemeris.csv")
-    )
+    vectors_df = pd.read_csv(os.path.join(DATA_DIR, "vectors.csv"))
+    ephemeris_df = pd.read_csv(os.path.join(DATA_DIR, "ephemeris.csv"))
     observer_states_df = pd.read_csv(
-        os.path.join(DATA_DIR, "observer_states.csv"),
-        index_col=False
+        os.path.join(DATA_DIR, "observer_states.csv"), index_col=False
     )
 
     targets = ephemeris_df["targetname"].unique()
@@ -66,26 +60,27 @@ def test_gaussIOD():
         for observatory in ["500"]:
             for selected_obs in [[23, 29, 35]]:
 
-                ephemeris_mask = (
-                    (ephemeris_df["targetname"].isin([target]))
-                    & (ephemeris_df["observatory_code"].isin([observatory]))
+                ephemeris_mask = (ephemeris_df["targetname"].isin([target])) & (
+                    ephemeris_df["observatory_code"].isin([observatory])
                 )
                 ephemeris = ephemeris_df[ephemeris_mask]
 
                 coords = ephemeris[["RA", "DEC"]].values
                 observation_times = Time(
-                    ephemeris["mjd_utc"].values,
-                    format="mjd",
-                    scale="utc"
+                    ephemeris["mjd_utc"].values, format="mjd", scale="utc"
                 )
 
-                vectors_mask = (vectors_df["targetname"].isin([target]))
+                vectors_mask = vectors_df["targetname"].isin([target])
                 vectors = vectors_df[vectors_mask]
                 vectors = vectors[["x", "y", "z", "vx", "vy", "vz"]].values
 
-                observer_states_mask = (observer_states_df["observatory_code"].isin([observatory]))
+                observer_states_mask = observer_states_df["observatory_code"].isin(
+                    [observatory]
+                )
                 observer_states = observer_states_df[observer_states_mask]
-                observer_states = observer_states[["x", "y", "z", "vx", "vy", "vz"]].values
+                observer_states = observer_states[
+                    ["x", "y", "z", "vx", "vy", "vz"]
+                ].values
 
                 states = ephemeris[["x", "y", "z", "vx", "vy", "vz"]].values
 
@@ -97,22 +92,21 @@ def test_gaussIOD():
                     velocity_method="gibbs",
                     light_time=True,
                     max_iter=100,
-                    iterate=False
+                    iterate=False,
                 )
 
                 # Select the best IOD orbit
                 best_iod_orbit = selectBestIOD(
-                    iod_orbits.cartesian,
-                    states[selected_obs[1]:selected_obs[1] + 1]
+                    iod_orbits.cartesian, states[selected_obs[1] : selected_obs[1] + 1]
                 )
 
                 # Test that the resulting orbit is within the tolerances of the
                 # true state below
                 testOrbits(
                     best_iod_orbit,
-                    states[selected_obs[1]:selected_obs[1] + 1],
-                    position_tol=(1000*u.km),
-                    velocity_tol=(1*u.mm/u.s),
-                    raise_error=False
+                    states[selected_obs[1] : selected_obs[1] + 1],
+                    position_tol=(1000 * u.km),
+                    velocity_tol=(1 * u.mm / u.s),
+                    raise_error=False,
                 )
     return

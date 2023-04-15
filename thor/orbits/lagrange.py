@@ -11,7 +11,12 @@ __all__ = [
 
 MU = C.MU
 
-@jit("Tuple((UniTuple(f8, 4), UniTuple(f8, 6), f8))(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
+
+@jit(
+    "Tuple((UniTuple(f8, 4), UniTuple(f8, 6), f8))(f8[:], f8[:], f8, f8, f8, f8)",
+    nopython=True,
+    cache=True,
+)
 def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     """
     Calculate the exact Lagrange coefficients given an initial state defined at t0,
@@ -57,14 +62,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
         Elsevier Ltd. ISBN-13: 978-0080977478
     """
     sqrt_mu = np.sqrt(mu)
-    chi, c0, c1, c2, c3, c4, c5 = calcChi(
-        r,
-        v,
-        dt,
-        mu=mu,
-        max_iter=max_iter,
-        tol=tol
-    )
+    chi, c0, c1, c2, c3, c4, c5 = calcChi(r, v, dt, mu=mu, max_iter=max_iter, tol=tol)
     stumpff_coeffs = (c0, c1, c2, c3, c4, c5)
     chi2 = chi**2
 
@@ -72,7 +70,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     v_mag = np.linalg.norm(v)
 
     # Equations 3.48 and 3.50 in Curtis (2014) [1]
-    alpha = -v_mag**2 / mu + 2 / r_mag
+    alpha = -(v_mag**2) / mu + 2 / r_mag
 
     # Equations 3.69a and 3.69b in Curtis (2014) [1]
     f = 1 - chi**2 / r_mag * c2
@@ -88,6 +86,7 @@ def calcLagrangeCoeffs(r, v, dt, mu=MU, max_iter=100, tol=1e-16):
     lagrange_coeffs = (f, g, f_dot, g_dot)
 
     return lagrange_coeffs, stumpff_coeffs, chi
+
 
 @jit("UniTuple(f8[:], 2)(f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
 def applyLagrangeCoeffs(r, v, f, g, f_dot, g_dot):

@@ -1,9 +1,7 @@
 import matplotlib.pyplot as plt
 
-__all__ = [
-    "_setAxes",
-    "_setPercentage"
-]
+__all__ = ["_setAxes", "_setPercentage"]
+
 
 def _setAxes(ax, coordinate_system):
     """
@@ -20,9 +18,12 @@ def _setAxes(ax, coordinate_system):
         ax.set_xlabel(r"$\theta_X$ [deg]")
         ax.set_ylabel(r"$\theta_Y$ [deg]")
     else:
-        raise ValueError("coordinate_system should be one of: 'equatorialAngular', 'eclipticAngular', 'tangentPlane'")
+        raise ValueError(
+            "coordinate_system should be one of: 'equatorialAngular', 'eclipticAngular', 'tangentPlane'"
+        )
     ax.set_aspect("equal")
     return
+
 
 def _setPercentage(limits, percentage):
     """
@@ -34,4 +35,3 @@ def _setPercentage(limits, percentage):
 
     """
     return (limits[-1] - limits[0]) * percentage + limits[0]
-

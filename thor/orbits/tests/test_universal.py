@@ -1,23 +1,22 @@
 import os
+
 import numpy as np
 import pandas as pd
 import spiceypy as sp
-from astropy.time import Time
 from astropy import units as u
+from astropy.time import Time
 
 from ...constants import Constants as c
-from ...utils import KERNELS_DE430
-from ...utils import getSPICEKernels
-from ...utils import setupSPICE
 from ...testing import testOrbits
+from ...utils import KERNELS_DE430, getSPICEKernels, setupSPICE
 from ..universal_propagate import propagateUniversal
 
 MU = c.MU
 DT = np.arange(-1000, 1000, 5)
 DATA_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "../../testing/data"
+    os.path.dirname(os.path.abspath(__file__)), "../../testing/data"
 )
+
 
 def test_propagateUniversal():
     """
@@ -29,19 +28,13 @@ def test_propagateUniversal():
     setupSPICE(KERNELS_DE430, force=True)
 
     # Read vectors from test data set
-    vectors_df = pd.read_csv(
-        os.path.join(DATA_DIR, "vectors.csv")
-    )
+    vectors_df = pd.read_csv(os.path.join(DATA_DIR, "vectors.csv"))
 
     # Get the target names
     targets = vectors_df["targetname"].unique()
 
     # Get the initial epochs
-    t0 = Time(
-        vectors_df["mjd_tdb"].values,
-        scale="tdb",
-        format="mjd"
-    )
+    t0 = Time(vectors_df["mjd_tdb"].values, scale="tdb", format="mjd")
 
     # Set propagation epochs
     t1 = t0[0] + DT
@@ -58,23 +51,18 @@ def test_propagateUniversal():
 
     # Repeat but now using THOR's universal 2-body propagator
     states_thor = propagateUniversal(
-        vectors,
-        t0.tdb.mjd,
-        t1.tdb.mjd,
-        mu=MU,
-        max_iter=1000,
-        tol=1e-15
+        vectors, t0.tdb.mjd, t1.tdb.mjd, mu=MU, max_iter=1000, tol=1e-15
     )
 
     # Test 2-body propagation using THOR is
     # is within this tolerance of SPICE 2-body
     # propagation
     testOrbits(
-       states_thor[:, 2:],
-       states_spice,
-       orbit_type="cartesian",
-       position_tol=1*u.cm,
-       velocity_tol=(1*u.mm/u.s),
-       magnitude=True
+        states_thor[:, 2:],
+        states_spice,
+        orbit_type="cartesian",
+        position_tol=1 * u.cm,
+        velocity_tol=(1 * u.mm / u.s),
+        magnitude=True,
     )
     return

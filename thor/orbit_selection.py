@@ -1,11 +1,11 @@
+from typing import List, Optional
+
 import numpy as np
 import pandas as pd
-from typing import List
 from astropy.time import Time
 
 from .orbits import Orbits
-from .utils import assignPatchesSquare
-from .utils import assignPatchesHEALPix
+from .utils import assignPatchesHEALPix, assignPatchesSquare
 
 __all__ = [
     "findAverageOrbits",
@@ -13,12 +13,13 @@ __all__ = [
     "selectTestOrbits",
 ]
 
+
 def findAverageOrbits(
-        ephemeris: pd.DataFrame,
-        orbits: pd.DataFrame,
-        d_values: list = None,
-        element_type: str = "keplerian",
-    ) -> pd.DataFrame:
+    ephemeris: pd.DataFrame,
+    orbits: pd.DataFrame,
+    d_values: Optional[np.ndarray] = None,
+    element_type: str = "keplerian",
+) -> pd.DataFrame:
     """
     Find the object with observations that represents
     the most average in terms of cartesian velocity and the
@@ -52,17 +53,17 @@ def findAverageOrbits(
     elif element_type == "cartesian":
         d_col = "r_au"
     else:
-        err = (
-            "element_type should be one of {'keplerian', 'cartesian'}"
-        )
+        err = "element_type should be one of {'keplerian', 'cartesian'}"
         raise ValueError(err)
 
     dataframe = pd.merge(orbits, ephemeris, on="orbit_id", how="right").copy()
 
     d_bins = []
-    if d_values != None:
+    if d_values is not None:
         for d_i, d_f in zip(d_values[:-1], d_values[1:]):
-            d_bins.append(dataframe[(dataframe[d_col] >= d_i) & (dataframe[d_col] < d_f)])
+            d_bins.append(
+                dataframe[(dataframe[d_col] >= d_i) & (dataframe[d_col] < d_f)]
+            )
     else:
         d_bins.append(dataframe)
 
@@ -82,7 +83,6 @@ def findAverageOrbits(
             median = np.median(aie, axis=0)
             percent_diff = np.abs((aie - median) / median)
 
-
         # Sum the percent differences
         summed_diff = np.sum(percent_diff, axis=1)
 
@@ -92,13 +92,11 @@ def findAverageOrbits(
         orbit_id = obs["orbit_id"].values[index]
         average_orbits.append(orbit_id)
 
-    average_orbits = orbits[orbits["orbit_id"].isin(average_orbits)]
-    average_orbits.reset_index(
-        inplace=True,
-        drop=True
-    )
+    average_orbits_df = orbits[orbits["orbit_id"].isin(average_orbits)].copy()
+    average_orbits_df.reset_index(inplace=True, drop=True)
 
-    return average_orbits
+    return average_orbits_df
+
 
 def findTestOrbitsPatch(ephemeris: pd.DataFrame) -> pd.DataFrame:
     """
@@ -116,41 +114,46 @@ def findTestOrbitsPatch(ephemeris: pd.DataFrame) -> pd.DataFrame:
     test_orbits : `~pandas.DataFrame` (<=9)
         Up to 9 test orbits for the given patch of ephemerides.
     """
-    observation_times = Time(
-        ephemeris["mjd_utc"].values,
-        scale="utc",
-        format="mjd"
-    )
+    observation_times = Time(ephemeris["mjd_utc"].values, scale="utc", format="mjd")
     orbits = Orbits(
         ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values,
         observation_times,
         ids=ephemeris["orbit_id"],
-        orbit_type="cartesian"
+        orbit_type="cartesian",
     )
-    orbits_df = orbits.to_df(
-        include_units=False,
-        include_keplerian=True
-    )
+    orbits_df = orbits.to_df(include_units=False, include_keplerian=True)
 
     patch_id = ephemeris["patch_id"].unique()[0]
 
     test_orbits_hun1_patch = findAverageOrbits(
         ephemeris,
-        orbits_df[(orbits_df["a"] < 2.06) & (orbits_df["a"] >= 1.7) & (orbits_df["e"] <= 0.1)],
+        orbits_df[
+            (orbits_df["a"] < 2.06) & (orbits_df["a"] >= 1.7) & (orbits_df["e"] <= 0.1)
+        ],
         element_type="keplerian",
-        d_values=[1.7, 2.06]
+        d_values=[1.7, 2.06],
     )
     test_orbits_hun2_patch = findAverageOrbits(
         ephemeris,
-        orbits_df[(orbits_df["a"] < 2.06) & (orbits_df["a"] >= 1.7) & (orbits_df["e"] > 0.1) & (orbits_df["e"] <= 0.2)],
+        orbits_df[
+            (orbits_df["a"] < 2.06)
+            & (orbits_df["a"] >= 1.7)
+            & (orbits_df["e"] > 0.1)
+            & (orbits_df["e"] <= 0.2)
+        ],
         element_type="keplerian",
-        d_values=[1.7, 2.06]
+        d_values=[1.7, 2.06],
     )
     test_orbits_hun3_patch = findAverageOrbits(
         ephemeris,
-        orbits_df[(orbits_df["a"] < 2.06) & (orbits_df["a"] >= 1.7) & (orbits_df["e"] > 0.2) & (orbits_df["e"] <= 0.4)],
+        orbits_df[
+            (orbits_df["a"] < 2.06)
+            & (orbits_df["a"] >= 1.7)
+            & (orbits_df["e"] > 0.2)
+            & (orbits_df["e"] <= 0.4)
+        ],
         element_type="keplerian",
-        d_values=[1.7, 2.06]
+        d_values=[1.7, 2.06],
     )
 
     test_orbits_patch = findAverageOrbits(
@@ -164,18 +167,18 @@ def findTestOrbitsPatch(ephemeris: pd.DataFrame) -> pd.DataFrame:
             test_orbits_hun1_patch,
             test_orbits_hun2_patch,
             test_orbits_hun3_patch,
-            test_orbits_patch
+            test_orbits_patch,
         ],
-        ignore_index=True
+        ignore_index=True,
     )
     test_orbits_patch.insert(0, "patch_id", patch_id)
-    test_orbits_patch["r"] = np.linalg.norm(test_orbits_patch[["x", "y", "z"]].values, axis=1)
-    test_orbits_patch.sort_values(
-        by=["r"],
-        inplace=True
+    test_orbits_patch["r"] = np.linalg.norm(
+        test_orbits_patch[["x", "y", "z"]].values, axis=1
     )
+    test_orbits_patch.sort_values(by=["r"], inplace=True)
 
     return test_orbits_patch
+
 
 def findTestOrbits_worker(ephemeris_list: List[pd.DataFrame]) -> pd.DataFrame:
     """
@@ -203,16 +206,13 @@ def findTestOrbits_worker(ephemeris_list: List[pd.DataFrame]) -> pd.DataFrame:
         test_orbits = pd.DataFrame()
     return test_orbits
 
+
 def selectTestOrbits(
-        observations: pd.DataFrame,
-        ephemeris: pd.DataFrame,
-        patch_algorithm: str = "healpix",
-        patch_algorithm_kwargs: dict = {
-            "nside": 32,
-            "nest": True,
-            "lonlat": True
-        }
-    ) -> pd.DataFrame:
+    observations: pd.DataFrame,
+    ephemeris: pd.DataFrame,
+    patch_algorithm: str = "healpix",
+    patch_algorithm_kwargs: dict = {"nside": 32, "nest": True, "lonlat": True},
+) -> pd.DataFrame:
     """
     Select test orbits from ephemerides. Both the observations and the ephemerides
     are divided into patches, for each patch up to 9 test orbits are selected in bins
@@ -244,9 +244,9 @@ def selectTestOrbits(
     ephemeris_ = ephemeris.copy()
 
     if patch_algorithm == "healpix":
-        patch_func = assignPatchesHEALPix
+        patch_func = assignPatchesHEALPix  # type: ignore
     elif patch_algorithm == "square":
-        patch_func = assignPatchesSquare
+        patch_func = assignPatchesSquare  # type: ignore
     else:
         err = "patch_algorithm should be one of {'healpix', 'square'}"
         raise ValueError(err)
@@ -258,10 +258,7 @@ def selectTestOrbits(
         **patch_algorithm_kwargs
     )
     observations_["patch_id"] = patch_ids
-    observations_.sort_values(
-        by=["patch_id", "mjd_utc"],
-        inplace=True
-    )
+    observations_.sort_values(by=["patch_id", "mjd_utc"], inplace=True)
 
     # Divide the ephemrides into patches of size ra_width x dec_width
     ephemeris_["patch_id"] = patch_func(
@@ -278,7 +275,10 @@ def selectTestOrbits(
     )
 
     grouped_ephemeris = ephemeris_.groupby(by=["patch_id"])
-    ephemeris_split = [grouped_ephemeris.get_group(g).reset_index(drop=True) for g in grouped_ephemeris.groups]
+    ephemeris_split = [
+        grouped_ephemeris.get_group(g).reset_index(drop=True)
+        for g in grouped_ephemeris.groups
+    ]
 
     test_orbits = findTestOrbits_worker(ephemeris_split)
 

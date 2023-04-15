@@ -1,9 +1,9 @@
-import pytest
 import numpy as np
-
+import pytest
 from astropy.time import Time
 
 from ..astropy import _checkTime
+
 
 def test__checkTime():
     # Create an array of epochs

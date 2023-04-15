@@ -1,21 +1,20 @@
 import os
-from thor.utils.spice import getSPICEKernels
-import pytest
+
 import pandas as pd
+import pytest
 from astropy import units as u
 from astropy.time import Time
 
+from thor.utils.spice import getSPICEKernels
+
 from ...testing import testOrbits
-from ...utils import KERNELS_DE440
-from ...utils import getSPICEKernels
-from ...utils import setupSPICE
-from ...utils import getMPCObservatoryCodes
+from ...utils import KERNELS_DE440, getMPCObservatoryCodes, getSPICEKernels, setupSPICE
 from ..state import getObserverState
 
 DATA_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "../../testing/data"
+    os.path.dirname(os.path.abspath(__file__)), "../../testing/data"
 )
+
 
 def test_getObserverState_heliocentric():
     """
@@ -32,38 +31,44 @@ def test_getObserverState_heliocentric():
 
     # Read observatory states from test data file
     observer_states_df = pd.read_csv(
-        os.path.join(DATA_DIR, "observer_states.csv"),
-        index_col=False
+        os.path.join(DATA_DIR, "observer_states.csv"), index_col=False
     )
 
     origin = "heliocenter"
     for observatory_code in observer_states_df["observatory_code"].unique():
-        observatory_mask = observer_states_df["observatory_code"].isin([observatory_code])
+        observatory_mask = observer_states_df["observatory_code"].isin(
+            [observatory_code]
+        )
 
         times = Time(
             observer_states_df[observatory_mask]["mjd_utc"].values,
             scale="utc",
-            format="mjd"
+            format="mjd",
         )
-        observer_states = observer_states_df[observatory_mask][["x", "y", "z", "vx", "vy", "vz"]].values
+        observer_states = observer_states_df[observatory_mask][
+            ["x", "y", "z", "vx", "vy", "vz"]
+        ].values
 
         observer_states_thor = getObserverState(
             [observatory_code],
             times,
             origin=origin,
         )
-        observer_states_thor = observer_states_thor[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
+        observer_states_thor = observer_states_thor[
+            ["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]
+        ].values
 
         # Test that each state agrees with Horizons
         # to within the tolerances below
         testOrbits(
             observer_states_thor,
             observer_states,
-            position_tol=(20*u.m),
-            velocity_tol=(1*u.cm/u.s),
-            magnitude=True
+            position_tol=(20 * u.m),
+            velocity_tol=(1 * u.cm / u.s),
+            magnitude=True,
         )
     return
+
 
 def test_getObserverState_barycentric():
     """
@@ -80,38 +85,44 @@ def test_getObserverState_barycentric():
 
     # Read observatory states from test data file
     observer_states_df = pd.read_csv(
-        os.path.join(DATA_DIR, "observer_states_barycentric.csv"),
-        index_col=False
+        os.path.join(DATA_DIR, "observer_states_barycentric.csv"), index_col=False
     )
 
     origin = "barycenter"
     for observatory_code in observer_states_df["observatory_code"].unique():
-        observatory_mask = observer_states_df["observatory_code"].isin([observatory_code])
+        observatory_mask = observer_states_df["observatory_code"].isin(
+            [observatory_code]
+        )
 
         times = Time(
             observer_states_df[observatory_mask]["mjd_utc"].values,
             scale="utc",
-            format="mjd"
+            format="mjd",
         )
-        observer_states = observer_states_df[observatory_mask][["x", "y", "z", "vx", "vy", "vz"]].values
+        observer_states = observer_states_df[observatory_mask][
+            ["x", "y", "z", "vx", "vy", "vz"]
+        ].values
 
         observer_states_thor = getObserverState(
             [observatory_code],
             times,
             origin=origin,
         )
-        observer_states_thor = observer_states_thor[["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]].values
+        observer_states_thor = observer_states_thor[
+            ["obs_x", "obs_y", "obs_z", "obs_vx", "obs_vy", "obs_vz"]
+        ].values
 
         # Test that each state agrees with Horizons
         # to within the tolerances below
         testOrbits(
             observer_states_thor,
             observer_states,
-            position_tol=(20*u.m),
-            velocity_tol=(1*u.cm/u.s),
-            magnitude=True
+            position_tol=(20 * u.m),
+            velocity_tol=(1 * u.cm / u.s),
+            magnitude=True,
         )
     return
+
 
 def test_getObserverState_raises():
 

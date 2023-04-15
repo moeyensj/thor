@@ -1,10 +1,10 @@
 import os
+
 import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from .io import _readFileLog
-from .io import _downloadFile
+from .io import _downloadFile, _readFileLog
 
 __all__ = [
     "_unpackMPCDate",
@@ -19,11 +19,12 @@ __all__ = [
     "getMPCOrbitCatalog",
     "readMPCOrbitCatalog",
     "getMPCCometCatalog",
-    "readMPCCometCatalog"
+    "readMPCCometCatalog",
 ]
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-BASE62_MAP = {BASE62[i] : i for i in range(len(BASE62))}
+BASE62_MAP = {BASE62[i]: i for i in range(len(BASE62))}
+
 
 def _unpackMPCDate(epoch_pf):
     # Taken from Lynne Jones' SSO TOOLS.
@@ -33,7 +34,7 @@ def _unpackMPCDate(epoch_pf):
     #    1998 Jan. 18.73     = J981I73
     #    2001 Oct. 22.138303 = K01AM138303
     epoch_pf = str(epoch_pf)
-    year = _lookupMPC(epoch_pf[0])*100 + int(epoch_pf[1:3])
+    year = _lookupMPC(epoch_pf[0]) * 100 + int(epoch_pf[1:3])
     month = _lookupMPC(epoch_pf[3])
     day = _lookupMPC(epoch_pf[4])
     isot_string = "{:d}-{:02d}-{:02d}".format(year, month, day)
@@ -47,6 +48,7 @@ def _unpackMPCDate(epoch_pf):
 
     return isot_string
 
+
 def _lookupMPC(x):
     # Convert the single character dates into integers.
     try:
@@ -56,6 +58,7 @@ def _lookupMPC(x):
     if x < 0 or x > 31:
         raise ValueError
     return x
+
 
 def convertMPCPackedDates(pf_tt):
     """
@@ -81,6 +84,7 @@ def convertMPCPackedDates(pf_tt):
 
     epoch = Time(isot_tt, format="isot", scale="tt")
     return epoch.tt.mjd
+
 
 def packMPCDesignation(designation):
     """
@@ -192,6 +196,7 @@ def packMPCDesignation(designation):
 
     return designation_pf
 
+
 def unpackMPCDesignation(designation_pf):
     """
     Unpack a packed MPC designation. For example, provisional
@@ -230,7 +235,7 @@ def unpackMPCDesignation(designation_pf):
                 number = 620000
                 number_pf = designation_pf[1:]
                 for i, c in enumerate(number_pf):
-                    power = (len(number_pf) - (i + 1))
+                    power = len(number_pf) - (i + 1)
                     number += BASE62_MAP[c] * (62**power)
 
             # Numbered objects (100000 - 619999)
@@ -290,6 +295,7 @@ def unpackMPCDesignation(designation_pf):
 
     return designation
 
+
 def getMPCObservatoryCodes():
     """
     Downloads the JSON-formatted MPC observatory codes file. Checks if a newer version of the file exists online, if so,
@@ -307,6 +313,7 @@ def getMPCObservatoryCodes():
     url = "https://minorplanetcenter.net/Extended_Files/obscodes_extended.json.gz"
     _downloadFile(directory, url)
     return
+
 
 def readMPCObservatoryCodes(observatoryCodes=None):
     """
@@ -327,17 +334,18 @@ def readMPCObservatoryCodes(observatoryCodes=None):
     `~thor.utils.mpc.getMPCObservatoryCodes` : Downloads the MPC observatory codes file.
     """
     if observatoryCodes is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        log = _readFileLog(
+            os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml")
+        )
         observatoryCodes = log["obscodes_extended.json.gz"]["location"]
 
     observatories = pd.read_json(observatoryCodes).T
-    observatories.rename(columns={
-        "Longitude" : "longitude_deg",
-        "Name" : "name"},
-        inplace=True
+    observatories.rename(
+        columns={"Longitude": "longitude_deg", "Name": "name"}, inplace=True
     )
-    observatories.index.name = 'code'
+    observatories.index.name = "code"
     return observatories
+
 
 def getMPCDesignationFiles():
     """
@@ -354,9 +362,15 @@ def getMPCDesignationFiles():
     None
     """
     directory = os.path.join(os.path.dirname(__file__), "..", "data")
-    _downloadFile(directory, "https://www.minorplanetcenter.net/Extended_Files/mpc_ids.json.gz")
-    _downloadFile(directory,"https://www.minorplanetcenter.net/Extended_Files/mpc_ids_packed.json.gz")
+    _downloadFile(
+        directory, "https://www.minorplanetcenter.net/Extended_Files/mpc_ids.json.gz"
+    )
+    _downloadFile(
+        directory,
+        "https://www.minorplanetcenter.net/Extended_Files/mpc_ids_packed.json.gz",
+    )
     return
+
 
 def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=None):
     """
@@ -381,26 +395,33 @@ def readMPCDesignationFiles(mpcDesignationsFile=None, mpcPackedDesignationsFile=
     `~thor.utils.mpc.getMPCDesignationFiles` : Downloads the JSON-formatted MPC designation files.
     """
     if mpcDesignationsFile is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        log = _readFileLog(
+            os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml")
+        )
         mpcDesignationsFile = log["mpc_ids.json.gz"]["location"]
 
     if mpcPackedDesignationsFile is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        log = _readFileLog(
+            os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml")
+        )
         mpcPackedDesignationsFile = log["mpc_ids_packed.json.gz"]["location"]
 
-    designations = pd.read_json(mpcDesignationsFile, orient='index')
+    designations = pd.read_json(mpcDesignationsFile, orient="index")
     designations = pd.DataFrame(designations.stack(), columns=["other_designations"])
     designations.reset_index(level=1, inplace=True, drop=True)
     designations.index.name = "designation"
     designations.reset_index(inplace=True)
 
-    designations_pf = pd.read_json(mpcPackedDesignationsFile, orient='index')
-    designations_pf = pd.DataFrame(designations_pf.stack(), columns=["other_designations_pf"])
+    designations_pf = pd.read_json(mpcPackedDesignationsFile, orient="index")
+    designations_pf = pd.DataFrame(
+        designations_pf.stack(), columns=["other_designations_pf"]
+    )
     designations_pf.reset_index(level=1, inplace=True, drop=True)
     designations_pf.index.name = "designation_pf"
     designations_pf.reset_index(inplace=True)
 
     return designations, designations_pf
+
 
 def getMPCOrbitCatalog():
     """
@@ -419,6 +440,7 @@ def getMPCOrbitCatalog():
     url = "https://www.minorplanetcenter.net/Extended_Files/mpcorb_extended.json.gz"
     _downloadFile(directory, url)
     return
+
 
 def readMPCOrbitCatalog(mpcOrbitCatalog=None):
     """
@@ -439,62 +461,75 @@ def readMPCOrbitCatalog(mpcOrbitCatalog=None):
     `~thor.utils.mpc.getMPCOrbitCatalog` : Downloads the extended MPC orbit catalog.
     """
     if mpcOrbitCatalog is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        log = _readFileLog(
+            os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml")
+        )
         mpcOrbitCatalog = log["mpcorb_extended.json.gz"]["location"]
     mpcorb = pd.read_json(mpcOrbitCatalog)
 
     # Rename columns, include units where possible
-    mpcorb.rename(columns={
-        "Number" : "number",
-        "Name" :  "name",
-        "Principal_desig" : "provisional_designation",
-        "Other_desigs" : "other_provisional_designations",
-        "Epoch" : "jd_tt",
-        "a" : "a_au",
-        "e" : "e",
-        "i" : "i_deg",
-        "Node" : "ascNode_deg",
-        "Peri" : "argPeri_deg",
-        "M" : "meanAnom_deg",
-        "n" : "mean_motion_deg_p_day",
-        "H" : "H_mag",
-        "G" : "G",
-        "Tp" : "tPeri_jd_tt",
-        "Orbital_period" : "period_yr",
-        "Perihelion_dist" : "perihelion_dist_au",
-        "Aphelion_dist" : "aphelion_dist_au",
-        "Semilatus_rectum" : "p_au",
-        "Synodic_period" : "synodic_period_yr",
-        "Orbit_type" : "orbit_type",
-        "Num_obs" : "num_obs",
-        "Last_obs" : "last_obs",
-        "rms" : "rms_arcsec",
-        "U" : "uncertainty_param",
-        "Arc_years" : "arc_yr",
-        "Arc_length" : "arc_days",
-        "Num_opps" : "num_oppos",
-        "Perturbers" : "perturbers1",
-        "Perturbers_2" : "perturbers2",
-        "Hex_flags" : "hex_flags",
-        "NEO_flag" : "neo_flag",
-        "One_km_NEO_flag" : "1km_neo_flag",
-        "PHA_flag" : "pha_flag",
-        "Critical_list_numbered_object_flag" : "critical_list_flag",
-        "One_opposition_object_flag" : "1_oppo_flag",
-        "Ref" : "reference",
-        "Computer" : "computer"
-    }, inplace=True)
+    mpcorb.rename(
+        columns={
+            "Number": "number",
+            "Name": "name",
+            "Principal_desig": "provisional_designation",
+            "Other_desigs": "other_provisional_designations",
+            "Epoch": "jd_tt",
+            "a": "a_au",
+            "e": "e",
+            "i": "i_deg",
+            "Node": "ascNode_deg",
+            "Peri": "argPeri_deg",
+            "M": "meanAnom_deg",
+            "n": "mean_motion_deg_p_day",
+            "H": "H_mag",
+            "G": "G",
+            "Tp": "tPeri_jd_tt",
+            "Orbital_period": "period_yr",
+            "Perihelion_dist": "perihelion_dist_au",
+            "Aphelion_dist": "aphelion_dist_au",
+            "Semilatus_rectum": "p_au",
+            "Synodic_period": "synodic_period_yr",
+            "Orbit_type": "orbit_type",
+            "Num_obs": "num_obs",
+            "Last_obs": "last_obs",
+            "rms": "rms_arcsec",
+            "U": "uncertainty_param",
+            "Arc_years": "arc_yr",
+            "Arc_length": "arc_days",
+            "Num_opps": "num_oppos",
+            "Perturbers": "perturbers1",
+            "Perturbers_2": "perturbers2",
+            "Hex_flags": "hex_flags",
+            "NEO_flag": "neo_flag",
+            "One_km_NEO_flag": "1km_neo_flag",
+            "PHA_flag": "pha_flag",
+            "Critical_list_numbered_object_flag": "critical_list_flag",
+            "One_opposition_object_flag": "1_oppo_flag",
+            "Ref": "reference",
+            "Computer": "computer",
+        },
+        inplace=True,
+    )
 
     # Add MJDs from JDs
     mpcorb["mjd_tt"] = Time(mpcorb["jd_tt"].values, format="jd", scale="tt").tt.mjd
-    mpcorb["tPeri_mjd_tt"] = Time(mpcorb["tPeri_jd_tt"].values, format="jd", scale="tt").tt.mjd
+    mpcorb["tPeri_mjd_tt"] = Time(
+        mpcorb["tPeri_jd_tt"].values, format="jd", scale="tt"
+    ).tt.mjd
 
     # Drop redundant columns
     mpcorb.drop(columns=["jd_tt", "tPeri_jd_tt"], inplace=True)
 
     # Create a designation column, if an asteroid is numbered use that as a designation if not use the provisional designation
-    mpcorb.loc[~mpcorb["number"].isna(), "designation"] = mpcorb[~mpcorb["number"].isna()]["number"].str.replace('[()]', '', regex=True).values
-    mpcorb.loc[mpcorb["designation"].isna(), "designation"] = mpcorb[mpcorb["designation"].isna()]["provisional_designation"].values
+    mpcorb.loc[~mpcorb["number"].isna(), "designation"] = (
+        mpcorb[~mpcorb["number"].isna()]["number"]
+        .str.replace("[()]", "", regex=True)
+        .values
+    )
+    mpcorb.loc[mpcorb["designation"].isna(), "designation"] = mpcorb[
+        mpcorb["designation"].isna()
+    ]["provisional_designation"].values
 
     # Arrange columns
     columns = [
@@ -542,6 +577,7 @@ def readMPCOrbitCatalog(mpcOrbitCatalog=None):
 
     return mpcorb
 
+
 def getMPCCometCatalog():
     """
     Downloads the JSON-formatted MPC comet orbit catalog. Checks if a newer version of the file exists online, if so,
@@ -559,6 +595,7 @@ def getMPCCometCatalog():
     url = "https://www.minorplanetcenter.net/Extended_Files/cometels.json.gz"
     _downloadFile(directory, url)
     return
+
 
 def readMPCCometCatalog(mpcCometCatalog=None):
     """
@@ -579,31 +616,34 @@ def readMPCCometCatalog(mpcCometCatalog=None):
     `~thor.utils.mpc.getMPCCometCatalog` : Downloads the MPC comet catalog.
     """
     if mpcCometCatalog is None:
-        log = _readFileLog(os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml"))
+        log = _readFileLog(
+            os.path.join(os.path.dirname(__file__), "..", "data", "log.yaml")
+        )
         mpcCometCatalog = log["cometels.json.gz"]["location"]
     mpcorb_comets = pd.read_json(mpcCometCatalog)
 
-    mpcorb_comets.rename(columns={
-         "Orbit_type" : "orbit_type",
-         "Provisional_packed_desig" : "provisional_designation_pf",
-         "Year_of_perihelion" : "tPeri_yr",
-         "Month_of_perihelion" : "tPeri_month",
-         "Day_of_perihelion" : "tPeri_day",
-         "Perihelion_dist" : "q_au",
-         "e": "e",
-         "Peri" : "argPeri_deg",
-         "Node" : "ascNode_deg",
-         "i" : "i_deg",
-         "Epoch_year" : "epoch_yr",
-         "Epoch_month" : "epoch_month",
-         "Epoch_day" : "epoch_day",
-         "H" : "H_mag",
-         "G" : "G",
-         "Designation_and_name" : "designation_name",
-         "Ref" : "reference",
-         "Comet_num" : "comet_number"
+    mpcorb_comets.rename(
+        columns={
+            "Orbit_type": "orbit_type",
+            "Provisional_packed_desig": "provisional_designation_pf",
+            "Year_of_perihelion": "tPeri_yr",
+            "Month_of_perihelion": "tPeri_month",
+            "Day_of_perihelion": "tPeri_day",
+            "Perihelion_dist": "q_au",
+            "e": "e",
+            "Peri": "argPeri_deg",
+            "Node": "ascNode_deg",
+            "i": "i_deg",
+            "Epoch_year": "epoch_yr",
+            "Epoch_month": "epoch_month",
+            "Epoch_day": "epoch_day",
+            "H": "H_mag",
+            "G": "G",
+            "Designation_and_name": "designation_name",
+            "Ref": "reference",
+            "Comet_num": "comet_number",
         },
-        inplace=True
+        inplace=True,
     )
 
     # Update time of perihelion passage to be an MJD
@@ -616,7 +656,7 @@ def readMPCCometCatalog(mpcCometCatalog=None):
     mpcorb_comets["tPeri_mjd_tt"] = t_peri.tt.mjd
 
     # Update orbit epoch to be an MJD
-    mask = (~mpcorb_comets["epoch_yr"].isna())
+    mask = ~mpcorb_comets["epoch_yr"].isna()
     yr = mpcorb_comets[mask]["epoch_yr"].values.astype(int)
     month = mpcorb_comets[mask]["epoch_month"].values.astype(int)
     day = mpcorb_comets[mask]["epoch_day"].values
@@ -626,25 +666,36 @@ def readMPCCometCatalog(mpcCometCatalog=None):
     mpcorb_comets.loc[mask, "mjd_tt"] = epoch.tt.mjd
 
     # Remove redundant columns
-    mpcorb_comets.drop(columns=[
-        "epoch_yr",
-        "epoch_month",
-        "epoch_day",
-        "tPeri_yr",
-        "tPeri_month",
-        "tPeri_day"
+    mpcorb_comets.drop(
+        columns=[
+            "epoch_yr",
+            "epoch_month",
+            "epoch_day",
+            "tPeri_yr",
+            "tPeri_month",
+            "tPeri_day",
         ],
-        inplace=True
+        inplace=True,
     )
 
     # Convert comet number to strings
-    mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "comet_number"] = mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["comet_number"].apply(lambda x: str(int(x))).values
+    mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "comet_number"] = (
+        mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["comet_number"]
+        .apply(lambda x: str(int(x)))
+        .values
+    )
 
     # Split designation_name into designation
-    mpcorb_comets["designation"] = mpcorb_comets["designation_name"].str.split(" [()]", expand=True)[0].values
+    mpcorb_comets["designation"] = (
+        mpcorb_comets["designation_name"].str.split(" [()]", expand=True)[0].values
+    )
 
     # Remove name from numbered comets
-    mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "designation"] = mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["designation_name"].str.split("/", expand=True)[0].values
+    mpcorb_comets.loc[~mpcorb_comets["comet_number"].isna(), "designation"] = (
+        mpcorb_comets[~mpcorb_comets["comet_number"].isna()]["designation_name"]
+        .str.split("/", expand=True)[0]
+        .values
+    )
 
     # Arrange columns
     columns = [
@@ -662,7 +713,7 @@ def readMPCCometCatalog(mpcCometCatalog=None):
         "H_mag",
         "G",
         "orbit_type",
-        "reference"
+        "reference",
     ]
     mpcorb_comets = mpcorb_comets[columns]
 

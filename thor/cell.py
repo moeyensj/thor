@@ -4,6 +4,7 @@ from astropy.coordinates import SkyCoord
 
 __all__ = ["Cell"]
 
+
 class Cell:
     """
     Cell: Construct used to find detections around a test orbit.
@@ -22,6 +23,7 @@ class Cell:
     -------
     None
     """
+
     def __init__(self, center, mjd_utc, area=10):
         self.center = center
         self.mjd_utc = mjd_utc
@@ -48,16 +50,24 @@ class Cell:
         -------
         None
         """
-        exp_observations = observations[(observations["mjd_utc"] <= self.mjd_utc + 0.00001)
-                                        & (observations["mjd_utc"] >= self.mjd_utc - 0.00001)]
+        exp_observations = observations[
+            (observations["mjd_utc"] <= self.mjd_utc + 0.00001)
+            & (observations["mjd_utc"] >= self.mjd_utc - 0.00001)
+        ]
         obs_ids = exp_observations["obs_id"].values
 
-        coords_observations = SkyCoord(*exp_observations[["RA_deg", "Dec_deg"]].values.T, unit=u.degree, frame="icrs")
+        coords_observations = SkyCoord(
+            *exp_observations[["RA_deg", "Dec_deg"]].values.T,
+            unit=u.degree,
+            frame="icrs"
+        )
         coords_center = SkyCoord(*self.center, unit=u.degree, frame="icrs")
 
         # Find all coordinates within circular region centered about the center coordinate
         distance = coords_center.separation(coords_observations).degree
         keep = obs_ids[np.where(distance <= np.sqrt(self.area / np.pi))[0]]
 
-        self.observations = exp_observations[exp_observations["obs_id"].isin(keep)].copy()
+        self.observations = exp_observations[
+            exp_observations["obs_id"].isin(keep)
+        ].copy()
         return

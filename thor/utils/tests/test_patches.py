@@ -1,7 +1,7 @@
 import numpy as np
 
-from ..patches import assignPatchesSquare
-from ..patches import assignPatchesHEALPix
+from ..patches import assignPatchesHEALPix, assignPatchesSquare
+
 
 def test_assignPatchesSquare():
 
@@ -11,9 +11,9 @@ def test_assignPatchesSquare():
     num_dec = 180 / dec_width
 
     # Create fake observations at the midpoint of each bin
-    ra =  np.arange(0., 360, ra_width)
+    ra = np.arange(0.0, 360, ra_width)
     ra += ra_width / 2
-    dec = np.arange(-90, 90., dec_width)
+    dec = np.arange(-90, 90.0, dec_width)
     dec += dec_width / 2
 
     dec, ra = np.meshgrid(dec, ra)
@@ -27,11 +27,12 @@ def test_assignPatchesSquare():
     # (increasing Dec first, then increasing RA)
     np.testing.assert_equal(patch_ids_desired, patch_ids)
 
+
 def test_assignPatchesHEALPix():
 
     # Create observations
-    ra =  np.arange(0., 360, 10)
-    dec = np.arange(-90, 90., 10)
+    ra = np.arange(0.0, 360, 10)
+    dec = np.arange(-90, 90.0, 10)
 
     dec, ra = np.meshgrid(dec, ra)
     dec = dec.flatten()

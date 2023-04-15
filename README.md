@@ -14,7 +14,7 @@ Tracklet-less Heliocentric Orbit Recovery
 
 ## Installation
 
-Warning: The THOR code is still in very active development. 
+Warning: The THOR code is still in very active development.
 
 The corresponding notebook repository can be found at: https://github.com/moeyensj/thor_notebooks
 
@@ -40,19 +40,19 @@ To run the container:
 
 ```docker run -it moeyensj/thor:latest```
 
-The THOR code is installed the /projects directory, and is by default also installed in the container's Python installation. 
-To access the code in Python: 
+The THOR code is installed the /projects directory, and is by default also installed in the container's Python installation.
+To access the code in Python:
 ```
 (base) root@202110177eee:/# python
-Python 3.6.9 |Anaconda, Inc.| (default, Jul 30 2019, 19:07:31) 
+Python 3.6.9 |Anaconda, Inc.| (default, Jul 30 2019, 19:07:31)
 [GCC 7.3.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>> import thor
->>> 
+>>>
 ```
 
 ### Source
-Clone this repository using either `ssh` or `https`. Once cloned and downloaded, `cd` into the repository. 
+Clone this repository using either `ssh` or `https`. Once cloned and downloaded, `cd` into the repository.
 
 To install THOR in its own `conda` enviroment please do the following:  
 
@@ -71,15 +71,15 @@ Or, if you are actively planning to develop or contribute to THOR, then:
 
 ```python setup.py develop --no-deps```
 
-You should now be able to start Python and import THOR. 
+You should now be able to start Python and import THOR.
 ```
 ┌─(thor_py38)[moeyensj][±][main ✓][~/projects/thor]
-└─▪ python 
-Python 3.8.8 (default, Apr 13 2021, 19:58:26) 
+└─▪ python
+Python 3.8.8 (default, Apr 13 2021, 19:58:26)
 [GCC 7.3.0] :: Anaconda, Inc. on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>> import thor
->>> 
+>>>
 ```
 
 **If you would like to run Jupyter Notebook or Juptyter Lab with THOR please see the installation instructions in the THOR notebooks repository.**

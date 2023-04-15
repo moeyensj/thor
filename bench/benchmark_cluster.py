@@ -1,11 +1,12 @@
-from thor import clusterVelocity
-from thor import clusters
+import cProfile
+import os
+import random
+import time
+
 import numpy as np
 import pandas as pd
-import random
-import cProfile
-import time
-import os
+
+from thor import clusters, clusterVelocity
 
 random.seed(1)
 
@@ -18,10 +19,10 @@ def load_cluster_input(max_observations=None, max_exposures=None):
     df = load_df()
 
     if max_exposures is not None and max_exposures != -1:
-        exposure_times = df['dt'].unique()
+        exposure_times = df["dt"].unique()
         if len(exposure_times) > max_exposures:
             exposures = random.sample(list(exposure_times), max_exposures)
-            df = df[df['dt'].isin(exposures)]
+            df = df[df["dt"].isin(exposures)]
 
     if max_observations is not None and len(df) > max_observations:
         df = df[:max_observations]
@@ -30,21 +31,25 @@ def load_cluster_input(max_observations=None, max_exposures=None):
 
 def warm_numba_jit():
     df = load_cluster_input(max_observations=1000, max_exposures=-1)
-    x = np.array(df['x'])
-    y = np.array(df['y'])
+    x = np.array(df["x"])
+    y = np.array(df["y"])
     eps = 0.01
     min_samples = 5
     points = np.array((x, y)).T
     found = clusters.find_clusters(points, eps, min_samples, alg="hotspot_2d")
     clusters.filter_clusters_by_length(
-        found, np.array(df['dt']), min_samples, 1.0,
+        found,
+        np.array(df["dt"]),
+        min_samples,
+        1.0,
     )
 
+
 def run(df, eps=0.01, min_samples=5, alg="hotspot_2d", run_id="run"):
-    obs_ids = np.array(df['obs_ids'])
-    x = np.array(df['x'])
-    y = np.array(df['y'])
-    dt = np.array(df['dt'])
+    obs_ids = np.array(df["obs_ids"])
+    x = np.array(df["x"])
+    y = np.array(df["y"])
+    dt = np.array(df["dt"])
     vx = 0.0
     vy = 0.0
     eps = eps
@@ -57,17 +62,22 @@ def run(df, eps=0.01, min_samples=5, alg="hotspot_2d", run_id="run"):
     start = time.perf_counter()
     found = clusters.find_clusters(points, eps, min_samples, alg=alg)
     filtered = clusters.filter_clusters_by_length(
-        found, dt, min_samples, min_arc_length,
+        found,
+        dt,
+        min_samples,
+        min_arc_length,
     )
     end = time.perf_counter()
     prof.disable()
 
-    profile_name = f"results/{run_id}/profiles/benchmark_cluster_{time.time():.6f}.profile"
+    profile_name = (
+        f"results/{run_id}/profiles/benchmark_cluster_{time.time():.6f}.profile"
+    )
     prof.dump_stats(profile_name)
 
     tags = {
-        "n_obs": str(len(df['x'])),
-        "n_exp": str(len(np.unique(df['dt']))),
+        "n_obs": str(len(df["x"])),
+        "n_exp": str(len(np.unique(df["dt"]))),
         "eps": str(eps),
         "min_samples": str(min_samples),
         "alg": alg,

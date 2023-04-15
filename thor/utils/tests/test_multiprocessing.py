@@ -1,9 +1,9 @@
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 
-from ..multiprocessing import yieldChunks
-from ..multiprocessing import calcChunkSize
+from ..multiprocessing import calcChunkSize, yieldChunks
+
 
 def test_yieldChunks_list():
     # Create list of data
@@ -52,6 +52,7 @@ def test_yieldChunks_list():
     np.testing.assert_array_equal(np.array(chunk), desired)
     return
 
+
 def test_yieldChunks_array():
     # Create list of data
     indexable = np.arange(0, 15, 1)
@@ -99,6 +100,7 @@ def test_yieldChunks_array():
     np.testing.assert_array_equal(chunk, desired)
     return
 
+
 def test_yieldChunks_series():
     # Create series of data
     indexable = pd.Series(np.arange(0, 15, 1))
@@ -145,6 +147,7 @@ def test_yieldChunks_series():
     desired = np.arange(0, 15, 1)
     np.testing.assert_array_equal(chunk.values, desired)
     return
+
 
 def test_yieldChunks_series_offsetIndex():
     # Create series of data
@@ -196,11 +199,10 @@ def test_yieldChunks_series_offsetIndex():
     np.testing.assert_array_equal(chunk.values, desired)
     return
 
+
 def test_yieldChunks_dataframe_offsetIndex():
     # Create dataframe of data
-    data = {
-        "x" : np.arange(0, 15, 1)
-    }
+    data = {"x": np.arange(0, 15, 1)}
     indexable = pd.DataFrame(data)
     # Offset the index and make sure chunking is done independent of
     # the values of the index
@@ -249,11 +251,10 @@ def test_yieldChunks_dataframe_offsetIndex():
     np.testing.assert_array_equal(chunk["x"].values, desired)
     return
 
+
 def test_yieldChunks_dataframe():
     # Create dataframe of data
-    data = {
-        "x" : np.arange(0, 15, 1)
-    }
+    data = {"x": np.arange(0, 15, 1)}
     indexable = pd.DataFrame(data)
 
     # Set chunk_size to 10
@@ -299,6 +300,7 @@ def test_yieldChunks_dataframe():
     np.testing.assert_array_equal(chunk["x"].values, desired)
     return
 
+
 def test_yieldChunks_errors():
 
     # Make sure yieldChunks raises an error for unsupported types
@@ -309,6 +311,7 @@ def test_yieldChunks_errors():
 
     return
 
+
 def test_calcChunkSize():
 
     num_workers = 60
@@ -318,13 +321,17 @@ def test_calcChunkSize():
 
     # Number of workers is less than 2x the number of things to process, so
     # chunk size should fall to the minimum value
-    chunk_size = calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size)
+    chunk_size = calcChunkSize(
+        n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size
+    )
     assert chunk_size == 1
 
     min_chunk_size = 5
     # Number of workers is less than 2x the number of things to process, so
     # chunk size should fall to the minimum value
-    chunk_size = calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size)
+    chunk_size = calcChunkSize(
+        n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size
+    )
     assert chunk_size == 5
 
     num_workers = 10
@@ -334,7 +341,9 @@ def test_calcChunkSize():
 
     # Number of things to process is 10x the number of workers, the max chunk size is 10 so
     # the chunk_size should be 10
-    chunk_size = calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size)
+    chunk_size = calcChunkSize(
+        n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size
+    )
     assert chunk_size == 10
 
     num_workers = 10
@@ -344,7 +353,9 @@ def test_calcChunkSize():
 
     # Number of things to process is 10x the number of workers, the max chunk size is 5 so
     # the chunk_size should be 5
-    chunk_size = calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size)
+    chunk_size = calcChunkSize(
+        n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size
+    )
     assert chunk_size == 5
 
     num_workers = 100
@@ -354,6 +365,8 @@ def test_calcChunkSize():
 
     # Number of things to process is 10x the number of workers, the max chunk size is 1000 so
     # the chunk_size should be 10000/100 = 100
-    chunk_size = calcChunkSize(n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size)
+    chunk_size = calcChunkSize(
+        n, num_workers, max_chunk_size, min_chunk_size=min_chunk_size
+    )
     assert chunk_size == 100
     return

@@ -1,17 +1,15 @@
-import numpy as np
 import healpy as hp
+import numpy as np
 
-__all__ = [
-    "assignPatchesSquare",
-    "assignPatchesHEALPix"
-]
+__all__ = ["assignPatchesSquare", "assignPatchesHEALPix"]
+
 
 def assignPatchesSquare(
-        ra: np.ndarray,
-        dec: np.ndarray,
-        ra_width: float = 15.,
-        dec_width: float = 15.,
-    ) -> np.ndarray:
+    ra: np.ndarray,
+    dec: np.ndarray,
+    ra_width: float = 15.0,
+    dec_width: float = 15.0,
+) -> np.ndarray:
     """
     Assign a patch ID to each coordinate where a patch is a square region
     on the sky plane of ra_width in RA and of dec_width in Dec.
@@ -48,8 +46,7 @@ def assignPatchesSquare(
         for dec_i, dec_f in zip(decs[:-1], decs[1:]):
 
             mask = np.where(
-                ((ra >= ra_i) & (ra < ra_f)
-                & (dec >= dec_i) & (dec < dec_f))
+                ((ra >= ra_i) & (ra < ra_f) & (dec >= dec_i) & (dec < dec_f))
             )
             patch_ids[mask] = patch_id
 
@@ -57,13 +54,14 @@ def assignPatchesSquare(
 
     return patch_ids
 
+
 def assignPatchesHEALPix(
-        ra: np.ndarray,
-        dec: np.ndarray,
-        nside: int = 1024,
-        nest: bool = True,
-        lonlat: bool = True,
-    ) -> np.ndarray:
+    ra: np.ndarray,
+    dec: np.ndarray,
+    nside: int = 1024,
+    nest: bool = True,
+    lonlat: bool = True,
+) -> np.ndarray:
     """
     Assign patches using a HEALPix schema.
     For details see Górski et al. (2005).

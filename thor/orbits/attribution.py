@@ -6,50 +6,52 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-import time
 import logging
+import multiprocessing as mp
+import time
+from functools import partial
+
 import numpy as np
 import pandas as pd
-import multiprocessing as mp
 from astropy.time import Time
-from functools import partial
 from sklearn.neighbors import BallTree
 
-from ..utils import _initWorker
-from ..utils import _checkParallel
-from ..utils import yieldChunks
-from ..utils import calcChunkSize
-from ..utils import sortLinkages
-from ..utils import removeDuplicateObservations
-from .orbits import Orbits
+from ..utils import (
+    _checkParallel,
+    _initWorker,
+    calcChunkSize,
+    removeDuplicateObservations,
+    sortLinkages,
+    yieldChunks,
+)
 from .ephemeris import generateEphemeris
-from .residuals import calcResiduals
 from .od import differentialCorrection
+from .orbits import Orbits
+from .residuals import calcResiduals
 
 logger = logging.getLogger(__name__)
 
-__all__ = [
-    "attribution_worker",
-    "attributeObservations",
-    "mergeAndExtendOrbits"
-]
+__all__ = ["attribution_worker", "attributeObservations", "mergeAndExtendOrbits"]
+
 
 def attribution_worker(
-        orbits,
-        observations,
-        eps=1/3600,
-        include_probabilistic=True,
-        backend="PYOORB",
-        backend_kwargs={}
-    ):
+    orbits,
+    observations,
+    eps=1 / 3600,
+    include_probabilistic=True,
+    backend="PYOORB",
+    backend_kwargs={},
+):
 
     # Create observer's dictionary from observations
     observers = {}
     for observatory_code in observations["observatory_code"].unique():
         observers[observatory_code] = Time(
-            observations[observations["observatory_code"].isin([observatory_code])]["mjd_utc"].unique(),
+            observations[observations["observatory_code"].isin([observatory_code])][
+                "mjd_utc"
+            ].unique(),
             scale="utc",
-            format="mjd"
+            format="mjd",
         )
 
     # Genereate ephemerides for each orbit at the observation times
@@ -59,14 +61,18 @@ def attribution_worker(
         backend=backend,
         backend_kwargs=backend_kwargs,
         num_jobs=1,
-        chunk_size=1
+        chunk_size=1,
     )
 
     # Group the predicted ephemerides and observations by visit / exposure
     ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
-    ephemeris_visits = [ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups]
+    ephemeris_visits = [
+        ephemeris_grouped.get_group(g) for g in ephemeris_grouped.groups
+    ]
     observations_grouped = observations.groupby(by=["observatory_code", "mjd_utc"])
-    observations_visits = [observations_grouped.get_group(g) for g in observations_grouped.groups]
+    observations_visits = [
+        observations_grouped.get_group(g) for g in observations_grouped.groups
+    ]
 
     # Loop through each unique exposure and visit, find the nearest observations within
     # eps (haversine metric)
@@ -77,11 +83,16 @@ def attribution_worker(
     eps_rad = np.radians(eps)
     residuals = []
     stats = []
-    for ephemeris_visit, observations_visit in zip(ephemeris_visits, observations_visits):
+    for ephemeris_visit, observations_visit in zip(
+        ephemeris_visits, observations_visits
+    ):
 
         assert len(ephemeris_visit["mjd_utc"].unique()) == 1
         assert len(observations_visit["mjd_utc"].unique()) == 1
-        assert observations_visit["mjd_utc"].unique()[0] == ephemeris_visit["mjd_utc"].unique()[0]
+        assert (
+            observations_visit["mjd_utc"].unique()[0]
+            == ephemeris_visit["mjd_utc"].unique()[0]
+        )
 
         obs_ids = observations_visit[["obs_id"]].values
         obs_times = observations_visit[["mjd_utc"]].values
@@ -93,16 +104,15 @@ def attribution_worker(
 
         # Haversine metric requires latitude first then longitude...
         coords_latlon = np.radians(observations_visit[["Dec_deg", "RA_deg"]].values)
-        coords_predicted_latlon = np.radians(ephemeris_visit[["Dec_deg", "RA_deg"]].values)
+        coords_predicted_latlon = np.radians(
+            ephemeris_visit[["Dec_deg", "RA_deg"]].values
+        )
 
         num_obs = len(coords_predicted)
         k = np.minimum(3, num_obs)
 
         # Build BallTree with a haversine metric on predicted ephemeris
-        tree = BallTree(
-            coords_predicted_latlon,
-            metric="haversine"
-        )
+        tree = BallTree(coords_predicted_latlon, metric="haversine")
         # Query tree using observed RA, Dec
         d, i = tree.query(
             coords_latlon,
@@ -110,7 +120,7 @@ def attribution_worker(
             return_distance=True,
             dualtree=True,
             breadth_first=False,
-            sort_results=False
+            sort_results=False,
         )
 
         # Select all observations with distance smaller or equal
@@ -127,7 +137,7 @@ def attribution_worker(
                 coords[mask[0]],
                 coords_predicted[i[mask]],
                 sigmas_actual=coords_sigma[mask[0]],
-                include_probabilistic=True
+                include_probabilistic=True,
             )
             residuals.append(residuals_visit)
             stats.append(np.vstack(stats_visit).T)
@@ -141,13 +151,13 @@ def attribution_worker(
         stats = np.vstack(stats)
 
         attributions = {
-            "orbit_id" : orbit_ids_associated[:, 0],
-            "obs_id" : obs_ids_associated[:, 0],
-            "mjd_utc" : obs_times_associated[:, 0],
-            "distance" : distances[:, 0],
-            "residual_ra_arcsec" : residuals[:, 0] * 3600,
-            "residual_dec_arcsec" : residuals[:, 1] * 3600,
-            "chi2" : stats[:, 0]
+            "orbit_id": orbit_ids_associated[:, 0],
+            "obs_id": obs_ids_associated[:, 0],
+            "mjd_utc": obs_times_associated[:, 0],
+            "distance": distances[:, 0],
+            "residual_ra_arcsec": residuals[:, 0] * 3600,
+            "residual_dec_arcsec": residuals[:, 1] * 3600,
+            "chi2": stats[:, 0],
         }
         if include_probabilistic:
             attributions["probability"] = stats[:, 1]
@@ -156,7 +166,15 @@ def attribution_worker(
         attributions = pd.DataFrame(attributions)
 
     else:
-        columns = ["orbit_id", "obs_id", "mjd_utc", "distance", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]
+        columns = [
+            "orbit_id",
+            "obs_id",
+            "mjd_utc",
+            "distance",
+            "residual_ra_arcsec",
+            "residual_dec_arcsec",
+            "chi2",
+        ]
         if include_probabilistic:
             columns += ["probability", "mahalanobis_distance"]
 
@@ -164,18 +182,19 @@ def attribution_worker(
 
     return attributions
 
+
 def attributeObservations(
-        orbits,
-        observations,
-        eps=5/3600,
-        include_probabilistic=True,
-        backend="PYOORB",
-        backend_kwargs={},
-        orbits_chunk_size=10,
-        observations_chunk_size=100000,
-        num_jobs=1,
-        parallel_backend="mp"
-    ):
+    orbits,
+    observations,
+    eps=5 / 3600,
+    include_probabilistic=True,
+    backend="PYOORB",
+    backend_kwargs={},
+    orbits_chunk_size=10,
+    observations_chunk_size=100000,
+    num_jobs=1,
+    parallel_backend="mp",
+):
     logger.info("Running observation attribution...")
     time_start = time.time()
 
@@ -188,17 +207,19 @@ def attributeObservations(
 
         if parallel_backend == "ray":
             import ray
+
             if not ray.is_initialized():
                 ray.init(address="auto")
 
             attribution_worker_ray = ray.remote(attribution_worker)
             attribution_worker_ray = attribution_worker_ray.options(
-                num_returns=1,
-                num_cpus=1
+                num_returns=1, num_cpus=1
             )
 
             # Send up to orbits_chunk_size orbits to each OD worker for processing
-            chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
+            chunk_size_ = calcChunkSize(
+                num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1
+            )
             orbits_split = orbits.split(chunk_size_)
 
             obs_oids = []
@@ -215,21 +236,23 @@ def attributeObservations(
                             eps=eps,
                             include_probabilistic=include_probabilistic,
                             backend=backend,
-                            backend_kwargs=backend_kwargs
+                            backend_kwargs=backend_kwargs,
                         )
                     )
 
                 attribution_dfs_i = ray.get(p)
                 attribution_dfs += attribution_dfs_i
 
-        else: # parallel_backend == "mp"
+        else:  # parallel_backend == "mp"
             p = mp.Pool(
                 processes=num_workers,
                 initializer=_initWorker,
             )
 
             # Send up to orbits_chunk_size orbits to each OD worker for processing
-            chunk_size_ = calcChunkSize(num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1)
+            chunk_size_ = calcChunkSize(
+                num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1
+            )
             orbits_split = orbits.split(chunk_size_)
 
             for observations_c in yieldChunks(observations, observations_chunk_size):
@@ -241,12 +264,12 @@ def attributeObservations(
                         eps=eps,
                         include_probabilistic=include_probabilistic,
                         backend=backend,
-                        backend_kwargs=backend_kwargs
+                        backend_kwargs=backend_kwargs,
                     ),
                     zip(
                         orbits_split,
                         obs,
-                    )
+                    ),
                 )
                 attribution_dfs += attribution_dfs_i
 
@@ -261,45 +284,47 @@ def attributeObservations(
                     eps=eps,
                     include_probabilistic=include_probabilistic,
                     backend=backend,
-                    backend_kwargs=backend_kwargs
+                    backend_kwargs=backend_kwargs,
                 )
                 attribution_dfs.append(attribution_df_i)
 
     attributions = pd.concat(attribution_dfs)
     attributions.sort_values(
-        by=["orbit_id", "mjd_utc", "distance"],
-        inplace=True,
-        ignore_index=True
+        by=["orbit_id", "mjd_utc", "distance"], inplace=True, ignore_index=True
     )
 
     time_end = time.time()
-    logger.info("Attributed {} observations to {} orbits.".format(
-        attributions["obs_id"].nunique(),
-        attributions["orbit_id"].nunique()
-    ))
-    logger.info("Attribution completed in {:.3f} seconds.".format(time_end - time_start))
+    logger.info(
+        "Attributed {} observations to {} orbits.".format(
+            attributions["obs_id"].nunique(), attributions["orbit_id"].nunique()
+        )
+    )
+    logger.info(
+        "Attribution completed in {:.3f} seconds.".format(time_end - time_start)
+    )
     return attributions
 
+
 def mergeAndExtendOrbits(
-        orbits,
-        orbit_members,
-        observations,
-        min_obs=6,
-        min_arc_length=1.0,
-        contamination_percentage=20.0,
-        rchi2_threshold=5,
-        eps=1/3600,
-        delta=1e-8,
-        max_iter=20,
-        method="central",
-        fit_epoch=False,
-        backend="PYOORB",
-        backend_kwargs={},
-        orbits_chunk_size=10,
-        observations_chunk_size=100000,
-        num_jobs=60,
-        parallel_backend="mp"
-    ):
+    orbits,
+    orbit_members,
+    observations,
+    min_obs=6,
+    min_arc_length=1.0,
+    contamination_percentage=20.0,
+    rchi2_threshold=5,
+    eps=1 / 3600,
+    delta=1e-8,
+    max_iter=20,
+    method="central",
+    fit_epoch=False,
+    backend="PYOORB",
+    backend_kwargs={},
+    orbits_chunk_size=10,
+    observations_chunk_size=100000,
+    num_jobs=60,
+    parallel_backend="mp",
+):
     """
     Attempt to extend an orbit's observational arc by running
     attribution on the observations. This is an iterative process: attribution
@@ -323,10 +348,7 @@ def mergeAndExtendOrbits(
     logger.info("Running orbit extension and merging...")
 
     orbits_iter, orbit_members_iter = sortLinkages(
-        orbits,
-        orbit_members,
-        observations,
-        linkage_id_col="orbit_id"
+        orbits, orbit_members, observations, linkage_id_col="orbit_id"
     )
     observations_iter = observations.copy()
 
@@ -349,25 +371,37 @@ def mergeAndExtendOrbits(
                 orbits_chunk_size=orbits_chunk_size,
                 observations_chunk_size=observations_chunk_size,
                 num_jobs=num_jobs,
-                parallel_backend=parallel_backend
+                parallel_backend=parallel_backend,
             )
 
-            assert np.all(np.isin(orbit_members_iter["obs_id"].unique(), observations_iter["obs_id"].unique()))
+            assert np.all(
+                np.isin(
+                    orbit_members_iter["obs_id"].unique(),
+                    observations_iter["obs_id"].unique(),
+                )
+            )
 
             # Attributions are sorted by orbit ID, observation time and
             # angular distance. Keep only the one observation with smallest distance
             # for any orbits that have multiple observations attributed at the same observation time.
             attributions.drop_duplicates(
-                subset=[
-                    "orbit_id",
-                    "mjd_utc"
-                ],
+                subset=["orbit_id", "mjd_utc"],
                 keep="first",
                 inplace=True,
-                ignore_index=True
+                ignore_index=True,
             )
-            orbit_members_iter = attributions[["orbit_id", "obs_id", "residual_ra_arcsec", "residual_dec_arcsec", "chi2"]]
-            orbits_iter = orbits_iter[orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())]
+            orbit_members_iter = attributions[
+                [
+                    "orbit_id",
+                    "obs_id",
+                    "residual_ra_arcsec",
+                    "residual_dec_arcsec",
+                    "chi2",
+                ]
+            ]
+            orbits_iter = orbits_iter[
+                orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())
+            ]
 
             orbits_iter, orbit_members_iter = sortLinkages(
                 orbits_iter,
@@ -394,41 +428,56 @@ def mergeAndExtendOrbits(
                 backend_kwargs=backend_kwargs,
                 chunk_size=orbits_chunk_size,
                 num_jobs=num_jobs,
-                parallel_backend=parallel_backend
+                parallel_backend=parallel_backend,
             )
             orbit_members_iter = orbit_members_iter[orbit_members_iter["outlier"] == 0]
-            orbit_members_iter.reset_index(
-                inplace=True,
-                drop=True
-            )
+            orbit_members_iter.reset_index(inplace=True, drop=True)
 
             # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
             # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
             # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
-            not_improved = orbits_iter[orbits_iter["improved"] == False]["orbit_id"].values
+            not_improved = orbits_iter[orbits_iter["improved"] == False][
+                "orbit_id"
+            ].values
             orbits_out = orbits_iter[orbits_iter["orbit_id"].isin(not_improved)].copy()
-            orbit_members_out = orbit_members_iter[orbit_members_iter["orbit_id"].isin(not_improved)].copy()
+            orbit_members_out = orbit_members_iter[
+                orbit_members_iter["orbit_id"].isin(not_improved)
+            ].copy()
             not_improved_obs_ids = orbit_members_out["obs_id"].values
 
             # If some orbits that were not improved still share observations, keep the orbit with the lowest
             # reduced chi2 in the pool of orbits but delete the others.
             obs_id_occurences = orbit_members_out["obs_id"].value_counts()
-            duplicate_obs_ids = obs_id_occurences.index.values[obs_id_occurences.values > 1]
+            duplicate_obs_ids = obs_id_occurences.index.values[
+                obs_id_occurences.values > 1
+            ]
 
-            logger.info("There are {} observations that appear in more than one orbit.".format(len(duplicate_obs_ids)))
+            logger.info(
+                "There are {} observations that appear in more than one orbit.".format(
+                    len(duplicate_obs_ids)
+                )
+            )
             orbits_out, orbit_members_out = removeDuplicateObservations(
                 orbits_out,
                 orbit_members_out,
                 min_obs=min_obs,
                 linkage_id_col="orbit_id",
                 filter_cols=["num_obs", "arc_length", "r_sigma", "v_sigma"],
-                ascending=[False, False, True, True]
+                ascending=[False, False, True, True],
             )
 
-            observations_iter = observations_iter[~observations_iter["obs_id"].isin(orbit_members_out["obs_id"].values)]
-            orbit_members_iter = orbit_members_iter[~orbit_members_iter["orbit_id"].isin(orbits_out["orbit_id"].values)]
-            orbit_members_iter = orbit_members_iter[orbit_members_iter["obs_id"].isin(observations_iter["obs_id"].values)]
-            orbits_iter = orbits_iter[orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())]
+            observations_iter = observations_iter[
+                ~observations_iter["obs_id"].isin(orbit_members_out["obs_id"].values)
+            ]
+            orbit_members_iter = orbit_members_iter[
+                ~orbit_members_iter["orbit_id"].isin(orbits_out["orbit_id"].values)
+            ]
+            orbit_members_iter = orbit_members_iter[
+                orbit_members_iter["obs_id"].isin(observations_iter["obs_id"].values)
+            ]
+            orbits_iter = orbits_iter[
+                orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())
+            ]
             orbit_members_iter = orbit_members_iter[["orbit_id", "obs_id"]]
 
             odp_orbits_dfs.append(orbits_out)
@@ -441,15 +490,9 @@ def mergeAndExtendOrbits(
         odp_orbits = pd.concat(odp_orbits_dfs)
         odp_orbit_members = pd.concat(odp_orbit_members_dfs)
 
-        odp_orbits.drop(
-            columns=["improved"],
-            inplace=True
-        )
+        odp_orbits.drop(columns=["improved"], inplace=True)
         odp_orbits, odp_orbit_members = sortLinkages(
-            odp_orbits,
-            odp_orbit_members,
-            observations,
-            linkage_id_col="orbit_id"
+            odp_orbits, odp_orbit_members, observations, linkage_id_col="orbit_id"
         )
 
     else:
@@ -467,7 +510,7 @@ def mergeAndExtendOrbits(
                 "arc_length",
                 "num_obs",
                 "chi2",
-                "rchi2"
+                "rchi2",
             ]
         )
 
@@ -478,13 +521,25 @@ def mergeAndExtendOrbits(
                 "residual_ra_arcsec",
                 "residual_dec_arcsec",
                 "chi2",
-                "outlier"
+                "outlier",
             ]
         )
 
     time_end = time.time()
-    logger.info("Number of attribution / differential correction iterations: {}".format(iterations))
-    logger.info("Extended and/or merged {} orbits into {} orbits.".format(len(orbits), len(odp_orbits)))
-    logger.info("Orbit extension and merging completed in {:.3f} seconds.".format(time_end - time_start))
+    logger.info(
+        "Number of attribution / differential correction iterations: {}".format(
+            iterations
+        )
+    )
+    logger.info(
+        "Extended and/or merged {} orbits into {} orbits.".format(
+            len(orbits), len(odp_orbits)
+        )
+    )
+    logger.info(
+        "Orbit extension and merging completed in {:.3f} seconds.".format(
+            time_end - time_start
+        )
+    )
 
     return odp_orbits, odp_orbit_members

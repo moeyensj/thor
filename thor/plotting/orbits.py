@@ -1,24 +1,22 @@
-import plotly
 import numpy as np
+import plotly
 
-from ..orbits import propagateOrbits
-from ..orbits import getPerturberState
+from ..orbits import getPerturberState, propagateOrbits
 
-__all__ = [
-    "plotOrbits"
-]
+__all__ = ["plotOrbits"]
 
 PLANET_COLORS = {
-    "mercury" : "#7F4D21",
-    "venus" : "#E7B765",
-    "earth" : "#5B6C8B",
-    "mars barycenter" : "#D84325",
-    "jupiter barycenter" : "#DDB282",
-    "saturn barycenter" : "#E3C299",
-    "uranus barycenter" : "#82B7CE",
-    "neptune barycenter" : "#5A63F4",
+    "mercury": "#7F4D21",
+    "venus": "#E7B765",
+    "earth": "#5B6C8B",
+    "mars barycenter": "#D84325",
+    "jupiter barycenter": "#DDB282",
+    "saturn barycenter": "#E3C299",
+    "uranus barycenter": "#82B7CE",
+    "neptune barycenter": "#5A63F4",
 }
 DTS = np.arange(-60, 1, 5)
+
 
 def addPerturber(perturber, t0, dts, color=None):
 
@@ -38,10 +36,7 @@ def addPerturber(perturber, t0, dts, color=None):
             z=[0],
             name=name,
             mode="markers",
-            marker=dict(
-                size=4,
-                color=color
-            ),
+            marker=dict(size=4, color=color),
         )
         perturber_data.append(trace)
 
@@ -53,19 +48,11 @@ def addPerturber(perturber, t0, dts, color=None):
             z=perturber_state_t0[:, 2],
             name=name,
             mode="markers",
-            marker=dict(
-                size=3,
-                color=color
-            ),
-            hovertemplate =
-                '%{text}<br>'+
-                'x: %{x}<br>'+
-                'y: %{y}<br>'+
-                'z: %{z}<br>',
-            text = ["MJD [TDB]: {:.5f}".format(i) for i in t0.tdb.mjd],
+            marker=dict(size=3, color=color),
+            hovertemplate="%{text}<br>" + "x: %{x}<br>" + "y: %{y}<br>" + "z: %{z}<br>",
+            text=["MJD [TDB]: {:.5f}".format(i) for i in t0.tdb.mjd],
         )
         perturber_data.append(trace)
-
 
         t1 = t0 + dts
         perturber_states = getPerturberState(perturber, t1)
@@ -75,16 +62,9 @@ def addPerturber(perturber, t0, dts, color=None):
             z=perturber_states[:, 2],
             name=name,
             mode="markers",
-            marker=dict(
-                size=1,
-                color=color
-            ),
-            hovertemplate =
-                '%{text}<br>'+
-                'x: %{x}<br>'+
-                'y: %{y}<br>'+
-                'z: %{z}<br>',
-            text = ["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
+            marker=dict(size=1, color=color),
+            hovertemplate="%{text}<br>" + "x: %{x}<br>" + "y: %{y}<br>" + "z: %{z}<br>",
+            text=["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
         )
         perturber_data.append(trace)
 
@@ -107,49 +87,36 @@ def addOrbits(orbits, dts):
             z=orbits.cartesian[np.where(orbits.ids == orbit_id)[0], 2],
             name=orbit_id,
             mode="markers",
-            marker=dict(
-                size=2,
-                color="white"
-            ),
-            hovertemplate =
-                '%{text}<br>'+
-                'x: %{x}<br>'+
-                'y: %{y}<br>'+
-                'z: %{z}<br>',
-            text = ["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
+            marker=dict(size=2, color="white"),
+            hovertemplate="%{text}<br>" + "x: %{x}<br>" + "y: %{y}<br>" + "z: %{z}<br>",
+            text=["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
         )
         orbit_data.append(trace)
 
-        propagated_mask =( propagated["orbit_id"] == orbit_id)
+        propagated_mask = propagated["orbit_id"] == orbit_id
         trace = plotly.graph_objs.Scatter3d(
             x=propagated[propagated_mask]["x"].values,
             y=propagated[propagated_mask]["y"].values,
             z=propagated[propagated_mask]["z"].values,
             name=orbit_id,
             mode="markers",
-            marker=dict(
-                size=1,
-                color="white"
-            ),
-            hovertemplate =
-                '%{text}<br>'+
-                'x: %{x}<br>'+
-                'y: %{y}<br>'+
-                'z: %{z}<br>',
-            text = ["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
+            marker=dict(size=1, color="white"),
+            hovertemplate="%{text}<br>" + "x: %{x}<br>" + "y: %{y}<br>" + "z: %{z}<br>",
+            text=["MJD [TDB]: {:.5f}".format(i) for i in t1.tdb.mjd],
         )
         orbit_data.append(trace)
 
     return orbit_data
 
+
 def plotOrbits(
-        orbits,
-        dts=DTS,
-        inner_planets=True,
-        outer_planets=True,
-        limits=None,
-        grid=True,
-    ):
+    orbits,
+    dts=DTS,
+    inner_planets=True,
+    outer_planets=True,
+    limits=None,
+    grid=True,
+):
 
     if grid:
         gridcolor = "rgb(96,96,96)"
@@ -175,7 +142,12 @@ def plotOrbits(
             data += addPerturber(perturber, t0, dts, color=PLANET_COLORS[perturber])
 
     if outer_planets:
-        for perturber in ["jupiter barycenter", "saturn barycenter", "uranus barycenter", "neptune barycenter"]:
+        for perturber in [
+            "jupiter barycenter",
+            "saturn barycenter",
+            "uranus barycenter",
+            "neptune barycenter",
+        ]:
             data += addPerturber(perturber, t0, dts, color=PLANET_COLORS[perturber])
 
     layout = dict(
@@ -189,34 +161,28 @@ def plotOrbits(
                 gridcolor=gridcolor,
                 zerolinecolor=zerolinecolor,
                 showbackground=False,
-                range=limits
+                range=limits,
             ),
             yaxis=dict(
                 title="y [au]",
                 gridcolor=gridcolor,
                 zerolinecolor=zerolinecolor,
                 showbackground=False,
-                range=limits
+                range=limits,
             ),
             zaxis=dict(
                 title="z [au]",
                 gridcolor=gridcolor,
                 zerolinecolor=zerolinecolor,
                 showbackground=False,
-                range=limits
+                range=limits,
             ),
-            aspectratio=dict(
-                x=1,
-                y=1,
-                z=1
-            ),
-
+            aspectratio=dict(x=1, y=1, z=1),
         ),
         font_color="white",
         plot_bgcolor="rgb(0,0,0)",
         paper_bgcolor="rgba(0,0,0)",
-        showlegend=False
-
+        showlegend=False,
     )
 
     fig = plotly.graph_objs.Figure(data=data, layout=layout)

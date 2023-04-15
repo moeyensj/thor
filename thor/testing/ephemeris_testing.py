@@ -1,23 +1,19 @@
 import numpy as np
 from astropy import units as u
 
-from .orbit_testing import __statsToErrorMessage
-from .orbit_testing import _evaluateDifference
+from .orbit_testing import __statsToErrorMessage, _evaluateDifference
 
-__all__ = [
-    "testCartesianEpehemeris",
-    "testSphericalEpehemeris",
-    "testEphemeris"
-]
+__all__ = ["testCartesianEpehemeris", "testSphericalEpehemeris", "testEphemeris"]
+
 
 def testCartesianEpehemeris(
-        ephemeris_actual,
-        ephemeris_desired,
-        position_tol=1*u.m,
-        velocity_tol=(1*u.mm/u.s),
-        magnitude=True,
-        raise_error=True
-    ):
+    ephemeris_actual,
+    ephemeris_desired,
+    position_tol=1 * u.m,
+    velocity_tol=(1 * u.mm / u.s),
+    magnitude=True,
+    raise_error=True,
+):
     """
     Tests that the two sets of cartesian ephemeris are within the desired absolute tolerances
     of each other. The absolute difference is calculated as |actual - desired|.
@@ -63,9 +59,7 @@ def testCartesianEpehemeris(
     statistics = {}
 
     if ephemeris_actual.shape != ephemeris_desired.shape:
-        err = (
-            "The shapes of the actual and desired ephemeris should be the same."
-        )
+        err = "The shapes of the actual and desired ephemeris should be the same."
         raise ValueError(err)
 
     N, D = ephemeris_actual.shape
@@ -88,22 +82,23 @@ def testCartesianEpehemeris(
         ephemeris_desired[:, :3],
         u.AU,
         position_tol,
-        magnitude=magnitude
+        magnitude=magnitude,
     )
     for i, n in enumerate(names):
         differences[n] = diff[:, i]
-        statistics[n] = {k : v[i] for k, v in stats.items()}
+        statistics[n] = {k: v[i] for k, v in stats.items()}
 
     # If any of the differences between desired and actual are
     # greater than the allowed tolerance set any_error to True
     # and build the error message
     if error:
         any_error = True
-        error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, position_tol)
-        error_message = __statsToErrorMessage(
-            stats,
-            error_message
+        error_message += (
+            "{} difference (|actual - desired|) is not within {}.\n".format(
+                names, position_tol
+            )
         )
+        error_message = __statsToErrorMessage(stats, error_message)
 
     if D == 6:
         # Test velocities
@@ -116,38 +111,40 @@ def testCartesianEpehemeris(
             ephemeris_desired[:, 3:],
             (u.AU / u.d),
             velocity_tol,
-            magnitude=magnitude
+            magnitude=magnitude,
         )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, velocity_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, velocity_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
     if any_error and raise_error:
         raise AssertionError(error_message)
 
     return differences, statistics, error
 
+
 def testSphericalEpehemeris(
-        ephemeris_actual,
-        ephemeris_desired,
-        position_tol=1*u.m,
-        velocity_tol=(1*u.mm/u.s),
-        angle_tol=(1*u.arcsec),
-        angular_velocity_tol=(1*u.arcsec / u.s),
-        magnitude=True,
-        raise_error=True
-    ):
+    ephemeris_actual,
+    ephemeris_desired,
+    position_tol=1 * u.m,
+    velocity_tol=(1 * u.mm / u.s),
+    angle_tol=(1 * u.arcsec),
+    angular_velocity_tol=(1 * u.arcsec / u.s),
+    magnitude=True,
+    raise_error=True,
+):
     """
     Tests that the two sets of cartesian ephemeris are within the desired absolute tolerances
     of each other. The absolute difference is calculated as |actual - desired|.
@@ -203,9 +200,7 @@ def testSphericalEpehemeris(
     statistics = {}
 
     if ephemeris_actual.shape != ephemeris_desired.shape:
-        err = (
-            "The shapes of the actual and desired ephemeris should be the same."
-        )
+        err = "The shapes of the actual and desired ephemeris should be the same."
         raise ValueError(err)
 
     N, D = ephemeris_actual.shape
@@ -226,10 +221,14 @@ def testSphericalEpehemeris(
             # linearize spherical angles
             # longitude_linear = cos(latitude) * longitude
             ephemeris_actual_ = ephemeris_actual.copy()
-            ephemeris_actual_[:, 0] = np.cos(np.radians(ephemeris_actual_[:, 1])) * ephemeris_actual_[:, 0]
+            ephemeris_actual_[:, 0] = (
+                np.cos(np.radians(ephemeris_actual_[:, 1])) * ephemeris_actual_[:, 0]
+            )
 
             ephemeris_desired_ = ephemeris_desired.copy()
-            ephemeris_desired_[:, 0] = np.cos(np.radians(ephemeris_desired_[:, 1])) * ephemeris_desired_[:, 0]
+            ephemeris_desired_[:, 0] = (
+                np.cos(np.radians(ephemeris_desired_[:, 1])) * ephemeris_desired_[:, 0]
+            )
 
         else:
             ephemeris_actual_ = ephemeris_actual.copy()
@@ -245,22 +244,23 @@ def testSphericalEpehemeris(
             ephemeris_desired_,
             u.degree,
             angle_tol,
-            magnitude=magnitude
+            magnitude=magnitude,
         )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, angle_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, angle_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
     if D == 3:
 
@@ -268,15 +268,18 @@ def testSphericalEpehemeris(
             # linearize spherical angles
             # longitude_linear = cos(latitude) * longitude
             ephemeris_actual_ = ephemeris_actual.copy()
-            ephemeris_actual_[:, 1] = np.cos(np.radians(ephemeris_actual_[:, 2])) * ephemeris_actual_[:, 1]
+            ephemeris_actual_[:, 1] = (
+                np.cos(np.radians(ephemeris_actual_[:, 2])) * ephemeris_actual_[:, 1]
+            )
 
             ephemeris_desired_ = ephemeris_desired.copy()
-            ephemeris_desired_[:, 1] = np.cos(np.radians(ephemeris_desired_[:, 2])) * ephemeris_desired_[:, 1]
+            ephemeris_desired_[:, 1] = (
+                np.cos(np.radians(ephemeris_desired_[:, 2])) * ephemeris_desired_[:, 1]
+            )
 
         else:
             ephemeris_actual_ = ephemeris_actual
             ephemeris_desired_ = ephemeris_desired
-
 
         # Test positions
         names = ["rho"]
@@ -285,22 +288,23 @@ def testSphericalEpehemeris(
             ephemeris_desired_[:, :1],
             u.AU,
             position_tol,
-            magnitude=False
+            magnitude=False,
         )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, position_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, position_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
         # Test angles
         if magnitude:
@@ -312,22 +316,23 @@ def testSphericalEpehemeris(
             ephemeris_desired_[:, 1:3],
             u.degree,
             angle_tol,
-            magnitude=magnitude
+            magnitude=magnitude,
         )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, angle_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, angle_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
     if D == 6:
 
@@ -336,17 +341,24 @@ def testSphericalEpehemeris(
             # longitude_linear = cos(latitude) * longitude
             # vlongitude_linear = cos(latitude) * vlongitude
             ephemeris_actual_ = ephemeris_actual.copy()
-            ephemeris_actual_[:, 1] = np.cos(np.radians(ephemeris_actual_[:, 2])) * ephemeris_actual_[:, 1]
-            ephemeris_actual_[:, 4] = np.cos(np.radians(ephemeris_actual_[:, 2])) * ephemeris_actual_[:, 4]
+            ephemeris_actual_[:, 1] = (
+                np.cos(np.radians(ephemeris_actual_[:, 2])) * ephemeris_actual_[:, 1]
+            )
+            ephemeris_actual_[:, 4] = (
+                np.cos(np.radians(ephemeris_actual_[:, 2])) * ephemeris_actual_[:, 4]
+            )
 
             ephemeris_desired_ = ephemeris_desired.copy()
-            ephemeris_desired_[:, 1] = np.cos(np.radians(ephemeris_desired_[:, 2])) * ephemeris_desired_[:, 1]
-            ephemeris_desired_[:, 4] = np.cos(np.radians(ephemeris_desired_[:, 2])) * ephemeris_desired_[:, 4]
+            ephemeris_desired_[:, 1] = (
+                np.cos(np.radians(ephemeris_desired_[:, 2])) * ephemeris_desired_[:, 1]
+            )
+            ephemeris_desired_[:, 4] = (
+                np.cos(np.radians(ephemeris_desired_[:, 2])) * ephemeris_desired_[:, 4]
+            )
 
         else:
             ephemeris_actual_ = ephemeris_actual
             ephemeris_desired_ = ephemeris_desired
-
 
         # Test positions
         names = ["rho"]
@@ -355,22 +367,23 @@ def testSphericalEpehemeris(
             ephemeris_desired_[:, :1],
             u.AU,
             position_tol,
-            magnitude=False
+            magnitude=False,
         )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, position_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, position_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
         # Test angles
         if magnitude:
@@ -382,22 +395,23 @@ def testSphericalEpehemeris(
             ephemeris_desired_[:, 1:3],
             u.degree,
             angle_tol,
-            magnitude=magnitude
+            magnitude=magnitude,
         )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, angle_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, angle_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
         # Test velocity
         names = ["vrho"]
@@ -406,21 +420,23 @@ def testSphericalEpehemeris(
             ephemeris_desired_[:, 3:4],
             u.AU / u.d,
             velocity_tol,
-            magnitude=False)
+            magnitude=False,
+        )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, velocity_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, velocity_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
         # Test angular velocities
         if magnitude:
@@ -432,39 +448,41 @@ def testSphericalEpehemeris(
             ephemeris_desired_[:, 3:4],
             u.degree / u.d,
             angular_velocity_tol,
-            magnitude=False
+            magnitude=False,
         )
         for i, n in enumerate(names):
             differences[n] = diff[:, i]
-            statistics[n] = {k : v[i] for k, v in stats.items()}
+            statistics[n] = {k: v[i] for k, v in stats.items()}
 
         # If any of the differences between desired and actual are
         # greater than the allowed tolerance set any_error to True
         # and build the error message
         if error:
             any_error = True
-            error_message += "{} difference (|actual - desired|) is not within {}.\n".format(names, angular_velocity_tol)
-            error_message = __statsToErrorMessage(
-                stats,
-                error_message
+            error_message += (
+                "{} difference (|actual - desired|) is not within {}.\n".format(
+                    names, angular_velocity_tol
+                )
             )
+            error_message = __statsToErrorMessage(stats, error_message)
 
     if any_error and raise_error:
         raise AssertionError(error_message)
 
     return differences, statistics, error
 
+
 def testEphemeris(
-        ephemeris_actual,
-        ephemeris_desired,
-        ephemeris_type="spherical",
-        position_tol=1*u.m,
-        velocity_tol=(1*u.mm/u.s),
-        angle_tol=(1*u.arcsec),
-        angular_velocity_tol=(1*u.arcsec / u.s),
-        magnitude=True,
-        raise_error=True
-    ):
+    ephemeris_actual,
+    ephemeris_desired,
+    ephemeris_type="spherical",
+    position_tol=1 * u.m,
+    velocity_tol=(1 * u.mm / u.s),
+    angle_tol=(1 * u.arcsec),
+    angular_velocity_tol=(1 * u.arcsec / u.s),
+    magnitude=True,
+    raise_error=True,
+):
     """
     Tests that the two sets of cartesian ephemeris are within the desired absolute tolerances
     of each other. The absolute difference is calculated as |actual - desired|.
@@ -518,7 +536,7 @@ def testEphemeris(
             position_tol=position_tol,
             velocity_tol=velocity_tol,
             magnitude=magnitude,
-            raise_error=raise_error
+            raise_error=raise_error,
         )
 
     elif ephemeris_type == "spherical":
@@ -531,11 +549,11 @@ def testEphemeris(
             angle_tol=angle_tol,
             angular_velocity_tol=angular_velocity_tol,
             magnitude=magnitude,
-            raise_error=raise_error
+            raise_error=raise_error,
         )
 
     else:
-        err = ("ephemeris_type should be one of {'cartesian', 'spherical'")
+        err = "ephemeris_type should be one of {'cartesian', 'spherical'"
         raise ValueError(err)
 
     return differences, statistics, error

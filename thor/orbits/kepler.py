@@ -3,12 +3,15 @@ from numba import jit
 
 from ..constants import Constants as c
 
-__all__ = ["_convertCartesianToKeplerian",
-           "_convertKeplerianToCartesian",
-           "convertOrbitalElements"]
+__all__ = [
+    "_convertCartesianToKeplerian",
+    "_convertKeplerianToCartesian",
+    "convertOrbitalElements",
+]
 
 MU = c.MU
-Z_AXIS = np.array([0., 0., 1.])
+Z_AXIS = np.array([0.0, 0.0, 1.0])
+
 
 @jit(["f8[:,:](f8[:,:], f8)"], nopython=True, cache=True)
 def _convertCartesianToKeplerian(elements_cart, mu=MU):
@@ -81,7 +84,9 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
         trueAnom_rad = np.radians(trueAnom_deg)
 
         if e < 1.0:
-            eccentricAnom_rad = np.arctan2(np.sqrt(1 - e**2) * np.sin(trueAnom_rad), e + np.cos(trueAnom_rad))
+            eccentricAnom_rad = np.arctan2(
+                np.sqrt(1 - e**2) * np.sin(trueAnom_rad), e + np.cos(trueAnom_rad)
+            )
             meanAnom_deg = np.degrees(eccentricAnom_rad - e * np.sin(eccentricAnom_rad))
             if meanAnom_deg < 0:
                 meanAnom_deg += 360.0
@@ -90,12 +95,21 @@ def _convertCartesianToKeplerian(elements_cart, mu=MU):
             parabolicAnom_rad = np.arctan(trueAnom_rad / 2)
             meanAnom_deg = np.degrees(parabolicAnom_rad + parabolicAnom_rad**3 / 3)
         else:
-            hyperbolicAnom_rad = np.arcsinh(np.sin(trueAnom_rad) * np.sqrt(e**2 - 1) / (1 + e * np.cos(trueAnom_rad)))
-            meanAnom_deg = np.degrees(e * np.sinh(hyperbolicAnom_rad) - hyperbolicAnom_rad)
+            hyperbolicAnom_rad = np.arcsinh(
+                np.sin(trueAnom_rad)
+                * np.sqrt(e**2 - 1)
+                / (1 + e * np.cos(trueAnom_rad))
+            )
+            meanAnom_deg = np.degrees(
+                e * np.sinh(hyperbolicAnom_rad) - hyperbolicAnom_rad
+            )
 
-        elements_kepler.append([a, q, e, i_deg, ascNode_deg, argPeri_deg, meanAnom_deg, trueAnom_deg])
+        elements_kepler.append(
+            [a, q, e, i_deg, ascNode_deg, argPeri_deg, meanAnom_deg, trueAnom_deg]
+        )
 
     return np.array(elements_kepler)
+
 
 @jit(["f8[:,:](f8[:,:], f8, i8, f8)"], nopython=True, cache=True)
 def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15):
@@ -162,7 +176,10 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
                 if iterations >= max_iter:
                     break
 
-            trueAnom_rad = 2 * np.arctan2(np.sqrt(1 + e) * np.sin(eccentricAnom_rad/2), np.sqrt(1 - e) * np.cos(eccentricAnom_rad/2))
+            trueAnom_rad = 2 * np.arctan2(
+                np.sqrt(1 + e) * np.sin(eccentricAnom_rad / 2),
+                np.sqrt(1 - e) * np.cos(eccentricAnom_rad / 2),
+            )
 
         elif e == 1.0:
             raise ValueError("Parabolic orbits not yet implemented!")
@@ -174,26 +191,34 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
 
             while np.abs(ratio) > tol:
                 f = meanAnom_rad - e * np.sinh(hyperbolicAnom_rad) + hyperbolicAnom_rad
-                fp =  e * np.cosh(hyperbolicAnom_rad) - 1
+                fp = e * np.cosh(hyperbolicAnom_rad) - 1
                 ratio = f / fp
                 hyperbolicAnom_rad += ratio
                 iterations += 1
                 if iterations >= max_iter:
                     break
 
-            trueAnom_rad = 2 * np.arctan(np.sqrt(e + 1) * np.sinh(hyperbolicAnom_rad / 2) / (np.sqrt(e - 1) * np.cosh(hyperbolicAnom_rad / 2)))
+            trueAnom_rad = 2 * np.arctan(
+                np.sqrt(e + 1)
+                * np.sinh(hyperbolicAnom_rad / 2)
+                / (np.sqrt(e - 1) * np.cosh(hyperbolicAnom_rad / 2))
+            )
 
-        r_PQW = np.array([
-            p * np.cos(trueAnom_rad) / (1 + e * np.cos(trueAnom_rad)),
-            p * np.sin(trueAnom_rad) / (1 + e * np.cos(trueAnom_rad)),
-            0
-        ])
+        r_PQW = np.array(
+            [
+                p * np.cos(trueAnom_rad) / (1 + e * np.cos(trueAnom_rad)),
+                p * np.sin(trueAnom_rad) / (1 + e * np.cos(trueAnom_rad)),
+                0,
+            ]
+        )
 
-        v_PQW = np.array([
-            -np.sqrt(mu/p) * np.sin(trueAnom_rad),
-            np.sqrt(mu/p) * (e + np.cos(trueAnom_rad)),
-            0
-        ])
+        v_PQW = np.array(
+            [
+                -np.sqrt(mu / p) * np.sin(trueAnom_rad),
+                np.sqrt(mu / p) * (e + np.cos(trueAnom_rad)),
+                0,
+            ]
+        )
 
         cos_ascNode = np.cos(ascNode_rad)
         sin_ascNode = np.sin(ascNode_rad)
@@ -202,23 +227,29 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
         cos_i = np.cos(i_rad)
         sin_i = np.sin(i_rad)
 
-        P1 = np.array([
-            [cos_argPeri, -sin_argPeri, 0.],
-            [sin_argPeri, cos_argPeri, 0.],
-            [0., 0., 1.],
-        ])
+        P1 = np.array(
+            [
+                [cos_argPeri, -sin_argPeri, 0.0],
+                [sin_argPeri, cos_argPeri, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
-        P2 = np.array([
-            [1., 0., 0.],
-            [0., cos_i, -sin_i],
-            [0., sin_i, cos_i],
-        ])
+        P2 = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, cos_i, -sin_i],
+                [0.0, sin_i, cos_i],
+            ]
+        )
 
-        P3 = np.array([
-            [cos_ascNode, -sin_ascNode, 0.],
-            [sin_ascNode, cos_ascNode, 0.],
-            [0., 0., 1.],
-        ])
+        P3 = np.array(
+            [
+                [cos_ascNode, -sin_ascNode, 0.0],
+                [sin_ascNode, cos_ascNode, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
         rotation_matrix = P3 @ P2 @ P1
         r = rotation_matrix @ r_PQW
@@ -227,6 +258,7 @@ def _convertKeplerianToCartesian(elements_kepler, mu=MU, max_iter=100, tol=1e-15
         elements_cart.append([r[0], r[1], r[2], v[0], v[1], v[2]])
 
     return np.array(elements_cart)
+
 
 def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=1e-15):
     """
@@ -274,7 +306,7 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=
         raise ValueError("type_in cannot be equal to type_out.")
 
     # If a single orbit was passed, reshape the array
-    if orbits.shape == (6, ):
+    if orbits.shape == (6,):
         orbits.reshape(1, -1)
 
     # If there are not enough or too many elements, raise error
@@ -286,5 +318,7 @@ def convertOrbitalElements(orbits, type_in, type_out, mu=MU, max_iter=1000, tol=
     elif type_in == "keplerian" and type_out == "cartesian":
         return _convertKeplerianToCartesian(orbits, mu=mu, tol=tol, max_iter=max_iter)
     else:
-        raise ValueError("Conversion from {} to {} not supported!".format(type_in, type_out))
+        raise ValueError(
+            "Conversion from {} to {} not supported!".format(type_in, type_out)
+        )
     return

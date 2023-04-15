@@ -2,25 +2,23 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-__all__ = [
-    "writeADESHeader",
-    "writeToADES"
-]
+__all__ = ["writeADESHeader", "writeToADES"]
+
 
 def writeADESHeader(
-        observatory_code,
-        submitter,
-        telescope_design,
-        telescope_aperture,
-        telescope_detector,
-        observers,
-        measurers,
-        observatory_name=None,
-        submitter_institution=None,
-        telescope_name=None,
-        telescope_fratio=None,
-        comment=None
-    ):
+    observatory_code,
+    submitter,
+    telescope_design,
+    telescope_aperture,
+    telescope_detector,
+    observers,
+    measurers,
+    observatory_name=None,
+    submitter_institution=None,
+    telescope_name=None,
+    telescope_fratio=None,
+    comment=None,
+):
     """
     Write the ADES PSV headers.
 
@@ -88,9 +86,7 @@ def writeADESHeader(
     # Add observer details
     header += ["# observers"]
     if type(observers) is not list:
-        err = (
-            "observers should be a list of strings."
-        )
+        err = "observers should be a list of strings."
         raise ValueError(err)
     for name in observers:
         header += [f"! name {name}"]
@@ -98,9 +94,7 @@ def writeADESHeader(
     # Add measurer details
     header += ["# measurers"]
     if type(measurers) is not list:
-        err = (
-            "measurers should be a list of strings."
-        )
+        err = "measurers should be a list of strings."
         raise ValueError(err)
     for name in measurers:
         header += [f"! name {name}"]
@@ -113,30 +107,31 @@ def writeADESHeader(
     header = [i + "\n" for i in header]
     return header
 
+
 def writeToADES(
-        observations,
-        file_out,
-        mjd_scale="utc",
-        seconds_precision=9,
-        columns_precision={
-            "ra" : 16,
-            "dec" : 16,
-            "mag" : 2,
-            "rmsMag" : 2,
-        },
-        observatory_code="I11",
-        submitter="D. iRAC",
-        telescope_design="Reflector",
-        telescope_aperture="8.4",
-        telescope_detector= "CCD",
-        observers=["D. iRAC"],
-        measurers=["D. iRAC"],
-        observatory_name="Vera C. Rubin Observatory",
-        submitter_institution=None,
-        telescope_name=None,
-        telescope_fratio=None,
-        comment=None
-    ):
+    observations,
+    file_out,
+    mjd_scale="utc",
+    seconds_precision=9,
+    columns_precision={
+        "ra": 16,
+        "dec": 16,
+        "mag": 2,
+        "rmsMag": 2,
+    },
+    observatory_code="I11",
+    submitter="D. iRAC",
+    telescope_design="Reflector",
+    telescope_aperture="8.4",
+    telescope_detector="CCD",
+    observers=["D. iRAC"],
+    measurers=["D. iRAC"],
+    observatory_name="Vera C. Rubin Observatory",
+    submitter_institution=None,
+    telescope_name=None,
+    telescope_fratio=None,
+    comment=None,
+):
     """
     Save observations to a MPC-submittable ADES psv file.
 
@@ -194,7 +189,7 @@ def writeToADES(
         submitter_institution=submitter_institution,
         telescope_name=telescope_name,
         telescope_fratio=telescope_fratio,
-        comment=comment
+        comment=comment,
     )
 
     # Format columns from observations into PSV format
@@ -222,7 +217,7 @@ def writeToADES(
         observations["mjd"].values,
         format="mjd",
         scale=mjd_scale,
-        precision=seconds_precision
+        precision=seconds_precision,
     )
     ades["obsTime"] = np.array([i + "Z" for i in observation_times.utc.isot])
     ades["ra"] = observations["ra"].values
@@ -261,24 +256,15 @@ def writeToADES(
         f.write("".join(header))
         f.write(col_header)
 
-    ades = ades.replace(
-        np.nan,
-        " ",
-        regex=True
-    )
+    ades = ades.replace(np.nan, " ", regex=True)
 
-    #reduced_precision_cols = ["rmsMag", "uncTime", "rmsTime"]
+    # reduced_precision_cols = ["rmsMag", "uncTime", "rmsTime"]
     reduced_precision_cols = []
     for col in reduced_precision_cols:
         if col in ades.columns:
-            ades[col] = ades[col].map(lambda x: '{0:.3f}'.format(x))
+            ades[col] = ades[col].map(lambda x: "{0:.3f}".format(x))
 
     ades.to_csv(
-        file_out,
-        sep="|",
-        header=False,
-        index=False,
-        mode="a",
-        float_format='%.16f'
+        file_out, sep="|", header=False, index=False, mode="a", float_format="%.16f"
     )
     return

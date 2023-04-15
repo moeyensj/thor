@@ -13,7 +13,11 @@ __all__ = [
 ]
 
 
-@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True, cache=True)
+@jit(
+    ["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"],
+    nopython=True,
+    cache=True,
+)
 def _convertCartesianToSpherical(x, y, z, vx, vy, vz):
     """
     Convert spherical coordinates to cartesian coordinates.
@@ -59,7 +63,7 @@ def _convertCartesianToSpherical(x, y, z, vx, vy, vz):
     lon = np.arctan2(y, x)
     lon = np.where(lon < 0.0, 2 * np.pi + lon, lon)
     lat = np.arcsin(z / rho)
-    lat = np.where((lat >= 3*np.pi/2) & (lat <= 2*np.pi), lat - 2*np.pi, lat)
+    lat = np.where((lat >= 3 * np.pi / 2) & (lat <= 2 * np.pi), lat - 2 * np.pi, lat)
 
     if np.all(vx == 0) & (np.all(vy == 0)) & (np.all(vz == 0)):
         vrho = np.zeros(len(rho))
@@ -73,7 +77,11 @@ def _convertCartesianToSpherical(x, y, z, vx, vy, vz):
     return rho, lon, lat, vrho, vlon, vlat
 
 
-@jit(["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"], nopython=True, cache=True)
+@jit(
+    ["UniTuple(f8[:], 6)(f8[:], f8[:], f8[:], f8[:], f8[:], f8[:])"],
+    nopython=True,
+    cache=True,
+)
 def _convertSphericalToCartesian(rho, lon, lat, vrho, vlon, vlat):
     """
     Convert spherical coordinates to cartesian coordinates.
@@ -129,13 +137,28 @@ def _convertSphericalToCartesian(rho, lon, lat, vrho, vlon, vlat):
         vy = np.zeros(len(y))
         vz = np.zeros(len(z))
     else:
-        vx = cos_lat * cos_lon * vrho - rho * cos_lat * sin_lon * vlon - rho * sin_lat * cos_lon * vlat
-        vy = cos_lat * sin_lon * vrho + rho * cos_lat * cos_lon * vlon - rho * sin_lat * sin_lon * vlat
+        vx = (
+            cos_lat * cos_lon * vrho
+            - rho * cos_lat * sin_lon * vlon
+            - rho * sin_lat * cos_lon * vlat
+        )
+        vy = (
+            cos_lat * sin_lon * vrho
+            + rho * cos_lat * cos_lon * vlon
+            - rho * sin_lat * sin_lon * vlat
+        )
         vz = sin_lat * vrho + rho * cos_lat * vlat
 
     return x, y, z, vx, vy, vz
 
-def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesian", representation_out="cartesian"):
+
+def transformCoordinates(
+    coords,
+    frame_in,
+    frame_out,
+    representation_in="cartesian",
+    representation_out="cartesian",
+):
     """
     Transform coordinates between frames ('ecliptic', 'equatorial') and/or representations ('cartesian', 'spherical').
     Coordinates may include only positions or they may also include velocities.
@@ -182,10 +205,7 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
     """
     # Check that frame_in and frame_out are one of equatorial
     # or ecliptic, raise errors otherwise
-    frame_err = [
-        "{} should be one of:\n",
-        "'equatorial' or 'ecliptic'"
-    ]
+    frame_err = ["{} should be one of:\n", "'equatorial' or 'ecliptic'"]
     if frame_in != "equatorial" and frame_in != "ecliptic":
         raise ValueError("".join(frame_err).format("frame_in"))
 
@@ -194,10 +214,7 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
 
     # Check that representation_in and representation_out are one of cartesian
     # or spherical, raise errors otherwise
-    representation_err = [
-        "{} should be one of:\n",
-        "'cartesian' or 'spherical'"
-    ]
+    representation_err = ["{} should be one of:\n", "'cartesian' or 'spherical'"]
     if representation_in != "cartesian" and representation_in != "spherical":
         raise ValueError("".join(representation_err).format("representation_in"))
 
@@ -212,12 +229,10 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
     elif coords.shape[1] == 6:
         coords_ = coords.copy()
     else:
-        err = (
-            "coords should have shape (N, 3) or (N, 6).\n"
-        )
+        err = "coords should have shape (N, 3) or (N, 6).\n"
         raise ValueError(err)
 
-     # Convert angles and angular velocites from degrees to radians
+    # Convert angles and angular velocites from degrees to radians
     if representation_in == "spherical":
         coords_[:, 1:3] = np.radians(coords_[:, 1:3])
         coords_[:, 4:6] = np.radians(coords_[:, 4:6])
@@ -232,7 +247,7 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
 
         if frame_in == "ecliptic":
             rotation_matrix = TRANSFORM_EC2EQ
-        else: # frame_in == "equatorial"
+        else:  # frame_in == "equatorial"
             rotation_matrix = TRANSFORM_EQ2EC
 
         coords_rotated[:, 0:3] = (rotation_matrix @ coords_[:, 0:3].T).T
@@ -264,4 +279,3 @@ def transformCoordinates(coords, frame_in, frame_out, representation_in="cartesi
         return coords_out[:, :3]
 
     return coords_out
-

@@ -6,12 +6,12 @@ from .stumpff import calcStumpff
 
 MU = c.MU
 
-__all__ = [
-    "calcLambert"
-]
+__all__ = ["calcLambert"]
 
 
-@jit(["UniTuple(f8[:], 2)(f8[:], f8, f8[:], f8, f8, f8, f8)"], nopython=True, cache=True)
+@jit(
+    ["UniTuple(f8[:], 2)(f8[:], f8, f8[:], f8, f8, f8, f8)"], nopython=True, cache=True
+)
 def calcLambert(r0, t0, r1, t1, mu=MU, max_iter=1000, dt_tol=1e-12):
     """
     Solve the Lambert problem using the universal variable formulation and
@@ -73,12 +73,17 @@ def calcLambert(r0, t0, r1, t1, mu=MU, max_iter=1000, dt_tol=1e-12):
         if np.abs(psi_iter) > 1e-8:
             c2p = (1 - psi_iter * c3 - 2 * c2) / (2 * psi_iter)
             c3p = (c2 - 3 * c3) / (2 * psi_iter)
-            dtp = (chi**3 * (c3p - 3/2 * (c3 * c2p / c2)) + 1/8 * A * ((3 * c3 * np.sqrt(y)) / c2 + A / chi)) / sqrt_mu
+            dtp = (
+                chi**3 * (c3p - 3 / 2 * (c3 * c2p / c2))
+                + 1 / 8 * A * ((3 * c3 * np.sqrt(y)) / c2 + A / chi)
+            ) / sqrt_mu
 
         else:
-            c2 = 1/2
+            c2 = 1 / 2
             y0 = r0_mag + r1_mag - A / np.sqrt(c2)
-            dtp = np.sqrt(2)/40 * y0**(3/2) + A / 8 * (np.sqrt(y0) + A * np.sqrt(1/2/y0))
+            dtp = np.sqrt(2) / 40 * y0 ** (3 / 2) + A / 8 * (
+                np.sqrt(y0) + A * np.sqrt(1 / 2 / y0)
+            )
 
         ratio = (dt_iter - dt) / dtp
         psi_iter -= ratio
@@ -92,7 +97,7 @@ def calcLambert(r0, t0, r1, t1, mu=MU, max_iter=1000, dt_tol=1e-12):
     g_dot = 1 - y / r1_mag
     g = A * np.sqrt(y / mu)
 
-    v0 = (r1 - f * r0 ) / g
-    v1 = (g_dot * r1 - r0 ) / g
+    v0 = (r1 - f * r0) / g
+    v1 = (g_dot * r1 - r0) / g
 
     return v0, v1

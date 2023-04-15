@@ -1,24 +1,19 @@
-import os
-import logging
 import cProfile
+import logging
+import os
+from contextlib import contextmanager
+
 import pandas as pd
 from astropy.time import Time
 from difi import analyzeObservations
-from contextlib import contextmanager
 
-from thor import (
-    preprocessObservations,
-    rangeAndShift,
-    clusterAndLink,
-)
+from thor import __version__, clusterAndLink, preprocessObservations, rangeAndShift
 from thor.orbits import (
     Orbits,
-    initialOrbitDetermination,
     differentialCorrection,
+    initialOrbitDetermination,
     mergeAndExtendOrbits,
 )
-
-from thor import __version__
 
 THREADS = 1
 
@@ -34,11 +29,7 @@ def load_observations(data_dir):
     observations.sort_values(by="jd", inplace=True)
 
     observations["observatory_code"] = ["I41"] * len(observations)
-    observations["mjd_utc"] = Time(
-        observations["jd"],
-        scale="utc",
-        format="jd"
-    ).utc.mjd
+    observations["mjd_utc"] = Time(observations["jd"], scale="utc", format="jd").utc.mjd
 
     column_mapping = {
         "obs_id": "candid",
@@ -51,52 +42,35 @@ def load_observations(data_dir):
         "obj_id": "ssnamenr",
     }
     mjd_scale = "utc"
-    astrometric_errors = {
-        "I41": [
-            0.1/3600,
-            0.1/3600
-        ]
-    }
+    astrometric_errors = {"I41": [0.1 / 3600, 0.1 / 3600]}
     preprocessed_observations, preprocessed_associations = preprocessObservations(
         observations,
         column_mapping,
         mjd_scale=mjd_scale,
-        astrometric_errors=astrometric_errors
+        astrometric_errors=astrometric_errors,
     )
     return preprocessed_observations, preprocessed_associations
 
 
 def assess_discoverability(observations, associations, min_obs=5):
-    analysis_observations = observations.merge(
-        associations,
-        on="obs_id",
-        how="left"
-    )
+    analysis_observations = observations.merge(associations, on="obs_id", how="left")
 
     n_unknown = len(analysis_observations[analysis_observations["obj_id"] == "None"])
     unknown_labels = ["unknown{:d}".format(i) for i in range(n_unknown)]
-    analysis_observations.loc[analysis_observations["obj_id"] == "None", "obj_id"] = unknown_labels
+    analysis_observations.loc[
+        analysis_observations["obj_id"] == "None", "obj_id"
+    ] = unknown_labels
 
-    column_mapping = {
-        "obs_id" : "obs_id",
-        "truth" : "obj_id",
-        "linkage_id" : "cluster_id"
-    }
+    column_mapping = {"obs_id": "obs_id", "truth": "obj_id", "linkage_id": "cluster_id"}
 
     all_truths, findable_observations, summary = analyzeObservations(
-        analysis_observations,
-        column_mapping=column_mapping,
-        min_obs=min_obs
+        analysis_observations, column_mapping=column_mapping, min_obs=min_obs
     )
     return all_truths, findable_observations, summary
 
 
 def define_test_orbit(observations):
-    t0 = Time([
-        observations["mjd_utc"].min()],
-              scale="utc",
-              format="mjd"
-    )
+    t0 = Time([observations["mjd_utc"].min()], scale="utc", format="mjd")
     test_orbit = Orbits.fromHorizons(["2010 EG43"], t0)
     return test_orbit
 
@@ -124,17 +98,18 @@ def cluster_and_link(proj_observations, min_obs=5, min_arc_length=1.0):
         min_samples=min_obs,
         min_arc_length=min_arc_length,
         threads=THREADS,
-        identify_subsets=False
+        identify_subsets=False,
     )
     return clusters, cluster_members
 
 
 def determine_orbits(
-        proj_observations,
-        cluster_members,
-        min_obs=5,
-        min_arc_length=1.0,
-        contamination_percentage=20.0):
+    proj_observations,
+    cluster_members,
+    min_obs=5,
+    min_arc_length=1.0,
+    contamination_percentage=20.0,
+):
     iod_orbits, iod_orbit_members = initialOrbitDetermination(
         proj_observations,
         cluster_members,
@@ -145,27 +120,25 @@ def determine_orbits(
         backend="PYOORB",
         threads=THREADS,
         iterate=False,
-        identify_subsets=False
+        identify_subsets=False,
     )
 
     # Remove outliers
     iod_orbit_members = iod_orbit_members[(iod_orbit_members["outlier"] == 0)]
 
     for df in [iod_orbits, iod_orbit_members]:
-        df.reset_index(
-            inplace=True,
-            drop=True
-        )
+        df.reset_index(inplace=True, drop=True)
     return iod_orbits, iod_orbit_members
 
 
 def apply_differential_correction(
-        iod_orbits,
-        iod_orbit_members,
-        proj_observations,
-        min_obs=5,
-        min_arc_length=1.0,
-        contamination_percentage=20.0):
+    iod_orbits,
+    iod_orbit_members,
+    proj_observations,
+    min_obs=5,
+    min_arc_length=1.0,
+    contamination_percentage=20.0,
+):
     od_orbits, od_orbit_members = differentialCorrection(
         iod_orbits,
         iod_orbit_members,
@@ -179,19 +152,18 @@ def apply_differential_correction(
         max_iter=10,
         threads=THREADS,
         fit_epoch=False,
-        backend="PYOORB"
+        backend="PYOORB",
     )
     return od_orbits, od_orbit_members
 
 
-def merge_and_extend(od_orbits, od_orbit_members, proj_observations,
-                     min_obs=5):
+def merge_and_extend(od_orbits, od_orbit_members, proj_observations, min_obs=5):
     odp_orbits, odp_orbit_members = mergeAndExtendOrbits(
         od_orbits,
         od_orbit_members[(od_orbit_members["outlier"] == 0)],
         proj_observations,
         min_obs=min_obs,
-        eps=1/3600,
+        eps=1 / 3600,
         rchi2_threshold=10.0,
         contamination_percentage=0.0,
         delta=1e-8,
@@ -211,7 +183,9 @@ def init_debug_logging():
     logger.setLevel(logging.DEBUG)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     # add formatter to ch
     ch.setFormatter(formatter)
@@ -255,19 +229,24 @@ def main():
 
     with cprofile("iod.profile"):
         iod_orbits, iod_orbit_members = determine_orbits(
-            projected_observations, cluster_members,
+            projected_observations,
+            cluster_members,
         )
     print("iod complete")
 
     with cprofile("differential_correction.profile"):
         od_orbits, od_orbit_members = apply_differential_correction(
-            iod_orbits, iod_orbit_members, projected_observations,
+            iod_orbits,
+            iod_orbit_members,
+            projected_observations,
         )
     print("differential correction complete")
 
     with cprofile("merge_and_extend.profile"):
         odp_orbits, odp_orbit_members = merge_and_extend(
-            od_orbits, od_orbit_members, projected_observations,
+            od_orbits,
+            od_orbit_members,
+            projected_observations,
         )
     print("orbit extension complete")
     print("all done")

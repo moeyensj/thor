@@ -1,18 +1,16 @@
-from ..config import Configuration
-from ..config import _handleUserConfig
+from ..config import Configuration, _handleUserConfig
+
 
 def test__handleUserConfig():
 
     # Define some arbitrary defaultr dictionary
     default_config = {
-        "a" : 1,
-        "b" : 2,
-        "c" : 3,
+        "a": 1,
+        "b": 2,
+        "c": 3,
     }
 
-    user_config = {
-        "a" : 4
-    }
+    user_config = {"a": 4}
 
     config = _handleUserConfig(user_config, default_config)
 
@@ -21,18 +19,13 @@ def test__handleUserConfig():
     assert config["c"] == 3
     return
 
+
 def test_configuration_rangeAndShift():
     Config = Configuration()
 
     # Configuration should be a dictionary
     assert isinstance(Config.RANGE_SHIFT_CONFIG, dict)
-    kwargs = [
-        "cell_area",
-        "num_jobs",
-        "backend",
-        "backend_kwargs",
-        "parallel_backend"
-    ]
+    kwargs = ["cell_area", "num_jobs", "backend", "backend_kwargs", "parallel_backend"]
 
     # Make sure all rangeAndShift kwargs are included in the dictionary
     for kwarg in kwargs:
@@ -40,6 +33,7 @@ def test_configuration_rangeAndShift():
     assert len(Config.RANGE_SHIFT_CONFIG.keys()) == len(kwargs)
 
     return
+
 
 def test_configuration_clusterAndLink():
     Config = Configuration()
@@ -60,13 +54,14 @@ def test_configuration_clusterAndLink():
         "min_arc_length",
         "alg",
         "num_jobs",
-        "parallel_backend"
+        "parallel_backend",
     ]
     for kwarg in kwargs:
         assert kwarg in Config.CLUSTER_LINK_CONFIG.keys()
     assert len(Config.CLUSTER_LINK_CONFIG.keys()) == len(kwargs)
 
     return
+
 
 def test_configuration_iod():
     Config = Configuration()
@@ -89,13 +84,14 @@ def test_configuration_iod():
         "backend_kwargs",
         "chunk_size",
         "num_jobs",
-        "parallel_backend"
+        "parallel_backend",
     ]
     for kwarg in kwargs:
         assert kwarg in Config.IOD_CONFIG.keys()
     assert len(Config.IOD_CONFIG.keys()) == len(kwargs)
 
     return
+
 
 def test_configuration_od():
     Config = Configuration()
@@ -118,13 +114,14 @@ def test_configuration_od():
         "backend_kwargs",
         "chunk_size",
         "num_jobs",
-        "parallel_backend"
+        "parallel_backend",
     ]
     for kwarg in kwargs:
         assert kwarg in Config.OD_CONFIG.keys()
     assert len(Config.OD_CONFIG.keys()) == len(kwargs)
 
     return
+
 
 def test_configuration_odp():
     Config = Configuration()
@@ -148,13 +145,14 @@ def test_configuration_odp():
         "orbits_chunk_size",
         "observations_chunk_size",
         "num_jobs",
-        "parallel_backend"
+        "parallel_backend",
     ]
     for kwarg in kwargs:
         assert kwarg in Config.ODP_CONFIG.keys()
     assert len(Config.ODP_CONFIG.keys()) == len(kwargs)
 
     return
+
 
 def test_configuration_min_obs_override():
     val = 1234
@@ -169,6 +167,7 @@ def test_configuration_min_obs_override():
 
     return
 
+
 def test_configuration_min_arc_length_override():
     val = 999.999
     Config = Configuration(min_arc_length=val)
@@ -181,6 +180,7 @@ def test_configuration_min_arc_length_override():
     assert Config.MIN_ARC_LENGTH == val
 
     return
+
 
 def test_configuration_contamination_percentage_override():
     val = 100.0
@@ -195,6 +195,7 @@ def test_configuration_contamination_percentage_override():
 
     return
 
+
 def test_configuration_backend_override():
     val = "propagator"
     Config = Configuration(backend=val)
@@ -208,8 +209,9 @@ def test_configuration_backend_override():
 
     return
 
+
 def test_configuration_backend_kwargs_override():
-    val = {"dynamical_model" : "test"}
+    val = {"dynamical_model": "test"}
     Config = Configuration(backend_kwargs=val)
 
     assert Config.RANGE_SHIFT_CONFIG["backend_kwargs"] == val
@@ -220,6 +222,7 @@ def test_configuration_backend_kwargs_override():
     assert Config.BACKEND_KWARGS == val
 
     return
+
 
 def test_configuration_num_jobs_override():
     val = 123
@@ -233,6 +236,7 @@ def test_configuration_num_jobs_override():
     assert Config.NUM_JOBS == val
 
     return
+
 
 def test_configuration_parallel_backend_override():
     val = "parallelizer"

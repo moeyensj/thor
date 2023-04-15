@@ -1,14 +1,14 @@
 import numpy as np
-from numpy import roots
-from numba import jit
 from astropy.time import Time
+from numba import jit
+from numpy import roots
 
 from ..constants import Constants as c
 from ..coordinates import transformCoordinates
-from .orbits import Orbits
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
 from .iterators import iterateStateTransition
+from .orbits import Orbits
 
 __all__ = [
     "_calcV",
@@ -18,11 +18,12 @@ __all__ = [
     "_calcRhos",
     "approxLangrangeCoeffs",
     "calcGauss",
-    "gaussIOD"
+    "gaussIOD",
 ]
 
 MU = c.MU
 C = c.C
+
 
 @jit("f8(f8[:], f8[:], f8[:])", nopython=True, cache=True)
 def _calcV(rho1_hat, rho2_hat, rho3_hat):
@@ -32,15 +33,26 @@ def _calcV(rho1_hat, rho2_hat, rho3_hat):
     # Note that vector triple product rules apply here.
     return np.dot(np.cross(rho1_hat, rho2_hat), rho3_hat)
 
+
 @jit("f8(f8[:], f8[:], f8[:], f8[:], f8[:], f8, f8, f8)", nopython=True, cache=True)
 def _calcA(q1, q2, q3, rho1_hat, rho3_hat, t31, t32, t21):
     # Equation 21 from Milani et al. 2008
-    return np.linalg.norm(q2)**3 * np.dot(np.cross(rho1_hat, rho3_hat), (t32 * q1 - t31 * q2 + t21 * q3))
+    return np.linalg.norm(q2) ** 3 * np.dot(
+        np.cross(rho1_hat, rho3_hat), (t32 * q1 - t31 * q2 + t21 * q3)
+    )
+
 
 @jit("f8(f8[:], f8[:], f8[:], f8[:], f8, f8, f8, f8)", nopython=True, cache=True)
 def _calcB(q1, q3, rho1_hat, rho3_hat, t31, t32, t21, mu=MU):
     # Equation 19 from Milani et al. 2008
-    return mu / 6 * t32 * t21 * np.dot(np.cross(rho1_hat, rho3_hat), ((t31 + t32) * q1 + (t31 + t21) * q3))
+    return (
+        mu
+        / 6
+        * t32
+        * t21
+        * np.dot(np.cross(rho1_hat, rho3_hat), ((t31 + t32) * q1 + (t31 + t21) * q3))
+    )
+
 
 @jit("UniTuple(f8, 2)(f8, f8, f8, f8, f8)", nopython=True, cache=True)
 def _calcLambdas(r2_mag, t31, t32, t21, mu=MU):
@@ -49,7 +61,12 @@ def _calcLambdas(r2_mag, t31, t32, t21, mu=MU):
     lambda3 = t21 / t31 * (1 + mu / (6 * r2_mag**3) * (t31**2 - t21**2))
     return lambda1, lambda3
 
-@jit("UniTuple(f8[:], 3)(f8, f8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8)", nopython=True, cache=True)
+
+@jit(
+    "UniTuple(f8[:], 3)(f8, f8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8)",
+    nopython=True,
+    cache=True,
+)
 def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V):
     # This can be derived by taking a series of scalar products of the coplanarity condition equation
     # with cross products of unit vectors in the direction of the observer, in particular, see Chapter 9 in
@@ -63,12 +80,14 @@ def _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V):
     rho3 = rho3_mag * rho3_hat
     return rho1, rho2, rho3
 
+
 @jit("UniTuple(f8, 2)(f8, f8, f8)", nopython=True, cache=True)
 def approxLangrangeCoeffs(r_mag, dt, mu=MU):
     # Calculate the Lagrange coefficients (Gauss f and g series)
     f = 1 - (1 / 2) * mu / r_mag**3 * dt**2
     g = dt - (1 / 6) * mu / r_mag**3 * dt**2
     return f, g
+
 
 def calcGauss(r1, r2, r3, t1, t2, t3):
     """
@@ -124,16 +143,19 @@ def calcGauss(r1, r2, r3, t1, t2, t3):
     v2 = (1 / (f1 * g3 - f3 * g1)) * (-f3 * r1 + f1 * r3)
     return v2
 
-def gaussIOD(coords,
-             observation_times,
-             coords_obs,
-             velocity_method="gibbs",
-             light_time=True,
-             iterate=True,
-             iterator="state transition",
-             mu=MU,
-             max_iter=10,
-             tol=1e-15):
+
+def gaussIOD(
+    coords,
+    observation_times,
+    coords_obs,
+    velocity_method="gibbs",
+    light_time=True,
+    iterate=True,
+    iterator="state transition",
+    mu=MU,
+    max_iter=10,
+    tol=1e-15,
+):
     """
     Compute up to three intial orbits using three observations in angular equatorial
     coordinates.
@@ -178,14 +200,14 @@ def gaussIOD(coords,
         "equatorial",
         "ecliptic",
         representation_in="spherical",
-        representation_out="cartesian"
+        representation_out="cartesian",
     )
     rho1_hat = rho[0, :]
     rho2_hat = rho[1, :]
     rho3_hat = rho[2, :]
-    q1 = coords_obs[0,:]
-    q2 = coords_obs[1,:]
-    q3 = coords_obs[2,:]
+    q1 = coords_obs[0, :]
+    q2 = coords_obs[1, :]
+    q3 = coords_obs[2, :]
     q2_mag = np.linalg.norm(q2)
 
     # Make sure rhohats are unit vectors
@@ -205,23 +227,25 @@ def gaussIOD(coords,
     V = _calcV(rho1_hat, rho2_hat, rho3_hat)
     coseps2 = np.dot(q2, rho2_hat) / q2_mag
     C0 = V * t31 * q2_mag**4 / B
-    h0 = - A / B
+    h0 = -A / B
 
     if np.isnan(C0) or np.isnan(h0):
         return np.array([])
 
     # Find roots to eighth order polynomial
-    all_roots = roots([
-        C0**2,
-        0,
-        -q2_mag**2 * (h0**2 + 2 * C0 * h0 * coseps2 + C0**2),
-        0,
-        0,
-        2 * q2_mag**5 * (h0 + C0 * coseps2),
-        0,
-        0,
-        -q2_mag**8
-    ])
+    all_roots = roots(
+        [
+            C0**2,
+            0,
+            -(q2_mag**2) * (h0**2 + 2 * C0 * h0 * coseps2 + C0**2),
+            0,
+            0,
+            2 * q2_mag**5 * (h0 + C0 * coseps2),
+            0,
+            0,
+            -(q2_mag**8),
+        ]
+    )
 
     # Keep only positive real roots (which should at most be 3)
     r2_mags = np.real(all_roots[np.isreal(all_roots) & (np.real(all_roots) >= 0)])
@@ -233,14 +257,16 @@ def gaussIOD(coords,
     epochs = []
     for r2_mag in r2_mags:
         lambda1, lambda3 = _calcLambdas(r2_mag, t31, t32, t21, mu=mu)
-        rho1, rho2, rho3 = _calcRhos(lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V)
+        rho1, rho2, rho3 = _calcRhos(
+            lambda1, lambda3, q1, q2, q3, rho1_hat, rho2_hat, rho3_hat, V
+        )
 
         if np.dot(rho2, rho2_hat) < 0:
             continue
 
         # Test if we get the same rho2 as using equation 22 in Milani et al. 2008
         rho2_mag = (h0 - q2_mag**3 / r2_mag**3) * q2_mag / C0
-        #np.testing.assert_almost_equal(np.dot(rho2_mag, rho2_hat), rho2)
+        # np.testing.assert_almost_equal(np.dot(rho2_mag, rho2_hat), rho2)
 
         r1 = q1 + rho1
         r2 = q2 + rho2
@@ -253,7 +279,9 @@ def gaussIOD(coords,
         elif velocity_method == "herrick+gibbs":
             v2 = calcHerrickGibbs(r1, r2, r3, t1, t2, t3)
         else:
-            raise ValueError("velocity_method should be one of {'gauss', 'gibbs', 'herrick+gibbs'}")
+            raise ValueError(
+                "velocity_method should be one of {'gauss', 'gibbs', 'herrick+gibbs'}"
+            )
 
         epoch = t2
         orbit = np.concatenate([r2, v2])
@@ -261,13 +289,19 @@ def gaussIOD(coords,
         if iterate == True:
             if iterator == "state transition":
                 orbit = iterateStateTransition(
-                    orbit, t21, t32,
-                    q1, q2, q3,
-                    rho1, rho2, rho3,
+                    orbit,
+                    t21,
+                    t32,
+                    q1,
+                    q2,
+                    q3,
+                    rho1,
+                    rho2,
+                    rho3,
                     light_time=light_time,
                     mu=mu,
                     max_iter=max_iter,
-                    tol=tol
+                    tol=tol,
                 )
 
         if light_time == True:
@@ -278,7 +312,7 @@ def gaussIOD(coords,
         if np.linalg.norm(orbit[3:]) >= C:
             continue
 
-        if (np.linalg.norm(orbit[:3]) > 300.) or (np.linalg.norm(orbit[3:]) > 1.):
+        if (np.linalg.norm(orbit[:3]) > 300.0) or (np.linalg.norm(orbit[3:]) > 1.0):
             # Orbits that crash PYOORB:
             # 58366.84446725786 : 9.5544354809296721e+01  1.4093228616761269e+01 -6.6700146960148423e+00 -6.2618123281073522e+01 -9.4167879481188717e+00  4.4421501034359023e+0
             continue
@@ -293,12 +327,6 @@ def gaussIOD(coords,
         orbits = orbits[~np.isnan(orbits).any(axis=1)]
 
     iod_orbits = Orbits(
-        orbits,
-        Time(
-            epochs,
-            format="mjd",
-            scale="utc"
-        ),
-        orbit_type="cartesian"
+        orbits, Time(epochs, format="mjd", scale="utc"), orbit_type="cartesian"
     )
     return iod_orbits
