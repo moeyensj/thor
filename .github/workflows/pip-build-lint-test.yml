@@ -7,12 +7,12 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  build-lint-test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.9", "3.10"]
+        python-version: ["3.10"]
     defaults:
       run:
         shell: bash -l {0}
