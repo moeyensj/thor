@@ -40,6 +40,9 @@ def _readFileLog(log_file=None):
     """
     if log_file is None:
         log_file = os.path.join(os.path.dirname(__file__), "..", "data/log.yaml")
+    if not os.path.isfile(log_file):
+        with open(log_file, "w") as f:
+            yaml.dump({}, f)
     with open(log_file) as file:
         log = yaml.load(file, Loader=yaml.FullLoader)
     return log
