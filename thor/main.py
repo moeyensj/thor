@@ -549,6 +549,34 @@ def clusterAndLink(
 
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
         if parallel:
+            if alg == "dbscan_rs":
+                import thor_cluster
+                import pyarrow as pa
+
+                # Return type is RecordBatches
+                clusters, cluster_members = thor_cluster.grid_search(
+                    ids=pa.array(obs_ids, pa.string()),
+                    xs=pa.array(theta_x),
+                    ys=pa.array(theta_y),
+                    dt=pa.array(dt),
+                    vxs=pa.array(vx),
+                    vys=pa.array(vy),
+                    eps=eps,
+                    min_cluster_size=min_obs,
+                    n_threads=num_workers,
+                    alg=thor_cluster.ClusterAlgorithm.DBSCAN,
+                )
+                clusters = clusters.to_pandas()
+                cluster_members = cluster_members.to_pandas()
+                time_end_cluster = time.time()
+                logger.info("Found {} clusters.".format(len(clusters)))
+                logger.info(
+                    "Clustering and restructuring completed in {:.3f} seconds.".format(
+                        time_end_cluster - time_start_cluster
+                    )
+                )
+                return clusters, cluster_members
+                
             if parallel_backend == "ray":
                 import ray
 

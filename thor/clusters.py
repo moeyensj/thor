@@ -51,6 +51,9 @@ def find_clusters(points, eps, min_samples, alg="hotspot_2d"):
         return _find_clusters_dbscan(points, eps, min_samples)
     elif alg == "hotspot_2d":
         return _find_clusters_hotspots_2d(points, eps, min_samples)
+    elif alg == "dbscan_rs":
+        import thor_cluster
+        return thor_cluster.find_clusters(points, eps, min_samples)
     else:
         raise NotImplementedError(f"algorithm '{alg}' is not implemented")
 
