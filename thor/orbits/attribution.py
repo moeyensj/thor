@@ -6,9 +6,9 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import concurrent.futures as cf
 import logging
 import multiprocessing as mp
-import concurrent.futures as cf
 import time
 from functools import partial
 
@@ -277,9 +277,13 @@ def attributeObservations(
             p.close()
 
         elif parallel_backend == "cf":
-            with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+            with cf.ProcessPoolExecutor(
+                max_workers=num_workers, initializer=_initWorker
+            ) as executor:
                 futures = []
-                for observations_c in yieldChunks(observations, observations_chunk_size):
+                for observations_c in yieldChunks(
+                    observations, observations_chunk_size
+                ):
                     for orbit_c in orbits.split(orbits_chunk_size):
                         futures.append(
                             executor.submit(

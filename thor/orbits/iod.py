@@ -6,9 +6,9 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import concurrent.futures as cf
 import logging
 import multiprocessing as mp
-import concurrent.futures as cf
 import time
 import uuid
 from functools import partial
@@ -736,7 +736,9 @@ def initialOrbitDetermination(
                 iod_orbit_members_dfs = results[1]
 
             elif parallel_backend == "cf":
-                with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                with cf.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=_initWorker
+                ) as executor:
                     futures = []
                     for observations_i in yieldChunks(observations_split, chunk_size):
                         futures.append(

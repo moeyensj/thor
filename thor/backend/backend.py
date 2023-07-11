@@ -6,10 +6,10 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import concurrent.futures as cf
 import copy
 import logging
 import multiprocessing as mp
-import concurrent.futures as cf
 
 import pandas as pd
 
@@ -178,7 +178,9 @@ class Backend:
                 p.close()
 
             elif parallel_backend == "cf":
-                with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                with cf.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=_initWorker
+                ) as executor:
                     propagated_dfs = executor.map(
                         propagation_worker,
                         orbits_split,
@@ -187,9 +189,7 @@ class Backend:
                     )
 
             else:
-                raise ValueError(
-                    "parallel_backend must be one of {'ray', 'mp', 'cf'}."
-                )
+                raise ValueError("parallel_backend must be one of {'ray', 'mp', 'cf'}.")
 
             propagated = pd.concat(propagated_dfs)
             propagated.reset_index(drop=True, inplace=True)
@@ -272,7 +272,7 @@ class Backend:
                     p.append(ephemeris_worker_ray.remote(o, t, b))
                 ephemeris_dfs = ray.get(p)
 
-            elif parallel_backend == "mp"
+            elif parallel_backend == "mp":
                 p = mp.Pool(
                     processes=num_workers,
                     initializer=_initWorker,
@@ -289,7 +289,9 @@ class Backend:
                 p.close()
 
             elif parallel_backend == "cf":
-                with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                with cf.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=_initWorker
+                ) as executor:
                     ephemeris_dfs = executor.map(
                         ephemeris_worker,
                         orbits_split,
@@ -298,9 +300,7 @@ class Backend:
                     )
 
             else:
-                raise ValueError(
-                    "parallel_backend must be one of {'ray', 'mp', 'cf'}."
-                )
+                raise ValueError("parallel_backend must be one of {'ray', 'mp', 'cf'}.")
 
             ephemeris = pd.concat(ephemeris_dfs)
             ephemeris.reset_index(drop=True, inplace=True)
@@ -436,7 +436,9 @@ class Backend:
             p.close()
 
         elif parallel_backend == "cf":
-            with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+            with cf.ProcessPoolExecutor(
+                max_workers=num_workers, initializer=_initWorker
+            ) as executor:
                 od_orbits_dfs = executor.map(
                     orbitDetermination_worker,
                     observations_split,
@@ -444,9 +446,7 @@ class Backend:
                 )
 
         else:
-            raise ValueError(
-                "parallel_backend must be one of {'ray', 'mp', 'cf'}."
-            )
+            raise ValueError("parallel_backend must be one of {'ray', 'mp', 'cf'}.")
 
         od_orbits = pd.concat(od_orbits_dfs, ignore_index=True)
         return od_orbits

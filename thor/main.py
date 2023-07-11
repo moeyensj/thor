@@ -6,9 +6,9 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import concurrent.futures as cf
 import logging
 import multiprocessing as mp
-import concurrent.futures as cf
 import shutil
 import time
 import uuid
@@ -348,11 +348,18 @@ def rangeAndShift(
             p.close()
 
         elif parallel_backend == "cf":
-            with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+            with cf.ProcessPoolExecutor(
+                max_workers=num_workers, initializer=_initWorker
+            ) as executor:
                 futures = []
-                for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
+                for observations_i, ephemeris_i in zip(
+                    observations_split, ephemeris_split
+                ):
                     f = executor.submit(
-                        rangeAndShift_worker, observations_i, ephemeris_i, cell_area=cell_area
+                        rangeAndShift_worker,
+                        observations_i,
+                        ephemeris_i,
+                        cell_area=cell_area,
                     )
                     futures.append(f)
 
@@ -360,11 +367,8 @@ def rangeAndShift(
                 for f in cf.as_completed(futures):
                     projected_dfs.append(f.result())
 
-
         else:
-            raise ValueError(
-                "Invalid parallel_backend: {}".format(parallel_backend)
-            )
+            raise ValueError("Invalid parallel_backend: {}".format(parallel_backend))
 
     else:
         projected_dfs = []
@@ -624,7 +628,9 @@ def clusterAndLink(
                 p.close()
 
             elif parallel_backend == "cf":
-                with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                with cf.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=_initWorker
+                ) as executor:
                     futures = []
                     for vxi, vyi in zip(vxx, vyy):
                         f = executor.submit(
