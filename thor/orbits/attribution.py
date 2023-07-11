@@ -8,6 +8,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import logging
 import multiprocessing as mp
+import concurrent.futures as cf
 import time
 from functools import partial
 
@@ -193,7 +194,7 @@ def attributeObservations(
     orbits_chunk_size=10,
     observations_chunk_size=100000,
     num_jobs=1,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
     logger.info("Running observation attribution...")
     time_start = time.time()
@@ -243,7 +244,7 @@ def attributeObservations(
                 attribution_dfs_i = ray.get(p)
                 attribution_dfs += attribution_dfs_i
 
-        else:  # parallel_backend == "mp"
+        elif parallel_backend == "mp":
             p = mp.Pool(
                 processes=num_workers,
                 initializer=_initWorker,
@@ -274,6 +275,33 @@ def attributeObservations(
                 attribution_dfs += attribution_dfs_i
 
             p.close()
+
+        elif parallel_backend == "cf":
+            with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                futures = []
+                for observations_c in yieldChunks(observations, observations_chunk_size):
+                    for orbit_c in orbits.split(orbits_chunk_size):
+                        futures.append(
+                            executor.submit(
+                                attribution_worker,
+                                orbit_c,
+                                observations_c,
+                                eps=eps,
+                                include_probabilistic=include_probabilistic,
+                                backend=backend,
+                                backend_kwargs=backend_kwargs,
+                            )
+                        )
+                attribution_dfs = []
+                for future in cf.as_completed(futures):
+                    attribution_dfs.append(future.result())
+
+        else:
+            raise ValueError(
+                "Invalid parallel_backend '{}'. Must be one of 'ray', 'mp', or 'cf'.".format(
+                    parallel_backend
+                )
+            )
 
     else:
         for observations_c in yieldChunks(observations, observations_chunk_size):
@@ -323,7 +351,7 @@ def mergeAndExtendOrbits(
     orbits_chunk_size=10,
     observations_chunk_size=100000,
     num_jobs=60,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
     """
     Attempt to extend an orbit's observational arc by running
@@ -341,8 +369,8 @@ def mergeAndExtendOrbits(
     num_jobs : int, optional
         Number of jobs to launch.
     parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-        module ('mp').
+        Which parallelization backend to use {'ray', 'mp', cf}. Defaults to using Python's concurrent.futures
+        module ('cf').
     """
     time_start = time.time()
     logger.info("Running orbit extension and merging...")

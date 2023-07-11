@@ -8,6 +8,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import logging
 import multiprocessing as mp
+import concurrent.futures as cf
 import shutil
 import time
 import uuid
@@ -199,10 +200,9 @@ def rangeAndShift(
     backend="PYOORB",
     backend_kwargs={},
     num_jobs=1,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
-    """
-    Propagate the orbit to all observation times in observations. At each epoch gather a circular region of observations of size cell_area
+    """Propagate the orbit to all observation times in observations. At each epoch gather a circular region of observations of size cell_area
     centered about the location of the orbit on the sky-plane. Transform and project each of the gathered observations into
     the frame of motion of the test orbit.
 
@@ -232,14 +232,15 @@ def rangeAndShift(
     num_jobs : int, optional
         Number of jobs to launch.
     parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-        module ('mp').
+        Which parallelization backend to use {'ray', 'mp', 'cf'}.
+        Defaults to using Python's concurrent futures module ('cf').
 
     Returns
     -------
     projected_observations : {`~pandas.DataFrame`, -1}
         Observations dataframe (from cell.observations) with columns containing
         projected coordinates.
+
     """
     time_start = time.time()
     logger.info("Running range and shift...")
@@ -332,7 +333,7 @@ def rangeAndShift(
                 )
             projected_dfs = ray.get(p)
 
-        else:  # parallel_backend == "mp"
+        elif parallel_backend == "mp":
             p = mp.Pool(
                 processes=num_workers,
                 initializer=_initWorker,
@@ -345,6 +346,25 @@ def rangeAndShift(
                 ),
             )
             p.close()
+
+        elif parallel_backend == "cf":
+            with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                futures = []
+                for observations_i, ephemeris_i in zip(observations_split, ephemeris_split):
+                    f = executor.submit(
+                        rangeAndShift_worker, observations_i, ephemeris_i, cell_area=cell_area
+                    )
+                    futures.append(f)
+
+                projected_dfs = []
+                for f in cf.as_completed(futures):
+                    projected_dfs.append(f.result())
+
+
+        else:
+            raise ValueError(
+                "Invalid parallel_backend: {}".format(parallel_backend)
+            )
 
     else:
         projected_dfs = []
@@ -403,7 +423,7 @@ def clusterAndLink(
     min_arc_length=1.0,
     alg="dbscan",
     num_jobs=1,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
     """
     Cluster and link correctly projected (after ranging and shifting)
@@ -454,8 +474,8 @@ def clusterAndLink(
     num_jobs : int, optional
         Number of jobs to launch.
     parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-        module ('mp').
+        Which parallelization backend to use {'ray', 'mp', 'cf'}.
+        Defaults to using Python's concurrent futures module ('cf').
 
     Returns
     -------
@@ -585,8 +605,7 @@ def clusterAndLink(
                     )
                 possible_clusters = ray.get(p)
 
-            else:  # parallel_backend == "mp"
-
+            elif parallel_backend == "mp":
                 p = mp.Pool(processes=num_workers, initializer=_initWorker)
                 possible_clusters = p.starmap(
                     partial(
@@ -603,6 +622,34 @@ def clusterAndLink(
                     zip(vxx, vyy),
                 )
                 p.close()
+
+            elif parallel_backend == "cf":
+                with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                    futures = []
+                    for vxi, vyi in zip(vxx, vyy):
+                        f = executor.submit(
+                            clusterVelocity_worker,
+                            vxi,
+                            vyi,
+                            obs_ids=obs_ids,
+                            x=theta_x,
+                            y=theta_y,
+                            dt=dt,
+                            eps=eps,
+                            min_obs=min_obs,
+                            min_arc_length=min_arc_length,
+                            alg=alg,
+                        )
+                        futures.append(f)
+
+                    possible_clusters = []
+                    for f in cf.as_completed(futures):
+                        possible_clusters.append(f.result())
+
+            else:
+                raise ValueError(
+                    "Invalid parallel_backend: {}".format(parallel_backend)
+                )
 
         else:
             possible_clusters = []

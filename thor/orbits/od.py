@@ -9,6 +9,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 import copy
 import logging
 import multiprocessing as mp
+import concurrent.futures as cf
 import time
 from functools import partial
 
@@ -580,7 +581,7 @@ def differentialCorrection(
     backend_kwargs={},
     chunk_size=10,
     num_jobs=60,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
     """
     Differentially correct (via finite/central differencing).
@@ -592,8 +593,8 @@ def differentialCorrection(
     num_jobs : int, optional
         Number of jobs to launch.
     parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-        module ('mp').
+        Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures
+        module ('cf').
     """
     logger.info("Running differential correction...")
 
@@ -683,7 +684,7 @@ def differentialCorrection(
                 od_orbits_dfs = ray.get(od_orbits_oids)
                 od_orbit_members_dfs = ray.get(od_orbit_members_oids)
 
-            else:  # parallel_backend == "mp"
+            elif parallel_backend == "mp":
 
                 chunk_size_ = calcChunkSize(
                     num_orbits, num_workers, chunk_size, min_chunk_size=1
@@ -721,6 +722,43 @@ def differentialCorrection(
                 results = list(zip(*results))
                 od_orbits_dfs = results[0]
                 od_orbit_members_dfs = results[1]
+
+            elif parallel_backend == "cf":
+                with cf.ProcessPoolExecutor(max_workers=num_workers, initializer=_initWorker) as executor:
+                    futures = []
+                    for orbits_i, observations_i in zip(
+                            yieldChunks(orbits_split, chunk_size),
+                            yieldChunks(observations_split, chunk_size),
+                    ):
+                        futures.append(
+                            executor.submit(
+                                od_worker,
+                                orbits_i,
+                                observations_i,
+                                rchi2_threshold=rchi2_threshold,
+                                min_obs=min_obs,
+                                min_arc_length=min_arc_length,
+                                contamination_percentage=contamination_percentage,
+                                delta=delta,
+                                max_iter=max_iter,
+                                method=method,
+                                fit_epoch=fit_epoch,
+                                test_orbit=test_orbit,
+                                backend=backend,
+                                backend_kwargs=backend_kwargs,
+                            )
+                        )
+                    od_orbits_dfs = []
+                    od_orbit_members_dfs = []
+                    for future in cf.as_completed(futures):
+                        od_orbits_df, od_orbit_members_df = future.result()
+                        od_orbits_dfs.append(od_orbits_df)
+                        od_orbit_members_dfs.append(od_orbit_members_df)
+
+            else:
+                raise ValueError(
+                    f"Unknown parallel backend: {parallel_backend}. Must be one of: 'ray', 'mp', 'cf'."
+                )
 
         else:
 

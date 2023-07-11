@@ -109,7 +109,7 @@ def _checkParallel(num_jobs, parallel_backend):
     num_jobs : {None, "auto", int}
         Number of jobs to launch.
     parallel_backend : str
-        Name of backend. Should be one of {'ray', 'mp'}.
+        Name of backend. Should be one of {'ray', 'mp', 'cf'}.
 
     Returns
     -------
@@ -120,14 +120,14 @@ def _checkParallel(num_jobs, parallel_backend):
 
     Raises
     ------
-    ValueError : If parallel_backend is not one of {'ray', 'mp'}.
+    ValueError : If parallel_backend is not one of {'ray', 'mp', 'cf'}.
     """
     if isinstance(num_jobs, str) or (num_jobs is None) or (num_jobs > 1):
 
         # Check that pareallel_backend is one of the support types
-        backends = ["ray", "mp"]
+        backends = ["ray", "mp", "cf"]
         if parallel_backend not in backends:
-            err = "parallel_backend should be one of {'ray', 'mp'}"
+            err = "parallel_backend should be one of {'ray', 'mp', 'cf'}"
             raise ValueError(err)
 
         enable_parallel = True

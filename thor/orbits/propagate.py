@@ -13,7 +13,7 @@ def propagateOrbits(
     backend_kwargs={},
     chunk_size=1,
     num_jobs=1,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
     """
     Propagate orbits using desired backend.
@@ -38,8 +38,8 @@ def propagateOrbits(
     num_jobs : int, optional
         Number of jobs to launch.
     parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-        module ('mp').
+        Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures
+        module ('cf').
 
     Returns
     -------

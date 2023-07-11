@@ -44,7 +44,7 @@ def test_rangeAndShift():
             cell_area=0.1,
             backend="PYOORB",
             num_jobs=1,
-            parallel_backend="mp",
+            parallel_backend="cf",
         )
         analyis_projected_observations = projected_observations.merge(
             preprocessed_associations, how="left", on="obs_id"
@@ -109,7 +109,7 @@ def test_clusterAndLink():
             cell_area=0.1,
             backend="PYOORB",
             num_jobs=1,
-            parallel_backend="mp",
+            parallel_backend="cf",
         )
         analyis_projected_observations = projected_observations.merge(
             preprocessed_associations, how="left", on="obs_id"
