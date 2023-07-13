@@ -16,6 +16,7 @@ RUN pip install --upgrade pip pre-commit
 
 # Install openorb from conda
 RUN conda install -c defaults -c conda-forge openorb --y
+ENV OORB_DATA /opt/conda/share/openorb
 
 # Install pre-commit hooks (before THOR is installed to cache this step)
 RUN mkdir /code/
