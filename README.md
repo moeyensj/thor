@@ -2,7 +2,7 @@
 # THOR
 Tracklet-less Heliocentric Orbit Recovery  
 
-[![Python 3.7+](https://img.shields.io/badge/Python-3.7%2B-blue)](https://img.shields.io/badge/Python-3.7%2B-blue)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue)](https://img.shields.io/badge/Python-3.9%2B-blue)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![DOI](https://zenodo.org/badge/116747066.svg)](https://zenodo.org/badge/latestdoi/116747066)  
 [![docker - Build, Lint, and Test](https://github.com/moeyensj/thor/actions/workflows/docker-build-lint-test.yml/badge.svg)](https://github.com/moeyensj/thor/actions/workflows/docker-build-lint-test.yml)
