@@ -23,8 +23,8 @@ KERNEL_URLS = {
     "latest_leapseconds.tls": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/latest_leapseconds.tls",
     "pck00010.tpc": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc",
     "earth_latest_high_prec.bpc": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_latest_high_prec.bpc",
-    "earth_720101_070426.bpc": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_720101_070426.bpc",
-    "earth_200101_990628_predict.bpc": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_200101_990628_predict.bpc",
+    "earth_720101_230601.bpc": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_720101_230601.bpc",
+    "earth_200101_990825_predict.bpc": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_200101_990825_predict.bpc",
     "earth_assoc_itrf93.tf": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf",
     "de430.bsp": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de430.bsp",
     "de440.bsp": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp",
@@ -33,8 +33,8 @@ KERNEL_URLS = {
 BASEKERNELS = [
     "latest_leapseconds.tls",
     "pck00010.tpc",
-    "earth_200101_990628_predict.bpc",
-    "earth_720101_070426.bpc",
+    "earth_200101_990825_predict.bpc",
+    "earth_720101_230601.bpc",
     "earth_latest_high_prec.bpc",
 ]
 KERNELS_DE430 = BASEKERNELS + ["de430.bsp"]
@@ -49,8 +49,8 @@ def getSPICEKernels(kernels=KERNELS_DE430):
     SPICE kernels used by THOR:
     "latest_leapseconds.tls": latest_leapseconds.tls downloaded from https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk,
     "earth_latest_high_prec.bpc": earth_latest_high_prec.bpc downloaded from https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck,
-    "earth_720101_070426.bpc": earth_720101_070426.bpc downloaded from https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck,
-    "earth_200101_990628_predict.bpc": earth_070425_370426_predict.bpc downloaded from https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/
+    "earth_720101_230601.bpc": earth_720101_230601.bpc downloaded from https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck,
+    "earth_200101_990825_predict.bpc": earth_070425_370426_predict.bpc downloaded from https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/
     "de430.bsp": de430.bsp downloaded from https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/
 
     Only the leapsecond and Earth planetary constants kernels are checked for updates since these files are rather small (< 10 MB). The
@@ -64,8 +64,8 @@ def getSPICEKernels(kernels=KERNELS_DE430):
         Possible options are:
             "latest_leapseconds.tls"
             "earth_latest_high_prec.bpc"
-            "earth_720101_070426.bpc"
-            "earth_200101_990628_predict.bpc"
+            "earth_720101_230601.bpc"
+            "earth_200101_990825_predict.bpc"
             "de430.bsp" or "de440.bsp"
 
     Returns
@@ -90,8 +90,8 @@ def setupSPICE(kernels=KERNELS_DE430, force=False):
         Possible options are:
             "latest_leapseconds.tls"
             "earth_latest_high_prec.bpc"
-            "earth_720101_070426.bpc"
-            "earth_200101_990628_predict.bpc"
+            "earth_720101_230601.bpc"
+            "earth_200101_990825_predict.bpc"
             "de430.bsp" or "de440.bsp"
     force : bool, optional
         Force spiceypy to set up kernels regardless of if SPICE is already set up.
