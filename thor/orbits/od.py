@@ -14,6 +14,7 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
+from astropy import units as u
 from astropy.time import Time
 from scipy.linalg import solve
 
@@ -271,7 +272,7 @@ def od(
             # Modify component i of the orbit by a small delta
             orbit_iter_p = Orbits(
                 orbit_prev.cartesian + d[0, :6],
-                orbit_prev.epochs + d[0, 6],
+                orbit_prev.epochs + d[0, 6] * u.day,
                 orbit_type="cartesian",
             )
 
@@ -285,7 +286,7 @@ def od(
                 # Modify component i of the orbit by a small delta
                 orbit_iter_n = Orbits(
                     orbit_prev.cartesian - d[0, :6],
-                    orbit_prev.epochs - d[0, 6],
+                    orbit_prev.epochs - d[0, 6] * u.day,
                     orbit_type="cartesian",
                 )
 
@@ -384,7 +385,7 @@ def od(
 
         orbit_iter = Orbits(
             orbit_prev.cartesian + d_state,
-            orbit_prev.epochs + d_time,
+            orbit_prev.epochs + d_time * u.day,
             orbit_type="cartesian",
             ids=orbit_prev.ids,
             covariance=[covariance_matrix],

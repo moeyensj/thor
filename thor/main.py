@@ -1077,7 +1077,8 @@ def runTHOROrbit(
         )
         logger.debug("Read recovered_orbit_members.csv.")
 
-    logger.removeHandler(file_handler)
+    if out_dir is not None:
+        logger.removeHandler(file_handler)
     return recovered_orbits, recovered_orbit_members
 
 

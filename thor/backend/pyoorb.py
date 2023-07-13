@@ -1,63 +1,76 @@
+try:
+    import pyoorb as oo
+except ImportError:
+    raise ImportError("PYOORB is not installed.")
+
+import enum
 import os
 import warnings
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
-import pyoorb as oo
 from astropy.time import Time
 
-from ..utils import _checkTime
 from .backend import Backend
 
-PYOORB_CONFIG = {"dynamical_model": "N", "ephemeris_file": "de430.dat"}
+
+class OpenOrbTimescale(enum.Enum):
+    UTC = 1
+    UT1 = 2
+    TT = 3
+    TAI = 4
+
+
+class OpenOrbOrbitType(enum.Enum):
+    CARTESIAN = 1
+    COMETARY = 2
+    KEPLERIAN = 3
 
 
 class PYOORB(Backend):
-    def __init__(self, **kwargs):
-        # Make sure only the correct kwargs
-        # are passed to the constructor
-        allowed_kwargs = PYOORB_CONFIG.keys()
-        for k in kwargs:
-            if k not in allowed_kwargs:
-                raise ValueError()
+    def __init__(
+        self, *, dynamical_model: str = "N", ephemeris_file: str = "de430.dat"
+    ):
 
-        # If an allowed kwarg is missing, add the
-        # default
-        for k in allowed_kwargs:
-            if k not in kwargs:
-                kwargs[k] = PYOORB_CONFIG[k]
+        self.dynamical_model = dynamical_model
+        self.ephemeris_file = ephemeris_file
 
-        super().__init__(name="OpenOrb", **kwargs)
-
-        self.setup()
-        return
-
-    def setup(self):
-        """
-        Initialize PYOORB with the designated JPL ephemeris file.
-
-        """
-        env_var = f"THOR_PYOORB"
+        env_var = "ADAM_CORE_PYOORB_INITIALIZED"
         if env_var in os.environ.keys() and os.environ[env_var] == "True":
             pass
         else:
-            if os.environ.get("OORB_DATA") == None:
-                os.environ["OORB_DATA"] = os.path.join(
-                    os.environ["CONDA_PREFIX"], "share/openorb"
-                )
+            if os.environ.get("OORB_DATA") is None:
+                if os.environ.get("CONDA_PREFIX") is None:
+                    raise RuntimeError(
+                        "Cannot find OORB_DATA directory. Please set the OORB_DATA environment variable."
+                    )
+                else:
+                    os.environ["OORB_DATA"] = os.path.join(
+                        os.environ["CONDA_PREFIX"], "share/openorb"
+                    )
+
+            oorb_data = os.environ["OORB_DATA"]
+
             # Prepare pyoorb
-            ephfile = os.path.join(os.getenv("OORB_DATA"), self.ephemeris_file)
+            ephfile = os.path.join(oorb_data, self.ephemeris_file)
             err = oo.pyoorb.oorb_init(ephfile)
             if err == 0:
                 os.environ[env_var] = "True"
-                self.__env_var = env_var
-                self.is_setup = True
             else:
-                warnings.warn("PYOORB returned error code: {}".format(err))
+                warnings.warn(f"PYOORB returned error code: {err}")
 
         return
 
-    def _configureOrbits(self, orbits, t0, orbit_type, time_scale, magnitude, slope):
+    @staticmethod
+    def _configure_orbits(
+        orbits: np.ndarray,
+        t0: np.ndarray,
+        orbit_type: OpenOrbOrbitType,
+        time_scale: OpenOrbTimescale,
+        magnitude: Optional[Union[float, np.ndarray]] = None,
+        slope: Optional[Union[float, np.ndarray]] = None,
+    ) -> np.ndarray:
         """
         Convert an array of orbits into the format expected by PYOORB.
 
@@ -67,7 +80,7 @@ class PYOORB(Backend):
             Orbits to convert. See orbit_type for expected input format.
         t0 : `~numpy.ndarray` (N)
             Epoch in MJD at which the orbits are defined.
-        orbit_type : {'cartesian', 'keplerian', 'cometary'}, optional
+        orbit_type : OpenOrbOrbitType
             Orbital element representation of the provided orbits.
             If cartesian:
                 x : heliocentric ecliptic J2000 x position in AU
@@ -90,7 +103,7 @@ class PYOORB(Backend):
                 Omega : longitude of the ascending node in degrees
                 omega : argument of periapsis in degrees
                 T0 : time of perihelion passage in MJD
-        time_scale : {'UTC', 'UT1', 'TT', 'TAI'}, optional
+        time_scale : OpenOrbTimescale
             Time scale of the MJD epochs.
         magnitude : float or `~numpy.ndarray` (N), optional
             Absolute H-magnitude or M1 magnitude.
@@ -110,87 +123,47 @@ class PYOORB(Backend):
                 G/K1 : photometric slope parameter
         """
         orbits_ = orbits.copy()
-        if orbits_.shape == (6,):
-            num_orbits = 1
-        else:
-            num_orbits = orbits_.shape[0]
+        num_orbits = orbits_.shape[0]
 
-        if orbit_type == "cartesian":
-            orbit_type = [1 for i in range(num_orbits)]
-        elif orbit_type == "cometary":
-            orbit_type = [2 for i in range(num_orbits)]
-            H = M1
-            G = K1
-            orbits_[:, 1:5] = np.radians(orbits_[:, 1:5])
-        elif orbit_type == "keplerian":
-            orbit_type = [3 for i in range(num_orbits)]
-            orbits_[:, 1:] = np.radians(orbits_[:, 1:])
-        else:
-            raise ValueError(
-                "orbit_type should be one of {'cartesian', 'keplerian', 'cometary'}"
-            )
+        orbit_type_ = np.array([orbit_type.value for i in range(num_orbits)])
 
-        if time_scale == "UTC":
-            time_scale = [1 for i in range(num_orbits)]
-        elif time_scale == "UT1":
-            time_scale = [2 for i in range(num_orbits)]
-        elif time_scale == "TT":
-            time_scale = [3 for i in range(num_orbits)]
-        elif time_scale == "TAI":
-            time_scale = [4 for i in range(num_orbits)]
-        else:
-            raise ValueError("time_scale should be one of {'UTC', 'UT1', 'TT', 'TAI'}")
+        time_scale_ = np.array([time_scale.value for i in range(num_orbits)])
 
-        if slope is not None:
-            if not isinstance(slope, np.ndarray):
-                slope = np.array([slope for i in range(num_orbits)])
+        if isinstance(slope, (float, int)):
+            slope_ = np.array([slope for i in range(num_orbits)])
+        elif isinstance(slope, list):
+            slope_ = np.array(slope)
+        elif isinstance(slope, np.ndarray):
+            slope_ = slope
         else:
-            slope = [0.15 for i in range(num_orbits)]
+            slope_ = np.array([0.15 for i in range(num_orbits)])
 
-        if magnitude is not None:
-            if not isinstance(magnitude, np.ndarray):
-                magnitude = np.array([magnitude for i in range(num_orbits)])
+        if isinstance(magnitude, (float, int)):
+            magnitude_ = np.array([magnitude for i in range(num_orbits)])
+        elif isinstance(magnitude, list):
+            magnitude_ = np.array(magnitude)
+        elif isinstance(magnitude, np.ndarray):
+            magnitude_ = magnitude
         else:
-            magnitude = [20.0 for i in range(num_orbits)]
+            magnitude_ = np.array([20.0 for i in range(num_orbits)])
 
-        ids = [i for i in range(num_orbits)]
+        ids = np.array([i for i in range(num_orbits)])
 
-        if num_orbits > 1:
-            orbits_pyoorb = np.array(
-                np.array(
-                    [
-                        ids,
-                        *list(orbits_.T),
-                        orbit_type,
-                        t0,
-                        time_scale,
-                        magnitude,
-                        slope,
-                    ]
-                ).T,
-                dtype=np.double,
-                order="F",
-            )
-        else:
-            orbits_pyoorb = np.array(
-                [
-                    [
-                        ids[0],
-                        *list(orbits_.T),
-                        orbit_type[0],
-                        t0[0],
-                        time_scale[0],
-                        magnitude[0],
-                        slope[0],
-                    ]
-                ],
-                dtype=np.double,
-                order="F",
-            )
+        orbits_pyoorb = np.zeros((num_orbits, 12), dtype=np.double, order="F")
+        orbits_pyoorb[:, 0] = ids
+        orbits_pyoorb[:, 1:7] = orbits_
+        orbits_pyoorb[:, 7] = orbit_type_
+        orbits_pyoorb[:, 8] = t0
+        orbits_pyoorb[:, 9] = time_scale_
+        orbits_pyoorb[:, 10] = magnitude_
+        orbits_pyoorb[:, 11] = slope_
 
         return orbits_pyoorb
 
-    def _configureEpochs(self, epochs, time_scale):
+    @staticmethod
+    def _configure_epochs(
+        epochs: np.ndarray, time_scale: OpenOrbTimescale
+    ) -> np.ndarray:
         """
         Convert an array of orbits into the format expected by PYOORB.
 
@@ -198,28 +171,18 @@ class PYOORB(Backend):
         ----------
         epochs : `~numpy.ndarray` (N)
             Epoch in MJD to convert.
-        time_scale : {'UTC', 'UT1', 'TT', 'TAI'}
+        time_scale : OpenOrbTimescale
             Time scale of the MJD epochs.
 
         Returns
         -------
-        epochs_pyoorb : `~numpy.ndarray (N, 2)
+        epochs_pyoorb : `~numpy.ndarray` (N, 2)
             Epochs converted into the PYOORB format.
         """
         num_times = len(epochs)
-        if time_scale == "UTC":
-            time_scale = [1 for i in range(num_times)]
-        elif time_scale == "UT1":
-            time_scale = [2 for i in range(num_times)]
-        elif time_scale == "TT":
-            time_scale = [3 for i in range(num_times)]
-        elif time_scale == "TAI":
-            time_scale = [4 for i in range(num_times)]
-        else:
-            raise ValueError("time_scale should be one of {'UTC', 'UT1', 'TT', 'TAI'}")
-
+        time_scale_list = [time_scale.value for i in range(num_times)]
         epochs_pyoorb = np.array(
-            list(np.vstack([epochs, time_scale]).T), dtype=np.double, order="F"
+            list(np.vstack([epochs, time_scale_list]).T), dtype=np.double, order="F"
         )
         return epochs_pyoorb
 
@@ -275,17 +238,17 @@ class PYOORB(Backend):
             Orbits at new epochs.
         """
         # Convert orbits into PYOORB format
-        orbits_pyoorb = self._configureOrbits(
+        orbits_pyoorb = self._configure_orbits(
             orbits.cartesian,
             orbits.epochs.tt.mjd,
-            "cartesian",
-            "TT",
-            orbits.H,
-            orbits.G,
+            OpenOrbOrbitType.CARTESIAN,
+            OpenOrbTimescale.TT,
+            magnitude=None,
+            slope=None,
         )
 
         # Convert epochs into PYOORB format
-        epochs_pyoorb = self._configureEpochs(t1.tt.mjd, "TT")
+        epochs_pyoorb = self._configure_epochs(t1.tt.mjd, OpenOrbTimescale.TT)
 
         # Propagate orbits to each epoch and append to list
         # of new states
@@ -392,13 +355,13 @@ class PYOORB(Backend):
             Which JPL ephemeris file to use with PYOORB.
         """
         # Convert orbits into PYOORB format
-        orbits_pyoorb = self._configureOrbits(
+        orbits_pyoorb = self._configure_orbits(
             orbits.cartesian,
             orbits.epochs.tt.mjd,
-            "cartesian",
-            "TT",
-            orbits.H,
-            orbits.G,
+            OpenOrbOrbitType.CARTESIAN,
+            OpenOrbTimescale.TT,
+            magnitude=None,
+            slope=None,
         )
 
         columns = [
@@ -440,10 +403,11 @@ class PYOORB(Backend):
 
         ephemeris_dfs = []
         for observatory_code, observation_times in observers.items():
-            _checkTime(observation_times, "observation_times")
 
             # Convert epochs into PYOORB format
-            epochs_pyoorb = self._configureEpochs(observation_times.utc.mjd, "UTC")
+            epochs_pyoorb = self._configure_epochs(
+                observation_times.utc.mjd, OpenOrbTimescale.UTC
+            )
 
             # Generate ephemeris
             ephemeris, err = oo.pyoorb.oorb_ephemeris_full(
