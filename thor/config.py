@@ -17,7 +17,7 @@ CONTAMINATION_PERCENTAGE: float = 20.0
 BACKEND: str = "PYOORB"
 BACKEND_KWARGS: dict = {}
 NUM_JOBS: str = "auto"
-PARALLEL_BACKEND: str = "mp"
+PARALLEL_BACKEND: str = "cf"
 
 DEFAULT_RANGE_SHIFT_CONFIG = {
     "cell_area": 1000,
