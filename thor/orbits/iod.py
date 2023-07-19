@@ -6,6 +6,7 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import concurrent.futures as cf
 import logging
 import multiprocessing as mp
 import time
@@ -529,7 +530,7 @@ def initialOrbitDetermination(
     backend_kwargs={},
     chunk_size=1,
     num_jobs=1,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
     """
     Run initial orbit determination on linkages found in observations.
@@ -586,8 +587,7 @@ def initialOrbitDetermination(
     num_jobs : int, optional
         Number of jobs to launch.
     parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-        module ('mp').
+        Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures module ('cf').
 
     Returns
     -------
@@ -699,7 +699,7 @@ def initialOrbitDetermination(
                 iod_orbits_dfs = ray.get(iod_orbits_oids)
                 iod_orbit_members_dfs = ray.get(iod_orbit_members_oids)
 
-            else:  # parallel_backend == "mp"
+            elif parallel_backend == "mp":
 
                 chunk_size_ = calcChunkSize(
                     num_linkages, num_workers, chunk_size, min_chunk_size=1
@@ -734,6 +734,40 @@ def initialOrbitDetermination(
                 results = list(zip(*results))
                 iod_orbits_dfs = results[0]
                 iod_orbit_members_dfs = results[1]
+
+            elif parallel_backend == "cf":
+                with cf.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=_initWorker
+                ) as executor:
+                    futures = []
+                    for observations_i in yieldChunks(observations_split, chunk_size):
+                        futures.append(
+                            executor.submit(
+                                iod_worker,
+                                observations_i,
+                                observation_selection_method=observation_selection_method,
+                                rchi2_threshold=rchi2_threshold,
+                                min_obs=min_obs,
+                                min_arc_length=min_arc_length,
+                                contamination_percentage=contamination_percentage,
+                                iterate=iterate,
+                                light_time=light_time,
+                                linkage_id_col=linkage_id_col,
+                                backend=backend,
+                                backend_kwargs=backend_kwargs,
+                            )
+                        )
+
+                    iod_orbits_dfs = []
+                    iod_orbit_members_dfs = []
+                    for f in cf.as_completed(futures):
+                        iod_orbits_df, iod_orbit_members_df = f.result()
+                        iod_orbits_dfs.append(iod_orbits_df)
+                        iod_orbit_members_dfs.append(iod_orbit_members_df)
+            else:
+                raise ValueError(
+                    f"Unknown parallel backend: {parallel_backend}. Must be one of: 'ray', 'mp', 'cf'."
+                )
 
         else:
 

@@ -13,7 +13,7 @@ def generateEphemeris(
     test_orbit=None,
     chunk_size=1,
     num_jobs=1,
-    parallel_backend="mp",
+    parallel_backend="cf",
 ):
     """
     Generate ephemeris for the orbits and the given observatories.
@@ -40,8 +40,8 @@ def generateEphemeris(
     num_jobs : int, optional
         Number of jobs to launch.
     parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-        module ('mp').
+        Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures
+        module ('cf').
 
     Returns
     -------

@@ -6,6 +6,7 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import concurrent.futures as cf
 import copy
 import logging
 import multiprocessing as mp
@@ -112,7 +113,7 @@ class Backend:
         raise NotImplementedError(err)
 
     def propagateOrbits(
-        self, orbits, t1, chunk_size=100, num_jobs=1, parallel_backend="mp"
+        self, orbits, t1, chunk_size=100, num_jobs=1, parallel_backend="cf"
     ):
         """
         Propagate each orbit in orbits to each time in t1.
@@ -128,8 +129,8 @@ class Backend:
         num_jobs : int, optional
             Number of jobs to launch.
         parallel_backend : str, optional
-            Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-            module ('mp').
+            Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures
+            module ('cf').
 
         Returns
         -------
@@ -160,7 +161,7 @@ class Backend:
                     p.append(propagation_worker_ray.remote(o, t, b))
                 propagated_dfs = ray.get(p)
 
-            else:  # parallel_backend == "mp"
+            elif parallel_backend == "mp":
                 p = mp.Pool(
                     processes=num_workers,
                     initializer=_initWorker,
@@ -175,6 +176,20 @@ class Backend:
                     ),
                 )
                 p.close()
+
+            elif parallel_backend == "cf":
+                with cf.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=_initWorker
+                ) as executor:
+                    propagated_dfs = executor.map(
+                        propagation_worker,
+                        orbits_split,
+                        t1_duplicated,
+                        backend_duplicated,
+                    )
+
+            else:
+                raise ValueError("parallel_backend must be one of {'ray', 'mp', 'cf'}.")
 
             propagated = pd.concat(propagated_dfs)
             propagated.reset_index(drop=True, inplace=True)
@@ -201,7 +216,7 @@ class Backend:
         test_orbit=None,
         chunk_size=100,
         num_jobs=1,
-        parallel_backend="mp",
+        parallel_backend="cf",
     ):
         """
         Generate ephemerides for each orbit in orbits as observed by each observer
@@ -220,8 +235,8 @@ class Backend:
         num_jobs : int, optional
             Number of jobs to launch.
         parallel_backend : str, optional
-            Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-            module ('mp').
+            Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures
+            module ('cf').
 
         Returns
         -------
@@ -257,7 +272,7 @@ class Backend:
                     p.append(ephemeris_worker_ray.remote(o, t, b))
                 ephemeris_dfs = ray.get(p)
 
-            else:  # parallel_backend == "mp"
+            elif parallel_backend == "mp":
                 p = mp.Pool(
                     processes=num_workers,
                     initializer=_initWorker,
@@ -272,6 +287,20 @@ class Backend:
                     ),
                 )
                 p.close()
+
+            elif parallel_backend == "cf":
+                with cf.ProcessPoolExecutor(
+                    max_workers=num_workers, initializer=_initWorker
+                ) as executor:
+                    ephemeris_dfs = executor.map(
+                        ephemeris_worker,
+                        orbits_split,
+                        observers_duplicated,
+                        backend_duplicated,
+                    )
+
+            else:
+                raise ValueError("parallel_backend must be one of {'ray', 'mp', 'cf'}.")
 
             ephemeris = pd.concat(ephemeris_dfs)
             ephemeris.reset_index(drop=True, inplace=True)
@@ -341,7 +370,7 @@ class Backend:
         raise NotImplementedError(err)
 
     def orbitDetermination(
-        self, observations, chunk_size=10, num_jobs=1, parallel_backend="mp"
+        self, observations, chunk_size=10, num_jobs=1, parallel_backend="cf"
     ):
         """
         Run orbit determination on the input observations. These observations
@@ -360,8 +389,8 @@ class Backend:
         num_jobs : int, optional
             Number of jobs to launch.
         parallel_backend : str, optional
-            Which parallelization backend to use {'ray', 'mp'}. Defaults to using Python's multiprocessing
-            module ('mp').
+            Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's multiprocessing
+            module ('cf').
         """
         unique_objs = observations["obj_id"].unique()
         observations_split = [
@@ -391,7 +420,7 @@ class Backend:
                 od.append(orbitDetermination_worker_ray.remote(o, b))
             od_orbits_dfs = ray.get(od)
 
-        else:  # parallel_backend == "mp"
+        elif parallel_backend == "mp":
             p = mp.Pool(
                 processes=num_workers,
                 initializer=_initWorker,
@@ -405,6 +434,19 @@ class Backend:
                 ),
             )
             p.close()
+
+        elif parallel_backend == "cf":
+            with cf.ProcessPoolExecutor(
+                max_workers=num_workers, initializer=_initWorker
+            ) as executor:
+                od_orbits_dfs = executor.map(
+                    orbitDetermination_worker,
+                    observations_split,
+                    backend_duplicated,
+                )
+
+        else:
+            raise ValueError("parallel_backend must be one of {'ray', 'mp', 'cf'}.")
 
         od_orbits = pd.concat(od_orbits_dfs, ignore_index=True)
         return od_orbits
