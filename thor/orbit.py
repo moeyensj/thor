@@ -4,7 +4,8 @@ import numpy as np
 from numba import jit
 
 from .coordinates import _convertSphericalToCartesian, transformCoordinates
-from .projections import cartesianToGnomonic
+
+# from .projections import cartesianToGnomonic
 
 X_AXIS = np.array([1.0, 0.0, 0.0])
 Y_AXIS = np.array([0.0, 1.0, 0.0])
