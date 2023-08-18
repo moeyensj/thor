@@ -1,3 +1,4 @@
+adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core@main
 numpy
 numba
 pandas
