@@ -8,14 +8,9 @@ astroquery
 scipy
 scikit-learn
 healpy
-pytables
 pyyaml>=5.1
 openorb
 spiceypy
-matplotlib
-seaborn
-plotly
-ipykernel
 pytest
 pytest-cov
 pre-commit

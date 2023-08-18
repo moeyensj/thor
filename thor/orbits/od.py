@@ -19,7 +19,7 @@ from astropy import units as u
 from astropy.time import Time
 from scipy.linalg import solve
 
-from ..backend import MJOLNIR, PYOORB
+from ..backend import PYOORB
 from ..utils import (
     _checkParallel,
     _initWorker,
@@ -112,14 +112,10 @@ def od(
     backend="PYOORB",
     backend_kwargs={},
 ):
-    if backend == "MJOLNIR":
-        backend = MJOLNIR(**backend_kwargs)
-
-    elif backend == "PYOORB":
+    if backend == "PYOORB":
         backend = PYOORB(**backend_kwargs)
-
     else:
-        err = "backend should be one of 'MJOLNIR' or 'PYOORB'"
+        err = "backend should be 'PYOORB'"
         raise ValueError(err)
 
     if method not in ["central", "finite"]:

@@ -1,7 +1,7 @@
 import numpy as np
+from adam_core import dynamics
 
 from ..constants import Constants as c
-from .lagrange import applyLagrangeCoeffs, calcLagrangeCoeffs
 from .state_transition import calcStateTransitionMatrix
 
 __all__ = ["iterateStateTransition"]
@@ -100,10 +100,10 @@ def iterateStateTransition(
             # differential equation:
             #   d\chi / dt = \sqrt{mu} / r
             # and the corresponding state vector
-            lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
+            lagrange_coeffs, stumpff_coeffs, chi = dynamics.calc_lagrange_coefficients(
                 r, v, dt, mu=mu, max_iter=max_iter, tol=tol
             )
-            r_new, v_new = applyLagrangeCoeffs(r, v, *lagrange_coeffs)
+            r_new, v_new = dynamics.apply_lagrange_coefficients(r, v, *lagrange_coeffs)
 
             # Calculate the state transition matrix
             STM = calcStateTransitionMatrix(
