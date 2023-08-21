@@ -1,19 +1,13 @@
 import numpy as np
-from numba import jit
+from adam_core import dynamics
 
 from ..constants import Constants as c
-from .lagrange import applyLagrangeCoeffs, calcLagrangeCoeffs
 
 __all__ = ["calcMMatrix", "calcStateTransitionMatrix"]
 
 MU = c.MU
 
 
-@jit(
-    "f8[:,:](f8[:], f8[:], UniTuple(f8, 4), UniTuple(f8, 6), f8, f8, f8)",
-    nopython=True,
-    cache=True,
-)
 def calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     """
     Calculate the M matrix proposed by S. W. Shepperd in 1985.
@@ -115,7 +109,6 @@ def calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     return M
 
 
-@jit("f8[:,:](f8[:], f8, f8, i8, f8)", nopython=True, cache=True)
 def calcStateTransitionMatrix(
     orbit, dt, mu=0.0002959122082855911, max_iter=100, tol=1e-15
 ):
@@ -160,11 +153,11 @@ def calcStateTransitionMatrix(
     #   Here alpha is defined as 1 / a where a is the semi-major axis of the orbit
     alpha = -(v0_mag**2) / mu + 2 / r0_mag
 
-    lagrange_coeffs, stumpff_coeffs, chi = calcLagrangeCoeffs(
+    lagrange_coeffs, stumpff_coeffs, chi = dynamics.calc_lagrange_coefficients(
         r0, v0, dt, mu=mu, max_iter=max_iter, tol=tol
     )
     f, g, f_dot, g_dot = lagrange_coeffs
-    r1, v1 = applyLagrangeCoeffs(r0, v0, *lagrange_coeffs)
+    r1, v1 = dynamics.apply_lagrange_coefficients(r0, v0, *lagrange_coeffs)
     M = calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=mu)
 
     # Construct the 3 x 2 state matrices with the position vector

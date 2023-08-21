@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from ..backend import MJOLNIR, PYOORB
+from ..backend import PYOORB
 from ..utils import (
     _checkParallel,
     _initWorker,
@@ -290,20 +290,14 @@ def iod(
             format="mjd",
         )
 
-    if backend == "MJOLNIR":
-        backend_kwargs["light_time"] = light_time
-
-        backend = MJOLNIR(**backend_kwargs)
-        # observers = observations[[obs_code_col, time_col, obs_x_col, obs_y_col, obs_z_col]]
-
-    elif backend == "PYOORB":
+    if backend == "PYOORB":
         if light_time == False:
             err = "PYOORB does not support turning light time correction off."
             raise ValueError(err)
 
         backend = PYOORB(**backend_kwargs)
     else:
-        err = "backend should be one of 'MJOLNIR' or 'PYOORB'"
+        err = "backend should be 'PYOORB'"
         raise ValueError(err)
 
     chi2_sol = 1e10
