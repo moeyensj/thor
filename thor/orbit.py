@@ -1,12 +1,15 @@
 import uuid
 from typing import Optional, TypeVar, Union
 
+import numpy as np
 import quivr as qv
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
     KeplerianCoordinates,
+    OriginCodes,
     SphericalCoordinates,
+    transform_coordinates,
 )
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
@@ -129,3 +132,57 @@ class TestOrbit:
         return propagator.generate_ephemeris(
             self.orbit, observers, max_processes=max_processes, chunk_size=1
         )
+
+
+def assume_heliocentric_distance(
+    r_mag: float, coords: SphericalCoordinates, origin_coords: CartesianCoordinates
+) -> SphericalCoordinates:
+    """
+    Given a heliocentric distance, for all coordinates that do not have a topocentric distance defined (rho), calculate
+    the topocentric distance assuming the coordinates are located at the given heliocentric distance.
+
+    Parameters
+    ----------
+    r_mag : float
+        Heliocentric distance to assume for the coordinates with missing topocentric distance. This is
+        typically the same distance as the heliocentric distance of test orbit at the time
+        of the coordinates.
+    coords : `~adam_core.coordinates.spherical.SphericalCoordinates`
+        Coordinates to assume the heliocentric distance for.
+    origin_coords : `~adam_core.coordinates.cartesian.CartesianCoordinates`
+        Heliocentric coordinates of the origin of the topocentric coordinates.
+
+    Returns
+    -------
+    coords : `~adam_core.coordinates.spherical.SphericalCoordinates`
+        Coordinates with the missing topocentric distance replaced with the calculated topocentric distance.
+    """
+    assert len(origin_coords) == 1
+    assert np.all(origin_coords.origin == OriginCodes.SUN)
+
+    # Extract the topocentric distance and topocentric radial velocity from the coordinates
+    rho = coords.rho.to_numpy(zero_copy_only=False)
+    vrho = coords.vrho.to_numpy(zero_copy_only=False)
+
+    # Transform the coordinates to the ecliptic frame by assuming they lie on a unit sphere
+    # (this assumption will only be applied to coordinates with missing rho values)
+    coords_eq_unit = coords.to_unit_sphere(only_missing=True)
+    coords_ec = transform_coordinates(
+        coords_eq_unit, SphericalCoordinates, frame_out="ecliptic"
+    )
+
+    # Transform the coordinates to cartesian and calculate the unit vectors pointing
+    # from the origin to the coordinates
+    coords_ec_xyz = coords_ec.to_cartesian()
+    unit_vectors = coords_ec_xyz.r_hat
+
+    # Calculate the topocentric distance such that the heliocentric distance to the coordinate
+    # is r_mag
+    dotprod = np.sum(unit_vectors * origin_coords.r, axis=1)
+    delta = -dotprod + np.sqrt(dotprod**2 + r_mag**2 - origin_coords.r_mag**2)
+
+    # Where rho was not defined, replace it with the calculated topocentric distance
+    coords_ec = coords_ec.set_column("rho", np.where(np.isnan(rho), delta, rho))
+    coords_ec = coords_ec.set_column("vrho", vrho)
+
+    return coords_ec
