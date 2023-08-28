@@ -2,18 +2,24 @@ import uuid
 from typing import Optional, TypeVar, Union
 
 import numpy as np
+import pyarrow as pa
 import quivr as qv
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
+    CoordinateCovariances,
     KeplerianCoordinates,
+    Origin,
     OriginCodes,
     SphericalCoordinates,
     transform_coordinates,
 )
+from adam_core.observations.detections import PointSourceDetections
+from adam_core.observations.exposures import Exposures
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
-from adam_core.propagator import PYOORB
+from adam_core.propagator import PYOORB, Propagator
+from astropy.time import Time
 
 CoordinateType = TypeVar(
     "CoordinateType",
@@ -24,6 +30,13 @@ CoordinateType = TypeVar(
         CometaryCoordinates,
     ],
 )
+
+
+class RangedPointSourceDetections(qv.Table):
+
+    id = qv.StringColumn()
+    exposure_id = qv.StringColumn()
+    coordinates = SphericalCoordinates.as_column()
 
 
 class TestOrbit:
@@ -85,7 +98,12 @@ class TestOrbit:
     def orbit(self):
         return self._orbit
 
-    def propagate(self, times, propagator=PYOORB(), max_processes=1) -> Orbits:
+    def propagate(
+        self,
+        times: Time,
+        propagator: Propagator = PYOORB(),
+        max_processes: Optional[int] = 1,
+    ) -> Orbits:
         """
         Propagate this test orbit to the given times.
 
@@ -108,7 +126,10 @@ class TestOrbit:
         )
 
     def generate_ephemeris(
-        self, observers, propagator=PYOORB(), max_processes=1
+        self,
+        observers: Observers,
+        propagator: Propagator = PYOORB(),
+        max_processes: Optional[int] = 1,
     ) -> qv.MultiKeyLinkage[Ephemeris, Observers]:
         """
         Generate ephemeris for this test orbit at the given observers.
@@ -132,6 +153,96 @@ class TestOrbit:
         return propagator.generate_ephemeris(
             self.orbit, observers, max_processes=max_processes, chunk_size=1
         )
+
+    def range_observations(
+        self,
+        observations: qv.Linkage[PointSourceDetections, Exposures],
+        max_processes: Optional[int] = 1,
+    ) -> RangedPointSourceDetections:
+        """
+        Given a set of observations, propagate this test orbit to the times of the observations and calculate the
+        topocentric distance (range) assuming they lie at the same heliocentric distance as the test orbit.
+
+        Parameters
+        ----------
+        observations : qv.Linkage[PointSourceDetections, Exposures]
+            Observations to range.
+        max_processes : int, optional
+            Number of processes to use to propagate the orbit. Defaults to 1.
+
+        Returns
+        -------
+        ranged_point_source_detections : `~thor.orbit.RangedPointSourceDetections`
+            The ranged detections.
+        """
+        exposures = observations.right_table
+        ephemeris = self.generate_ephemeris(
+            exposures.observers(), max_processes=max_processes
+        )
+        # Get the light-time corrected state vector: the state vector
+        # at the time where the light reflected/emitted from the object
+        # would have reached the observer.
+        # We will use this state vector to get the heliocentric distance of
+        # the object at the time of the exposure.
+        # TODO: We could use other adam_core functionality to calculate this if need
+        # be and we may need to if we plan on mapping covariances.
+        propagated_orbit = ephemeris.left_table.aberrated_coordinates
+
+        # TODO: We could investigate using concurrent futures here to parallelize
+        # this loop
+        rpsds = []
+        for propagated_orbit_i, exposure_i in zip(propagated_orbit, exposures):
+
+            # Select the detections that belong to this exposure
+            detections_i = observations.select_left(exposure_i.id[0])
+
+            # Get the heliocentric distance of the object at the time of the exposure
+            r_mag = propagated_orbit_i.r_mag[0]
+
+            # Get the observer's heliocentric coordinates
+            observer_i = exposure_i.observers()
+
+            # Create an array of observatory codes for the detections
+            num_detections = len(detections_i)
+            observatory_codes = np.repeat(
+                exposure_i.observatory_code[0].as_py(), num_detections
+            )
+
+            # The following can be replaced with:
+            # coords = detections_i.to_spherical(observatory_codes)
+            # Start replacement:
+            sigma_data = np.vstack(
+                [
+                    pa.nulls(num_detections, pa.float64()),
+                    detections_i.ra_sigma.to_numpy(zero_copy_only=False),
+                    detections_i.dec_sigma.to_numpy(zero_copy_only=False),
+                    pa.nulls(num_detections, pa.float64()),
+                    pa.nulls(num_detections, pa.float64()),
+                    pa.nulls(num_detections, pa.float64()),
+                ]
+            ).T
+            coords = SphericalCoordinates.from_kwargs(
+                lon=detections_i.ra,
+                lat=detections_i.dec,
+                time=detections_i.time,
+                covariance=CoordinateCovariances.from_sigmas(sigma_data),
+                origin=Origin.from_kwargs(code=observatory_codes),
+                frame="equatorial",
+            )
+            # End replacement (only once
+            # https://github.com/B612-Asteroid-Institute/adam_core/pull/45 is merged)
+
+            rpsds.append(
+                RangedPointSourceDetections.from_kwargs(
+                    id=detections_i.id,
+                    exposure_id=detections_i.exposure_id,
+                    coordinates=assume_heliocentric_distance(
+                        r_mag, coords, observer_i.coordinates
+                    ),
+                )
+            )
+
+        return qv.concatenate(rpsds)
 
 
 def assume_heliocentric_distance(
