@@ -97,7 +97,29 @@ def fixed_observations(fixed_detections, fixed_exposures):
     return observation_source.Observations(fixed_detections, fixed_exposures)
 
 
-def test_fixed_radius_observation_source(fixed_test_orbit, fixed_observations):
+def test_observation_fixtures(fixed_test_orbit, fixed_observations):
     assert len(fixed_test_orbit.orbit) == 1
     assert len(fixed_observations.exposures) == 5
     assert len(fixed_observations.detections) == 100 * 100 * 5
+
+
+def test_static_observation_source(fixed_test_orbit, fixed_observations):
+    sos = observation_source.StaticObservationSource(observations=fixed_observations)
+    have = sos.gather_observations(fixed_test_orbit)
+
+    assert have == fixed_observations
+
+
+def test_fixed_radius_observation_source(fixed_test_orbit, fixed_observations):
+    fos = observation_source.FixedRadiusObservationSource(
+        radius=0.5,
+        all_observations=fixed_observations,
+    )
+    have = fos.gather_observations(fixed_test_orbit)
+    assert len(have.exposures) == 5
+    assert have.exposures == fixed_observations.exposures
+    assert len(have.detections) < len(fixed_observations.detections)
+
+    # Approximately pi/4 (~0.78) of the detections should be in the 0.5 degree
+    # radius
+    assert len(have.detections) > 0.75 * len(fixed_observations.detections)
