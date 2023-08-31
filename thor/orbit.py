@@ -78,8 +78,7 @@ class TestOrbit:
         else:
             self.orbit_id = uuid.uuid4().hex
 
-        if object_id is not None:
-            self.object_id = object_id
+        self.object_id = object_id
 
         self._orbit = Orbits.from_kwargs(
             orbit_id=[self.orbit_id],
