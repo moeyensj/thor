@@ -122,7 +122,9 @@ def _within_radius(
 
     num1 = cos_det_lat * sin_dist_lon
     num2 = cos_center_lat * sin_det_lat - sin_center_lat * cos_det_lat * cos_dist_lon
-    denominator = sin_center_lat * sin_det_lat + cos_center_lat * cos_det_lat * cos_dist_lon
+    denominator = (
+        sin_center_lat * sin_det_lat + cos_center_lat * cos_det_lat * cos_dist_lon
+    )
 
     distances = np.arctan2(np.hypot(num1, num2), denominator)
 
