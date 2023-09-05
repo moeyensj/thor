@@ -118,6 +118,7 @@ def test_fixed_radius_observation_source(fixed_test_orbit, fixed_observations):
     have = fos.gather_observations(fixed_test_orbit)
     assert len(have.exposures) == 5
     assert have.exposures == fixed_observations.exposures
-    assert len(have.detections) < len(fixed_observations.detections)
-    assert len(have.detections) > 0.75 * len(fixed_observations.detections)
+    # Should be about pi/4 fraction of the detections (0.785
+    assert len(have.detections) < 0.80 * len(fixed_observations.detections)
+    assert len(have.detections) > 0.76 * len(fixed_observations.detections)
 
