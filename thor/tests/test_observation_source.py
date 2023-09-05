@@ -17,7 +17,7 @@ def fixed_test_orbit():
         y=[0],
         z=[0],
         vx=[0],
-        vy=[2*np.pi/365.25],
+        vy=[2 * np.pi / 365.25],
         vz=[0],
         time=coordinates.Times.from_astropy(astropy.time.Time("2020-01-01T00:00:00")),
         origin=coordinates.Origin.from_kwargs(code=["SUN"]),
@@ -118,6 +118,6 @@ def test_fixed_radius_observation_source(fixed_test_orbit, fixed_observations):
     have = fos.gather_observations(fixed_test_orbit)
     assert len(have.exposures) == 5
     assert have.exposures == fixed_observations.exposures
-    assert len(have.detections) < len(fixed_observations.detections)
-    assert len(have.detections) > 0.75 * len(fixed_observations.detections)
-
+    # Should be about pi/4 fraction of the detections (0.785
+    assert len(have.detections) < 0.80 * len(fixed_observations.detections)
+    assert len(have.detections) > 0.76 * len(fixed_observations.detections)

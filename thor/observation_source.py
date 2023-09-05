@@ -101,22 +101,34 @@ def _within_radius(
     radius: float,
 ) -> detections.PointSourceDetections:
     """
-    Return the detections within a given radius of a given ra and dec
-    """
-    sdlon = np.sin(detections.ra.to_numpy() - ra)
-    cdlon = np.cos(detections.ra.to_numpy() - ra)
-    slat1 = np.sin(dec)
-    slat2 = np.sin(detections.dec.to_numpy())
-    clat1 = np.cos(dec)
-    clat2 = np.cos(detections.dec.to_numpy())
+    Return the detections within a given radius of a given ra and dec.
 
-    num1 = clat2 * sdlon
-    num2 = clat1 * slat2 - slat1 * clat2 * cdlon
-    denominator = slat1 * slat2 + clat1 * clat2 * cdlon
+    ra, dec, and radius should be in degrees.
+    """
+    det_ra = np.deg2rad(detections.ra.to_numpy())
+    det_dec = np.deg2rad(detections.dec.to_numpy())
+
+    center_ra = np.deg2rad(ra)
+    center_dec = np.deg2rad(dec)
+
+    dist_lon = det_ra - center_ra
+    sin_dist_lon = np.sin(dist_lon)
+    cos_dist_lon = np.cos(dist_lon)
+
+    sin_center_lat = np.sin(center_dec)
+    sin_det_lat = np.sin(det_dec)
+    cos_center_lat = np.cos(center_dec)
+    cos_det_lat = np.cos(det_dec)
+
+    num1 = cos_det_lat * sin_dist_lon
+    num2 = cos_center_lat * sin_det_lat - sin_center_lat * cos_det_lat * cos_dist_lon
+    denominator = (
+        sin_center_lat * sin_det_lat + cos_center_lat * cos_det_lat * cos_dist_lon
+    )
 
     distances = np.arctan2(np.hypot(num1, num2), denominator)
 
-    mask = distances <= radius
+    mask = distances <= np.deg2rad(radius)
     return detections.apply_mask(mask)
 
 
