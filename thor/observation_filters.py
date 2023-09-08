@@ -40,6 +40,7 @@ class ObservationFilter(abc.ABC):
     a subset of those observations.
 
     """
+
     @abc.abstractmethod
     def apply(self, observations: Observations) -> Observations:
         ...
@@ -127,5 +128,3 @@ def _within_radius(
 
     mask = distances <= np.deg2rad(radius)
     return detections.apply_mask(mask)
-
-
