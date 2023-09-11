@@ -1,6 +1,6 @@
 import warnings
 
-from ..backend import FINDORB, MJOLNIR, PYOORB, Backend
+from ..backend import FINDORB, PYOORB, Backend
 from ..utils import _checkTime
 
 __all__ = ["propagateOrbits"]
@@ -9,7 +9,7 @@ __all__ = ["propagateOrbits"]
 def propagateOrbits(
     orbits,
     t1,
-    backend="MJOLNIR",
+    backend="PYOORB",
     backend_kwargs={},
     chunk_size=1,
     num_jobs=1,
@@ -28,7 +28,7 @@ def propagateOrbits(
         expressed in heliocentric keplerian, cometary or cartesian elements.
     t1 : `~astropy.time.core.Time` (M)
         Epochs to which to propagate each orbit.
-    backend : {'MJOLNIR', 'PYOORB', 'FINDORB'}, optional
+    backend : {'PYOORB', 'FINDORB'}, optional
         Which backend to use.
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
@@ -49,10 +49,7 @@ def propagateOrbits(
     # Check that t1 is an astropy.time objects
     _checkTime(t1, "t1")
 
-    if backend == "MJOLNIR":
-        backend = MJOLNIR(**backend_kwargs)
-
-    elif backend == "PYOORB":
+    if backend == "PYOORB":
         backend = PYOORB(**backend_kwargs)
 
     elif backend == "FINDORB":
@@ -67,7 +64,7 @@ def propagateOrbits(
             )
 
     else:
-        err = "backend should be one of 'MJOLNIR', 'PYOORB', 'FINDORB'"
+        err = "backend should be one of 'PYOORB', 'FINDORB'"
         raise ValueError(err)
 
     propagated = backend.propagateOrbits(

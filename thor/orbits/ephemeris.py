@@ -1,6 +1,6 @@
 import warnings
 
-from ..backend import FINDORB, MJOLNIR, PYOORB, Backend
+from ..backend import FINDORB, PYOORB, Backend
 
 __all__ = ["generateEphemeris"]
 
@@ -8,7 +8,7 @@ __all__ = ["generateEphemeris"]
 def generateEphemeris(
     orbits,
     observers,
-    backend="MJOLNIR",
+    backend="PYOORB",
     backend_kwargs={},
     test_orbit=None,
     chunk_size=1,
@@ -30,7 +30,7 @@ def generateEphemeris(
         The expected data frame columns are obs_x, obs_y, obs_y and optionally the velocity columns obs_vx, obs_vy, obs_vz.
         If no velocities are not correctly given, then sky-plane velocities will all be zero.
         (See: `~thor.observatories.getObserverState`)
-    backend : {'MJOLNIR', 'PYOORB'}, optional
+    backend : {'PYOORB'}, optional
         Which backend to use.
     backend_kwargs : dict, optional
         Settings and additional parameters to pass to selected
@@ -48,10 +48,7 @@ def generateEphemeris(
     ephemeris : `~pandas.DataFrame` (N x M, 21) or (N x M, 18)
         A DataFrame containing the generated ephemeris.
     """
-    if backend == "MJOLNIR":
-        backend = MJOLNIR(**backend_kwargs)
-
-    elif backend == "PYOORB":
+    if backend == "PYOORB":
         backend = PYOORB(**backend_kwargs)
 
     elif backend == "FINDORB":

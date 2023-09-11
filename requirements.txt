@@ -1,3 +1,4 @@
+adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core@main
 numpy
 numba
 pandas
@@ -7,14 +8,9 @@ astroquery
 scipy
 scikit-learn
 healpy
-pytables
 pyyaml>=5.1
 openorb
 spiceypy
-matplotlib
-seaborn
-plotly
-ipykernel
 pytest
 pytest-cov
 pre-commit

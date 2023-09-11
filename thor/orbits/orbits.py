@@ -8,7 +8,6 @@ from astropy import units as u
 from astropy.time import Time
 
 from ..utils import _checkTime, getHorizonsVectors
-from .kepler import convertOrbitalElements
 
 CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
 CARTESIAN_UNITS = [u.au, u.au, u.au, u.au / u.d, u.au / u.d, u.au / u.d]
@@ -288,27 +287,13 @@ class Orbits:
     @property
     def cartesian(self):
         if not isinstance(self._cartesian, np.ndarray):
-            logger.debug(
-                "Cartesian elements are not defined. Converting Keplerian elements to Cartesian."
-            )
-            self._cartesian = convertOrbitalElements(
-                self._keplerian,
-                "keplerian",
-                "cartesian",
-            )
+            logger.debug("Cartesian elements are not defined.")
         return self._cartesian
 
     @property
     def keplerian(self):
         if not isinstance(self._keplerian, np.ndarray):
-            logger.debug(
-                "Keplerian elements are not defined. Converting Cartesian elements to Keplerian."
-            )
-            self._keplerian = convertOrbitalElements(
-                self._cartesian,
-                "cartesian",
-                "keplerian",
-            )
+            logger.debug("Keplerian elements are not defined.")
         return self._keplerian
 
     @property

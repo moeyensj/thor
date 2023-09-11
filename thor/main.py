@@ -22,7 +22,6 @@ from astropy.time import Time
 from .cell import Cell
 from .clusters import filter_clusters_by_length, find_clusters
 from .config import Config, Configuration
-from .observatories import getObserverState
 from .orbit import TestOrbit
 from .orbits import (
     Orbits,

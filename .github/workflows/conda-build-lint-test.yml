@@ -2,9 +2,9 @@ name: conda - Build, Lint, and Test
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, "v*"]
   pull_request:
-    branches: [ main ]
+    branches: [ main, "v*"]
 
 jobs:
   build-lint-test:
