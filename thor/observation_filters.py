@@ -35,37 +35,34 @@ class Observations:
         )
 
 
-class ObservationSource(abc.ABC):
-    """An ObservationSource is a source of observations for a given test orbit.
-
-    It has one method, gather_observations, which takes a test orbit
-    and returns a collection of Observations.
+class ObservationFilter(abc.ABC):
+    """An ObservationFilter is reduces a collection of observations to
+    a subset of those observations.
 
     """
-
     @abc.abstractmethod
-    def gather_observations(self, test_orbit: orbit.TestOrbit) -> Observations:
-        pass
+    def apply(self, observations: Observations) -> Observations:
+        ...
 
 
-class FixedRadiusObservationSource(ObservationSource):
-    """A FixedRadiusObservationSource is an ObservationSource that
+class TestOrbitRadiusObservationFilter(ObservationFilter):
+    """A TestOrbitRadiusObservationFilter is an ObservationFilter that
     gathers observations within a fixed radius of the test orbit's
     ephemeris at each exposure time within a collection of exposures.
 
     """
 
-    def __init__(self, radius: float, all_observations: Observations):
+    def __init__(self, radius: float, test_orbit: orbit.TestOrbit):
         """
         radius: The radius of the cell in degrees
         """
         self.radius = radius
-        self.all_observations = all_observations
+        self.test_orbit = test_orbit
 
-    def gather_observations(self, test_orbit: orbit.TestOrbit) -> Observations:
+    def apply(self, observations: Observations) -> Observations:
         # Generate an ephemeris for every observer time/location in the dataset
-        observers = self.all_observations.exposures.observers()
-        ephems_linkage = test_orbit.generate_ephemeris(
+        observers = observations.exposures.observers()
+        ephems_linkage = self.test_orbit.generate_ephemeris(
             observers=observers,
         )
 
@@ -73,7 +70,7 @@ class FixedRadiusObservationSource(ObservationSource):
         matching_exposures = exposures.Exposures.empty()
 
         # Build a mapping of exposure_id to ephemeris ra and dec
-        for exposure in self.all_observations.exposures:
+        for exposure in observations.exposures:
             key = ephems_linkage.key(
                 code=exposure.observatory_code[0].as_py(),
                 mjd=exposure.midpoint().mjd()[0].as_py(),
@@ -84,7 +81,7 @@ class FixedRadiusObservationSource(ObservationSource):
             ephem_ra = ephem.coordinates.lon[0].as_py()
             ephem_dec = ephem.coordinates.lat[0].as_py()
 
-            exp_dets = self.all_observations.linkage.select_left(exposure.id[0])
+            exp_dets = observations.linkage.select_left(exposure.id[0])
 
             nearby_dets = _within_radius(exp_dets, ephem_ra, ephem_dec, self.radius)
             if len(nearby_dets) > 0:
@@ -132,13 +129,3 @@ def _within_radius(
     return detections.apply_mask(mask)
 
 
-class StaticObservationSource(ObservationSource):
-    """A StaticObservationSource is an ObservationSource that
-    returns a fixed collection of observations for any test orbit.
-    """
-
-    def __init__(self, observations: Observations):
-        self.observations = observations
-
-    def gather_observations(self, test_orbit: orbit.TestOrbit) -> Observations:
-        return self.observations
