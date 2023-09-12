@@ -2,9 +2,9 @@ name: pip - Build Lint Test and Coverage
 
 on:
   push:
-    branches: [ main, "v*"]
+    branches: [ main ]
   pull_request:
-    branches: [ main, "v*"]
+    branches: [ main ]
 
 jobs:
   build-lint-test-coverage:
