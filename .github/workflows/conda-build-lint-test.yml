@@ -1,4 +1,4 @@
-name: conda - Build, Lint, and Test
+name: conda - Build Lint and Test
 
 on:
   push:
