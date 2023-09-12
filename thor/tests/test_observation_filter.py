@@ -6,7 +6,7 @@ import quivr as qv
 from adam_core import coordinates, observers, propagator
 from adam_core.observations import detections, exposures
 
-from .. import observation_source, orbit
+from .. import observation_filters, orbit
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def fixed_detections(fixed_ephems, fixed_exposures):
 
 @pytest.fixture
 def fixed_observations(fixed_detections, fixed_exposures):
-    return observation_source.Observations(fixed_detections, fixed_exposures)
+    return observation_filters.Observations(fixed_detections, fixed_exposures)
 
 
 def test_observation_fixtures(fixed_test_orbit, fixed_observations):
@@ -103,19 +103,12 @@ def test_observation_fixtures(fixed_test_orbit, fixed_observations):
     assert len(fixed_observations.detections) == 100 * 100 * 5
 
 
-def test_static_observation_source(fixed_test_orbit, fixed_observations):
-    sos = observation_source.StaticObservationSource(observations=fixed_observations)
-    have = sos.gather_observations(fixed_test_orbit)
-
-    assert have == fixed_observations
-
-
-def test_fixed_radius_observation_source(fixed_test_orbit, fixed_observations):
-    fos = observation_source.FixedRadiusObservationSource(
+def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
+    fos = observation_filters.TestOrbitRadiusObservationFilter(
         radius=0.5,
-        all_observations=fixed_observations,
+        test_orbit=fixed_test_orbit,
     )
-    have = fos.gather_observations(fixed_test_orbit)
+    have = fos.apply(fixed_observations)
     assert len(have.exposures) == 5
     assert have.exposures == fixed_observations.exposures
     # Should be about pi/4 fraction of the detections (0.785
