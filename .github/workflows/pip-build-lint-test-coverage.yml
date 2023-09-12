@@ -1,4 +1,4 @@
-name: pip - Build, Lint, Test, and Coverage
+name: pip - Build Lint Test and Coverage
 
 on:
   push:
