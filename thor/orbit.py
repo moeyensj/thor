@@ -3,6 +3,7 @@ from typing import Optional, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
 import quivr as qv
 from adam_core.coordinates import (
     CartesianCoordinates,
@@ -241,7 +242,18 @@ class TestOrbit:
                 )
             )
 
-        return qv.concatenate(rpsds)
+        # Sort ranged detections by time
+        ranged_detections = qv.concatenate(rpsds)
+        table = pa.table(
+            [ranged_detections.coordinates.time.jd()],
+            names=["time_jd"],
+        )
+
+        indices = pc.sort_indices(
+            table,
+            (("time_jd", "ascending"),),
+        )
+        return ranged_detections.take(indices)
 
 
 def assume_heliocentric_distance(
