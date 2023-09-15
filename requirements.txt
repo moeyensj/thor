@@ -1,5 +1,6 @@
 adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core@main
 numpy
+pyarrow>=13.0.0
 numba
 pandas
 difi

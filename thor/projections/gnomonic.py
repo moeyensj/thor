@@ -33,7 +33,7 @@ class GnomonicCoordinates(qv.Table):
     def values(self) -> np.ndarray:
         return np.array(
             self.table.select(["theta_x", "theta_y", "vtheta_x", "vtheta_y"])
-        ).T
+        )
 
     @property
     def sigma_theta_x(self) -> np.ndarray:
