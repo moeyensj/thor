@@ -1,11 +1,10 @@
 import abc
-from typing import TypeAlias
 
 import numpy as np
 import quivr as qv
-from adam_core.observations import detections, exposures
+from adam_core.observations import Exposures, PointSourceDetections
 
-from . import orbit
+from .orbit import TestOrbit
 
 
 class Observations:
@@ -16,14 +15,14 @@ class Observations:
     exposures.
     """
 
-    detections: detections.PointSourceDetections
-    exposures: exposures.Exposures
-    linkage: qv.Linkage[detections.PointSourceDetections, exposures.Exposures]
+    detections: PointSourceDetections
+    exposures: Exposures
+    linkage: qv.Linkage[PointSourceDetections, Exposures]
 
     def __init__(
         self,
-        detections: detections.PointSourceDetections,
-        exposures: exposures.Exposures,
+        detections: PointSourceDetections,
+        exposures: Exposures,
     ):
         self.detections = detections
         self.exposures = exposures
@@ -53,7 +52,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
     """
 
-    def __init__(self, radius: float, test_orbit: orbit.TestOrbit):
+    def __init__(self, radius: float, test_orbit: TestOrbit):
         """
         radius: The radius of the cell in degrees
         """
@@ -67,8 +66,8 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
             observers=observers,
         )
 
-        matching_detections = detections.PointSourceDetections.empty()
-        matching_exposures = exposures.Exposures.empty()
+        matching_detections = PointSourceDetections.empty()
+        matching_exposures = Exposures.empty()
 
         # Build a mapping of exposure_id to ephemeris ra and dec
         for exposure in observations.exposures:
@@ -93,11 +92,11 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
 
 def _within_radius(
-    detections: detections.PointSourceDetections,
+    detections: PointSourceDetections,
     ra: float,
     dec: float,
     radius: float,
-) -> detections.PointSourceDetections:
+) -> PointSourceDetections:
     """
     Return the detections within a given radius of a given ra and dec.
 
