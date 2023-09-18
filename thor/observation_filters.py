@@ -1,8 +1,12 @@
 import abc
 
 import numpy as np
+import pandas as pd
+import pyarrow as pa
 import quivr as qv
 from adam_core.observations import Exposures, PointSourceDetections
+from adam_core.observers import Observers
+from astropy.time import Time
 
 from .orbit import TestOrbit
 
@@ -33,6 +37,78 @@ class Observations:
             right_keys=exposures.id,
         )
 
+    def observers(self, exposures_only: bool = False) -> Observers:
+        """
+        Get the Observers associated with these observations. By default, this will return
+        observers for each unique detection time and observatory code. However, if exposures_only
+        is set to True, then only the observers for each exposure midpoint will be returned.
+
+        Parameters
+        ----------
+        exposures_only : bool, optional
+            If True, only return the observers for each exposure midpoint, by default False.
+
+        Returns
+        -------
+        observers : `~adam_core.observers.observers.Observers`
+            Observer for each unique detection time and observatory code, or each exposure midpoint.
+        """
+        if exposures_only:
+            return self.exposures.observers()
+
+        else:
+            # This could be changed / improved with additional functionality in quivr:
+            # Features needed:
+            # 1. A way to join two tables (or we simply add observatory code to each detection)
+            # 2. A method to drop row duplicates considering a user-defined set of column names
+            # 3. By extension of 2, having a .unique() attached to a table would be nice
+
+            # Get the time scale
+            scale = self.detections.time.scale
+
+            # Create a table of exposure IDs and times for each detection
+            detection_times = pa.table(
+                [self.detections.exposure_id, self.detections.time.mjd()],
+                names=["exposure_id", "time_mjd"],
+            )
+
+            # Create a table of exposure IDs and observatory codes for each exposure
+            exposure_obscodes = pa.table(
+                [self.exposures.id, self.exposures.observatory_code],
+                names=["exposure_id", "observatory_code"],
+            )
+
+            # Merge the two tables on exposure ID (we need to get each individual detection's observatory code)
+            detection_obscodes_times = pd.merge(
+                exposure_obscodes.to_pandas(),
+                detection_times.to_pandas(),
+                on="exposure_id",
+            )
+
+            # Now, lets only keep the unique occurrences of observatory code and time
+            unique_obscodes_times = detection_obscodes_times.drop_duplicates(
+                subset=["observatory_code", "time_mjd"]
+            )
+
+            # Get unique codes and times
+            unique_obscodes = unique_obscodes_times["observatory_code"].unique()
+            observers_list = []
+            for code in unique_obscodes:
+                observers_list.append(
+                    Observers.from_code(
+                        code,
+                        Time(
+                            unique_obscodes_times[
+                                unique_obscodes_times["observatory_code"] == code
+                            ]["time_mjd"].values,
+                            format="mjd",
+                            scale=scale,
+                        ),
+                    )
+                )
+
+            return qv.concatenate(observers_list)
+
 
 class ObservationFilter(abc.ABC):
     """An ObservationFilter is reduces a collection of observations to
@@ -61,7 +137,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
     def apply(self, observations: Observations) -> Observations:
         # Generate an ephemeris for every observer time/location in the dataset
-        observers = observations.exposures.observers()
+        observers = observations.observers(exposures_only=True)
         ephems_linkage = self.test_orbit.generate_ephemeris(
             observers=observers,
         )
