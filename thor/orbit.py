@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Optional, TypeVar, Union
 
@@ -32,12 +33,24 @@ CoordinateType = TypeVar(
     ],
 )
 
+from .observations import Observations
+
+logger = logging.getLogger(__name__)
+
 
 class RangedPointSourceDetections(qv.Table):
 
     id = qv.StringColumn()
     exposure_id = qv.StringColumn()
     coordinates = SphericalCoordinates.as_column()
+    state_id = qv.Int64Column()
+
+
+class TestOrbitEphemeris(qv.Table):
+
+    id = qv.Int64Column()
+    ephemeris = Ephemeris.as_column()
+    observer = Observers.as_column()
 
 
 class TestOrbit:
@@ -87,6 +100,9 @@ class TestOrbit:
             coordinates=cartesian_coordinates,
         )
 
+        self._cached_ephemeris: Optional[TestOrbitEphemeris] = None
+        self._cached_observation_ids: Optional[pa.array] = None
+
     @classmethod
     def from_orbits(cls, orbits):
         assert len(orbits) == 1
@@ -97,6 +113,53 @@ class TestOrbit:
     @property
     def orbit(self):
         return self._orbit
+
+    def _is_cache_fresh(self, observations: Observations) -> bool:
+        """
+        Check if the cached ephemeris is fresh. If the observation IDs are contained within the
+        cached observation IDs, then the cache is fresh. Otherwise, it is stale. This permits
+        observations to be filtered out without having to regenerate the ephemeris.
+
+        Parameters
+        ----------
+        observations : `~thor.observations.observations.Observations`
+            Observations to check against the cached ephemerides.
+
+        Returns
+        -------
+        is_fresh : bool
+            True if the cache is fresh, False otherwise.
+        """
+        if self._cached_ephemeris is None or self._cached_observation_ids is None:
+            return False
+        elif pc.all(
+            pc.is_in(
+                self._cached_observation_ids.sort(), observations.detections.id.sort()
+            )
+        ).as_py():
+            return True
+        else:
+            return False
+
+    def _cache_ephemeris(
+        self, ephemeris: TestOrbitEphemeris, observations: Observations
+    ):
+        """
+        Cache the ephemeris and observation IDs.
+
+        Parameters
+        ----------
+        ephemeris : `~thor.orbit.TestOrbitEphemeris`
+            States to cache.
+        observations : `~thor.observations.observations.Observations`
+            Observations to cache. Only observation IDs will be cached.
+
+        Returns
+        -------
+        None
+        """
+        self._cached_ephemeris = ephemeris
+        self._cached_observation_ids = observations.detections.id
 
     def propagate(
         self,
@@ -153,6 +216,61 @@ class TestOrbit:
         return propagator.generate_ephemeris(
             self.orbit, observers, max_processes=max_processes, chunk_size=1
         )
+
+    def generate_ephemeris_from_observations(
+        self,
+        observations: Observations,
+        propagator: Propagator = PYOORB(),
+        max_processes: Optional[int] = 1,
+    ):
+        """
+        For each unique time and code in the observations (a state), generate an ephemeris for
+        that state and store them in a TestOrbitStates table. The observer's coordinates will also be
+        stored in the table and can be referenced through out the THOR pipeline.
+
+        These ephemerides will be cached. If the cache is fresh, the cached ephemerides will be
+        returned instead of regenerating them.
+
+        Parameters
+        ----------
+        observations : `~thor.observations.observations.Observations`
+            Observations to compute test orbit ephemerides for.
+        propagator : `~adam_core.propagator.propagator.Propagator`, optional
+            Propagator to use to propagate the orbit. Defaults to PYOORB.
+        num_processes : int, optional
+            Number of processes to use to propagate the orbit. Defaults to 1.
+
+
+        Returns
+        -------
+        states : `~thor.orbit.TestOrbitEphemeris`
+            Table containing the ephemeris of the test orbit, its aberrated state vector, and the
+            observer coordinates at each unique time of the observations.
+        """
+        if self._is_cache_fresh(observations):
+            logger.debug(
+                "Test orbit ephemeris cache is fresh. Returning cached states."
+            )
+            return self._cached_ephemeris
+
+        logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
+
+        state_ids = observations.state_id.unique()
+        observers = observations.get_observers()
+
+        # Generate ephemerides for each unique state and then sort by time and code
+        ephemeris = self.generate_ephemeris(
+            observers, propagator=propagator, max_processes=max_processes
+        ).left_table
+        ephemeris = ephemeris.sort_by(by=["time", "code"])
+
+        test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
+            id=state_ids,
+            ephemeris=ephemeris,
+            observer=observers,
+        )
+        self._cache_ephemeris(test_orbit_ephemeris, observations)
+        return test_orbit_ephemeris
 
     def range_observations(
         self,
