@@ -16,8 +16,6 @@ from adam_core.coordinates import (
     SphericalCoordinates,
     transform_coordinates,
 )
-from adam_core.observations.detections import PointSourceDetections
-from adam_core.observations.exposures import Exposures
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import PYOORB, Propagator

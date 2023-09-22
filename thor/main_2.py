@@ -1,58 +1,137 @@
-from adam_core import propagator
-from adam_core.coordinates import cartesian, transform
+from typing import List, Optional
 
-from . import observation_filters
-from . import orbit as thor_orbit
-from . import projections
+import pyarrow.compute as pc
+import quivr as qv
+from adam_core.coordinates import (
+    CartesianCoordinates,
+    OriginCodes,
+    transform_coordinates,
+)
+from adam_core.propagator import PYOORB, Propagator
+
+from .observations import Observations
+from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
+from .orbit import TestOrbit
+from .projections import GnomonicCoordinates
+
+
+class TransformedDetections(qv.Table):
+    id = qv.StringColumn()
+    coordinates = GnomonicCoordinates.as_column()
+    state_id = qv.Int64Column()
+
+
+def range_and_transform(
+    test_orbit: TestOrbit,
+    observations: Observations,
+    filters: Optional[List[ObservationFilter]] = None,
+    propagator: Propagator = PYOORB(),
+    max_processes: int = 1,
+) -> TransformedDetections:
+    """
+    Gather observations for a single test orbit, and transform them into a
+    gnomonic projection centered on the motion of the test orbit (co-rotating
+    frame).
+
+    Parameters
+    ----------
+    obs_src : `~thor.observation_filters.ObservationFilter`
+        Observation filter to use to gather observations given the test orbit.
+    test_orbit : `~thor.orbit.TestOrbit`
+        Test orbit to use to gather and transform observations.
+    propagator : `~adam_core.propagator.propagator.Propagator`
+        Propagator to use to propagate the test orbit and generate
+        ephemerides.
+    max_processes : int, optional
+        Maximum number of processes to use for parallelization.
+
+    Returns
+    -------
+    transformed_detections : `~thor.main.TransformedDetections`
+        The transformed detections as gnomonic coordinates
+        of the observations in the co-rotating frame.
+    """
+    # Compute the ephemeris of the test orbit (this will be cached)
+    ephemeris = test_orbit.generate_ephemeris_from_observations(
+        observations,
+        propagator=propagator,
+        max_processes=max_processes,
+    )
+
+    # Apply filters to the observations
+    filtered_observations = observations
+    if filters is not None:
+        for filter_i in filters:
+            filtered_observations = filter_i.apply(filtered_observations, test_orbit)
+
+    # Assume that the heliocentric distance of all point sources in
+    # the observations are the same as that of the test orbit
+    ranged_detections_spherical = test_orbit.range_observations(
+        filtered_observations,
+        propagator=propagator,
+        max_processes=max_processes,
+    )
+
+    # Transform from spherical topocentric to cartesian heliocentric coordinates
+    ranged_detections_cartesian = transform_coordinates(
+        ranged_detections_spherical.coordinates,
+        representation_out=CartesianCoordinates,
+        frame_out="ecliptic",
+        origin_out=OriginCodes.SUN,
+    )
+
+    # Link the ephemeris and observations by state id
+    link = qv.Linkage(
+        ephemeris,
+        filtered_observations,
+        left_keys=ephemeris.id,
+        right_keys=filtered_observations.state_id,
+    )
+
+    # Transform the detections into the co-rotating frame
+    transformed_detection_list = []
+    for state_id in filtered_observations.state_id.unique():
+        # Select the detections and ephemeris for this state id
+        mask = pc.equal(state_id, filtered_observations.state_id)
+        ranged_detections_cartesian_i = ranged_detections_cartesian.apply_mask(mask)
+        ephemeris_i = link.select_left(state_id)
+        observations_i = link.select_right(state_id)
+
+        # Transform the detections into the co-rotating frame
+        transformed_detections_i = TransformedDetections.from_kwargs(
+            id=observations_i.detections.id,
+            coordinates=GnomonicCoordinates.from_cartesian(
+                ranged_detections_cartesian_i,
+                center_cartesian=ephemeris_i.ephemeris.aberrated_coordinates,
+            ),
+            state_id=observations_i.state_id,
+        )
+
+        transformed_detection_list.append(transformed_detections_i)
+
+    transformed_detections = qv.concatenate(transformed_detection_list)
+    return transformed_detections
 
 
 def link_test_orbit(
-    obs_src: observation_filters.ObservationFilter,
-    test_orbit: thor_orbit.TestOrbit,
-    propagator: propagator.Propagator,
+    test_orbit: TestOrbit,
+    observations: Observations,
+    filters: Optional[List[ObservationFilter]] = [
+        TestOrbitRadiusObservationFilter(radius=10.0)
+    ],
+    propagator: Propagator = PYOORB(),
     max_processes: int = 1,
 ):
     """
     Find all linkages for a single test orbit.
     """
-
-    # Gather observations for the test orbit
-    filtered_observations: observation_filters.Observations = obs_src.apply(
-        filtered_observations
-    )
-
-    # Assume that the heliocentric distance of all point sources in
-    # the observations are the same as that of the test orbit.
-    #
-    # FIXME: this may repeat work done in gather_observations, since
-    # that might propagate the test orbit as well, depending on the
-    # ObservationSource implementation. Caching?
-    ranged_observations = test_orbit.range_observations(
-        filtered_observations.linkage,
-        max_processes=max_processes,
-    )
-
-    # Transform from spherical topocentric to cartesian heliocentric coordinates
-    cartesian_heliocentric = transform.transform_coordinates(
-        ranged_observations.coordinates,
-        representation_out=cartesian.CartesianCoordinates,
-        frame_out="ecliptic",
-        origin_out="SUN",
-    )
-
-    # Project from cartesian heliocentric to gnomonic heliocentric
-    # coordinates, centered on the test orbit's position.
-    #
-    # FIXME: this repeats propagation work done in
-    # test_orbit.ranged_observation. Caching?
-    test_orbit_positions = test_orbit.propagate(
-        times=filtered_observations.exposures.midpoint().to_astropy(),
+    # Range and transform the observations
+    transformed_detections = range_and_transform(
+        test_orbit,
+        observations,
+        filters=filters,
         propagator=propagator,
         max_processes=max_processes,
-    )
-    gnomonic = projections.GnomonicCoordinates.from_cartesian(
-        cartesian_heliocentric,
-        center_cartesian=test_orbit_positions,
     )
 
     # TODO: Find objects which move in straight-ish lines in the gnomonic frame.
@@ -63,3 +142,5 @@ def link_test_orbit(
     # TODO: Run OD against the plausible orbits, and filter down to really good orbits.
     #
     # TODO: Perform arc extension on the really good orbits.
+
+    return transformed_detections
