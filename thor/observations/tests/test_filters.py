@@ -112,9 +112,8 @@ def test_observation_fixtures(fixed_test_orbit, fixed_observations):
 def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
     fos = TestOrbitRadiusObservationFilter(
         radius=0.5,
-        test_orbit=fixed_test_orbit,
     )
-    have = fos.apply(fixed_observations)
+    have = fos.apply(fixed_observations, fixed_test_orbit)
     assert len(pc.unique(have.detections.exposure_id)) == 5
     assert pc.all(pc.equal(pc.unique(have.detections.exposure_id), pc.unique(fixed_observations.detections.exposure_id)))
     # Should be about pi/4 fraction of the detections (0.785

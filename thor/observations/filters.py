@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import quivr as qv
-from adam_core.observations import Exposures, PointSourceDetections
+from adam_core.observations import PointSourceDetections
 
 from ..orbit import TestOrbit
 
@@ -18,7 +18,24 @@ class ObservationFilter(abc.ABC):
     """
 
     @abc.abstractmethod
-    def apply(self, observations: "Observations") -> "Observations":
+    def apply(
+        self, observations: "Observations", test_orbit: TestOrbit
+    ) -> "Observations":
+        """
+        Apply the filter to a collection of observations.
+
+        Parameters
+        ----------
+        observations : `~thor.observations.Observations`
+            The observations to filter.
+        test_orbit : `~thor.orbit.TestOrbit`
+            The test orbit to use for filtering.
+
+        Returns
+        -------
+        filtered_observations : `~thor.observations.Observations`
+            The filtered observations.
+        """
         ...
 
 
@@ -29,50 +46,74 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
     """
 
-    def __init__(self, radius: float, test_orbit: TestOrbit):
+    def __init__(self, radius: float):
         """
         Parameters
         ----------
-        radius: float
-            The radius of the cell in degrees.
-        test_orbit: `~thor.orbit.TestOrbit`
-            The test orbit to use for filtering.
+        radius : float
+            The radius in degrees.
         """
         self.radius = radius
-        self.test_orbit = test_orbit
 
-    def apply(self, observations: "Observations") -> "Observations":
-        from .observations import Observations
+    def apply(
+        self, observations: "Observations", test_orbit: TestOrbit
+    ) -> "Observations":
+        """
+        Apply the filter to a collection of observations.
 
+        Parameters
+        ----------
+        observations : `~thor.observations.Observations`
+            The observations to filter.
+        test_orbit : `~thor.orbit.TestOrbit`
+            The test orbit to use for filtering.
+
+        Returns
+        -------
+        filtered_observations : `~thor.observations.Observations`
+            The filtered observations.
+        """
         # Generate an ephemeris for every observer time/location in the dataset
-        observers = observations.get_observers()
-        ephems_linkage = self.test_orbit.generate_ephemeris(
-            observers=observers,
+        test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
+            observations
         )
 
-        matching_detections = PointSourceDetections.empty()
-        matching_exposures = Exposures.empty()
+        # Link the ephemeris to the observations
+        link = qv.Linkage(
+            test_orbit_ephemeris,
+            observations,
+            left_keys=test_orbit_ephemeris.id,
+            right_keys=observations.state_id,
+        )
 
-        # Build a mapping of exposure_id to ephemeris ra and dec
-        for exposure in observations.exposures:
-            key = ephems_linkage.key(
-                code=exposure.observatory_code[0].as_py(),
-                mjd=exposure.midpoint().mjd()[0].as_py(),
-            )
-            ephem = ephems_linkage.select_left(key)
-            assert len(ephem) == 1, "there should be exactly one ephemeris per exposure"
+        # Loop over states and build a mask of detections within the radius
+        state_ids = observations.state_id.to_numpy(zero_copy_only=False)
+        mask = np.zeros(len(observations), dtype=bool)
+        for state_id in np.unique(state_ids):
+            # Compute the indices for observations belonging to this state
+            idx_state = np.where(state_ids == state_id)[0]
 
-            ephem_ra = ephem.coordinates.lon[0].as_py()
-            ephem_dec = ephem.coordinates.lat[0].as_py()
+            # Select the ephemeris and observations for this state
+            ephemeris_i = link.select_left(state_id)
+            observations_i = link.select_right(state_id)
+            detections_i = observations_i.detections
 
-            exp_dets = observations.linkage.select_left(exposure.id[0])
+            assert (
+                len(ephemeris_i) == 1
+            ), "there should be exactly one ephemeris per exposure"
 
-            nearby_dets = _within_radius(exp_dets, ephem_ra, ephem_dec, self.radius)
-            if len(nearby_dets) > 0:
-                matching_exposures = qv.concatenate([matching_exposures, exposure])
-                matching_detections = qv.concatenate([matching_detections, nearby_dets])
+            ephem_ra = ephemeris_i.ephemeris.coordinates.lon[0].as_py()
+            ephem_dec = ephemeris_i.ephemeris.coordinates.lat[0].as_py()
 
-        return Observations(matching_detections, matching_exposures)
+            # Compute indices for the detections within the radius
+            idx_within = idx_state[
+                _within_radius(detections_i, ephem_ra, ephem_dec, self.radius)
+            ]
+
+            # Update the mask
+            mask[idx_within] = True
+
+        return observations.apply_mask(mask)
 
 
 def _within_radius(
@@ -80,11 +121,27 @@ def _within_radius(
     ra: float,
     dec: float,
     radius: float,
-) -> PointSourceDetections:
+) -> np.array:
     """
-    Return the detections within a given radius of a given ra and dec.
+    Return a boolean mask that identifies which of
+    the detections are within a given radius of a given ra and dec.
 
-    ra, dec, and radius should be in degrees.
+    Parameters
+    ----------
+    detections : `~adam_core.observations.detections.PointSourceDetections`
+        The detections to filter.
+    ra : float
+        The right ascension of the center of the radius in degrees.
+    dec : float
+        The declination of the center of the radius in degrees.
+    radius : float
+        The radius in degrees.
+
+    Returns
+    -------
+    mask : `~numpy.ndarray`
+        A boolean mask that identifies which of the detections are within
+        the radius.
     """
     det_ra = np.deg2rad(detections.ra.to_numpy())
     det_dec = np.deg2rad(detections.dec.to_numpy())
@@ -108,6 +165,4 @@ def _within_radius(
     )
 
     distances = np.arctan2(np.hypot(num1, num2), denominator)
-
-    mask = distances <= np.deg2rad(radius)
-    return detections.apply_mask(mask)
+    return distances <= np.deg2rad(radius)
