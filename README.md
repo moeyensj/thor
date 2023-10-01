@@ -1,7 +1,8 @@
 # THOR - Tracklet-less Heliocentric Orbit Recovery
 
-<img src="docs/banner.png" width="400" height="200">
-
+<div align = "center">
+    <img src="docs/banner.png" width="400" height="200">
+</div>
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue)](https://img.shields.io/badge/Python-3.9%2B-blue)[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)[![DOI](https://zenodo.org/badge/116747066.svg)](https://zenodo.org/badge/latestdoi/116747066)[![docker - Build, Lint, and Test](https://github.com/moeyensj/thor/actions/workflows/docker-build-lint-test.yml/badge.svg)](https://github.com/moeyensj/thor/actions/workflows/docker-build-lint-test.yml)[![conda - Build, Lint, and Test](https://github.com/moeyensj/thor/actions/workflows/conda-build-lint-test.yml/badge.svg)](https://github.com/moeyensj/thor/actions/workflows/conda-build-lint-test.yml)[![pip - Build, Lint, Test, and Coverage](https://github.com/moeyensj/thor/actions/workflows/pip-build-lint-test-coverage.yml/badge.svg)](https://github.com/moeyensj/thor/actions/workflows/pip-build-lint-test-coverage.yml)[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)[![Coverage Status](https://coveralls.io/repos/github/moeyensj/thor/badge.svg?branch=main)](https://coveralls.io/github/moeyensj/thor?branch=main)[![Docker Pulls](https://img.shields.io/docker/pulls/moeyensj/thor)](https://hub.docker.com/r/moeyensj/thor)[![Anaconda-Server Badge](https://anaconda.org/moeyensj/thor/badges/version.svg)](https://anaconda.org/moeyensj/thor)[![Anaconda-Server Badge](https://anaconda.org/moeyensj/thor/badges/platforms.svg)](https://anaconda.org/moeyensj/thor)[![Anaconda-Server Badge](https://anaconda.org/moeyensj/thor/badges/downloads.svg)](https://anaconda.org/moeyensj/thor)
 
@@ -50,62 +51,58 @@ The following installation paths are available:
 [Source](#Source)  
 
 ### Anaconda
-`thor` can be downloaded directly from anaconda:  
-```conda install -c moeyensj thor```
 
-Or, if preferred, installed into its own environment via:  
-```conda create -n thor_py38 -c moeyensj thor python=3.8```
+Installation using conda:
+```shell
+conda install -c moeyensj thor
+```
 
+Installation into a dedicated environment:
+```shell
+conda create -n thor_py38 -c moeyensj thor python=3.8
+```
 ### Docker
 
-A Docker container with the latest version of the code can be pulled using:  
-
-```docker pull moeyensj/thor:latest```
-
-To run the container:  
-
-```docker run -it moeyensj/thor:latest```
-
-The THOR code is installed the /projects directory, and is by default also installed in the container's Python installation.
-To access the code in Python:
+Pull the latest Docker container:
+```shell
+docker pull moeyensj/thor:latest
 ```
-(base) root@202110177eee:/# python
-Python 3.6.9 |Anaconda, Inc.| (default, Jul 30 2019, 19:07:31)
-[GCC 7.3.0] on linux
-Type "help", "copyright", "credits" or "license" for more information.
->>> import thor
->>>
+Run the Docker container:
+```shell
+docker run -it moeyensj/thor:latest
+```
+After running the container, you can access the THOR code in Python using:
+```shell
+python
 ```
 
 ### Source
-Clone this repository using either `ssh` or `https`. Once cloned and downloaded, `cd` into the repository.
+To install THOR from the source code, follow these steps:
 
-To install THOR in its own `conda` enviroment please do the following:  
+1. Clone this repository using either ssh or https.
+2. Once cloned and downloaded, cd into the repository.
 
-```conda create -n thor_py38 -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt python=3.8```  
-
-Or, to install THOR in a pre-existing `conda` environment called `env`:  
-
-```conda activate env```  
-```conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt```  
-
-Once pre-requisites have been installed using either one of the options above, then:  
-
-```python setup.py install```
-
-Or, if you are actively planning to develop or contribute to THOR, then:
-
-```python setup.py develop --no-deps```
-
-You should now be able to start Python and import THOR.
+Installation in a dedicated conda environment:
+```shell
+conda create -n thor_py38 -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt python=3.8
 ```
-┌─(thor_py38)[moeyensj][±][main ✓][~/projects/thor]
-└─▪ python
-Python 3.8.8 (default, Apr 13 2021, 19:58:26)
-[GCC 7.3.0] :: Anaconda, Inc. on linux
-Type "help", "copyright", "credits" or "license" for more information.
->>> import thor
->>>
+Installation in an existing conda environment called env:
+```shell
+conda activate env
+conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt
+```
+After installing the prerequisites, you can proceed with THOR installation:
+```shell
+python setup.py install
+```
+If you plan to actively develop or contribute to THOR:
+```shell
+python setup.py develop --no-deps
+```
+You can now start Python and import THOR using the following commands:
+```shell
+python
+import thor
 ```
 
 **If you would like to run Jupyter Notebook or Juptyter Lab with THOR please see the installation instructions in the THOR notebooks repository.**
