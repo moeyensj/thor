@@ -158,7 +158,7 @@ class Observations(qv.Table):
         observers : `~adam_core.observers.observers.Observers`
             The observers table for these observations.
         """
-        observer_dfs = []
+        observers_tables = []
         for code, observations_i in self.group_by_observatory_code():
             unique_times = observations_i.detections.time.unique()
             unique_states = observations_i.state_id.unique()
@@ -166,16 +166,17 @@ class Observations(qv.Table):
             # Get observers table for this observatory
             observers_i = Observers.from_code(code, unique_times.to_astropy())
 
-            # Here we fall back on pandas to do some book-keeping to get the state IDs for each
-            # observer state
-            observers_i_df = observers_i.to_dataframe()
-            observers_i_df["state_id"] = unique_states.to_numpy()
-            observer_dfs.append(observers_i_df)
+            # Extract the table and add a column for the state ID
+            observers_table = observers_i.table
+            observers_table = observers_table.add_column(
+                0, pa.field("state_id", pa.int64()), unique_states
+            )
+            observers_tables.append(observers_table)
 
-        # Merge the observers tables for each observatory and sort by state ID
-        observer_df = pd.concat(observer_dfs)
-        observer_df.sort_values(by=["state_id"], inplace=True, ignore_index=True)
-        return Observers.from_dataframe(observer_df)
+        observers_table = pa.concat_tables(observers_tables)
+        observers_table = observers_table.sort_by([("state_id", "ascending")])
+        observers_table = observers_table.drop(["state_id"])
+        return Observers.from_pyarrow(observers_table, validate=True)
 
     def select_exposure(self, exposure_id: int) -> "Observations":
         """
