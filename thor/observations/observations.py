@@ -1,9 +1,11 @@
 from typing import Iterator, Tuple
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
+from adam_core.coordinates import Times
 from adam_core.observations import Exposures, PointSourceDetections
 from adam_core.observers import Observers
 
@@ -31,7 +33,7 @@ class Observations(qv.Table):
     @classmethod
     def from_detections_and_exposures(
         cls, detections: PointSourceDetections, exposures: Exposures
-    ):
+    ) -> "Observations":
         """
         Create a THOR observations table from a PointSourceDetections table and an Exposures table.
 
@@ -53,94 +55,97 @@ class Observations(qv.Table):
         # into indvidual states (i.e. if two observations are within 1ms of each other, they are in the same state). Again,
         # this only matters for those detections that have times that differ from the midpoint time of the exposure (LSST)
 
-        # It would be cool if we could do the following with functionality in quivr rather than expensive
-        # copies to pandas and back to arrow. A proposed interface is in the comments.
-
-        # Lets set the time scale to UTC
+        # If the detection times are not in UTC, convert them to UTC
         if detections.time.scale != "utc":
             detections = detections.set_column("time", detections.time.to_scale("utc"))
 
-        ### 1. Create a table that attaches observatory codes to detections
-        # Quivr interface (join -- create composite table schema from two tables)
-        # times_obscodes = detections.join(exposures, on="exposure_id", columns=["exposure_id", "observatory_code"])
-
-        # Create table of detections IDs, exposure IDs, and times
-        detections_times = pa.table(
-            [detections.id, detections.exposure_id, detections.time.mjd()],
-            names=["obs_id", "exposure_id", "time_mjd"],
+        # Flatten the detections table (i.e. remove the nested columns). Unfortunately joins on tables
+        # with nested columns are not all supported in pyarrow
+        detections_flattened = pa.table(
+            [
+                detections.id,
+                detections.exposure_id,
+                detections.time.jd1,
+                detections.time.jd2,
+                detections.ra,
+                detections.ra_sigma,
+                detections.dec,
+                detections.dec_sigma,
+                detections.mag,
+                detections.mag_sigma,
+            ],
+            names=[
+                "id",
+                "exposure_id",
+                "jd1",
+                "jd2",
+                "ra",
+                "ra_sigma",
+                "dec",
+                "dec_sigma",
+                "mag",
+                "mag_sigma",
+            ],
         )
 
-        # Create table of exposure IDs and observatory codes
+        # Extract the exposure IDs and the observatory codes from the exposures table
         exposure_obscodes = pa.table(
             [exposures.id, exposures.observatory_code],
             names=["exposure_id", "observatory_code"],
         )
 
-        # Merge the two tables so that each detection has its corresponding observatory code
-        times_obscodes = pd.merge(
-            detections_times.to_pandas(),
-            exposure_obscodes.to_pandas(),
-            on="exposure_id",
+        # Join the detection times and the exposure IDs so that each detection has an observatory code
+        obscode_times = detections_flattened.join(exposure_obscodes, ["exposure_id"])
+
+        # Group the detections by detection time and observatory code
+        unique_obscode_times = obscode_times.group_by(
+            ["jd1", "jd2", "observatory_code"]
+        ).aggregate([])
+
+        # Now sort the unique detections by time and observatory code
+        unique_obscode_times = unique_obscode_times.sort_by(
+            [
+                ("jd1", "ascending"),
+                ("jd2", "ascending"),
+                ("observatory_code", "ascending"),
+            ]
         )
 
-        ### 2. Get unique observatory codes and times
-        # Quivr interface (drop duplicates -- drop duplicate rows optionally considering only a subset of columns)
-        # unique_times_obscodes = times_obscodes.drop_duplicates(subset=["time", "observatory_code"])
-
-        # Now lets get the unique times and observatory codes (these are the unique states at which we will need
-        # to get the observatory coordinates and later test orbit coordinates)
-        unique_time_obscodes = times_obscodes[
-            ["time_mjd", "observatory_code"]
-        ].drop_duplicates(subset=["time_mjd", "observatory_code"])
-        unique_time_obscodes.reset_index(drop=True, inplace=True)
-
-        ### 3. Calculate a unique state ID for each unique time and observatory code
-        # Quivr interface (add column -- add a column to a table)
-        # If add column is un-quivr like then I'd create a temporary table here
-        # unique_time_obscodes = unique_time_obscodes.add_column("state_id", qv.Int64Column(pa.array()))
-        unique_time_obscodes.insert(0, "state_id", unique_time_obscodes.index.values)
-
-        ### 4. Merge the unique state IDs back into the times_obscodes table
-        # Quivr interface (join -- create composite table schema from two tables)
-        # times_obscodes = times_obscodes.join(unique_time_obscodes, on=["time_mjd", "observatory_code"])
-
-        # Merge the unique state IDs back into the times_obscodes table
-        times_obscodes = pd.merge(
-            times_obscodes, unique_time_obscodes, on=["time_mjd", "observatory_code"]
+        # For each unique detection time and observatory code assign a unique state ID
+        unique_obscode_times = unique_obscode_times.add_column(
+            0,
+            pa.field("state_id", pa.int64()),
+            pa.array(np.arange(0, len(unique_obscode_times))),
         )
 
-        ### 5. Merge the detections table with the times_obscodes table to get the state IDs for each detection
-        # Quivr interface (join -- create composite table schema from two tables)
-        # detections_states = detections.join(times_obscodes, on=["id", "exposure_id"], columns=["state_id"])
-
-        # Now merge the detections table with the times_obscodes table to get the state IDs for each detection
-        detections_states = pd.merge(
-            detections.to_dataframe(),
-            times_obscodes[["obs_id", "exposure_id", "state_id", "observatory_code"]],
-            left_on=["id", "exposure_id"],
-            right_on=["obs_id", "exposure_id"],
+        # Join the unique observatory code and detections back to the original detections
+        detections_with_states = obscode_times.join(
+            unique_obscode_times, ["observatory_code", "jd1", "jd2"]
         )
 
-        ### 6. Sort the detections by time and observatory code
-        # Quivr interface (sort -- sort a table by one or more columns)
-        # detections_states = detections_states.sort(by=["time_mjd", "observatory_code"], ascending=[True, True])
-        detections_states.sort_values(
-            by=["time.jd1", "time.jd2", "observatory_code"],
-            inplace=True,
-            ignore_index=True,
+        # Now sort the detections one final time by state ID
+        detections_with_states = detections_with_states.sort_by(
+            [("state_id", "ascending")]
         )
 
-        # In summary, with the proposed quivr interface, this function would look like:
-        # times_obscodes = detections.join(exposures, on="exposure_id", columns=["exposure_id", "observatory_code"])
-        # unique_times_obscodes = times_obscodes.drop_duplicates(subset=["time", "observatory_code"])
-        # unique_times_obscodes = unique_times_obscodes.add_column("state_id", qv.Int64Column(pa.array()))
-        # times_obscodes = times_obscodes.join(unique_times_obscodes, on=["time", "observatory_code"])
-        # detections_states = detections.join(times_obscodes, on=["id", "exposure_id"], columns=["state_id"])
-        # detections_states = detections_states.sort(by=["time", "observatory_code"], ascending=[True, True])
         return cls.from_kwargs(
-            detections=PointSourceDetections.from_flat_dataframe(detections_states),
-            observatory_code=detections_states["observatory_code"],
-            state_id=detections_states["state_id"],
+            detections=PointSourceDetections.from_kwargs(
+                id=detections_with_states["id"],
+                exposure_id=detections_with_states["exposure_id"],
+                ra=detections_with_states["ra"],
+                ra_sigma=detections_with_states["ra_sigma"],
+                dec=detections_with_states["dec"],
+                dec_sigma=detections_with_states["dec_sigma"],
+                mag=detections_with_states["mag"],
+                mag_sigma=detections_with_states["mag_sigma"],
+                time=Times.from_kwargs(
+                    jd1=detections_with_states["jd1"],
+                    jd2=detections_with_states["jd2"],
+                    scale="utc",
+                ),
+            ),
+            observatory_code=detections_with_states["observatory_code"],
+            state_id=detections_with_states["state_id"],
         )
 
     def get_observers(self):
