@@ -260,7 +260,13 @@ class TestOrbit:
         ephemeris = self.generate_ephemeris(
             observers, propagator=propagator, max_processes=max_processes
         ).left_table
-        ephemeris = ephemeris.sort_by(by=["time", "code"])
+        ephemeris = ephemeris.sort_by(
+            by=[
+                "coordinates.time.jd1",
+                "coordinates.time.jd2",
+                "coordinates.origin.code",
+            ]
+        )
 
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=state_ids,
