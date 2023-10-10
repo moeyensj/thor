@@ -9,8 +9,6 @@ from adam_core.coordinates import (
     CartesianCoordinates,
     Origin,
     Times,
-    coords_from_dataframe,
-    coords_to_dataframe,
     transform_covariances_jacobian,
 )
 from typing_extensions import Self
@@ -199,55 +197,3 @@ class GnomonicCoordinates(qv.Table):
             )
 
         return qv.concatenate(gnomonic_coords)
-
-    def to_dataframe(
-        self, sigmas: bool = False, covariances: bool = True
-    ) -> pd.DataFrame:
-        """
-        Convert coordinates to a pandas DataFrame.
-
-        Parameters
-        ----------
-        sigmas : bool, optional
-            If True, include 1-sigma uncertainties in the DataFrame.
-        covariances : bool, optional
-            If True, include covariance matrices in the DataFrame. Covariance matrices
-            will be split into 21 columns, with the lower triangular elements stored.
-
-        Returns
-        -------
-        df : `~pandas.Dataframe`
-            DataFrame containing coordinates.
-        """
-        return coords_to_dataframe(
-            self,
-            ["theta_x", "theta_y", "vtheta_x", "vtheta_y"],
-            sigmas=sigmas,
-            covariances=covariances,
-        )
-
-    @classmethod
-    def from_dataframe(
-        cls, df: pd.DataFrame, frame: Literal["ecliptic", "equatorial"]
-    ) -> Self:
-        """
-        Create coordinates from a pandas DataFrame.
-
-        Parameters
-        ----------
-        df : `~pandas.Dataframe`
-            DataFrame containing coordinates.
-        frame : {"ecliptic", "equatorial"}
-            Frame in which coordinates are defined.
-
-        Returns
-        -------
-        coords : `~thor.projections.gnomonic.GnomonicCoordinates`
-            Gnomomic projection coordinates.
-        """
-        return coords_from_dataframe(
-            cls,
-            df,
-            coord_names=["theta_x", "theta_y", "vtheta_x", "vtheta_y"],
-            frame=frame,
-        )
