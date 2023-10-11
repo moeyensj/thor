@@ -1,13 +1,12 @@
 from typing import Iterator, Tuple
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
-from adam_core.coordinates import Times
 from adam_core.observations import Exposures, PointSourceDetections
 from adam_core.observers import Observers
+from adam_core.time import Timestamp
 
 
 class Observations(qv.Table):
@@ -57,7 +56,7 @@ class Observations(qv.Table):
 
         # If the detection times are not in UTC, convert them to UTC
         if detections.time.scale != "utc":
-            detections = detections.set_column("time", detections.time.to_scale("utc"))
+            detections = detections.set_column("time", detections.time.rescale("utc"))
 
         # Flatten the detections table (i.e. remove the nested columns). Unfortunately joins on tables
         # with nested columns are not all supported in pyarrow
@@ -65,8 +64,8 @@ class Observations(qv.Table):
             [
                 detections.id,
                 detections.exposure_id,
-                detections.time.jd1,
-                detections.time.jd2,
+                detections.time.days,
+                detections.time.nanos,
                 detections.ra,
                 detections.ra_sigma,
                 detections.dec,
@@ -77,8 +76,8 @@ class Observations(qv.Table):
             names=[
                 "id",
                 "exposure_id",
-                "jd1",
-                "jd2",
+                "days",
+                "nanos",
                 "ra",
                 "ra_sigma",
                 "dec",
@@ -97,16 +96,16 @@ class Observations(qv.Table):
         # Join the detection times and the exposure IDs so that each detection has an observatory code
         obscode_times = detections_flattened.join(exposure_obscodes, ["exposure_id"])
 
-        # Group the detections by detection time and observatory code
+        # Group the detections by the observatory code and the detection times and then grab the unique ones
         unique_obscode_times = obscode_times.group_by(
-            ["jd1", "jd2", "observatory_code"]
+            ["days", "nanos", "observatory_code"]
         ).aggregate([])
 
-        # Now sort the unique detections by time and observatory code
+        # Now sort the unique detections by the observatory code and the detection time
         unique_obscode_times = unique_obscode_times.sort_by(
             [
-                ("jd1", "ascending"),
-                ("jd2", "ascending"),
+                ("days", "ascending"),
+                ("nanos", "ascending"),
                 ("observatory_code", "ascending"),
             ]
         )
@@ -120,7 +119,7 @@ class Observations(qv.Table):
 
         # Join the unique observatory code and detections back to the original detections
         detections_with_states = obscode_times.join(
-            unique_obscode_times, ["observatory_code", "jd1", "jd2"]
+            unique_obscode_times, ["days", "nanos", "observatory_code"]
         )
 
         # Now sort the detections one final time by state ID
@@ -132,17 +131,17 @@ class Observations(qv.Table):
             detections=PointSourceDetections.from_kwargs(
                 id=detections_with_states["id"],
                 exposure_id=detections_with_states["exposure_id"],
+                time=Timestamp.from_kwargs(
+                    days=detections_with_states["days"],
+                    nanos=detections_with_states["nanos"],
+                    scale="utc",
+                ),
                 ra=detections_with_states["ra"],
                 ra_sigma=detections_with_states["ra_sigma"],
                 dec=detections_with_states["dec"],
                 dec_sigma=detections_with_states["dec_sigma"],
                 mag=detections_with_states["mag"],
                 mag_sigma=detections_with_states["mag_sigma"],
-                time=Times.from_kwargs(
-                    jd1=detections_with_states["jd1"],
-                    jd2=detections_with_states["jd2"],
-                    scale="utc",
-                ),
             ),
             observatory_code=detections_with_states["observatory_code"],
             state_id=detections_with_states["state_id"],
@@ -158,25 +157,19 @@ class Observations(qv.Table):
         observers : `~adam_core.observers.observers.Observers`
             The observers table for these observations.
         """
-        observers_tables = []
+        observers = []
         for code, observations_i in self.group_by_observatory_code():
             unique_times = observations_i.detections.time.unique()
-            unique_states = observations_i.state_id.unique()
 
             # Get observers table for this observatory
-            observers_i = Observers.from_code(code, unique_times.to_astropy())
+            observers_i = Observers.from_code(code, unique_times)
+            observers.append(observers_i)
 
-            # Extract the table and add a column for the state ID
-            observers_table = observers_i.table
-            observers_table = observers_table.add_column(
-                0, pa.field("state_id", pa.int64()), unique_states
-            )
-            observers_tables.append(observers_table)
-
-        observers_table = pa.concat_tables(observers_tables)
-        observers_table = observers_table.sort_by([("state_id", "ascending")])
-        observers_table = observers_table.drop(["state_id"])
-        return Observers.from_pyarrow(observers_table, validate=True)
+        observers = qv.concatenate(observers)
+        observers = observers.sort_by(
+            ["coordinates.time.days", "coordinates.time.nanos", "code"]
+        )
+        return observers
 
     def select_exposure(self, exposure_id: int) -> "Observations":
         """
@@ -205,7 +198,7 @@ class Observations(qv.Table):
             Observations belonging to individual exposures.
         """
         exposure_ids = self.detections.exposure_id
-        for exposure_id in exposure_ids.unique():
+        for exposure_id in exposure_ids.unique().sort():
             yield exposure_id.as_py(), self.select_exposure(exposure_id)
 
     def select_observatory_code(self, observatory_code) -> "Observations":
@@ -234,7 +227,7 @@ class Observations(qv.Table):
             Observations belonging to individual observatories.
         """
         observatory_codes = self.observatory_code
-        for observatory_code in observatory_codes.unique():
+        for observatory_code in observatory_codes.unique().sort():
             yield observatory_code.as_py(), self.select_observatory_code(
                 observatory_code
             )

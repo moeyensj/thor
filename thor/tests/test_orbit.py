@@ -1,10 +1,6 @@
 import numpy as np
-from adam_core.coordinates import (
-    CartesianCoordinates,
-    Origin,
-    SphericalCoordinates,
-    Times,
-)
+from adam_core.coordinates import CartesianCoordinates, Origin, SphericalCoordinates
+from adam_core.time import Timestamp
 
 from ..orbit import assume_heliocentric_distance
 
@@ -21,7 +17,7 @@ def test_assume_heliocentric_distance_missing_rho():
         vx=[0.0],
         vy=[0.0],
         vz=[0.0],
-        time=Times.from_mjd([59000.0], scale="tdb"),
+        time=Timestamp.from_mjd([59000.0], scale="tdb"),
         origin=Origin.from_kwargs(code=["SUN"]),
         frame="ecliptic",
     )
@@ -34,7 +30,7 @@ def test_assume_heliocentric_distance_missing_rho():
         rho=rho,
         lon=lon,
         lat=lat,
-        time=Times.from_mjd([59000.0] * num_detections, scale="tdb"),
+        time=Timestamp.from_mjd([59000.0] * num_detections, scale="tdb"),
         origin=Origin.from_kwargs(code=["Observatory"] * num_detections),
         frame="equatorial",
     )
@@ -59,7 +55,7 @@ def test_assume_heliocentric_distance_zero_origin():
         vx=[0.0],
         vy=[0.0],
         vz=[0.0],
-        time=Times.from_mjd([59000.0], scale="tdb"),
+        time=Timestamp.from_mjd([59000.0], scale="tdb"),
         origin=Origin.from_kwargs(code=["SUN"]),
         frame="ecliptic",
     )
@@ -75,7 +71,7 @@ def test_assume_heliocentric_distance_zero_origin():
     coords = SphericalCoordinates.from_kwargs(
         lon=lon,
         lat=lat,
-        time=Times.from_mjd([59000.0] * num_detections, scale="tdb"),
+        time=Timestamp.from_mjd([59000.0] * num_detections, scale="tdb"),
         origin=Origin.from_kwargs(code=["Observatory"] * num_detections),
         frame="equatorial",
     )
@@ -100,7 +96,7 @@ def test_assume_heliocentric_distance():
         vx=[0.0],
         vy=[0.0],
         vz=[0.0],
-        time=Times.from_mjd([59000.0], scale="tdb"),
+        time=Timestamp.from_mjd([59000.0], scale="tdb"),
         origin=Origin.from_kwargs(code=["SUN"]),
         frame="ecliptic",
     )
@@ -114,7 +110,7 @@ def test_assume_heliocentric_distance():
     coords = SphericalCoordinates.from_kwargs(
         lon=lon,
         lat=lat,
-        time=Times.from_mjd([59000.0] * num_detections, scale="tdb"),
+        time=Timestamp.from_mjd([59000.0] * num_detections, scale="tdb"),
         origin=Origin.from_kwargs(code=["Observatory"] * num_detections),
         frame="equatorial",
     )

@@ -90,7 +90,8 @@ def range_and_transform(
 
     # Transform the detections into the co-rotating frame
     transformed_detection_list = []
-    for state_id in filtered_observations.state_id.unique():
+    state_ids = filtered_observations.state_id.unique().sort()
+    for state_id in state_ids:
         # Select the detections and ephemeris for this state id
         mask = pc.equal(state_id, filtered_observations.state_id)
         ranged_detections_cartesian_i = ranged_detections_cartesian.apply_mask(mask)

@@ -19,7 +19,7 @@ from adam_core.coordinates import (
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import PYOORB, Propagator
-from astropy.time import Time
+from adam_core.time import Timestamp
 
 CoordinateType = TypeVar(
     "CoordinateType",
@@ -161,7 +161,7 @@ class TestOrbit:
 
     def propagate(
         self,
-        times: Time,
+        times: Timestamp,
         propagator: Propagator = PYOORB(),
         max_processes: Optional[int] = 1,
     ) -> Orbits:
@@ -170,7 +170,7 @@ class TestOrbit:
 
         Parameters
         ----------
-        times : `~astropy.time.core.Time`
+        times : `~adam_core.time.time.Timestamp`
             Times to which to propagate the orbit.
         propagator : `~adam_core.propagator.propagator.Propagator`, optional
             Propagator to use to propagate the orbit. Defaults to PYOORB.
@@ -262,8 +262,8 @@ class TestOrbit:
         ).left_table
         ephemeris = ephemeris.sort_by(
             by=[
-                "coordinates.time.jd1",
-                "coordinates.time.jd2",
+                "coordinates.time.days",
+                "coordinates.time.nanos",
                 "coordinates.origin.code",
             ]
         )
