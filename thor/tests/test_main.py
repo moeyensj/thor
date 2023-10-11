@@ -49,6 +49,15 @@ def orbits():
     return make_real_orbits()
 
 
+def test_Orbit_generate_ephemeris_from_observations_empty(orbits):
+    # Test that when passed empty observations, TestOrbit.generate_ephemeris_from_observations
+    # returns a Value Error
+    observations = Observations.empty()
+    test_orbit = THORbit.from_orbits(orbits[0])
+    with pytest.raises(ValueError, match="Observations must not be empty."):
+        test_orbit.generate_ephemeris_from_observations(observations)
+
+
 @pytest.mark.parametrize("object_id", OBJECT_IDS)
 def test_range_and_transform(object_id, orbits, observations):
 

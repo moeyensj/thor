@@ -244,7 +244,15 @@ class TestOrbit:
         states : `~thor.orbit.TestOrbitEphemeris`
             Table containing the ephemeris of the test orbit, its aberrated state vector, and the
             observer coordinates at each unique time of the observations.
+
+        Raises
+        ------
+        ValueError
+            If the observations are empty.
         """
+        if len(observations) == 0:
+            raise ValueError("Observations must not be empty.")
+
         if self._is_cache_fresh(observations):
             logger.debug(
                 "Test orbit ephemeris cache is fresh. Returning cached states."
