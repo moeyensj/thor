@@ -8,24 +8,23 @@ import quivr as qv
 from adam_core.coordinates import (
     CartesianCoordinates,
     Origin,
-    Times,
-    coords_from_dataframe,
-    coords_to_dataframe,
     transform_covariances_jacobian,
 )
+from adam_core.time import Timestamp
 from typing_extensions import Self
 
-from . import covariances, transforms
+from .covariances import ProjectionCovariances
+from .transforms import _cartesian_to_gnomonic, cartesian_to_gnomonic
 
 
 class GnomonicCoordinates(qv.Table):
 
-    time = Times.as_column(nullable=True)
+    time = Timestamp.as_column(nullable=True)
     theta_x = qv.Float64Column()
     theta_y = qv.Float64Column()
     vtheta_x = qv.Float64Column(nullable=True)
     vtheta_y = qv.Float64Column(nullable=True)
-    covariance = covariances.ProjectionCovariances.as_column(nullable=True)
+    covariance = ProjectionCovariances.as_column(nullable=True)
     origin = Origin.as_column()
     frame = qv.StringAttribute("testorbit?")
 
@@ -33,7 +32,7 @@ class GnomonicCoordinates(qv.Table):
     def values(self) -> np.ndarray:
         return np.array(
             self.table.select(["theta_x", "theta_y", "vtheta_x", "vtheta_y"])
-        ).T
+        )
 
     @property
     def sigma_theta_x(self) -> np.ndarray:
@@ -108,6 +107,15 @@ class GnomonicCoordinates(qv.Table):
             left_key = pa.array(np.zeros(len(cartesian)), type=pa.int64())
             right_key = pa.array(np.zeros(len(center_cartesian)), type=pa.int64())
 
+            # Create a linkage between the cartesian coordinates and the center cartesian
+            # coordinates on time
+            link = qv.Linkage(
+                cartesian,
+                center_cartesian,
+                left_keys=left_key,
+                right_keys=right_key,
+            )
+
         elif center_cartesian is None and cartesian.time is not None:
             # Create a center cartesian coordinate for each unique time in the
             # input cartesian coordinates
@@ -126,22 +134,12 @@ class GnomonicCoordinates(qv.Table):
                     [cartesian[0].origin for _ in range(num_unique_times)]
                 ),
             )
-            left_key = cartesian.time.mjd()
-            right_key = center_cartesian.time.mjd()
+            link = cartesian.time.link(center_cartesian.time, precision="us")
 
         elif center_cartesian is not None and cartesian.time is not None:
             assert cartesian.time.scale == center_cartesian.time.scale
 
-            times = cartesian.time.mjd().unique().sort()
-            center_times = cartesian.time.mjd().unique().sort()
-            if not pc.all(pc.equal(times, center_times)).as_py():
-                raise ValueError(
-                    "Input cartesian coordinates and projection center cartesian coordinates "
-                    "must have the same times."
-                )
-
-            left_key = cartesian.time.mjd()
-            right_key = center_cartesian.time.mjd()
+            link = cartesian.time.link(center_cartesian.time, precision="us")
 
         else:
             raise ValueError(
@@ -149,20 +147,24 @@ class GnomonicCoordinates(qv.Table):
                 "must have the same times."
             )
 
-        # Create a linkage between the cartesian coordinates and the center cartesian
-        # coordinates on time
-        link = qv.Linkage(
-            cartesian,
-            center_cartesian,
-            left_keys=left_key,
-            right_keys=right_key,
-        )
+        # Round the times to the nearest microsecond and use those to select
+        # the cartesian coordinates and center cartesian coordinates
+        rounded_cartesian_times = cartesian.time.rounded(precision="us")  # type: ignore
+        rounded_center_cartesian_times = center_cartesian.time.rounded(precision="us")  # type: ignore
 
         gnomonic_coords = []
-        for key, cartesian_i, center_cartesian_i in link.iterate():
-            assert len(center_cartesian_i) == 1
+        for key, time_i, center_time_i in link.iterate():
 
-            coords_gnomonic, M = transforms.cartesian_to_gnomonic(
+            cartesian_i = cartesian.apply_mask(
+                rounded_cartesian_times.equals_scalar(key[0], key[1], precision="us")
+            )
+            center_cartesian_i = center_cartesian.apply_mask(
+                rounded_center_cartesian_times.equals_scalar(
+                    key[0], key[1], precision="us"
+                )
+            )
+
+            coords_gnomonic, M = cartesian_to_gnomonic(
                 cartesian_i.values,
                 center_cartesian=center_cartesian_i.values[0],
             )
@@ -173,7 +175,7 @@ class GnomonicCoordinates(qv.Table):
                 covariances_gnomonic = transform_covariances_jacobian(
                     cartesian_i.values,
                     cartesian_covariances,
-                    transforms._cartesian_to_gnomonic,
+                    _cartesian_to_gnomonic,
                     in_axes=(0, None),
                     center_cartesian=center_cartesian_i.values[0],
                 )
@@ -190,64 +192,10 @@ class GnomonicCoordinates(qv.Table):
                     vtheta_x=coords_gnomonic[:, 2],
                     vtheta_y=coords_gnomonic[:, 3],
                     time=cartesian_i.time,
-                    covariance=covariances.ProjectionCovariances.from_matrix(
-                        covariances_gnomonic
-                    ),
+                    covariance=ProjectionCovariances.from_matrix(covariances_gnomonic),
                     origin=cartesian_i.origin,
                     frame=cartesian_i.frame,
                 )
             )
 
         return qv.concatenate(gnomonic_coords)
-
-    def to_dataframe(
-        self, sigmas: bool = False, covariances: bool = True
-    ) -> pd.DataFrame:
-        """
-        Convert coordinates to a pandas DataFrame.
-
-        Parameters
-        ----------
-        sigmas : bool, optional
-            If True, include 1-sigma uncertainties in the DataFrame.
-        covariances : bool, optional
-            If True, include covariance matrices in the DataFrame. Covariance matrices
-            will be split into 21 columns, with the lower triangular elements stored.
-
-        Returns
-        -------
-        df : `~pandas.Dataframe`
-            DataFrame containing coordinates.
-        """
-        return coords_to_dataframe(
-            self,
-            ["theta_x", "theta_y", "vtheta_x", "vtheta_y"],
-            sigmas=sigmas,
-            covariances=covariances,
-        )
-
-    @classmethod
-    def from_dataframe(
-        cls, df: pd.DataFrame, frame: Literal["ecliptic", "equatorial"]
-    ) -> Self:
-        """
-        Create coordinates from a pandas DataFrame.
-
-        Parameters
-        ----------
-        df : `~pandas.Dataframe`
-            DataFrame containing coordinates.
-        frame : {"ecliptic", "equatorial"}
-            Frame in which coordinates are defined.
-
-        Returns
-        -------
-        coords : `~thor.projections.gnomonic.GnomonicCoordinates`
-            Gnomomic projection coordinates.
-        """
-        return coords_from_dataframe(
-            cls,
-            df,
-            coord_names=["theta_x", "theta_y", "vtheta_x", "vtheta_y"],
-            frame=frame,
-        )

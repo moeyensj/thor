@@ -1,30 +1,36 @@
 import astropy.time
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 import quivr as qv
-from adam_core import coordinates, observers, propagator
-from adam_core.observations import detections, exposures
+from adam_core.coordinates import CartesianCoordinates, Origin
+from adam_core.observations import Exposures, PointSourceDetections
+from adam_core.observers import Observers
+from adam_core.propagator import PYOORB
+from adam_core.time import Timestamp
 
-from .. import observation_filters, orbit
+from ...orbit import TestOrbit
+from ..filters import TestOrbitRadiusObservationFilter
+from ..observations import Observations
 
 
 @pytest.fixture
 def fixed_test_orbit():
     # An orbit at 1AU going around at (about) 1 degree per day
-    coords = coordinates.CartesianCoordinates.from_kwargs(
+    coords = CartesianCoordinates.from_kwargs(
         x=[1],
         y=[0],
         z=[0],
         vx=[0],
         vy=[2 * np.pi / 365.25],
         vz=[0],
-        time=coordinates.Times.from_astropy(astropy.time.Time("2020-01-01T00:00:00")),
-        origin=coordinates.Origin.from_kwargs(code=["SUN"]),
+        time=Timestamp.from_iso8601(["2020-01-01T00:00:00"]),
+        origin=Origin.from_kwargs(code=["SUN"]),
         frame="ecliptic",
     )
 
-    return orbit.TestOrbit(
+    return TestOrbit(
         coordinates=coords,
         orbit_id="test_orbit",
     )
@@ -32,7 +38,7 @@ def fixed_test_orbit():
 
 @pytest.fixture
 def fixed_observers():
-    times = astropy.time.Time(
+    times = Timestamp.from_iso8601(
         [
             "2020-01-01T00:00:00",
             "2020-01-02T00:00:00",
@@ -41,18 +47,18 @@ def fixed_observers():
             "2020-01-05T00:00:00",
         ]
     )
-    return observers.Observers.from_code("I11", times)
+    return Observers.from_code("I11", times)
 
 
 @pytest.fixture
 def fixed_ephems(fixed_test_orbit, fixed_observers):
-    prop = propagator.PYOORB()
+    prop = PYOORB()
     return prop.generate_ephemeris(fixed_test_orbit.orbit, fixed_observers).left_table
 
 
 @pytest.fixture
 def fixed_exposures(fixed_observers):
-    return exposures.Exposures.from_kwargs(
+    return Exposures.from_kwargs(
         id=[str(i) for i in range(len(fixed_observers))],
         start_time=fixed_observers.coordinates.time,
         duration=[30 for i in range(len(fixed_observers))],
@@ -79,11 +85,17 @@ def fixed_detections(fixed_ephems, fixed_exposures):
         ids = [str(i) for i in range(N)]
         exposure_ids = pa.concat_arrays([exposure.id] * N)
         magnitudes = [20] * N
+        times_mjd_utc = np.full(
+            N,
+            exposure.start_time.rescale("utc").mjd().to_numpy(zero_copy_only=False)[0]
+            + exposure.duration.to_numpy(zero_copy_only=False)[0] / 2 / 86400,
+        )
 
         detection_tables.append(
-            detections.PointSourceDetections.from_kwargs(
+            PointSourceDetections.from_kwargs(
                 id=ids,
                 exposure_id=exposure_ids,
+                time=Timestamp.from_mjd(times_mjd_utc, scale="utc"),
                 ra=ra_decs[0].flatten(),
                 dec=ra_decs[1].flatten(),
                 mag=magnitudes,
@@ -94,23 +106,27 @@ def fixed_detections(fixed_ephems, fixed_exposures):
 
 @pytest.fixture
 def fixed_observations(fixed_detections, fixed_exposures):
-    return observation_filters.Observations(fixed_detections, fixed_exposures)
+    return Observations.from_detections_and_exposures(fixed_detections, fixed_exposures)
 
 
 def test_observation_fixtures(fixed_test_orbit, fixed_observations):
     assert len(fixed_test_orbit.orbit) == 1
-    assert len(fixed_observations.exposures) == 5
+    assert len(pc.unique(fixed_observations.detections.exposure_id)) == 5
     assert len(fixed_observations.detections) == 100 * 100 * 5
 
 
 def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
-    fos = observation_filters.TestOrbitRadiusObservationFilter(
+    fos = TestOrbitRadiusObservationFilter(
         radius=0.5,
-        test_orbit=fixed_test_orbit,
     )
-    have = fos.apply(fixed_observations)
-    assert len(have.exposures) == 5
-    assert have.exposures == fixed_observations.exposures
+    have = fos.apply(fixed_observations, fixed_test_orbit)
+    assert len(pc.unique(have.detections.exposure_id)) == 5
+    assert pc.all(
+        pc.equal(
+            pc.unique(have.detections.exposure_id),
+            pc.unique(fixed_observations.detections.exposure_id),
+        )
+    )
     # Should be about pi/4 fraction of the detections (0.785
     assert len(have.detections) < 0.80 * len(fixed_observations.detections)
     assert len(have.detections) > 0.76 * len(fixed_observations.detections)

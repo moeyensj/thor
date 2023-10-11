@@ -1,8 +1,10 @@
+import logging
 import uuid
 from typing import Optional, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
 import quivr as qv
 from adam_core.coordinates import (
     CartesianCoordinates,
@@ -14,12 +16,10 @@ from adam_core.coordinates import (
     SphericalCoordinates,
     transform_coordinates,
 )
-from adam_core.observations.detections import PointSourceDetections
-from adam_core.observations.exposures import Exposures
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import PYOORB, Propagator
-from astropy.time import Time
+from adam_core.time import Timestamp
 
 CoordinateType = TypeVar(
     "CoordinateType",
@@ -31,12 +31,24 @@ CoordinateType = TypeVar(
     ],
 )
 
+from .observations import Observations
+
+logger = logging.getLogger(__name__)
+
 
 class RangedPointSourceDetections(qv.Table):
 
     id = qv.StringColumn()
     exposure_id = qv.StringColumn()
     coordinates = SphericalCoordinates.as_column()
+    state_id = qv.Int64Column()
+
+
+class TestOrbitEphemeris(qv.Table):
+
+    id = qv.Int64Column()
+    ephemeris = Ephemeris.as_column()
+    observer = Observers.as_column()
 
 
 class TestOrbit:
@@ -86,6 +98,9 @@ class TestOrbit:
             coordinates=cartesian_coordinates,
         )
 
+        self._cached_ephemeris: Optional[TestOrbitEphemeris] = None
+        self._cached_observation_ids: Optional[pa.array] = None
+
     @classmethod
     def from_orbits(cls, orbits):
         assert len(orbits) == 1
@@ -97,9 +112,56 @@ class TestOrbit:
     def orbit(self):
         return self._orbit
 
+    def _is_cache_fresh(self, observations: Observations) -> bool:
+        """
+        Check if the cached ephemeris is fresh. If the observation IDs are contained within the
+        cached observation IDs, then the cache is fresh. Otherwise, it is stale. This permits
+        observations to be filtered out without having to regenerate the ephemeris.
+
+        Parameters
+        ----------
+        observations : `~thor.observations.observations.Observations`
+            Observations to check against the cached ephemerides.
+
+        Returns
+        -------
+        is_fresh : bool
+            True if the cache is fresh, False otherwise.
+        """
+        if self._cached_ephemeris is None or self._cached_observation_ids is None:
+            return False
+        elif pc.all(
+            pc.is_in(
+                observations.detections.id.sort(), self._cached_observation_ids.sort()
+            )
+        ).as_py():
+            return True
+        else:
+            return False
+
+    def _cache_ephemeris(
+        self, ephemeris: TestOrbitEphemeris, observations: Observations
+    ):
+        """
+        Cache the ephemeris and observation IDs.
+
+        Parameters
+        ----------
+        ephemeris : `~thor.orbit.TestOrbitEphemeris`
+            States to cache.
+        observations : `~thor.observations.observations.Observations`
+            Observations to cache. Only observation IDs will be cached.
+
+        Returns
+        -------
+        None
+        """
+        self._cached_ephemeris = ephemeris
+        self._cached_observation_ids = observations.detections.id
+
     def propagate(
         self,
-        times: Time,
+        times: Timestamp,
         propagator: Propagator = PYOORB(),
         max_processes: Optional[int] = 1,
     ) -> Orbits:
@@ -108,7 +170,7 @@ class TestOrbit:
 
         Parameters
         ----------
-        times : `~astropy.time.core.Time`
+        times : `~adam_core.time.time.Timestamp`
             Times to which to propagate the orbit.
         propagator : `~adam_core.propagator.propagator.Propagator`, optional
             Propagator to use to propagate the orbit. Defaults to PYOORB.
@@ -153,9 +215,71 @@ class TestOrbit:
             self.orbit, observers, max_processes=max_processes, chunk_size=1
         )
 
+    def generate_ephemeris_from_observations(
+        self,
+        observations: Observations,
+        propagator: Propagator = PYOORB(),
+        max_processes: Optional[int] = 1,
+    ):
+        """
+        For each unique time and code in the observations (a state), generate an ephemeris for
+        that state and store them in a TestOrbitStates table. The observer's coordinates will also be
+        stored in the table and can be referenced through out the THOR pipeline.
+
+        These ephemerides will be cached. If the cache is fresh, the cached ephemerides will be
+        returned instead of regenerating them.
+
+        Parameters
+        ----------
+        observations : `~thor.observations.observations.Observations`
+            Observations to compute test orbit ephemerides for.
+        propagator : `~adam_core.propagator.propagator.Propagator`, optional
+            Propagator to use to propagate the orbit. Defaults to PYOORB.
+        num_processes : int, optional
+            Number of processes to use to propagate the orbit. Defaults to 1.
+
+
+        Returns
+        -------
+        states : `~thor.orbit.TestOrbitEphemeris`
+            Table containing the ephemeris of the test orbit, its aberrated state vector, and the
+            observer coordinates at each unique time of the observations.
+        """
+        if self._is_cache_fresh(observations):
+            logger.debug(
+                "Test orbit ephemeris cache is fresh. Returning cached states."
+            )
+            return self._cached_ephemeris
+
+        logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
+
+        state_ids = observations.state_id.unique()
+        observers = observations.get_observers()
+
+        # Generate ephemerides for each unique state and then sort by time and code
+        ephemeris = self.generate_ephemeris(
+            observers, propagator=propagator, max_processes=max_processes
+        ).left_table
+        ephemeris = ephemeris.sort_by(
+            by=[
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.origin.code",
+            ]
+        )
+
+        test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
+            id=state_ids,
+            ephemeris=ephemeris,
+            observer=observers,
+        )
+        self._cache_ephemeris(test_orbit_ephemeris, observations)
+        return test_orbit_ephemeris
+
     def range_observations(
         self,
-        observations: qv.Linkage[PointSourceDetections, Exposures],
+        observations: Observations,
+        propagator: Propagator = PYOORB(),
         max_processes: Optional[int] = 1,
     ) -> RangedPointSourceDetections:
         """
@@ -164,8 +288,10 @@ class TestOrbit:
 
         Parameters
         ----------
-        observations : qv.Linkage[PointSourceDetections, Exposures]
+        observations : `~thor.observations.observations.Observations`
             Observations to range.
+        propagator : `~adam_core.propagator.propagator.Propagator`, optional
+            Propagator to use to propagate the orbit. Defaults to PYOORB.
         max_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
 
@@ -174,41 +300,44 @@ class TestOrbit:
         ranged_point_source_detections : `~thor.orbit.RangedPointSourceDetections`
             The ranged detections.
         """
-        exposures = observations.right_table
-        ephemeris = self.generate_ephemeris(
-            exposures.observers(), max_processes=max_processes
+        # Generate an ephemeris for each unique observation time and observatory
+        # code combination
+        ephemeris = self.generate_ephemeris_from_observations(
+            observations, propagator=propagator, max_processes=max_processes
         )
-        # Get the light-time corrected state vector: the state vector
-        # at the time where the light reflected/emitted from the object
-        # would have reached the observer.
-        # We will use this state vector to get the heliocentric distance of
-        # the object at the time of the exposure.
-        # TODO: We could use other adam_core functionality to calculate this if need
-        # be and we may need to if we plan on mapping covariances.
-        propagated_orbit = ephemeris.left_table.aberrated_coordinates
 
-        # TODO: We could investigate using concurrent futures here to parallelize
-        # this loop
+        # Link the ephemeris to the observations
+        link = qv.Linkage(
+            ephemeris,
+            observations,
+            left_keys=ephemeris.id,
+            right_keys=observations.state_id,
+        )
+
+        # Do a sorted iteration over the unique state IDs
         rpsds = []
-        for propagated_orbit_i, exposure_i in zip(propagated_orbit, exposures):
+        state_ids = observations.state_id.unique().sort()
+        for state_id in state_ids:
 
-            # Select the detections that belong to this exposure
-            detections_i = observations.select_left(exposure_i.id[0])
+            # Select the ephemeris and observations for this state
+            ephemeris_i = link.select_left(state_id)
+            observations_i = link.select_right(state_id)
+            detections_i = observations_i.detections
 
             # Get the heliocentric distance of the object at the time of the exposure
-            r_mag = propagated_orbit_i.r_mag[0]
+            r_mag = ephemeris_i.ephemeris.aberrated_coordinates.r_mag[0]
 
             # Get the observer's heliocentric coordinates
-            observer_i = exposure_i.observers()
+            observer_i = ephemeris_i.observer
 
             # Create an array of observatory codes for the detections
-            num_detections = len(detections_i)
+            num_detections = len(observations_i)
             observatory_codes = np.repeat(
-                exposure_i.observatory_code[0].as_py(), num_detections
+                observations_i.observatory_code[0].as_py(), num_detections
             )
 
             # The following can be replaced with:
-            # coords = detections_i.to_spherical(observatory_codes)
+            # coords = observations_i.to_spherical(observatory_codes)
             # Start replacement:
             sigma_data = np.vstack(
                 [
@@ -238,10 +367,12 @@ class TestOrbit:
                     coordinates=assume_heliocentric_distance(
                         r_mag, coords, observer_i.coordinates
                     ),
+                    state_id=observations_i.state_id,
                 )
             )
 
-        return qv.concatenate(rpsds)
+        ranged_detections = qv.concatenate(rpsds)
+        return ranged_detections
 
 
 def assume_heliocentric_distance(
