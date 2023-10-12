@@ -40,9 +40,10 @@ def test_assume_heliocentric_distance_missing_rho():
     # detection should have a heliocentric distance of 2.5 au (as rho)
     # Since the origin is the Sun the heliocentric distance is also the
     # topocentric distance
-    r_mag = 3.0
-    coords_assumed = assume_heliocentric_distance(r_mag, coords, origin_coords)
-    np.testing.assert_equal(coords_assumed.rho, np.array([r_mag, rho[1]]))
+    r = np.array([3.0, 0.0, 0.0])
+    r_mag = np.linalg.norm(r)
+    coords_assumed = assume_heliocentric_distance(r, coords, origin_coords)
+    np.testing.assert_equal(coords_assumed.rho, np.array([r[0], rho[1]]))
 
 
 def test_assume_heliocentric_distance_zero_origin():
@@ -80,8 +81,9 @@ def test_assume_heliocentric_distance_zero_origin():
     # should have a heliocentric distance of 3 au (as rho)
     # Since the origin is the Sun the heliocentric distance is also the
     # topocentric distance
-    r_mag = 3.0
-    coords_assumed = assume_heliocentric_distance(r_mag, coords, origin_coords)
+    r = np.array([3.0, 0.0, 0.0])
+    r_mag = np.linalg.norm(r)
+    coords_assumed = assume_heliocentric_distance(r, coords, origin_coords)
     np.testing.assert_equal(coords_assumed.rho, r_mag * np.ones(num_detections))
 
 
@@ -120,8 +122,9 @@ def test_assume_heliocentric_distance():
     # point should have topocentric distance sqrt(2) - 1 au (as rho), and the South
     # point should have a topocentric distance of sqrt(2) + 1 au (on the opposite side of the
     # Sun)
-    r_mag = np.sqrt(2)
-    coords_assumed = assume_heliocentric_distance(r_mag, coords, origin_coords)
+    r = np.array([1.0, 1.0, 0.0])
+    r_mag = np.linalg.norm(r)
+    coords_assumed = assume_heliocentric_distance(r, coords, origin_coords)
     rho_assumed = coords_assumed.rho.to_numpy()
-    rho_expected = np.array([1.0, 1.0, np.sqrt(2) - 1, 1.0, np.sqrt(2) + 1, 1.0])
+    rho_expected = np.array([1.0, 1.0, r_mag - 1, 1.0, r_mag + 1, 1.0])
     np.testing.assert_almost_equal(rho_assumed, rho_expected)
