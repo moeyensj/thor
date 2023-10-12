@@ -37,6 +37,11 @@ OBJECT_IDS = [
     "15789 (1993 SC)",
     "1I/'Oumuamua (A/2017 U1)",
 ]
+TOLERANCES = {
+    "default": 0.1 / 3600,
+    "594913 'Aylo'chaxnim (2020 AV2)": 2 / 3600,
+    "1I/'Oumuamua (A/2017 U1)": 5 / 3600,
+}
 
 
 @pytest.fixture
@@ -79,19 +84,29 @@ def test_range_and_transform(object_id, orbits, observations):
         pc.is_in(observations.detections.id, obs_ids_expected)
     )
 
+    if object_id in TOLERANCES:
+        tolerance = TOLERANCES[object_id]
+    else:
+        tolerance = TOLERANCES["default"]
+
     # Set a filter to include observations within 1 arcsecond of the predicted position
     # of the test orbit
-    # filters = [TestOrbitRadiusObservationFilter(radius=1/3600)]
+    filters = [TestOrbitRadiusObservationFilter(radius=tolerance)]
 
     # Create a test orbit for this object
     test_orbit = THORbit.from_orbits(orbit)
 
     # Run range and transform and make sure we get the correct observations back
     transformed_detections = range_and_transform(
-        test_orbit,
-        observations,  # filters=filters
+        test_orbit, observations, filters=filters
     )
     assert len(transformed_detections) == 90
+    assert pc.all(
+        pc.less_equal(pc.abs(transformed_detections.coordinates.theta_x), tolerance)
+    ).as_py()
+    assert pc.all(
+        pc.less_equal(pc.abs(transformed_detections.coordinates.theta_y), tolerance)
+    ).as_py()
 
     # Ensure we get all the object IDs back that we expect
     obs_ids_actual = transformed_detections.id.unique().sort()
