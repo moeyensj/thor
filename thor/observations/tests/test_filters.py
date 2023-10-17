@@ -53,7 +53,7 @@ def fixed_observers():
 @pytest.fixture
 def fixed_ephems(fixed_test_orbit, fixed_observers):
     prop = PYOORB()
-    return prop.generate_ephemeris(fixed_test_orbit.orbit, fixed_observers).left_table
+    return prop.generate_ephemeris(fixed_test_orbit.orbit, fixed_observers)
 
 
 @pytest.fixture

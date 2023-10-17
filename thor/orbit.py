@@ -191,7 +191,7 @@ class TestOrbit:
         observers: Observers,
         propagator: Propagator = PYOORB(),
         max_processes: Optional[int] = 1,
-    ) -> qv.MultiKeyLinkage[Ephemeris, Observers]:
+    ) -> Ephemeris:
         """
         Generate ephemeris for this test orbit at the given observers.
 
@@ -206,9 +206,7 @@ class TestOrbit:
 
         Returns
         -------
-        ephemeris : qv.MultiKeyLinkage[
-                `~adam_core.orbits.ephemeris.Ephemeris`,
-                `~adam_core.observers.observers.Observers`]
+        ephemeris : `~adam_core.orbits.ephemeris.Ephemeris`
             The ephemeris of the test orbit at the given observers.
         """
         return propagator.generate_ephemeris(
@@ -267,7 +265,7 @@ class TestOrbit:
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
             observers, propagator=propagator, max_processes=max_processes
-        ).left_table
+        )
         ephemeris = ephemeris.sort_by(
             by=[
                 "coordinates.time.days",
