@@ -191,7 +191,7 @@ class TestOrbit:
         observers: Observers,
         propagator: Propagator = PYOORB(),
         max_processes: Optional[int] = 1,
-    ) -> qv.MultiKeyLinkage[Ephemeris, Observers]:
+    ) -> Ephemeris:
         """
         Generate ephemeris for this test orbit at the given observers.
 
@@ -206,9 +206,7 @@ class TestOrbit:
 
         Returns
         -------
-        ephemeris : qv.MultiKeyLinkage[
-                `~adam_core.orbits.ephemeris.Ephemeris`,
-                `~adam_core.observers.observers.Observers`]
+        ephemeris : `~adam_core.orbits.ephemeris.Ephemeris`
             The ephemeris of the test orbit at the given observers.
         """
         return propagator.generate_ephemeris(
@@ -244,7 +242,15 @@ class TestOrbit:
         states : `~thor.orbit.TestOrbitEphemeris`
             Table containing the ephemeris of the test orbit, its aberrated state vector, and the
             observer coordinates at each unique time of the observations.
+
+        Raises
+        ------
+        ValueError
+            If the observations are empty.
         """
+        if len(observations) == 0:
+            raise ValueError("Observations must not be empty.")
+
         if self._is_cache_fresh(observations):
             logger.debug(
                 "Test orbit ephemeris cache is fresh. Returning cached states."
@@ -259,7 +265,7 @@ class TestOrbit:
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
             observers, propagator=propagator, max_processes=max_processes
-        ).left_table
+        )
         ephemeris = ephemeris.sort_by(
             by=[
                 "coordinates.time.days",
@@ -324,8 +330,8 @@ class TestOrbit:
             observations_i = link.select_right(state_id)
             detections_i = observations_i.detections
 
-            # Get the heliocentric distance of the object at the time of the exposure
-            r_mag = ephemeris_i.ephemeris.aberrated_coordinates.r_mag[0]
+            # Get the heliocentric position vector of the object at the time of the exposure
+            r = ephemeris_i.ephemeris.aberrated_coordinates.r[0]
 
             # Get the observer's heliocentric coordinates
             observer_i = ephemeris_i.observer
@@ -365,7 +371,7 @@ class TestOrbit:
                     id=detections_i.id,
                     exposure_id=detections_i.exposure_id,
                     coordinates=assume_heliocentric_distance(
-                        r_mag, coords, observer_i.coordinates
+                        r, coords, observer_i.coordinates
                     ),
                     state_id=observations_i.state_id,
                 )
@@ -376,7 +382,7 @@ class TestOrbit:
 
 
 def assume_heliocentric_distance(
-    r_mag: float, coords: SphericalCoordinates, origin_coords: CartesianCoordinates
+    r: np.ndarray, coords: SphericalCoordinates, origin_coords: CartesianCoordinates
 ) -> SphericalCoordinates:
     """
     Given a heliocentric distance, for all coordinates that do not have a topocentric distance defined (rho), calculate
@@ -384,10 +390,11 @@ def assume_heliocentric_distance(
 
     Parameters
     ----------
-    r_mag : float
-        Heliocentric distance to assume for the coordinates with missing topocentric distance. This is
-        typically the same distance as the heliocentric distance of test orbit at the time
-        of the coordinates.
+    r_mag : `~numpy.ndarray` (3)
+        Heliocentric position vector from which to assume each coordinate lies at the same heliocentric distance.
+        In cases where the heliocentric distance is less than the heliocentric distance of the origin, the topocentric
+        distance will be calculated such that the topocentric position vector is closest to the heliocentric position
+        vector.
     coords : `~adam_core.coordinates.spherical.SphericalCoordinates`
         Coordinates to assume the heliocentric distance for.
     origin_coords : `~adam_core.coordinates.cartesian.CartesianCoordinates`
@@ -400,6 +407,8 @@ def assume_heliocentric_distance(
     """
     assert len(origin_coords) == 1
     assert np.all(origin_coords.origin == OriginCodes.SUN)
+
+    r_mag = np.linalg.norm(r)
 
     # Extract the topocentric distance and topocentric radial velocity from the coordinates
     rho = coords.rho.to_numpy(zero_copy_only=False)
@@ -420,10 +429,27 @@ def assume_heliocentric_distance(
     # Calculate the topocentric distance such that the heliocentric distance to the coordinate
     # is r_mag
     dotprod = np.sum(unit_vectors * origin_coords.r, axis=1)
-    delta = -dotprod + np.sqrt(dotprod**2 + r_mag**2 - origin_coords.r_mag**2)
+    sqrt = np.sqrt(dotprod**2 + r_mag**2 - origin_coords.r_mag**2)
+    delta_p = -dotprod + sqrt
+    delta_n = -dotprod - sqrt
 
     # Where rho was not defined, replace it with the calculated topocentric distance
-    coords_ec = coords_ec.set_column("rho", np.where(np.isnan(rho), delta, rho))
+    # By default we take the positive solution which applies for all orbits exterior to the
+    # observer's orbit
+    coords_ec = coords_ec.set_column("rho", np.where(np.isnan(rho), delta_p, rho))
+
+    # For cases where the orbit is interior to the observer's orbit there are two valid solutions
+    # for the topocentric distance. In this case, we take the dot product of the heliocentric position
+    # vector with the calculated topocentric position vector. If the dot product is positive, then
+    # that solution is closest to the heliocentric position vector and we take that solution.
+    if np.any(r_mag < origin_coords.r_mag):
+        coords_ec_xyz_p = coords_ec.to_cartesian()
+        dotprod_p = np.sum(coords_ec_xyz_p.r * r, axis=1)
+        coords_ec = coords_ec.set_column(
+            "rho",
+            np.where(np.isnan(rho), np.where(dotprod_p < 0, delta_n, delta_p), rho),
+        )
+
     coords_ec = coords_ec.set_column("vrho", vrho)
 
     return coords_ec
