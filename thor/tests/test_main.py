@@ -2,7 +2,7 @@ import pyarrow.compute as pc
 import pytest
 from adam_core.utils.helpers import make_observations, make_real_orbits
 
-from ..main_2 import range_and_transform
+from ..main_2 import link_test_orbit, range_and_transform
 from ..observations import Observations
 from ..observations.filters import TestOrbitRadiusObservationFilter
 from ..orbit import TestOrbit as THORbit
@@ -107,6 +107,51 @@ def test_range_and_transform(object_id, orbits, observations):
     assert pc.all(
         pc.less_equal(pc.abs(transformed_detections.coordinates.theta_y), tolerance)
     ).as_py()
+
+    # Ensure we get all the object IDs back that we expect
+    obs_ids_actual = transformed_detections.id.unique().sort()
+    assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
+
+
+@pytest.mark.parametrize("object_id", OBJECT_IDS)
+def test_link_test_orbit(object_id, orbits, observations):
+
+    orbit = orbits.select("object_id", object_id)
+    exposures, detections, associations = observations
+
+    # Make THOR observations from the detections and exposures
+    observations = Observations.from_detections_and_exposures(detections, exposures)
+
+    # Select the associations that match this object ID
+    associations_i = associations.select("object_id", object_id)
+    assert len(associations_i) == 90
+
+    # Extract the observations that match this object ID
+    obs_ids_expected = associations_i.detection_id.unique().sort()
+
+    # Filter the observations to include only those that match this object
+    observations = observations.apply_mask(
+        pc.is_in(observations.detections.id, obs_ids_expected)
+    )
+
+    if object_id in TOLERANCES:
+        tolerance = TOLERANCES[object_id]
+    else:
+        tolerance = TOLERANCES["default"]
+
+    # Set a filter to include observations within 1 arcsecond of the predicted position
+    # of the test orbit
+    filters = [TestOrbitRadiusObservationFilter(radius=tolerance)]
+
+    # Create a test orbit for this object
+    test_orbit = THORbit.from_orbits(orbit)
+
+    # Run link_test_orbit and make sure we get the correct observations back
+    transformed_detections = link_test_orbit(
+        test_orbit, observations, filters=filters, max_processes=None
+    )
+
+    assert len(transformed_detections) == 90
 
     # Ensure we get all the object IDs back that we expect
     obs_ids_actual = transformed_detections.id.unique().sort()
