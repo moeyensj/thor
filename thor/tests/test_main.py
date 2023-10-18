@@ -89,16 +89,19 @@ def test_range_and_transform(object_id, orbits, observations):
     else:
         tolerance = TOLERANCES["default"]
 
-    # Set a filter to include observations within 1 arcsecond of the predicted position
-    # of the test orbit
-    filters = [TestOrbitRadiusObservationFilter(radius=tolerance)]
-
     # Create a test orbit for this object
     test_orbit = THORbit.from_orbits(orbit)
 
+    # Set a filter to include observations within 1 arcsecond of the predicted position
+    # of the test orbit
+    filters = [TestOrbitRadiusObservationFilter(radius=tolerance)]
+    for filter in filters:
+        observations = filter.apply(observations, test_orbit)
+
     # Run range and transform and make sure we get the correct observations back
     transformed_detections = range_and_transform(
-        test_orbit, observations, filters=filters
+        test_orbit,
+        observations,
     )
     assert len(transformed_detections) == 90
     assert pc.all(

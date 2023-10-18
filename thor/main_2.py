@@ -24,21 +24,20 @@ class TransformedDetections(qv.Table):
 def range_and_transform(
     test_orbit: TestOrbit,
     observations: Observations,
-    filters: Optional[List[ObservationFilter]] = None,
     propagator: Propagator = PYOORB(),
     max_processes: int = 1,
 ) -> TransformedDetections:
     """
-    Gather observations for a single test orbit, and transform them into a
+    Range observations for a single test orbit and transform them into a
     gnomonic projection centered on the motion of the test orbit (co-rotating
     frame).
 
     Parameters
     ----------
-    obs_src : `~thor.observation_filters.ObservationFilter`
-        Observation filter to use to gather observations given the test orbit.
     test_orbit : `~thor.orbit.TestOrbit`
         Test orbit to use to gather and transform observations.
+    observations : `~thor.observations.observations.Observations`
+        Observations from which range and transform the detections.
     propagator : `~adam_core.propagator.propagator.Propagator`
         Propagator to use to propagate the test orbit and generate
         ephemerides.
@@ -58,16 +57,10 @@ def range_and_transform(
         max_processes=max_processes,
     )
 
-    # Apply filters to the observations
-    filtered_observations = observations
-    if filters is not None:
-        for filter_i in filters:
-            filtered_observations = filter_i.apply(filtered_observations, test_orbit)
-
     # Assume that the heliocentric distance of all point sources in
     # the observations are the same as that of the test orbit
     ranged_detections_spherical = test_orbit.range_observations(
-        filtered_observations,
+        observations,
         propagator=propagator,
         max_processes=max_processes,
     )
@@ -83,17 +76,17 @@ def range_and_transform(
     # Link the ephemeris and observations by state id
     link = qv.Linkage(
         ephemeris,
-        filtered_observations,
+        observations,
         left_keys=ephemeris.id,
-        right_keys=filtered_observations.state_id,
+        right_keys=observations.state_id,
     )
 
     # Transform the detections into the co-rotating frame
     transformed_detection_list = []
-    state_ids = filtered_observations.state_id.unique().sort()
+    state_ids = observations.state_id.unique().sort()
     for state_id in state_ids:
         # Select the detections and ephemeris for this state id
-        mask = pc.equal(state_id, filtered_observations.state_id)
+        mask = pc.equal(state_id, observations.state_id)
         ranged_detections_cartesian_i = ranged_detections_cartesian.apply_mask(mask)
         ephemeris_i = link.select_left(state_id)
         observations_i = link.select_right(state_id)
@@ -126,11 +119,16 @@ def link_test_orbit(
     """
     Find all linkages for a single test orbit.
     """
+    # Apply filters to the observations
+    filtered_observations = observations
+    if filters is not None:
+        for filter_i in filters:
+            filtered_observations = filter_i.apply(filtered_observations, test_orbit)
+
     # Range and transform the observations
     transformed_detections = range_and_transform(
         test_orbit,
-        observations,
-        filters=filters,
+        filtered_observations,
         propagator=propagator,
         max_processes=max_processes,
     )
