@@ -32,6 +32,10 @@ jobs:
         run: |
           tail +2 requirements.txt > requirements_conda.txt
           conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements_conda.txt --yes
+      - name: Update OBSCODE.dat
+        run: |
+          cd $CONDA_PREFIX/share/oorb && ./updateOBSCODE
+          cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
       - name: Install adam_core
         run: |
           pip install adam-core@git+https://github.com/B612-Asteroid-Institute/adam_core@main

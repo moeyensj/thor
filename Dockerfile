@@ -18,6 +18,11 @@ RUN pip install --upgrade pip pre-commit
 RUN conda install -c defaults -c conda-forge openorb --y
 ENV OORB_DATA /opt/conda/share/openorb
 
+# Update OBSCODE.dat
+RUN cd /opt/conda/share/oorb \
+	&& ./updateOBSCODE \
+    && cp OBSCODE.dat /opt/conda/share/openorb/OBSCODE.dat
+
 # Install pre-commit hooks (before THOR is installed to cache this step)
 RUN mkdir /code/
 COPY .pre-commit-config.yaml /code/
