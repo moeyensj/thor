@@ -5,11 +5,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
-from adam_core.coordinates import (
-    CartesianCoordinates,
-    Origin,
-    transform_covariances_jacobian,
-)
+from adam_core.coordinates import CartesianCoordinates, Origin
+from adam_core.coordinates.covariances import transform_covariances_jacobian
 from adam_core.time import Timestamp
 from typing_extensions import Self
 
