@@ -116,9 +116,25 @@ def test_range_and_transform(object_id, orbits, observations):
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
 
 
-# Limit to a single orbit for now
-@pytest.mark.parametrize("object_id", OBJECT_IDS[10:11])
-@pytest.mark.integration_test
+@pytest.mark.parametrize(
+    "object_id",
+    [
+        pytest.param(OBJECT_IDS[0], marks=pytest.mark.xfail(reason="Fails OD")),
+    ]
+    + OBJECT_IDS[1:3]
+    + [
+        pytest.param(OBJECT_IDS[3], marks=pytest.mark.xfail(reason="Fails OD")),
+        pytest.param(OBJECT_IDS[4], marks=pytest.mark.xfail(reason="Fails OD")),
+        pytest.param(OBJECT_IDS[5], marks=pytest.mark.xfail(reason="Fails OD")),
+    ]
+    + [OBJECT_IDS[6]]
+    + [
+        pytest.param(OBJECT_IDS[7], marks=pytest.mark.xfail(reason="Fails OD")),
+        pytest.param(OBJECT_IDS[8], marks=pytest.mark.xfail(reason="Fails OD")),
+    ]
+    + OBJECT_IDS[9:],
+)
+@pytest.mark.integration
 def test_link_test_orbit(object_id, orbits, observations):
 
     orbit = orbits.select("object_id", object_id)
