@@ -30,6 +30,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install openorb using conda
         run: conda install -c defaults -c conda-forge openorb --yes
+      - name: Update OBSCODE.dat
+        run: |
+          cd $CONDA_PREFIX/share/oorb && ./updateOBSCODE
+          cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
