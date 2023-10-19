@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Iterator, List, Optional
 
 import pyarrow.compute as pc
 import quivr as qv
@@ -9,6 +9,12 @@ from adam_core.coordinates import (
 )
 from adam_core.propagator import PYOORB, Propagator
 
+from .main import (
+    clusterAndLink,
+    differentialCorrection,
+    initialOrbitDetermination,
+    mergeAndExtendOrbits,
+)
 from .observations import Observations
 from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
 from .orbit import TestOrbit
@@ -115,9 +121,29 @@ def link_test_orbit(
     ],
     propagator: Propagator = PYOORB(),
     max_processes: int = 1,
-):
+) -> Iterator[Any]:
     """
-    Find all linkages for a single test orbit.
+    Run THOR for a single test orbit on the given observations. This function will yield
+    results at each stage of the pipeline.
+        1. transformed_detections
+        2. clusters, cluster_members
+        3. iod_orbits, iod_orbit_members
+        4. od_orbits, od_orbit_members
+        5. recovered_orbits, recovered_orbit_members
+
+    Parameters
+    ----------
+    test_orbit : `~thor.orbit.TestOrbit`
+        Test orbit to use to gather and transform observations.
+    observations : `~thor.observations.observations.Observations`
+        Observations from which range and transform the detections.
+    filters : list of `~thor.observations.filters.ObservationFilter`, optional
+        List of filters to apply to the observations before running THOR.
+    propagator : `~adam_core.propagator.propagator.Propagator`
+        Propagator to use to propagate the test orbit and generate
+        ephemerides.
+    max_processes : int, optional
+        Maximum number of processes to use for parallelization.
     """
     # Apply filters to the observations
     filtered_observations = observations
@@ -132,14 +158,86 @@ def link_test_orbit(
         propagator=propagator,
         max_processes=max_processes,
     )
+    yield transformed_detections
+
+    # Translate transformed detections into format required by the rest of the pipeline
+    # FIXME: Remove this translation step
+    observations_df = filtered_observations.to_dataframe()
+    observations_df.rename(
+        columns={
+            "detections.id": "obs_id",
+            "detections.ra": "RA_deg",
+            "detections.dec": "Dec_deg",
+            "detections.ra_sigma": "RA_sigma_deg",
+            "detections.dec_sigma": "Dec_sigma_deg",
+            "detections.mag": "mag",
+            "detections.mag_sigma": "mag_sigma",
+        },
+        inplace=True,
+    )
+    observations_df["mjd_utc"] = (
+        filtered_observations.detections.time.rescale("utc")
+        .mjd()
+        .to_numpy(zero_copy_only=False)
+    )
+
+    # TODO: I think we might want to add state_id to the observers table. Essential wrap the observers class with another table.
+    observers_df = filtered_observations.get_observers().to_dataframe()
+    observers_df["state_id"] = (
+        filtered_observations.state_id.unique().sort().to_numpy(zero_copy_only=False)
+    )
+    observers_df.rename(
+        columns={
+            "coordinates.x": "obs_x",
+            "coordinates.y": "obs_y",
+            "coordinates.z": "obs_z",
+            "coordinates.vx": "obs_vx",
+            "coordinates.vy": "obs_vy",
+            "coordinates.vz": "obs_vz",
+        },
+        inplace=True,
+    )
+
+    observations_df = observations_df.merge(observers_df, on="state_id")
+
+    transformed_detections_df = transformed_detections.to_dataframe()
+    transformed_detections_df.rename(
+        columns={
+            "id": "obs_id",
+            "coordinates.theta_x": "theta_x_deg",
+            "coordinates.theta_y": "theta_y_deg",
+        },
+        inplace=True,
+    )
+    transformed_detections_df = transformed_detections_df.merge(
+        observations_df[["obs_id", "mjd_utc", "observatory_code"]], on="obs_id"
+    )
 
     # TODO: Find objects which move in straight-ish lines in the gnomonic frame.
-    #
-    # TODO: Run IOD against each of the discovered straight lines, and
-    # filter down to plausible orbits.
-    #
-    # TODO: Run OD against the plausible orbits, and filter down to really good orbits.
-    #
-    # TODO: Perform arc extension on the really good orbits.
+    clusters, cluster_members = clusterAndLink(
+        transformed_detections_df,
+    )
+    yield clusters, cluster_members
 
-    return transformed_detections
+    iod_orbits, iod_orbit_members = initialOrbitDetermination(
+        observations_df,
+        cluster_members,
+        identify_subsets=False,
+        rchi2_threshold=1e10,
+    )
+    yield iod_orbits, iod_orbit_members
+
+    od_orbits, od_orbit_members = differentialCorrection(
+        iod_orbits,
+        iod_orbit_members,
+        observations_df,
+        rchi2_threshold=1e10,
+    )
+    yield od_orbits, od_orbit_members
+
+    recovered_orbits, recovered_orbit_members = mergeAndExtendOrbits(
+        od_orbits,
+        od_orbit_members,
+        observations_df,
+    )
+    yield recovered_orbits, recovered_orbit_members
