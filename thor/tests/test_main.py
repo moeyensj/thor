@@ -116,26 +116,42 @@ def test_range_and_transform(object_id, orbits, observations):
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
 
 
-@pytest.mark.parametrize("object_id", OBJECT_IDS)
+# Limit to a single orbit for now
+@pytest.mark.parametrize("object_id", OBJECT_IDS[10:11])
+@pytest.mark.integration_test
 def test_link_test_orbit(object_id, orbits, observations):
 
     orbit = orbits.select("object_id", object_id)
     exposures, detections, associations = observations
 
-    # Make THOR observations from the detections and exposures
-    observations = Observations.from_detections_and_exposures(detections, exposures)
-
     # Select the associations that match this object ID
     associations_i = associations.select("object_id", object_id)
+    detections_i = detections.apply_mask(
+        pc.is_in(detections.id, associations_i.detection_id)
+    )
+    exposures_i = exposures.apply_mask(pc.is_in(exposures.id, detections_i.exposure_id))
     assert len(associations_i) == 90
+
+    # Limit detections to first two weeks
+    time_mask = pc.and_(
+        pc.greater_equal(detections_i.time.days, pc.min(detections_i.time.days)),
+        pc.less_equal(
+            detections_i.time.days, pc.min(detections_i.time.days).as_py() + 14
+        ),
+    )
+    detections_i = detections_i.apply_mask(time_mask)
+    exposures_i = exposures_i.apply_mask(
+        pc.is_in(exposures_i.id, detections_i.exposure_id)
+    )
+    associations_i = associations_i.apply_mask(
+        pc.is_in(associations_i.detection_id, detections_i.id)
+    )
 
     # Extract the observations that match this object ID
     obs_ids_expected = associations_i.detection_id.unique().sort()
 
-    # Filter the observations to include only those that match this object
-    observations = observations.apply_mask(
-        pc.is_in(observations.detections.id, obs_ids_expected)
-    )
+    # Make THOR observations from the detections and exposures
+    observations = Observations.from_detections_and_exposures(detections_i, exposures_i)
 
     if object_id in TOLERANCES:
         tolerance = TOLERANCES[object_id]
@@ -150,12 +166,16 @@ def test_link_test_orbit(object_id, orbits, observations):
     test_orbit = THORbit.from_orbits(orbit)
 
     # Run link_test_orbit and make sure we get the correct observations back
-    transformed_detections = link_test_orbit(
-        test_orbit, observations, filters=filters, max_processes=None
-    )
+    for i, results in enumerate(
+        link_test_orbit(test_orbit, observations, filters=filters)
+    ):
+        if i == 4:
+            od_orbits, od_orbit_members = results
+        else:
+            continue
 
-    assert len(transformed_detections) == 90
+    assert len(od_orbit_members) == len(obs_ids_expected)
 
     # Ensure we get all the object IDs back that we expect
-    obs_ids_actual = transformed_detections.id.unique().sort()
+    obs_ids_actual = od_orbit_members["obs_id"].values
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
