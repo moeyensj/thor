@@ -8,7 +8,6 @@ from adam_core.coordinates import (
     OriginCodes,
     transform_coordinates,
 )
-from adam_core.observers import Observers
 from adam_core.propagator import PYOORB, Propagator
 
 from .main import (
@@ -17,8 +16,8 @@ from .main import (
     initialOrbitDetermination,
     mergeAndExtendOrbits,
 )
-from .observations import Observations
 from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
+from .observations.observations import Observations, ObserversWithStates
 from .orbit import TestOrbit
 from .projections import GnomonicCoordinates
 
@@ -150,7 +149,9 @@ def _observations_to_observations_df(observations: Observations) -> pd.DataFrame
     return observations_df
 
 
-def _observers_to_observers_df(observers: Observers) -> pd.DataFrame:
+def _observers_with_states_to_observers_df(
+    observers: ObserversWithStates,
+) -> pd.DataFrame:
     """
     Convert THOR observers (v2.0) to the older format used by the rest of the
     pipeline. This will eventually be removed once the rest of the pipeline is
@@ -169,12 +170,12 @@ def _observers_to_observers_df(observers: Observers) -> pd.DataFrame:
     observers_df = observers.to_dataframe()
     observers_df.rename(
         columns={
-            "coordinates.x": "obs_x",
-            "coordinates.y": "obs_y",
-            "coordinates.z": "obs_z",
-            "coordinates.vx": "obs_vx",
-            "coordinates.vy": "obs_vy",
-            "coordinates.vz": "obs_vz",
+            "observers.coordinates.x": "obs_x",
+            "observers.coordinates.y": "obs_y",
+            "observers.coordinates.z": "obs_z",
+            "observers.coordinates.vx": "obs_vx",
+            "observers.coordinates.vy": "obs_vy",
+            "observers.coordinates.vz": "obs_vz",
         },
         inplace=True,
     )
@@ -260,15 +261,14 @@ def link_test_orbit(
 
     # Convert quivr tables to dataframes used by the rest of the pipeline
     observations_df = _observations_to_observations_df(filtered_observations)
-    observers_df = _observers_to_observers_df(filtered_observations.get_observers())
+    observers_df = _observers_with_states_to_observers_df(
+        filtered_observations.get_observers()
+    )
     transformed_detections_df = _transformed_detections_to_transformed_detections_df(
         transformed_detections
     )
 
     # Merge dataframes together
-    observers_df["state_id"] = (
-        filtered_observations.state_id.unique().sort().to_numpy(zero_copy_only=False)
-    )
     observations_df = observations_df.merge(observers_df, on="state_id")
     transformed_detections_df = transformed_detections_df.merge(
         observations_df[["obs_id", "mjd_utc", "observatory_code"]], on="obs_id"
