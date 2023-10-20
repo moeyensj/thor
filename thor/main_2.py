@@ -1,5 +1,6 @@
 from typing import Any, Iterator, List, Optional
 
+import pandas as pd
 import pyarrow.compute as pc
 import quivr as qv
 from adam_core.coordinates import (
@@ -7,6 +8,7 @@ from adam_core.coordinates import (
     OriginCodes,
     transform_coordinates,
 )
+from adam_core.observers import Observers
 from adam_core.propagator import PYOORB, Propagator
 
 from .main import (
@@ -113,6 +115,102 @@ def range_and_transform(
     return transformed_detections
 
 
+def _observations_to_observations_df(observations: Observations) -> pd.DataFrame:
+    """
+    Convert THOR observations (v2.0) to the older format used by the rest of the
+    pipeline. This will eventually be removed once the rest of the pipeline is
+    updated to use the new format.
+
+    Parameters
+    ----------
+    observations : `~thor.observations.observations.Observations`
+        Observations to convert.
+
+    Returns
+    -------
+    observations_df : `~pandas.DataFrame`
+        Observations in the old format.
+    """
+    observations_df = observations.to_dataframe()
+    observations_df.rename(
+        columns={
+            "detections.id": "obs_id",
+            "detections.ra": "RA_deg",
+            "detections.dec": "Dec_deg",
+            "detections.ra_sigma": "RA_sigma_deg",
+            "detections.dec_sigma": "Dec_sigma_deg",
+            "detections.mag": "mag",
+            "detections.mag_sigma": "mag_sigma",
+        },
+        inplace=True,
+    )
+    observations_df["mjd_utc"] = (
+        observations.detections.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
+    )
+    return observations_df
+
+
+def _observers_to_observers_df(observers: Observers) -> pd.DataFrame:
+    """
+    Convert THOR observers (v2.0) to the older format used by the rest of the
+    pipeline. This will eventually be removed once the rest of the pipeline is
+    updated to use the new format.
+
+    Parameters
+    ----------
+    observers : `~adam_core.observers.observers.Observers`
+        Observers to convert to a dataframe.
+
+    Returns
+    -------
+    observers_df : `~pandas.DataFrame`
+        Observers in the old format.
+    """
+    observers_df = observers.to_dataframe()
+    observers_df.rename(
+        columns={
+            "coordinates.x": "obs_x",
+            "coordinates.y": "obs_y",
+            "coordinates.z": "obs_z",
+            "coordinates.vx": "obs_vx",
+            "coordinates.vy": "obs_vy",
+            "coordinates.vz": "obs_vz",
+        },
+        inplace=True,
+    )
+    return observers_df
+
+
+def _transformed_detections_to_transformed_detections_df(
+    transformed_detections: TransformedDetections,
+) -> pd.DataFrame:
+    """
+    Convert THOR transformed detections (v2.0) to the older format used by the
+    rest of the pipeline. This will eventually be removed once the rest of the
+    pipeline is updated to use the new format.
+
+    Parameters
+    ----------
+    transformed_detections : `~thor.main.TransformedDetections`
+        Transformed detections to convert to a dataframe.
+
+    Returns
+    -------
+    transformed_detections_df : `~pandas.DataFrame`
+        Transformed detections in the old format.
+    """
+    transformed_detections_df = transformed_detections.to_dataframe()
+    transformed_detections_df.rename(
+        columns={
+            "id": "obs_id",
+            "coordinates.theta_x": "theta_x_deg",
+            "coordinates.theta_y": "theta_y_deg",
+        },
+        inplace=True,
+    )
+    return transformed_detections_df
+
+
 def link_test_orbit(
     test_orbit: TestOrbit,
     observations: Observations,
@@ -160,65 +258,29 @@ def link_test_orbit(
     )
     yield transformed_detections
 
-    # Translate transformed detections into format required by the rest of the pipeline
-    # FIXME: Remove this translation step
-    observations_df = filtered_observations.to_dataframe()
-    observations_df.rename(
-        columns={
-            "detections.id": "obs_id",
-            "detections.ra": "RA_deg",
-            "detections.dec": "Dec_deg",
-            "detections.ra_sigma": "RA_sigma_deg",
-            "detections.dec_sigma": "Dec_sigma_deg",
-            "detections.mag": "mag",
-            "detections.mag_sigma": "mag_sigma",
-        },
-        inplace=True,
-    )
-    observations_df["mjd_utc"] = (
-        filtered_observations.detections.time.rescale("utc")
-        .mjd()
-        .to_numpy(zero_copy_only=False)
+    # Convert quivr tables to dataframes used by the rest of the pipeline
+    observations_df = _observations_to_observations_df(filtered_observations)
+    observers_df = _observers_to_observers_df(filtered_observations.get_observers())
+    transformed_detections_df = _transformed_detections_to_transformed_detections_df(
+        transformed_detections
     )
 
-    # TODO: I think we might want to add state_id to the observers table. Essential wrap the observers class with another table.
-    observers_df = filtered_observations.get_observers().to_dataframe()
+    # Merge dataframes together
     observers_df["state_id"] = (
         filtered_observations.state_id.unique().sort().to_numpy(zero_copy_only=False)
     )
-    observers_df.rename(
-        columns={
-            "coordinates.x": "obs_x",
-            "coordinates.y": "obs_y",
-            "coordinates.z": "obs_z",
-            "coordinates.vx": "obs_vx",
-            "coordinates.vy": "obs_vy",
-            "coordinates.vz": "obs_vz",
-        },
-        inplace=True,
-    )
-
     observations_df = observations_df.merge(observers_df, on="state_id")
-
-    transformed_detections_df = transformed_detections.to_dataframe()
-    transformed_detections_df.rename(
-        columns={
-            "id": "obs_id",
-            "coordinates.theta_x": "theta_x_deg",
-            "coordinates.theta_y": "theta_y_deg",
-        },
-        inplace=True,
-    )
     transformed_detections_df = transformed_detections_df.merge(
         observations_df[["obs_id", "mjd_utc", "observatory_code"]], on="obs_id"
     )
 
-    # TODO: Find objects which move in straight-ish lines in the gnomonic frame.
+    # Run clustering
     clusters, cluster_members = clusterAndLink(
         transformed_detections_df,
     )
     yield clusters, cluster_members
 
+    # Run initial orbit determination
     iod_orbits, iod_orbit_members = initialOrbitDetermination(
         observations_df,
         cluster_members,
@@ -227,6 +289,7 @@ def link_test_orbit(
     )
     yield iod_orbits, iod_orbit_members
 
+    # Run differential correction
     od_orbits, od_orbit_members = differentialCorrection(
         iod_orbits,
         iod_orbit_members,
@@ -235,6 +298,7 @@ def link_test_orbit(
     )
     yield od_orbits, od_orbit_members
 
+    # Run arc extension
     recovered_orbits, recovered_orbit_members = mergeAndExtendOrbits(
         od_orbits,
         od_orbit_members,
