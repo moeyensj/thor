@@ -11,15 +11,15 @@ from adam_core.coordinates import (
 )
 from adam_core.propagator import PYOORB, Propagator
 
-from .main import (
-    clusterAndLink,
+from .main import clusterAndLink
+from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
+from .observations.observations import Observations, ObserversWithStates
+from .orbit import TestOrbit, TestOrbitEphemeris
+from .orbits import (
     differentialCorrection,
     initialOrbitDetermination,
     mergeAndExtendOrbits,
 )
-from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
-from .observations.observations import Observations, ObserversWithStates
-from .orbit import TestOrbit, TestOrbitEphemeris
 from .projections import GnomonicCoordinates
 
 
