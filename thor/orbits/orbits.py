@@ -1,13 +1,12 @@
 import ast
 import logging
-from typing import Any, Tuple
 
 import numpy as np
 import pandas as pd
 from astropy import units as u
 from astropy.time import Time
 
-from ..utils import _checkTime, getHorizonsVectors
+from ..utils import _checkTime
 
 CARTESIAN_COLS = ["x", "y", "z", "vx", "vy", "vz"]
 CARTESIAN_UNITS = [u.au, u.au, u.au, u.au / u.d, u.au / u.d, u.au / u.d]
@@ -352,45 +351,6 @@ class Orbits:
 
         self.orbit_class = classes
         return
-
-    @staticmethod
-    def fromHorizons(obj_ids, t0):
-        """
-        Query Horizons for state vectors for each object ID at time t0.
-        This is a convenience function and should not be used to query for state
-        vectors for many objects or at many times.
-
-        Parameters
-        ----------
-        obj_ids : `~numpy.ndarray` (N)
-            Object IDs / designations recognizable by HORIZONS.
-        t0 : `~astropy.core.time.Time` (1)
-            Astropy time object at which to gather state vectors.
-
-        Return
-        ------
-        `~thor.orbits.orbits.Orbits`
-            THOR Orbits class
-        """
-
-        if len(t0) != 1:
-            err = "t0 should be a single time."
-            raise ValueError(err)
-
-        horizons_vectors = getHorizonsVectors(
-            obj_ids, t0, location="@sun", id_type="smallbody", aberrations="geometric"
-        )
-
-        orbits = Orbits(
-            horizons_vectors[["x", "y", "z", "vx", "vy", "vz"]].values,
-            t0 + np.zeros(len(obj_ids)),
-            orbit_type="cartesian",
-            orbit_units=CARTESIAN_UNITS,
-            ids=horizons_vectors["targetname"].values,
-            H=horizons_vectors["H"].values,
-            G=horizons_vectors["G"].values,
-        )
-        return orbits
 
     @staticmethod
     def fromMPCOrbitCatalog(mpcorb):
