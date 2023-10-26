@@ -3,6 +3,7 @@ from typing import Any, Iterator, List, Optional
 import pandas as pd
 import pyarrow.compute as pc
 import quivr as qv
+import ray
 from adam_core.coordinates import (
     CartesianCoordinates,
     OriginCodes,
@@ -18,7 +19,7 @@ from .main import (
 )
 from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
 from .observations.observations import Observations, ObserversWithStates
-from .orbit import TestOrbit
+from .orbit import TestOrbit, TestOrbitEphemeris
 from .projections import GnomonicCoordinates
 
 
@@ -26,6 +27,55 @@ class TransformedDetections(qv.Table):
     id = qv.StringColumn()
     coordinates = GnomonicCoordinates.as_column()
     state_id = qv.Int64Column()
+
+
+def range_and_transform_worker(
+    ranged_detections: CartesianCoordinates,
+    observations: Observations,
+    ephemeris: TestOrbitEphemeris,
+    state_id: int,
+) -> TransformedDetections:
+    """
+    Given ranged detections and their original observations, transform these to the gnomonic tangent
+    plane centered on the motion of the test orbit for a single state.
+
+    Parameters
+    ----------
+    ranged_detections
+        Cartesian detections ranged so that their heliocentric distance is the same as the test orbit
+        for each state
+    observations
+        The observations from which the ranged detections originate. These should be sorted one-to-one
+        with the ranged detections
+    ephemeris
+        Ephemeris from which to extract the test orbit's aberrated state.
+    state_id
+        The ID for this particular state.
+
+    Returns
+    -------
+    transformed_detections
+        Detections transformed to a gnomonic tangent plane centered on the motion of the
+        test orbit.
+    """
+    # Select the detections and ephemeris for this state id
+    mask = pc.equal(state_id, observations.state_id)
+    ranged_detections_state = ranged_detections.apply_mask(mask)
+    ephemeris_state = ephemeris.select("id", state_id)
+    observations_state = observations.select("state_id", state_id)
+
+    # Transform the detections into the co-rotating frame
+    return TransformedDetections.from_kwargs(
+        id=observations_state.detections.id,
+        coordinates=GnomonicCoordinates.from_cartesian(
+            ranged_detections_state,
+            center_cartesian=ephemeris_state.ephemeris.aberrated_coordinates,
+        ),
+        state_id=observations_state.state_id,
+    )
+
+
+range_and_transform_remote = ray.remote(range_and_transform_worker)
 
 
 def range_and_transform(
@@ -80,38 +130,58 @@ def range_and_transform(
         origin_out=OriginCodes.SUN,
     )
 
-    # Link the ephemeris and observations by state id
-    link = qv.Linkage(
-        ephemeris,
-        observations,
-        left_keys=ephemeris.id,
-        right_keys=observations.state_id,
-    )
-
-    # Transform the detections into the co-rotating frame
     transformed_detection_list = []
-    state_ids = observations.state_id.unique().sort()
-    for state_id in state_ids:
-        # Select the detections and ephemeris for this state id
-        mask = pc.equal(state_id, observations.state_id)
-        ranged_detections_cartesian_i = ranged_detections_cartesian.apply_mask(mask)
-        ephemeris_i = link.select_left(state_id)
-        observations_i = link.select_right(state_id)
+    if max_processes is None or max_processes > 1:
 
-        # Transform the detections into the co-rotating frame
-        transformed_detections_i = TransformedDetections.from_kwargs(
-            id=observations_i.detections.id,
-            coordinates=GnomonicCoordinates.from_cartesian(
-                ranged_detections_cartesian_i,
-                center_cartesian=ephemeris_i.ephemeris.aberrated_coordinates,
-            ),
-            state_id=observations_i.state_id,
-        )
+        if not ray.is_initialized():
+            ray.init(num_cpus=max_processes)
 
-        transformed_detection_list.append(transformed_detections_i)
+        if isinstance(observations, ray.ObjectRef):
+            observations_ref = observations
+            observations = ray.get(observations_ref)
+        else:
+            observations_ref = ray.put(observations)
+
+        if isinstance(ephemeris, ray.ObjectRef):
+            ephemeris_ref = ephemeris
+        else:
+            ephemeris_ref = ray.put(ephemeris)
+
+        ranged_detections_cartesian_ref = ray.put(ranged_detections_cartesian)
+
+        # Get state IDs
+        state_ids = observations.state_id.unique().sort()
+        futures = []
+        for state_id in state_ids:
+            futures.append(
+                range_and_transform_remote.remote(
+                    ranged_detections_cartesian_ref,
+                    observations_ref,
+                    ephemeris_ref,
+                    state_id,
+                )
+            )
+
+        while futures:
+            finished, futures = ray.wait(futures, num_returns=1)
+            transformed_detection_list.append(ray.get(finished[0]))
+
+    else:
+        # Get state IDs
+        state_ids = observations.state_id.unique().sort()
+        for state_id in state_ids:
+            mask = pc.equal(state_id, observations.state_id)
+            transformed_detection_list.append(
+                range_and_transform_worker(
+                    ranged_detections_cartesian.apply_mask(mask),
+                    observations.select("state_id", state_id),
+                    ephemeris.select("id", state_id),
+                    state_id,
+                )
+            )
 
     transformed_detections = qv.concatenate(transformed_detection_list)
-    return transformed_detections
+    return transformed_detections.sort_by(by=["state_id"])
 
 
 def _observations_to_observations_df(observations: Observations) -> pd.DataFrame:
