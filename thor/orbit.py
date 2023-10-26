@@ -260,11 +260,13 @@ class TestOrbit:
         logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
 
         state_ids = observations.state_id.unique()
-        observers = observations.get_observers()
+        observers_with_states = observations.get_observers()
 
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
-            observers, propagator=propagator, max_processes=max_processes
+            observers_with_states.observers,
+            propagator=propagator,
+            max_processes=max_processes,
         )
         ephemeris = ephemeris.sort_by(
             by=[
@@ -275,9 +277,9 @@ class TestOrbit:
         )
 
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
-            id=state_ids,
+            id=observers_with_states.state_id,
             ephemeris=ephemeris,
-            observer=observers,
+            observer=observers_with_states.observers,
         )
         self._cache_ephemeris(test_orbit_ephemeris, observations)
         return test_orbit_ephemeris

@@ -9,11 +9,22 @@ from adam_core.observers import Observers
 from adam_core.time import Timestamp
 
 
+class ObserversWithStates(qv.Table):
+    state_id = qv.Int64Column()
+    observers = Observers.as_column()
+
+
 class Observations(qv.Table):
     """
     The Observations table stored invidual point source detections and a state ID for each unique
     combination of detection time and observatory code. The state ID is used as reference to a specific
     observing geometry.
+
+    The recommended constructor to use is `~Observations.from_detections_and_exposures`, as this function
+    will sort the detections by time and observatory code, and for each unique combination of the two
+    assign a unique state ID. If not using this constructor, please ensure that the detections are sorted
+    by time and observatory code and that each unique combination of time and observatory code has a unique
+    state ID.
 
     Columns
     -------
@@ -147,29 +158,40 @@ class Observations(qv.Table):
             state_id=detections_with_states["state_id"],
         )
 
-    def get_observers(self):
+    def get_observers(self) -> ObserversWithStates:
         """
         Get the observers table for these observations. The observers table
         will have one row for each unique state ID in the observations table.
 
         Returns
         -------
-        observers : `~adam_core.observers.observers.Observers`
-            The observers table for these observations.
+        observers : `~thor.observations.observers.ObserversWithStates`
+            The observers table for these observations with an added
+            column representing the state ID.
         """
-        observers = []
+        observers_with_states = []
         for code, observations_i in self.group_by_observatory_code():
+            # Extract unique times and make sure they are sorted
+            # by time in ascending order
             unique_times = observations_i.detections.time.unique()
+            unique_times = unique_times.sort_by(["days", "nanos"])
+
+            # States are defined by unique times and observatory codes and
+            # are sorted by time in ascending order
+            state_ids = observations_i.state_id.unique().sort()
 
             # Get observers table for this observatory
             observers_i = Observers.from_code(code, unique_times)
-            observers.append(observers_i)
 
-        observers = qv.concatenate(observers)
-        observers = observers.sort_by(
-            ["coordinates.time.days", "coordinates.time.nanos", "code"]
-        )
-        return observers
+            # Create the observers with states table
+            observers_with_states_i = ObserversWithStates.from_kwargs(
+                state_id=state_ids,
+                observers=observers_i,
+            )
+            observers_with_states.append(observers_with_states_i)
+
+        observers = qv.concatenate(observers_with_states)
+        return observers.sort_by("state_id")
 
     def select_exposure(self, exposure_id: int) -> "Observations":
         """
