@@ -6,6 +6,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
+import ray
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
@@ -49,6 +50,79 @@ class TestOrbitEphemeris(qv.Table):
     id = qv.Int64Column()
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
+
+
+def range_observations_worker(
+    observations: Observations, ephemeris: TestOrbitEphemeris, state_id: int
+) -> RangedPointSourceDetections:
+    """
+    Range observations for a single state given the orbit's ephemeris for that state.
+
+    Parameters
+    ----------
+    observations
+        Observations to range.
+    ephemeris
+        Ephemeris from which to extract the test orbit's aberrated state (we
+        use this state to get the test orbit's heliocentric distance).
+    state_id
+        The ID for this particular state.
+
+    Returns
+    -------
+    ranged_point_source_detections
+        The detections assuming they are located at the same heliocentric distance
+        as the test orbit.
+    """
+    observations_state = observations.select("state_id", state_id)
+    ephemeris_state = ephemeris.select("id", state_id)
+    detections_state = observations_state.detections
+
+    # Get the heliocentric position vector of the object at the time of the exposure
+    r = ephemeris_state.ephemeris.aberrated_coordinates.r[0]
+
+    # Get the observer's heliocentric coordinates
+    observer_i = ephemeris_state.observer
+
+    # Create an array of observatory codes for the detections
+    num_detections = len(observations_state)
+    observatory_codes = np.repeat(
+        observations_state.observatory_code[0].as_py(), num_detections
+    )
+
+    # The following can be replaced with:
+    # coords = observations_state.to_spherical(observatory_codes)
+    # Start replacement:
+    sigma_data = np.vstack(
+        [
+            pa.nulls(num_detections, pa.float64()),
+            detections_state.ra_sigma.to_numpy(zero_copy_only=False),
+            detections_state.dec_sigma.to_numpy(zero_copy_only=False),
+            pa.nulls(num_detections, pa.float64()),
+            pa.nulls(num_detections, pa.float64()),
+            pa.nulls(num_detections, pa.float64()),
+        ]
+    ).T
+    coords = SphericalCoordinates.from_kwargs(
+        lon=detections_state.ra,
+        lat=detections_state.dec,
+        time=detections_state.time,
+        covariance=CoordinateCovariances.from_sigmas(sigma_data),
+        origin=Origin.from_kwargs(code=observatory_codes),
+        frame="equatorial",
+    )
+    # End replacement (only once
+    # https://github.com/B612-Asteroid-Institute/adam_core/pull/45 is merged)
+
+    return RangedPointSourceDetections.from_kwargs(
+        id=detections_state.id,
+        exposure_id=detections_state.exposure_id,
+        coordinates=assume_heliocentric_distance(r, coords, observer_i.coordinates),
+        state_id=observations_state.state_id,
+    )
+
+
+range_observations_remote = ray.remote(range_observations_worker)
 
 
 class TestOrbit:
@@ -314,73 +388,51 @@ class TestOrbit:
             observations, propagator=propagator, max_processes=max_processes
         )
 
-        # Link the ephemeris to the observations
-        link = qv.Linkage(
-            ephemeris,
-            observations,
-            left_keys=ephemeris.id,
-            right_keys=observations.state_id,
-        )
+        ranged_detections_list = []
+        if max_processes is None or max_processes > 1:
+            if not ray.is_initialized():
+                ray.init(num_cpus=max_processes)
 
-        # Do a sorted iteration over the unique state IDs
-        rpsds = []
-        state_ids = observations.state_id.unique().sort()
-        for state_id in state_ids:
+            if isinstance(observations, ray.ObjectRef):
+                observations_ref = observations
+                observations = ray.get(observations_ref)
+            else:
+                observations_ref = ray.put(observations)
 
-            # Select the ephemeris and observations for this state
-            ephemeris_i = link.select_left(state_id)
-            observations_i = link.select_right(state_id)
-            detections_i = observations_i.detections
+            if isinstance(ephemeris, ray.ObjectRef):
+                ephemeris_ref = ephemeris
+            else:
+                ephemeris_ref = ray.put(ephemeris)
 
-            # Get the heliocentric position vector of the object at the time of the exposure
-            r = ephemeris_i.ephemeris.aberrated_coordinates.r[0]
-
-            # Get the observer's heliocentric coordinates
-            observer_i = ephemeris_i.observer
-
-            # Create an array of observatory codes for the detections
-            num_detections = len(observations_i)
-            observatory_codes = np.repeat(
-                observations_i.observatory_code[0].as_py(), num_detections
-            )
-
-            # The following can be replaced with:
-            # coords = observations_i.to_spherical(observatory_codes)
-            # Start replacement:
-            sigma_data = np.vstack(
-                [
-                    pa.nulls(num_detections, pa.float64()),
-                    detections_i.ra_sigma.to_numpy(zero_copy_only=False),
-                    detections_i.dec_sigma.to_numpy(zero_copy_only=False),
-                    pa.nulls(num_detections, pa.float64()),
-                    pa.nulls(num_detections, pa.float64()),
-                    pa.nulls(num_detections, pa.float64()),
-                ]
-            ).T
-            coords = SphericalCoordinates.from_kwargs(
-                lon=detections_i.ra,
-                lat=detections_i.dec,
-                time=detections_i.time,
-                covariance=CoordinateCovariances.from_sigmas(sigma_data),
-                origin=Origin.from_kwargs(code=observatory_codes),
-                frame="equatorial",
-            )
-            # End replacement (only once
-            # https://github.com/B612-Asteroid-Institute/adam_core/pull/45 is merged)
-
-            rpsds.append(
-                RangedPointSourceDetections.from_kwargs(
-                    id=detections_i.id,
-                    exposure_id=detections_i.exposure_id,
-                    coordinates=assume_heliocentric_distance(
-                        r, coords, observer_i.coordinates
-                    ),
-                    state_id=observations_i.state_id,
+            # Get state IDs
+            state_ids = observations.state_id.unique().sort()
+            futures = []
+            for state_id in state_ids:
+                futures.append(
+                    range_observations_remote.remote(
+                        observations_ref, ephemeris_ref, state_id
+                    )
                 )
-            )
 
-        ranged_detections = qv.concatenate(rpsds)
-        return ranged_detections
+            while futures:
+                finished, futures = ray.wait(futures, num_returns=1)
+                ranged_detections_list.append(ray.get(finished[0]))
+
+        else:
+            # Get state IDs
+            state_ids = observations.state_id.unique().sort()
+
+            for state_id in state_ids:
+                ranged_detections_list.append(
+                    range_observations_worker(
+                        observations.select("state_id", state_id),
+                        ephemeris.select("id", state_id),
+                        state_id,
+                    )
+                )
+
+        ranged_point_source_detections = qv.concatenate(ranged_detections_list)
+        return ranged_point_source_detections.sort_by(by=["state_id"])
 
 
 def assume_heliocentric_distance(
