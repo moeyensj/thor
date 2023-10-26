@@ -11,6 +11,7 @@ from adam_core.coordinates import (
 )
 from adam_core.propagator import PYOORB, Propagator
 
+from .config import Config
 from .main import clusterAndLink
 from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
 from .observations.observations import Observations, ObserversWithStates
@@ -82,7 +83,7 @@ def range_and_transform(
     test_orbit: TestOrbit,
     observations: Observations,
     propagator: Propagator = PYOORB(),
-    max_processes: int = 1,
+    max_processes: Optional[int] = 1,
 ) -> TransformedDetections:
     """
     Range observations for a single test orbit and transform them into a
@@ -285,11 +286,8 @@ def _transformed_detections_to_transformed_detections_df(
 def link_test_orbit(
     test_orbit: TestOrbit,
     observations: Observations,
-    filters: Optional[List[ObservationFilter]] = [
-        TestOrbitRadiusObservationFilter(radius=10.0)
-    ],
-    propagator: Propagator = PYOORB(),
-    max_processes: int = 1,
+    filters: Optional[List[ObservationFilter]] = None,
+    config: Optional[Config] = None,
 ) -> Iterator[Any]:
     """
     Run THOR for a single test orbit on the given observations. This function will yield
@@ -314,9 +312,21 @@ def link_test_orbit(
     max_processes : int, optional
         Maximum number of processes to use for parallelization.
     """
+    if config is None:
+        config = Config()
+
+    if config.propagator == "PYOORB":
+        propagator = PYOORB()
+    else:
+        raise ValueError(f"Unknown propagator: {config.propagator}")
+
     # Apply filters to the observations
     filtered_observations = observations
     if filters is not None:
+        for filter_i in filters:
+            filtered_observations = filter_i.apply(filtered_observations, test_orbit)
+    else:
+        filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
         for filter_i in filters:
             filtered_observations = filter_i.apply(filtered_observations, test_orbit)
 
@@ -325,7 +335,7 @@ def link_test_orbit(
         test_orbit,
         filtered_observations,
         propagator=propagator,
-        max_processes=max_processes,
+        max_processes=config.max_processes,
     )
     yield transformed_detections
 
@@ -347,6 +357,18 @@ def link_test_orbit(
     # Run clustering
     clusters, cluster_members = clusterAndLink(
         transformed_detections_df,
+        vx_range=[config.vx_min, config.vx_max],
+        vy_range=[config.vy_min, config.vy_max],
+        vx_bins=config.vx_bins,
+        vy_bins=config.vy_bins,
+        vx_values=config.vx_values,
+        vy_values=config.vy_values,
+        eps=config.cluster_radius,
+        min_obs=config.cluster_min_obs,
+        min_arc_length=config.cluster_min_arc_length,
+        alg=config.cluster_algorithm,
+        num_jobs=config.max_processes,
+        parallel_backend=config.parallel_backend,
     )
     yield clusters, cluster_members
 
@@ -354,8 +376,21 @@ def link_test_orbit(
     iod_orbits, iod_orbit_members = initialOrbitDetermination(
         observations_df,
         cluster_members,
+        min_obs=config.iod_min_obs,
+        min_arc_length=config.iod_min_arc_length,
+        contamination_percentage=config.iod_contamination_percentage,
+        rchi2_threshold=config.iod_rchi2_threshold,
+        observation_selection_method=config.iod_observation_selection_method,
+        backend=config.propagator,
+        backend_kwargs={},
+        chunk_size=config.iod_chunk_size,
+        num_jobs=config.max_processes,
+        parallel_backend=config.parallel_backend,
+        # TODO: investigate whether these should be configurable
+        iterate=False,
         identify_subsets=False,
-        rchi2_threshold=1e10,
+        light_time=True,
+        linkage_id_col="cluster_id",
     )
     yield iod_orbits, iod_orbit_members
 
@@ -364,7 +399,21 @@ def link_test_orbit(
         iod_orbits,
         iod_orbit_members,
         observations_df,
-        rchi2_threshold=1e10,
+        min_obs=config.od_min_obs,
+        min_arc_length=config.od_min_arc_length,
+        contamination_percentage=config.od_contamination_percentage,
+        rchi2_threshold=config.od_rchi2_threshold,
+        delta=config.od_delta,
+        max_iter=config.od_max_iter,
+        backend=config.propagator,
+        backend_kwargs={},
+        chunk_size=config.od_chunk_size,
+        num_jobs=config.max_processes,
+        parallel_backend=config.parallel_backend,
+        # TODO: investigate whether these should be configurable
+        method="central",
+        fit_epoch=False,
+        test_orbit=None,
     )
     yield od_orbits, od_orbit_members
 
@@ -373,5 +422,21 @@ def link_test_orbit(
         od_orbits,
         od_orbit_members,
         observations_df,
+        min_obs=config.arc_extension_min_obs,
+        min_arc_length=config.arc_extension_min_arc_length,
+        contamination_percentage=config.arc_extension_contamination_percentage,
+        rchi2_threshold=config.arc_extension_rchi2_threshold,
+        eps=config.arc_extension_radius,
+        delta=config.od_delta,
+        max_iter=config.od_max_iter,
+        backend=config.propagator,
+        backend_kwargs={},
+        orbits_chunk_size=config.arc_extension_chunk_size,
+        num_jobs=config.max_processes,
+        parallel_backend=config.parallel_backend,
+        # TODO: investigate whether these should be configurable
+        method="central",
+        fit_epoch=False,
+        observations_chunk_size=100000,
     )
     yield recovered_orbits, recovered_orbit_members
