@@ -104,7 +104,9 @@ def range_and_transform(
         Propagator to use to propagate the test orbit and generate
         ephemerides.
     max_processes : int, optional
-        Maximum number of processes to use for parallelization.
+        Maximum number of processes to use for parallelization. If
+        an existing ray cluster is already running, this parameter
+        will be ignored if larger than 1 or not None.
 
     Returns
     -------
@@ -355,7 +357,9 @@ def link_test_orbit(
         # By default we always filter by radius from the predicted position of the test orbit
         filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
     for filter_i in filters:
-        filtered_observations = filter_i.apply(filtered_observations, test_orbit)
+        filtered_observations = filter_i.apply(
+            filtered_observations, test_orbit, max_processes=config.max_processes
+        )
 
     # Range and transform the observations
     transformed_detections = range_and_transform(
