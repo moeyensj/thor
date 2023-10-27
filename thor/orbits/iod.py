@@ -785,6 +785,27 @@ def initialOrbitDetermination(
         iod_orbits = pd.concat(iod_orbits_dfs, ignore_index=True)
         iod_orbit_members = pd.concat(iod_orbit_members_dfs, ignore_index=True)
 
+        for col in ["num_obs"]:
+            iod_orbits[col] = iod_orbits[col].astype(int)
+        for col in ["gauss_sol", "outlier"]:
+            iod_orbit_members[col] = iod_orbit_members[col].astype(int)
+
+        logger.info("Found {} initial orbits.".format(len(iod_orbits)))
+
+        if identify_subsets and len(iod_orbits) > 0:
+            iod_orbits, iod_orbit_members = identifySubsetLinkages(
+                iod_orbits, iod_orbit_members, linkage_id_col="orbit_id"
+            )
+            logger.info(
+                "{} subset orbits identified.".format(
+                    len(iod_orbits[~iod_orbits["subset_of"].isna()])
+                )
+            )
+
+        iod_orbits, iod_orbit_members = sortLinkages(
+            iod_orbits, iod_orbit_members, observations, linkage_id_col="orbit_id"
+        )
+
     else:
         iod_orbits = pd.DataFrame(
             columns=[
@@ -814,27 +835,6 @@ def initialOrbitDetermination(
                 "outlier",
             ]
         )
-
-    for col in ["num_obs"]:
-        iod_orbits[col] = iod_orbits[col].astype(int)
-    for col in ["gauss_sol", "outlier"]:
-        iod_orbit_members[col] = iod_orbit_members[col].astype(int)
-
-    logger.info("Found {} initial orbits.".format(len(iod_orbits)))
-
-    if identify_subsets and len(iod_orbits) > 0:
-        iod_orbits, iod_orbit_members = identifySubsetLinkages(
-            iod_orbits, iod_orbit_members, linkage_id_col="orbit_id"
-        )
-        logger.info(
-            "{} subset orbits identified.".format(
-                len(iod_orbits[~iod_orbits["subset_of"].isna()])
-            )
-        )
-
-    iod_orbits, iod_orbit_members = sortLinkages(
-        iod_orbits, iod_orbit_members, observations, linkage_id_col="orbit_id"
-    )
 
     time_end = time.time()
     logger.info(
