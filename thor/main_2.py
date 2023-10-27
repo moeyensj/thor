@@ -119,84 +119,91 @@ def range_and_transform(
     logger.info(f"Assuming r = {test_orbit.orbit.coordinates.r[0]} au")
     logger.info(f"Assuming v = {test_orbit.orbit.coordinates.v[0]} au/d")
 
-    # Compute the ephemeris of the test orbit (this will be cached)
-    ephemeris = test_orbit.generate_ephemeris_from_observations(
-        observations,
-        propagator=propagator,
-        max_processes=max_processes,
-    )
+    if isinstance(observations, ray.ObjectRef):
+        observations = ray.get(observations)
 
-    # Assume that the heliocentric distance of all point sources in
-    # the observations are the same as that of the test orbit
-    ranged_detections_spherical = test_orbit.range_observations(
-        observations,
-        propagator=propagator,
-        max_processes=max_processes,
-    )
+    if len(observations) > 0:
+        # Compute the ephemeris of the test orbit (this will be cached)
+        ephemeris = test_orbit.generate_ephemeris_from_observations(
+            observations,
+            propagator=propagator,
+            max_processes=max_processes,
+        )
 
-    # Transform from spherical topocentric to cartesian heliocentric coordinates
-    ranged_detections_cartesian = transform_coordinates(
-        ranged_detections_spherical.coordinates,
-        representation_out=CartesianCoordinates,
-        frame_out="ecliptic",
-        origin_out=OriginCodes.SUN,
-    )
+        # Assume that the heliocentric distance of all point sources in
+        # the observations are the same as that of the test orbit
+        ranged_detections_spherical = test_orbit.range_observations(
+            observations,
+            propagator=propagator,
+            max_processes=max_processes,
+        )
 
-    transformed_detection_list = []
-    if max_processes is None or max_processes > 1:
+        # Transform from spherical topocentric to cartesian heliocentric coordinates
+        ranged_detections_cartesian = transform_coordinates(
+            ranged_detections_spherical.coordinates,
+            representation_out=CartesianCoordinates,
+            frame_out="ecliptic",
+            origin_out=OriginCodes.SUN,
+        )
 
-        if not ray.is_initialized():
-            logger.debug(
-                f"Ray is not initialized. Initializing with {max_processes}..."
-            )
-            ray.init(num_cpus=max_processes)
+        transformed_detection_list = []
+        if max_processes is None or max_processes > 1:
 
-        if isinstance(observations, ray.ObjectRef):
-            observations_ref = observations
-            observations = ray.get(observations_ref)
-        else:
-            observations_ref = ray.put(observations)
-
-        if isinstance(ephemeris, ray.ObjectRef):
-            ephemeris_ref = ephemeris
-        else:
-            ephemeris_ref = ray.put(ephemeris)
-
-        ranged_detections_cartesian_ref = ray.put(ranged_detections_cartesian)
-
-        # Get state IDs
-        state_ids = observations.state_id.unique().sort()
-        futures = []
-        for state_id in state_ids:
-            futures.append(
-                range_and_transform_remote.remote(
-                    ranged_detections_cartesian_ref,
-                    observations_ref,
-                    ephemeris_ref,
-                    state_id,
+            if not ray.is_initialized():
+                logger.debug(
+                    f"Ray is not initialized. Initializing with {max_processes}..."
                 )
-            )
+                ray.init(num_cpus=max_processes)
 
-        while futures:
-            finished, futures = ray.wait(futures, num_returns=1)
-            transformed_detection_list.append(ray.get(finished[0]))
+            if isinstance(observations, ray.ObjectRef):
+                observations_ref = observations
+                observations = ray.get(observations_ref)
+            else:
+                observations_ref = ray.put(observations)
+
+            if isinstance(ephemeris, ray.ObjectRef):
+                ephemeris_ref = ephemeris
+            else:
+                ephemeris_ref = ray.put(ephemeris)
+
+            ranged_detections_cartesian_ref = ray.put(ranged_detections_cartesian)
+
+            # Get state IDs
+            state_ids = observations.state_id.unique().sort()
+            futures = []
+            for state_id in state_ids:
+                futures.append(
+                    range_and_transform_remote.remote(
+                        ranged_detections_cartesian_ref,
+                        observations_ref,
+                        ephemeris_ref,
+                        state_id,
+                    )
+                )
+
+            while futures:
+                finished, futures = ray.wait(futures, num_returns=1)
+                transformed_detection_list.append(ray.get(finished[0]))
+
+        else:
+            # Get state IDs
+            state_ids = observations.state_id.unique().sort()
+            for state_id in state_ids:
+                mask = pc.equal(state_id, observations.state_id)
+                transformed_detection_list.append(
+                    range_and_transform_worker(
+                        ranged_detections_cartesian.apply_mask(mask),
+                        observations.select("state_id", state_id),
+                        ephemeris.select("id", state_id),
+                        state_id,
+                    )
+                )
+
+        transformed_detections = qv.concatenate(transformed_detection_list)
+        transformed_detections = transformed_detections.sort_by(by=["state_id"])
 
     else:
-        # Get state IDs
-        state_ids = observations.state_id.unique().sort()
-        for state_id in state_ids:
-            mask = pc.equal(state_id, observations.state_id)
-            transformed_detection_list.append(
-                range_and_transform_worker(
-                    ranged_detections_cartesian.apply_mask(mask),
-                    observations.select("state_id", state_id),
-                    ephemeris.select("id", state_id),
-                    state_id,
-                )
-            )
-
-    transformed_detections = qv.concatenate(transformed_detection_list)
-    transformed_detections = transformed_detections.sort_by(by=["state_id"])
+        transformed_detections = TransformedDetections.empty()
 
     time_end = time.perf_counter()
     logger.info(f"Transformed {len(transformed_detections)} observations.")
@@ -369,7 +376,8 @@ def link_test_orbit(
         )
 
     # Defragment the observations
-    filtered_observations = qv.defragment(filtered_observations)
+    if len(filtered_observations) > 0:
+        filtered_observations = qv.defragment(filtered_observations)
 
     # Observations are no longer needed, so we can delete them
     del observations
@@ -391,20 +399,24 @@ def link_test_orbit(
     if use_ray:
         filtered_observations = ray.get(filtered_observations)
 
-    # Convert quivr tables to dataframes used by the rest of the pipeline
-    observations_df = _observations_to_observations_df(filtered_observations)
-    observers_df = _observers_with_states_to_observers_df(
-        filtered_observations.get_observers()
-    )
-    transformed_detections_df = _transformed_detections_to_transformed_detections_df(
-        transformed_detections
-    )
+    if len(filtered_observations) > 0:
+        # Convert quivr tables to dataframes used by the rest of the pipeline
+        observations_df = _observations_to_observations_df(filtered_observations)
+        observers_df = _observers_with_states_to_observers_df(
+            filtered_observations.get_observers()
+        )
+        transformed_detections_df = (
+            _transformed_detections_to_transformed_detections_df(transformed_detections)
+        )
 
-    # Merge dataframes together
-    observations_df = observations_df.merge(observers_df, on="state_id")
-    transformed_detections_df = transformed_detections_df.merge(
-        observations_df[["obs_id", "mjd_utc", "observatory_code"]], on="obs_id"
-    )
+        # Merge dataframes together
+        observations_df = observations_df.merge(observers_df, on="state_id")
+        transformed_detections_df = transformed_detections_df.merge(
+            observations_df[["obs_id", "mjd_utc", "observatory_code"]], on="obs_id"
+        )
+    else:
+        transformed_detections_df = pd.DataFrame()
+        observations_df = pd.DataFrame()
 
     # Run clustering
     clusters, cluster_members = clusterAndLink(

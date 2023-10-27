@@ -794,6 +794,10 @@ def differentialCorrection(
         for col in ["outlier"]:
             od_orbit_members[col] = od_orbit_members[col].astype(int)
 
+        od_orbits, od_orbit_members = sortLinkages(
+            od_orbits, od_orbit_members, observations, linkage_id_col="orbit_id"
+        )
+
     else:
         od_orbits = pd.DataFrame(
             columns=[
@@ -827,10 +831,6 @@ def differentialCorrection(
                 "outlier",
             ]
         )
-
-    od_orbits, od_orbit_members = sortLinkages(
-        od_orbits, od_orbit_members, observations, linkage_id_col="orbit_id"
-    )
 
     time_end = time.time()
     logger.info("Differentially corrected {} orbits.".format(len(od_orbits)))
