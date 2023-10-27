@@ -1,7 +1,7 @@
 import abc
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 import quivr as qv
@@ -118,7 +118,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
     def apply(
         self,
-        observations: "Observations",
+        observations: Union["Observations", ray.ObjectRef],
         test_orbit: TestOrbit,
         max_processes: Optional[int] = 1,
     ) -> "Observations":

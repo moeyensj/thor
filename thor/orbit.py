@@ -289,7 +289,7 @@ class TestOrbit:
 
     def generate_ephemeris_from_observations(
         self,
-        observations: Observations,
+        observations: Union[Observations, ray.ObjectRef],
         propagator: Propagator = PYOORB(),
         max_processes: Optional[int] = 1,
     ):
@@ -322,6 +322,9 @@ class TestOrbit:
         ValueError
             If the observations are empty.
         """
+        if isinstance(observations, ray.ObjectRef):
+            observations = ray.get(observations)
+
         if len(observations) == 0:
             raise ValueError("Observations must not be empty.")
 
@@ -360,7 +363,7 @@ class TestOrbit:
 
     def range_observations(
         self,
-        observations: Observations,
+        observations: Union[Observations, ray.ObjectRef],
         propagator: Propagator = PYOORB(),
         max_processes: Optional[int] = 1,
     ) -> RangedPointSourceDetections:

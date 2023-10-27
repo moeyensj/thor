@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Iterator, List, Optional
+from typing import Any, Iterator, List, Optional, Union
 
 import pandas as pd
 import pyarrow.compute as pc
@@ -85,7 +85,7 @@ range_and_transform_remote = ray.remote(range_and_transform_worker)
 
 def range_and_transform(
     test_orbit: TestOrbit,
-    observations: Observations,
+    observations: Union[Observations, ray.ObjectRef],
     propagator: Propagator = PYOORB(),
     max_processes: Optional[int] = 1,
 ) -> TransformedDetections:
@@ -118,6 +118,7 @@ def range_and_transform(
     logger.info("Running range and transform...")
     logger.info(f"Assuming r = {test_orbit.orbit.coordinates.r[0]} au")
     logger.info(f"Assuming v = {test_orbit.orbit.coordinates.v[0]} au/d")
+
     # Compute the ephemeris of the test orbit (this will be cached)
     ephemeris = test_orbit.generate_ephemeris_from_observations(
         observations,
@@ -343,6 +344,7 @@ def link_test_orbit(
     else:
         raise ValueError(f"Unknown propagator: {config.propagator}")
 
+    use_ray = False
     if config.max_processes is None or config.max_processes > 1:
         # Initialize ray
         if not ray.is_initialized():
@@ -350,6 +352,11 @@ def link_test_orbit(
                 f"Ray is not initialized. Initializing with {config.max_processes}..."
             )
             ray.init(num_cpus=config.max_processes)
+
+        if not isinstance(observations, ray.ObjectRef):
+            observations = ray.put(observations)
+
+        use_ray = True
 
     # Apply filters to the observations
     filtered_observations = observations
@@ -361,6 +368,15 @@ def link_test_orbit(
             filtered_observations, test_orbit, max_processes=config.max_processes
         )
 
+    # Defragment the observations
+    filtered_observations = qv.defragment(filtered_observations)
+
+    # Observations are no longer needed, so we can delete them
+    del observations
+
+    if use_ray:
+        filtered_observations = ray.put(filtered_observations)
+
     # Range and transform the observations
     transformed_detections = range_and_transform(
         test_orbit,
@@ -369,6 +385,11 @@ def link_test_orbit(
         max_processes=config.max_processes,
     )
     yield transformed_detections
+
+    # TODO: ray support for the rest of the pipeline has not yet been implemented
+    # so we will convert the ray objects to regular objects for now
+    if use_ray:
+        filtered_observations = ray.get(filtered_observations)
 
     # Convert quivr tables to dataframes used by the rest of the pipeline
     observations_df = _observations_to_observations_df(filtered_observations)

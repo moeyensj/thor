@@ -2,6 +2,7 @@ import pyarrow.compute as pc
 import pytest
 from adam_core.utils.helpers import make_observations, make_real_orbits
 
+from ..config import Config
 from ..main_2 import link_test_orbit, range_and_transform
 from ..observations import Observations
 from ..observations.filters import TestOrbitRadiusObservationFilter
@@ -52,6 +53,21 @@ def observations():
 @pytest.fixture
 def orbits():
     return make_real_orbits()
+
+
+@pytest.fixture
+def ray_cluster():
+    import ray
+
+    ray_initialized = False
+    if not ray.is_initialized():
+        ray.init(
+            num_cpus=4, include_dashboard=False, namespace="THOR Integration Tests"
+        )
+        ray_initialized = True
+    yield
+    if ray_initialized:
+        ray.shutdown()
 
 
 def test_Orbit_generate_ephemeris_from_observations_empty(orbits):
@@ -134,8 +150,15 @@ def test_range_and_transform(object_id, orbits, observations):
     ]
     + OBJECT_IDS[9:],
 )
+@pytest.mark.parametrize("parallelized", [True, False])
 @pytest.mark.integration
-def test_link_test_orbit(object_id, orbits, observations):
+def test_link_test_orbit(object_id, orbits, observations, parallelized, ray_cluster):
+
+    config = Config()
+    if parallelized:
+        config.max_processes = 4
+    else:
+        config.max_processes = 1
 
     orbit = orbits.select("object_id", object_id)
     exposures, detections, associations = observations
@@ -170,20 +193,16 @@ def test_link_test_orbit(object_id, orbits, observations):
     observations = Observations.from_detections_and_exposures(detections_i, exposures_i)
 
     if object_id in TOLERANCES:
-        tolerance = TOLERANCES[object_id]
+        config.cell_radius = TOLERANCES[object_id]
     else:
-        tolerance = TOLERANCES["default"]
-
-    # Set a filter to include observations within 1 arcsecond of the predicted position
-    # of the test orbit
-    filters = [TestOrbitRadiusObservationFilter(radius=tolerance)]
+        config.cell_radius = TOLERANCES["default"]
 
     # Create a test orbit for this object
     test_orbit = THORbit.from_orbits(orbit)
 
     # Run link_test_orbit and make sure we get the correct observations back
     for i, results in enumerate(
-        link_test_orbit(test_orbit, observations, filters=filters)
+        link_test_orbit(test_orbit, observations, config=config)
     ):
         if i == 4:
             od_orbits, od_orbit_members = results
