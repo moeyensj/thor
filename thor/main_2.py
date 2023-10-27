@@ -1,3 +1,5 @@
+import logging
+import time
 from typing import Any, Iterator, List, Optional
 
 import pandas as pd
@@ -22,6 +24,8 @@ from .orbits import (
     mergeAndExtendOrbits,
 )
 from .projections import GnomonicCoordinates
+
+logger = logging.getLogger(__name__)
 
 
 class TransformedDetections(qv.Table):
@@ -108,6 +112,10 @@ def range_and_transform(
         The transformed detections as gnomonic coordinates
         of the observations in the co-rotating frame.
     """
+    time_start = time.perf_counter()
+    logger.info("Running range and transform...")
+    logger.info(f"Assuming r = {test_orbit.orbit.coordinates.r[0]} au")
+    logger.info(f"Assuming v = {test_orbit.orbit.coordinates.v[0]} au/d")
     # Compute the ephemeris of the test orbit (this will be cached)
     ephemeris = test_orbit.generate_ephemeris_from_observations(
         observations,
@@ -135,6 +143,9 @@ def range_and_transform(
     if max_processes is None or max_processes > 1:
 
         if not ray.is_initialized():
+            logger.debug(
+                f"Ray is not initialized. Initializing with {max_processes}..."
+            )
             ray.init(num_cpus=max_processes)
 
         if isinstance(observations, ray.ObjectRef):
@@ -182,7 +193,14 @@ def range_and_transform(
             )
 
     transformed_detections = qv.concatenate(transformed_detection_list)
-    return transformed_detections.sort_by(by=["state_id"])
+    transformed_detections = transformed_detections.sort_by(by=["state_id"])
+
+    time_end = time.perf_counter()
+    logger.info(f"Transformed {len(transformed_detections)} observations.")
+    logger.info(
+        f"Range and transform completed in {time_end - time_start:.3f} seconds."
+    )
+    return transformed_detections
 
 
 def _observations_to_observations_df(observations: Observations) -> pd.DataFrame:
@@ -312,6 +330,9 @@ def link_test_orbit(
     max_processes : int, optional
         Maximum number of processes to use for parallelization.
     """
+    time_start = time.perf_counter()
+    logger.info("Running test orbit...")
+
     if config is None:
         config = Config()
 
@@ -320,15 +341,21 @@ def link_test_orbit(
     else:
         raise ValueError(f"Unknown propagator: {config.propagator}")
 
+    if config.max_processes is None or config.max_processes > 1:
+        # Initialize ray
+        if not ray.is_initialized():
+            logger.debug(
+                f"Ray is not initialized. Initializing with {config.max_processes}..."
+            )
+            ray.init(num_cpus=config.max_processes)
+
     # Apply filters to the observations
     filtered_observations = observations
-    if filters is not None:
-        for filter_i in filters:
-            filtered_observations = filter_i.apply(filtered_observations, test_orbit)
-    else:
+    if filters is None:
+        # By default we always filter by radius from the predicted position of the test orbit
         filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
-        for filter_i in filters:
-            filtered_observations = filter_i.apply(filtered_observations, test_orbit)
+    for filter_i in filters:
+        filtered_observations = filter_i.apply(filtered_observations, test_orbit)
 
     # Range and transform the observations
     transformed_detections = range_and_transform(
@@ -440,3 +467,6 @@ def link_test_orbit(
         observations_chunk_size=100000,
     )
     yield recovered_orbits, recovered_orbit_members
+
+    time_end = time.perf_counter()
+    logger.info(f"Test orbit completed in {time_end-time_start:.3f} seconds.")

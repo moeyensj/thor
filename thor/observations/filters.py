@@ -1,4 +1,6 @@
 import abc
+import logging
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -9,6 +11,9 @@ from ..orbit import TestOrbit
 
 if TYPE_CHECKING:
     from .observations import Observations
+
+
+logger = logging.getLogger(__name__)
 
 
 class ObservationFilter(abc.ABC):
@@ -73,6 +78,9 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         filtered_observations : `~thor.observations.Observations`
             The filtered observations.
         """
+        time_start = time.perf_counter()
+        logger.info("Applying TestOrbitRadiusObservationFilter...")
+        logger.info(f"Using radius = {self.radius:.5f} deg")
         # Generate an ephemeris for every observer time/location in the dataset
         test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
             observations
@@ -113,7 +121,15 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
             # Update the mask
             mask[idx_within] = True
 
-        return observations.apply_mask(mask)
+        observations_masked = observations.apply_mask(mask)
+        time_end = time.perf_counter()
+        logger.info(
+            f"Filtered {len(observations)} observations to {len(observations_masked)} observations."
+        )
+        logger.info(
+            f"TestOrbitRadiusObservationFilter completed in {time_end - time_start:.3f} seconds."
+        )
+        return observations_masked
 
 
 def _within_radius(
