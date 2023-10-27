@@ -11,27 +11,25 @@ requirements:
   host:
     - python {{ python }}
     - pip
-    - setuptools >=45
-    - setuptools_scm >=6.0
+    - setuptools >= 45
+    - setuptools_scm >= 6.0
     - wheel
   run:
     - python {{ python }}
+    - astropy >= 5.3.1
+    - astroquery
+    - difi
+    - healpy
+    - jax
     - numpy
-    - pyarrow >= 13.0.0
     - numba
     - pandas
-    - difi
-    - astropy
-    - astroquery
-    - scipy
+    - pyarrow >= 13.0.0
+    - pyyaml >= 5.1
+    - ray-default
     - scikit-learn
-    - pyyaml
-    - openorb
+    - scipy
     - spiceypy
-    - matplotlib
-    - seaborn
-    - plotly
-    - ipykernel
     - pytest
     - pytest-cov
     - pre-commit

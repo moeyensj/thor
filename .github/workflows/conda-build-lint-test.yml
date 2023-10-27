@@ -28,17 +28,18 @@ jobs:
           activate-environment: "thor"
           auto-update-conda: true
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies (excluding adam_core since it is not available via conda)
+      - name: Install dependencies (excluding adam_core and quivr since they are not available via conda)
         run: |
-          tail +2 requirements.txt > requirements_conda.txt
+          tail +3 requirements.txt > requirements_conda.txt
           conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements_conda.txt --yes
       - name: Update OBSCODE.dat
         run: |
           cd $CONDA_PREFIX/share/oorb && ./updateOBSCODE
           cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
-      - name: Install adam_core
+      - name: Install adam_core and quivr
         run: |
           pip install adam-core@git+https://github.com/B612-Asteroid-Institute/adam_core@main
+          pip install quivr>=0.7.1
       - name: Build and install
         run: pip install . --no-deps
       - name: Lint

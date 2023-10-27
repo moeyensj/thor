@@ -1,20 +1,23 @@
 adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core@main
-numpy
-pyarrow>=13.0.0
-numba
-pandas
-difi
-astropy>=5.3.1
+quivr >= 0.7.1
+astropy >= 5.3.1
 astroquery
-scipy
-scikit-learn
+difi
 healpy
-pyyaml>=5.1
+jax
+numpy
+numba
 openorb
+pandas
+pyarrow >= 13.0.0
+pyyaml >= 5.1
+ray-default
+scikit-learn
+scipy
 spiceypy
 pytest
 pytest-cov
 pre-commit
-setuptools>=45
+setuptools >= 45
 wheel
-setuptools_scm>=6.0
+setuptools_scm >= 6.0
