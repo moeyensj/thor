@@ -425,8 +425,6 @@ def link_test_orbit(
         vy_range=[config.vy_min, config.vy_max],
         vx_bins=config.vx_bins,
         vy_bins=config.vy_bins,
-        vx_values=config.vx_values,
-        vy_values=config.vy_values,
         eps=config.cluster_radius,
         min_obs=config.cluster_min_obs,
         min_arc_length=config.cluster_min_arc_length,

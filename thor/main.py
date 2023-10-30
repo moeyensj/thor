@@ -408,8 +408,6 @@ def clusterAndLink(
     vy_range=[-0.1, 0.1],
     vx_bins=100,
     vy_bins=100,
-    vx_values=None,
-    vy_values=None,
     eps=0.005,
     min_obs=5,
     min_arc_length=1.0,
@@ -427,30 +425,18 @@ def clusterAndLink(
         DataFrame containing post-range and shift observations.
     vx_range : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in x.
-        Will not be used if vx_values are specified.
         [Default = [-0.1, 0.1]]
     vy_range : {None, list or `~numpy.ndarray` (2)}
         Maximum and minimum velocity range in y.
-        Will not be used if vy_values are specified.
         [Default = [-0.1, 0.1]]
     vx_bins : int, optional
         Length of x-velocity grid between vx_range[0]
-        and vx_range[-1]. Will not be used if vx_values are
-        specified.
+        and vx_range[-1].
         [Default = 100]
     vy_bins: int, optional
         Length of y-velocity grid between vy_range[0]
-        and vy_range[-1]. Will not be used if vy_values are
-        specified.
+        and vy_range[-1].
         [Default = 100]
-    vx_values : {None, `~numpy.ndarray`}, optional
-        Values of velocities in x at which to cluster
-        and link.
-        [Default = None]
-    vy_values : {None, `~numpy.ndarray`}, optional
-        Values of velocities in y at which to cluster
-        and link.
-        [Default = None]
     eps : float, optional
         The maximum distance between two samples for them to be considered
         as in the same neighborhood.
@@ -491,58 +477,17 @@ def clusterAndLink(
     time_start_cluster = time.time()
     logger.info("Running velocity space clustering...")
 
-    if vx_values is None and vx_range is not None:
-        vx = np.linspace(*vx_range, num=vx_bins)
-    elif vx_values is None and vx_range is None:
-        raise ValueError("Both vx_values and vx_range cannot be None.")
-    else:
-        vx = vx_values
-        vx_range = [vx_values[0], vx_values[-1]]
-        vx_bins = len(vx)
-
-    if vy_values is None and vy_range is not None:
-        vy = np.linspace(*vy_range, num=vy_bins)
-    elif vy_values is None and vy_range is None:
-        raise ValueError("Both vy_values and vy_range cannot be None.")
-    else:
-        vy = vy_values
-        vy_range = [vy_values[0], vy_values[-1]]
-        vy_bins = len(vy)
-
-    if vx_values is None and vy_values is None:
-        vxx, vyy = np.meshgrid(vx, vy)
-        vxx = vxx.flatten()
-        vyy = vyy.flatten()
-    elif vx_values is not None and vy_values is not None:
-        vxx = vx
-        vyy = vy
-    else:
-        raise ValueError("")
+    vx = np.linspace(*vx_range, num=vx_bins)
+    vy = np.linspace(*vy_range, num=vy_bins)
+    vxx, vyy = np.meshgrid(vx, vy)
+    vxx = vxx.flatten()
+    vyy = vyy.flatten()
 
     logger.debug("X velocity range: {}".format(vx_range))
-    if vx_values is not None:
-        logger.debug("X velocity values: {}".format(vx_bins))
-    else:
-        logger.debug("X velocity bins: {}".format(vx_bins))
-
+    logger.debug("X velocity bins: {}".format(vx_bins))
     logger.debug("Y velocity range: {}".format(vy_range))
-    if vy_values is not None:
-        logger.debug("Y velocity values: {}".format(vy_bins))
-    else:
-        logger.debug("Y velocity bins: {}".format(vy_bins))
-    if vx_values is not None:
-        logger.debug("User defined x velocity values: True")
-    else:
-        logger.debug("User defined x velocity values: False")
-    if vy_values is not None:
-        logger.debug("User defined y velocity values: True")
-    else:
-        logger.debug("User defined y velocity values: False")
-
-    if vx_values is None and vy_values is None:
-        logger.debug("Velocity grid size: {}".format(vx_bins * vy_bins))
-    else:
-        logger.debug("Velocity grid size: {}".format(vx_bins))
+    logger.debug("Y velocity bins: {}".format(vy_bins))
+    logger.debug("Velocity grid size: {}".format(vx_bins))
     logger.info("Max sample distance: {}".format(eps))
     logger.info("Minimum samples: {}".format(min_obs))
 

@@ -17,8 +17,6 @@ class Config:
     vy_max: float = 0.1
     vx_bins: int = 300
     vy_bins: int = 300
-    vx_values: Optional[npt.NDArray[np.float64]] = None
-    vy_values: Optional[npt.NDArray[np.float64]] = None
     cluster_radius: float = 0.005
     cluster_min_obs: int = 6
     cluster_min_arc_length: float = 1.0
