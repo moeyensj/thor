@@ -1,10 +1,9 @@
-name: pip - Build Lint Test and Coverage
+name: pip - Build and Integration Test
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  schedule:
+    # Run every day at 20:00 UTC
+    - cron: '0 20 * * * '
 
 jobs:
   build-lint-test-coverage:
@@ -40,12 +39,5 @@ jobs:
           cache: 'pip' # caching pip dependencies
       - name: Build and install
         run: pip install .[tests]
-      - name: Lint
-        run: pre-commit run --all-files
-      - name: Test
-        run: pytest . --cov --cov-report xml
-      - name: Coverage
-        uses: coverallsapp/github-action@v2.0.0
-        with:
-          github-token: ${{ secrets.COVERALLS_TOKEN }}
-          path-to-lcov: coverage.xml
+      - name: Integration Tests
+        run: pytest . -m "integration"

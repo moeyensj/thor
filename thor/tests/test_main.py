@@ -160,6 +160,14 @@ def test_link_test_orbit(object_id, orbits, observations, parallelized, ray_clus
     else:
         config.max_processes = 1
 
+    # Reduce the clustering grid size to speed up the test
+    config.vx_bins = 10
+    config.vy_bins = 10
+    config.vx_min = -0.01
+    config.vx_max = 0.01
+    config.vy_min = -0.01
+    config.vy_max = 0.01
+
     orbit = orbits.select("object_id", object_id)
     exposures, detections, associations = observations
 
