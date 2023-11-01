@@ -4,7 +4,6 @@ from .constants import *
 from .orbits import *
 from .backend import *
 from .utils import *
-from .coordinates import *
 from .projections import *
 from .orbit import *
 from .data_processing import *

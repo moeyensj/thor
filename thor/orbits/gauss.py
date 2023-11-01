@@ -1,10 +1,15 @@
 import numpy as np
+from adam_core.coordinates import (
+    CartesianCoordinates,
+    Origin,
+    SphericalCoordinates,
+    transform_coordinates,
+)
 from astropy.time import Time
 from numba import jit
 from numpy import roots
 
 from ..constants import Constants as c
-from ..coordinates import transformCoordinates
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
 from .iterators import iterateStateTransition
@@ -194,14 +199,18 @@ def gaussIOD(
     orbits : `~numpy.ndarray` ((<3, 6) or (0))
         Up to three preliminary orbits (as cartesian state vectors).
     """
-    coords = np.array([np.ones(len(coords)), coords[:, 0], coords[:, 1]]).T.copy()
-    rho = transformCoordinates(
-        coords,
-        "equatorial",
-        "ecliptic",
-        representation_in="spherical",
-        representation_out="cartesian",
+    coords = transform_coordinates(
+        SphericalCoordinates.from_kwargs(
+            lon=coords[:, 0],
+            lat=coords[:, 1],
+            origin=Origin.from_kwargs(code=np.full(len(coords), "Unknown")),
+            frame="equatorial",
+        ).to_unit_sphere(),
+        representation_out=CartesianCoordinates,
+        frame_out="ecliptic",
     )
+    rho = coords.values[:, :3]
+
     rho1_hat = rho[0, :]
     rho2_hat = rho[1, :]
     rho3_hat = rho[2, :]
