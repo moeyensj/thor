@@ -10,7 +10,6 @@ import concurrent.futures as cf
 import logging
 import multiprocessing as mp
 import time
-import uuid
 from functools import partial
 from itertools import combinations
 
@@ -355,11 +354,8 @@ def iod(
 
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
-        orbit_ids = iod_orbits.ids
+        orbit_ids = iod_orbits.orbit_id.to_numpy(zero_copy_only=False)
         for i, orbit_id in enumerate(orbit_ids):
-            orbit_name = str(uuid.uuid4().hex)
-            iod_orbits.ids[i] = orbit_name
-
             ephemeris_orbit = ephemeris[ephemeris["orbit_id"] == orbit_id]
 
             # Calculate residuals and chi2
@@ -485,7 +481,7 @@ def iod(
         )
 
     else:
-        orbit = orbit_sol.to_df(include_units=False)
+        orbit = orbit_sol.to_dataframe()
         orbit["arc_length"] = arc_length
         orbit["num_obs"] = num_obs
         orbit["chi2"] = chi2_total_sol
@@ -493,7 +489,9 @@ def iod(
 
         orbit_members = pd.DataFrame(
             {
-                "orbit_id": [orbit_sol.ids[0] for i in range(len(obs_ids_all))],
+                "orbit_id": [
+                    orbit_sol.orbit_id[0].as_py() for i in range(len(obs_ids_all))
+                ],
                 "obs_id": obs_ids_all,
                 "residual_ra_arcsec": residuals_sol[:, 0] * 3600,
                 "residual_dec_arcsec": residuals_sol[:, 1] * 3600,

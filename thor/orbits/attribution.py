@@ -27,7 +27,6 @@ from ..utils import (
 )
 from .ephemeris import generateEphemeris
 from .od import differentialCorrection
-from .orbits import Orbits
 from .residuals import calcResiduals
 
 logger = logging.getLogger(__name__)
@@ -221,7 +220,7 @@ def attributeObservations(
             chunk_size_ = calcChunkSize(
                 num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1
             )
-            orbits_split = orbits.split(chunk_size_)
+            orbits_split = [chunk for chunk in _iterate_chunks(orbits, chunk_size_)]
 
             obs_oids = []
             for observations_c in yieldChunks(observations, observations_chunk_size):
@@ -254,7 +253,7 @@ def attributeObservations(
             chunk_size_ = calcChunkSize(
                 num_orbits, num_workers, orbits_chunk_size, min_chunk_size=1
             )
-            orbits_split = orbits.split(chunk_size_)
+            orbits_split = [chunk for chunk in _iterate_chunks(orbits, chunk_size_)]
 
             for observations_c in yieldChunks(observations, observations_chunk_size):
 
@@ -284,7 +283,7 @@ def attributeObservations(
                 for observations_c in yieldChunks(
                     observations, observations_chunk_size
                 ):
-                    for orbit_c in orbits.split(orbits_chunk_size):
+                    for orbit_c in _iterate_chunks(orbits, orbits_chunk_size):
                         futures.append(
                             executor.submit(
                                 attribution_worker,
@@ -309,7 +308,7 @@ def attributeObservations(
 
     else:
         for observations_c in yieldChunks(observations, observations_chunk_size):
-            for orbit_c in orbits.split(orbits_chunk_size):
+            for orbit_c in _iterate_chunks(orbits, orbits_chunk_size):
                 attribution_df_i = attribution_worker(
                     orbit_c,
                     observations_c,
@@ -398,7 +397,7 @@ def mergeAndExtendOrbits(
         while not converged:
             # Run attribution
             attributions = attributeObservations(
-                Orbits.from_df(orbits_iter),
+                Orbits.from_flat_dataframe(orbits_iter),
                 observations_iter,
                 eps=eps,
                 include_probabilistic=True,

@@ -3,8 +3,6 @@ import os
 import pandas as pd
 from difi import analyzeLinkages, analyzeObservations
 
-from .orbits import Orbits
-
 __all__ = ["readOrbitDir", "analyzeTHOROrbit", "analyzeTHOR"]
 
 

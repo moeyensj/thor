@@ -5,6 +5,8 @@ from adam_core.coordinates import (
     SphericalCoordinates,
     transform_coordinates,
 )
+from adam_core.orbits import Orbits
+from adam_core.time import Timestamp
 from astropy.time import Time
 from numba import jit
 from numpy import roots
@@ -13,7 +15,6 @@ from ..constants import Constants as c
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs
 from .iterators import iterateStateTransition
-from .orbits import Orbits
 
 __all__ = [
     "_calcV",
@@ -335,7 +336,19 @@ def gaussIOD(
         epochs = epochs[~np.isnan(orbits).any(axis=1)]
         orbits = orbits[~np.isnan(orbits).any(axis=1)]
 
-    iod_orbits = Orbits(
-        orbits, Time(epochs, format="mjd", scale="utc"), orbit_type="cartesian"
-    )
-    return iod_orbits
+        return Orbits.from_kwargs(
+            coordinates=CartesianCoordinates.from_kwargs(
+                x=orbits[:, 0],
+                y=orbits[:, 1],
+                z=orbits[:, 2],
+                vx=orbits[:, 3],
+                vy=orbits[:, 4],
+                vz=orbits[:, 5],
+                time=Timestamp.from_mjd(epochs, scale="utc"),
+                origin=Origin.from_kwargs(code=np.full(len(orbits), "SUN")),
+                frame="ecliptic",
+            )
+        )
+
+    else:
+        return Orbits.empty()

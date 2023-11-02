@@ -15,6 +15,9 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
+from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
+from adam_core.orbits import Orbits
+from adam_core.time import Timestamp
 from astropy import units as u
 from astropy.time import Time
 from scipy.linalg import solve
@@ -27,7 +30,6 @@ from ..utils import (
     sortLinkages,
     yieldChunks,
 )
-from .orbits import Orbits
 from .residuals import calcResiduals
 
 logger = logging.getLogger(__name__)
@@ -54,7 +56,7 @@ def od_worker(
     od_orbit_members_dfs = []
     for orbit, observations in zip(orbits_list, observations_list):
         try:
-            assert orbit.ids[0] == observations["orbit_id"].unique()[0]
+            assert orbit.orbit_id[0].as_py() == observations["orbit_id"].unique()[0]
             assert np.all(
                 sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values
             )
@@ -64,12 +66,12 @@ def od_worker(
         except:
             err = (
                 "Invalid observations and orbit have been passed to the OD code.\n"
-                "Orbit ID: {}".format(orbit.ids[0])
+                "Orbit ID: {}".format(orbit.orbit_id[0].as_py())
             )
             raise ValueError(err)
 
         time_start = time.time()
-        logger.debug(f"Differentially correcting orbit {orbit.ids[0]}...")
+        logger.debug(f"Differentially correcting orbit {orbit.orbit_id[0].as_py()}...")
         od_orbit, od_orbit_members = od(
             orbit,
             observations,
@@ -87,7 +89,9 @@ def od_worker(
         )
         time_end = time.time()
         duration = time_end - time_start
-        logger.debug(f"OD for orbit {orbit.ids[0]} completed in {duration:.3f}s.")
+        logger.debug(
+            f"OD for orbit {orbit.orbit_id[0].as_py()} completed in {duration:.3f}s."
+        )
 
         od_orbits_dfs.append(od_orbit)
         od_orbit_members_dfs.append(od_orbit_members)
@@ -256,21 +260,30 @@ def od(
             if i < 3:
                 delta_iter = delta_prev
 
-                d[0, i] = orbit_prev.cartesian[0, i] * delta_iter
+                d[0, i] = orbit_prev.coordinates.values[0, i] * delta_iter
             elif i < 6:
                 delta_iter = delta_prev
 
-                d[0, i] = orbit_prev.cartesian[0, i] * delta_iter
+                d[0, i] = orbit_prev.coordinates.values[0, i] * delta_iter
             else:
                 delta_iter = delta_prev / 100000
 
                 d[0, i] = delta_iter
 
             # Modify component i of the orbit by a small delta
-            orbit_iter_p = Orbits(
-                orbit_prev.cartesian + d[0, :6],
-                orbit_prev.epochs + d[0, 6] * u.day,
-                orbit_type="cartesian",
+            cartesian_elements_p = orbit_prev.coordinates.values + d[0, :6]
+            orbit_iter_p = Orbits.from_kwargs(
+                coordinates=CartesianCoordinates.from_kwargs(
+                    x=cartesian_elements_p[:, 0],
+                    y=cartesian_elements_p[:, 1],
+                    z=cartesian_elements_p[:, 2],
+                    vx=cartesian_elements_p[:, 3],
+                    vy=cartesian_elements_p[:, 4],
+                    vz=cartesian_elements_p[:, 5],
+                    time=orbit_prev.coordinates.time,
+                    origin=orbit_prev.coordinates.origin,
+                    frame=orbit_prev.coordinates.frame,
+                )
             )
 
             # Calculate the modified ephemerides
@@ -281,10 +294,19 @@ def od(
             if method == "central":
 
                 # Modify component i of the orbit by a small delta
-                orbit_iter_n = Orbits(
-                    orbit_prev.cartesian - d[0, :6],
-                    orbit_prev.epochs - d[0, 6] * u.day,
-                    orbit_type="cartesian",
+                cartesian_elements_n = orbit_prev.coordinates.values - d[0, :6]
+                orbit_iter_n = Orbits.from_kwargs(
+                    coordinates=CartesianCoordinates.from_kwargs(
+                        x=cartesian_elements_n[:, 0],
+                        y=cartesian_elements_n[:, 1],
+                        z=cartesian_elements_n[:, 2],
+                        vx=cartesian_elements_n[:, 3],
+                        vy=cartesian_elements_n[:, 4],
+                        vz=cartesian_elements_n[:, 5],
+                        time=orbit_prev.coordinates.time,
+                        origin=orbit_prev.coordinates.origin,
+                        frame=orbit_prev.coordinates.frame,
+                    )
                 )
 
                 # Calculate the modified ephemerides
@@ -309,7 +331,7 @@ def od(
                         residuals_mod[ids_mask][n : n + 1].T / delta_denom
                     )
                 except RuntimeError:
-                    print(orbit_prev.ids)
+                    print(orbit_prev.orbit_id)
 
         for n in range(num_obs):
             W = np.diag(1 / coords_sigma[n] ** 2)
@@ -345,7 +367,7 @@ def od(
 
                 r_variances = variances[0:3]
                 r_sigma = np.sqrt(np.sum(r_variances))
-                r = np.linalg.norm(orbit_prev.cartesian[0, :3])
+                r = orbit_prev.coordinates.r_mag
                 if (r_sigma / r) > 1:
                     delta_prev /= DELTA_DECREASE_FACTOR
                     logger.debug(
@@ -380,14 +402,25 @@ def od(
             logger.debug("Change in state is more than 100 au, discarding solution.")
             continue
 
-        orbit_iter = Orbits(
-            orbit_prev.cartesian + d_state,
-            orbit_prev.epochs + d_time * u.day,
-            orbit_type="cartesian",
-            ids=orbit_prev.ids,
-            covariance=[covariance_matrix],
+        cartesian_elements = orbit_prev.coordinates.values + d_state
+        orbit_iter = Orbits.from_kwargs(
+            orbit_id=orbit_prev.orbit_id,
+            coordinates=CartesianCoordinates.from_kwargs(
+                x=cartesian_elements[:, 0],
+                y=cartesian_elements[:, 1],
+                z=cartesian_elements[:, 2],
+                vx=cartesian_elements[:, 3],
+                vy=cartesian_elements[:, 4],
+                vz=cartesian_elements[:, 5],
+                covariance=CoordinateCovariances.from_matrix(
+                    covariance_matrix.reshape(1, 6, 6)
+                ),
+                time=orbit_prev.coordinates.time,
+                origin=orbit_prev.coordinates.origin,
+                frame=orbit_prev.coordinates.frame,
+            ),
         )
-        if np.linalg.norm(orbit_iter.cartesian[0, 3:]) > 1:
+        if np.linalg.norm(orbit_iter.coordinates.v_mag) > 1:
             delta_prev *= DELTA_INCREASE_FACTOR
             logger.debug("Orbit is moving extraordinarily fast, discarding solution.")
             continue
@@ -526,16 +559,12 @@ def od(
         )
 
     else:
-        variances = np.diag(orbit_prev.cartesian_covariance[0])
-        r_variances = variances[0:3]
-        v_variances = variances[3:6]
-
         obs_times = observations["mjd_utc"].values[ids_mask]
-        od_orbit = orbit_prev.to_df(include_units=False)
-        od_orbit["r"] = np.linalg.norm(orbit_prev.cartesian[0, :3])
-        od_orbit["r_sigma"] = np.sqrt(np.sum(r_variances))
-        od_orbit["v"] = np.linalg.norm(orbit_prev.cartesian[0, 3:])
-        od_orbit["v_sigma"] = np.sqrt(np.sum(v_variances))
+        od_orbit = orbit_prev.to_dataframe()
+        od_orbit["r"] = orbit_prev.coordinates.r_mag
+        od_orbit["r_sigma"] = orbit_prev.coordinates.sigma_r_mag
+        od_orbit["v"] = orbit_prev.coordinates.v_mag
+        od_orbit["v_sigma"] = orbit_prev.coordinates.sigma_v_mag
         od_orbit["arc_length"] = np.max(obs_times) - np.min(obs_times)
         od_orbit["num_obs"] = num_obs
         od_orbit["num_params"] = num_params
@@ -546,7 +575,9 @@ def od(
 
         od_orbit_members = pd.DataFrame(
             {
-                "orbit_id": [orbit_prev.ids[0] for i in range(len(obs_ids_all))],
+                "orbit_id": [
+                    orbit_prev.orbit_id[0].as_py() for i in range(len(obs_ids_all))
+                ],
                 "obs_id": obs_ids_all,
                 "residual_ra_arcsec": residuals_prev[:, 0] * 3600,
                 "residual_dec_arcsec": residuals_prev[:, 1] * 3600,
@@ -622,8 +653,8 @@ def differentialCorrection(
         duration = time.time() - start
         logger.debug(f"Grouping and splitting completed in {duration:.3f}s.")
 
-        orbits_initial = Orbits.from_df(orbits_)
-        orbits_split = orbits_initial.split(1)
+        orbits_initial = Orbits.from_flat_dataframe(orbits_)
+        orbits_split = [orbit for orbit in orbits_initial]
         num_orbits = len(orbits)
 
         parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
