@@ -2,7 +2,6 @@ from .version import __version__
 from .config import *
 from .constants import *
 from .orbits import *
-from .backend import *
 from .utils import *
 from .projections import *
 from .orbit import *

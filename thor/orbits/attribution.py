@@ -1,4 +1,5 @@
 import os
+from typing import Literal
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -14,7 +15,12 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
-from astropy.time import Time
+import quivr as qv
+from adam_core.observers import Observers
+from adam_core.orbits import Orbits
+from adam_core.propagator import PYOORB
+from adam_core.propagator.utils import _iterate_chunks
+from adam_core.time import Timestamp
 from sklearn.neighbors import BallTree
 
 from ..utils import (
@@ -25,9 +31,9 @@ from ..utils import (
     sortLinkages,
     yieldChunks,
 )
-from .ephemeris import generateEphemeris
 from .od import differentialCorrection
 from .residuals import calcResiduals
+from .utils import _ephemeris_to_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -39,30 +45,38 @@ def attribution_worker(
     observations,
     eps=1 / 3600,
     include_probabilistic=True,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
 ):
+    if propagator == "PYOORB":
+        prop = PYOORB(**propagator_kwargs)
+    else:
+        raise ValueError(f"Invalid propagator '{propagator}'.")
 
-    # Create observer's dictionary from observations
-    observers = {}
+    # Create Observers table
+    observers_list = []
     for observatory_code in observations["observatory_code"].unique():
-        observers[observatory_code] = Time(
-            observations[observations["observatory_code"].isin([observatory_code])][
-                "mjd_utc"
-            ].unique(),
-            scale="utc",
-            format="mjd",
+        observers_list.append(
+            Observers.from_code(
+                observatory_code,
+                Timestamp.from_mjd(
+                    observations[
+                        observations["observatory_code"].isin([observatory_code])
+                    ]["mjd_utc"].unique(),
+                    scale="utc",
+                ),
+            )
         )
 
-    # Genereate ephemerides for each orbit at the observation times
-    ephemeris = generateEphemeris(
-        orbits,
-        observers,
-        backend=backend,
-        backend_kwargs=backend_kwargs,
-        num_jobs=1,
-        chunk_size=1,
+    observers = qv.concatenate(observers_list)
+    observers = observers.sort_by(
+        ["coordinates.time.days", "coordinates.time.nanos", "code"]
     )
+
+    # Genereate ephemerides for each orbit at the observation times
+    ephemeris = prop._generate_ephemeris(orbits, observers)
+    ephemeris = _ephemeris_to_dataframe(ephemeris)
+    # TODO: Replace types below with pyarrow/quivr tables
 
     # Group the predicted ephemerides and observations by visit / exposure
     ephemeris_grouped = ephemeris.groupby(by=["observatory_code", "mjd_utc"])
@@ -188,8 +202,8 @@ def attributeObservations(
     observations,
     eps=5 / 3600,
     include_probabilistic=True,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
     orbits_chunk_size=10,
     observations_chunk_size=100000,
     num_jobs=1,
@@ -235,8 +249,8 @@ def attributeObservations(
                             obs_oid,
                             eps=eps,
                             include_probabilistic=include_probabilistic,
-                            backend=backend,
-                            backend_kwargs=backend_kwargs,
+                            propagator=propagator,
+                            propagator_kwargs=propagator_kwargs,
                         )
                     )
 
@@ -263,8 +277,8 @@ def attributeObservations(
                         attribution_worker,
                         eps=eps,
                         include_probabilistic=include_probabilistic,
-                        backend=backend,
-                        backend_kwargs=backend_kwargs,
+                        propagator=propagator,
+                        propagator_kwargs=propagator_kwargs,
                     ),
                     zip(
                         orbits_split,
@@ -291,8 +305,8 @@ def attributeObservations(
                                 observations_c,
                                 eps=eps,
                                 include_probabilistic=include_probabilistic,
-                                backend=backend,
-                                backend_kwargs=backend_kwargs,
+                                propagator=propagator,
+                                propagator_kwargs=propagator_kwargs,
                             )
                         )
                 attribution_dfs = []
@@ -314,8 +328,8 @@ def attributeObservations(
                     observations_c,
                     eps=eps,
                     include_probabilistic=include_probabilistic,
-                    backend=backend,
-                    backend_kwargs=backend_kwargs,
+                    propagator=propagator,
+                    propagator_kwargs=propagator_kwargs,
                 )
                 attribution_dfs.append(attribution_df_i)
 
@@ -349,8 +363,8 @@ def mergeAndExtendOrbits(
     max_iter=20,
     method="central",
     fit_epoch=False,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
     orbits_chunk_size=10,
     observations_chunk_size=100000,
     num_jobs=60,
@@ -401,8 +415,8 @@ def mergeAndExtendOrbits(
                 observations_iter,
                 eps=eps,
                 include_probabilistic=True,
-                backend=backend,
-                backend_kwargs=backend_kwargs,
+                propagator=propagator,
+                propagator_kwargs=propagator_kwargs,
                 orbits_chunk_size=orbits_chunk_size,
                 observations_chunk_size=observations_chunk_size,
                 num_jobs=num_jobs,
@@ -459,8 +473,8 @@ def mergeAndExtendOrbits(
                 method=method,
                 max_iter=max_iter,
                 fit_epoch=False,
-                backend=backend,
-                backend_kwargs=backend_kwargs,
+                propagator=propagator,
+                propagator_kwargs=propagator_kwargs,
                 chunk_size=orbits_chunk_size,
                 num_jobs=num_jobs,
                 parallel_backend=parallel_backend,

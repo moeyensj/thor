@@ -1,4 +1,5 @@
 import os
+from typing import Literal
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -15,9 +16,12 @@ from itertools import combinations
 
 import numpy as np
 import pandas as pd
+import quivr as qv
+from adam_core.observers import Observers
+from adam_core.propagator import PYOORB
+from adam_core.time import Timestamp
 from astropy.time import Time
 
-from ..backend import PYOORB
 from ..utils import (
     _checkParallel,
     _initWorker,
@@ -28,6 +32,7 @@ from ..utils import (
 )
 from .gauss import gaussIOD
 from .residuals import calcResiduals
+from .utils import _ephemeris_to_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +132,8 @@ def iod_worker(
     iterate=False,
     light_time=True,
     linkage_id_col="cluster_id",
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
 ):
     iod_orbits_dfs = []
     iod_orbit_members_dfs = []
@@ -150,8 +155,8 @@ def iod_worker(
             contamination_percentage=contamination_percentage,
             iterate=iterate,
             light_time=light_time,
-            backend=backend,
-            backend_kwargs=backend_kwargs,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
         )
         if len(iod_orbit) > 0:
             iod_orbit.insert(1, linkage_id_col, linkage_id)
@@ -177,8 +182,8 @@ def iod(
     observation_selection_method="combinations",
     iterate=False,
     light_time=True,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
 ):
     """
     Run initial orbit determination on a set of observations believed to belong to a single
@@ -281,23 +286,28 @@ def iod(
     times_all = observations[time_col].values
     times_all = Time(times_all, scale="utc", format="mjd")
 
-    observers = {}
-    for code in observations[obs_code_col].unique():
-        observers[code] = Time(
-            observations[observations[obs_code_col] == code][time_col].values,
-            scale="utc",
-            format="mjd",
+    observers_list = []
+    for observatory_code in observations["observatory_code"].unique():
+        observers_list.append(
+            Observers.from_code(
+                observatory_code,
+                Timestamp.from_mjd(
+                    observations[
+                        observations["observatory_code"].isin([observatory_code])
+                    ]["mjd_utc"].unique(),
+                    scale="utc",
+                ),
+            )
         )
+    observers = qv.concatenate(observers_list)
+    observers = observers.sort_by(
+        ["coordinates.time.days", "coordinates.time.nanos", "code"]
+    )
 
-    if backend == "PYOORB":
-        if light_time == False:
-            err = "PYOORB does not support turning light time correction off."
-            raise ValueError(err)
-
-        backend = PYOORB(**backend_kwargs)
+    if propagator == "PYOORB":
+        prop = PYOORB(**propagator_kwargs)
     else:
-        err = "backend should be 'PYOORB'"
-        raise ValueError(err)
+        raise ValueError(f"Invalid propagator '{propagator}'.")
 
     chi2_sol = 1e10
     orbit_sol = None
@@ -350,7 +360,8 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = backend._generateEphemeris(iod_orbits, observers)
+        ephemeris = prop._generate_ephemeris(iod_orbits, observers)
+        ephemeris = _ephemeris_to_dataframe(ephemeris)
 
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
@@ -518,8 +529,8 @@ def initialOrbitDetermination(
     light_time=True,
     linkage_id_col="cluster_id",
     identify_subsets=True,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
     chunk_size=1,
     num_jobs=1,
     parallel_backend="cf",
@@ -682,8 +693,8 @@ def initialOrbitDetermination(
                         iterate=iterate,
                         light_time=light_time,
                         linkage_id_col=linkage_id_col,
-                        backend=backend,
-                        backend_kwargs=backend_kwargs,
+                        propagator=propagator,
+                        propagator_kwargs=propagator_kwargs,
                     )
                     iod_orbits_oids.append(iod_orbits_oid)
                     iod_orbit_members_oids.append(iod_orbit_members_oid)
@@ -716,8 +727,8 @@ def initialOrbitDetermination(
                         iterate=iterate,
                         light_time=light_time,
                         linkage_id_col=linkage_id_col,
-                        backend=backend,
-                        backend_kwargs=backend_kwargs,
+                        propagator=propagator,
+                        propagator_kwargs=propagator_kwargs,
                     ),
                     zip(yieldChunks(observations_split, chunk_size_)),
                 )
@@ -745,8 +756,8 @@ def initialOrbitDetermination(
                                 iterate=iterate,
                                 light_time=light_time,
                                 linkage_id_col=linkage_id_col,
-                                backend=backend,
-                                backend_kwargs=backend_kwargs,
+                                propagator=propagator,
+                                propagator_kwargs=propagator_kwargs,
                             )
                         )
 
@@ -774,8 +785,8 @@ def initialOrbitDetermination(
                     iterate=iterate,
                     light_time=light_time,
                     linkage_id_col=linkage_id_col,
-                    backend=backend,
-                    backend_kwargs=backend_kwargs,
+                    propagator=propagator,
+                    propagator_kwargs=propagator_kwargs,
                 )
                 iod_orbits_dfs.append(iod_orbits_df)
                 iod_orbit_members_dfs.append(iod_orbit_members_df)

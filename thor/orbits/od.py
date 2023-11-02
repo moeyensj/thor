@@ -1,4 +1,5 @@
 import os
+from typing import Literal
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -15,14 +16,14 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
+import quivr as qv
 from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
+from adam_core.observers import Observers
 from adam_core.orbits import Orbits
+from adam_core.propagator import PYOORB
 from adam_core.time import Timestamp
-from astropy import units as u
-from astropy.time import Time
 from scipy.linalg import solve
 
-from ..backend import PYOORB
 from ..utils import (
     _checkParallel,
     _initWorker,
@@ -31,6 +32,7 @@ from ..utils import (
     yieldChunks,
 )
 from .residuals import calcResiduals
+from .utils import _ephemeris_to_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +50,8 @@ def od_worker(
     max_iter=20,
     method="central",
     fit_epoch=False,
-    test_orbit=None,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
 ):
     od_orbits_dfs = []
     od_orbit_members_dfs = []
@@ -83,9 +84,8 @@ def od_worker(
             max_iter=max_iter,
             method=method,
             fit_epoch=fit_epoch,
-            test_orbit=test_orbit,
-            backend=backend,
-            backend_kwargs=backend_kwargs,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
         )
         time_end = time.time()
         duration = time_end - time_start
@@ -112,15 +112,13 @@ def od(
     max_iter=20,
     method="central",
     fit_epoch=False,
-    test_orbit=None,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
 ):
-    if backend == "PYOORB":
-        backend = PYOORB(**backend_kwargs)
+    if propagator == "PYOORB":
+        prop = PYOORB(**propagator_kwargs)
     else:
-        err = "backend should be 'PYOORB'"
-        raise ValueError(err)
+        raise ValueError(f"Invalid propagator '{propagator}'.")
 
     if method not in ["central", "finite"]:
         err = "method should be one of 'central' or 'finite'."
@@ -132,14 +130,24 @@ def od(
     coords = observations[observables].values
     coords_sigma = observations[["RA_sigma_deg", "Dec_sigma_deg"]].values
 
-    observers = {}
+    # Create Observers table
+    observers_list = []
     for observatory_code in observations["observatory_code"].unique():
-        observatory_mask = observations["observatory_code"].isin([observatory_code])
-        observers[observatory_code] = Time(
-            observations[observatory_mask]["mjd_utc"].unique(),
-            format="mjd",
-            scale="utc",
+        observers_list.append(
+            Observers.from_code(
+                observatory_code,
+                Timestamp.from_mjd(
+                    observations[
+                        observations["observatory_code"].isin([observatory_code])
+                    ]["mjd_utc"].unique(),
+                    scale="utc",
+                ),
+            )
         )
+    observers = qv.concatenate(observers_list)
+    observers = observers.sort_by(
+        ["coordinates.time.days", "coordinates.time.nanos", "code"]
+    )
 
     # FLAG: can we stop iterating to find a solution?
     converged = False
@@ -169,7 +177,10 @@ def od(
         # such that the chi2 improves
         orbit_prev_ = copy.deepcopy(orbit)
 
-        ephemeris_prev_ = backend._generateEphemeris(orbit_prev_, observers)
+        ephemeris_prev_ = prop._generate_ephemeris(orbit_prev_, observers)
+        ephemeris_prev_ = _ephemeris_to_dataframe(ephemeris_prev_)
+        # TODO: replace with newer types
+
         residuals_prev_, stats_prev_ = calcResiduals(
             coords,
             ephemeris_prev_[observables].values,
@@ -244,7 +255,10 @@ def od(
         ATWb = np.zeros((num_params, 1, num_obs))
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_nom = backend._generateEphemeris(orbit_prev, observers)
+        ephemeris_nom = prop._generate_ephemeris(orbit_prev, observers)
+        ephemeris_nom = _ephemeris_to_dataframe(ephemeris_nom)
+        # TODO: replace with newer types
+
         coords_nom = ephemeris_nom[observables].values
 
         # Modify each component of the state by a small delta
@@ -287,7 +301,9 @@ def od(
             )
 
             # Calculate the modified ephemerides
-            ephemeris_mod_p = backend._generateEphemeris(orbit_iter_p, observers)
+            ephemeris_mod_p = prop._generate_ephemeris(orbit_iter_p, observers)
+            ephemeris_mod_p = _ephemeris_to_dataframe(ephemeris_mod_p)
+            # TODO: replace with newer types
             coords_mod_p = ephemeris_mod_p[observables].values
 
             delta_denom = d[0, i]
@@ -310,7 +326,9 @@ def od(
                 )
 
                 # Calculate the modified ephemerides
-                ephemeris_mod_n = backend._generateEphemeris(orbit_iter_n, observers)
+                ephemeris_mod_n = prop._generate_ephemeris(orbit_iter_n, observers)
+                ephemeris_mod_n = _ephemeris_to_dataframe(ephemeris_mod_n)
+                # TODO: replace with newer types
                 coords_mod_n = ephemeris_mod_n[observables].values
 
                 delta_denom *= 2
@@ -426,7 +444,8 @@ def od(
             continue
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_iter = backend._generateEphemeris(orbit_iter, observers)
+        ephemeris_iter = prop._generate_ephemeris(orbit_iter, observers)
+        ephemeris_iter = _ephemeris_to_dataframe(ephemeris_iter)
         coords_iter = ephemeris_iter[observables].values
 
         residuals, stats = calcResiduals(
@@ -604,9 +623,8 @@ def differentialCorrection(
     max_iter=20,
     method="central",
     fit_epoch=False,
-    test_orbit=None,
-    backend="PYOORB",
-    backend_kwargs={},
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
     chunk_size=10,
     num_jobs=60,
     parallel_backend="cf",
@@ -702,9 +720,8 @@ def differentialCorrection(
                         max_iter=max_iter,
                         method=method,
                         fit_epoch=fit_epoch,
-                        test_orbit=test_orbit,
-                        backend=backend,
-                        backend_kwargs=backend_kwargs,
+                        propagator=propagator,
+                        propagator_kwargs=propagator_kwargs,
                     )
                     od_orbits_oids.append(od_orbits_oid)
                     od_orbit_members_oids.append(od_orbit_members_oid)
@@ -736,9 +753,8 @@ def differentialCorrection(
                         max_iter=max_iter,
                         method=method,
                         fit_epoch=fit_epoch,
-                        test_orbit=test_orbit,
-                        backend=backend,
-                        backend_kwargs=backend_kwargs,
+                        propagator=propagator,
+                        propagator_kwargs=propagator_kwargs,
                     ),
                     zip(
                         yieldChunks(orbits_split, chunk_size_),
@@ -773,9 +789,8 @@ def differentialCorrection(
                                 max_iter=max_iter,
                                 method=method,
                                 fit_epoch=fit_epoch,
-                                test_orbit=test_orbit,
-                                backend=backend,
-                                backend_kwargs=backend_kwargs,
+                                propagator=propagator,
+                                propagator_kwargs=propagator_kwargs,
                             )
                         )
                     od_orbits_dfs = []
@@ -810,9 +825,8 @@ def differentialCorrection(
                     max_iter=max_iter,
                     method=method,
                     fit_epoch=fit_epoch,
-                    test_orbit=test_orbit,
-                    backend=backend,
-                    backend_kwargs=backend_kwargs,
+                    propagator=propagator,
+                    propagator_kwargs=propagator_kwargs,
                 )
                 od_orbits_dfs.append(od_orbits_df)
                 od_orbit_members_dfs.append(od_orbit_members_df)
