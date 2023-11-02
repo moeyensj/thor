@@ -1,5 +1,5 @@
 import os
-from typing import Literal
+from typing import List, Literal, Tuple
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -15,15 +15,21 @@ import time
 from functools import partial
 
 import numpy as np
-import pandas as pd
 import quivr as qv
-from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
+from adam_core.coordinates import (
+    CartesianCoordinates,
+    CoordinateCovariances,
+    Origin,
+    SphericalCoordinates,
+)
+from adam_core.coordinates.residuals import Residuals
 from adam_core.observers import Observers
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB
 from adam_core.time import Timestamp
 from scipy.linalg import solve
 
+from ..orbit_determination import FittedOrbitMembers, FittedOrbits
 from ..utils import (
     _checkParallel,
     _initWorker,
@@ -31,8 +37,6 @@ from ..utils import (
     sortLinkages,
     yieldChunks,
 )
-from .residuals import calcResiduals
-from .utils import _ephemeris_to_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ __all__ = ["od_worker", "od", "differentialCorrection"]
 
 
 def od_worker(
-    orbits_list,
+    orbits_list: List[FittedOrbits],
     observations_list,
     rchi2_threshold=100,
     min_obs=5,
@@ -52,9 +56,9 @@ def od_worker(
     fit_epoch=False,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
-):
-    od_orbits_dfs = []
-    od_orbit_members_dfs = []
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+    od_orbits_list = []
+    od_orbit_members_list = []
     for orbit, observations in zip(orbits_list, observations_list):
         try:
             assert orbit.orbit_id[0].as_py() == observations["orbit_id"].unique()[0]
@@ -93,16 +97,16 @@ def od_worker(
             f"OD for orbit {orbit.orbit_id[0].as_py()} completed in {duration:.3f}s."
         )
 
-        od_orbits_dfs.append(od_orbit)
-        od_orbit_members_dfs.append(od_orbit_members)
+        od_orbits_list.append(od_orbit)
+        od_orbit_members_list.append(od_orbit_members)
 
-    od_orbits = pd.concat(od_orbits_dfs, ignore_index=True)
-    od_orbit_members = pd.concat(od_orbit_members_dfs, ignore_index=True)
+    od_orbits = qv.concatenate(od_orbits_list)
+    od_orbit_members = qv.concatenate(od_orbit_members_list)
     return od_orbits, od_orbit_members
 
 
 def od(
-    orbit,
+    orbit: FittedOrbits,
     observations,
     rchi2_threshold=100,
     min_obs=5,
@@ -114,7 +118,7 @@ def od(
     fit_epoch=False,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
-):
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     if propagator == "PYOORB":
         prop = PYOORB(**propagator_kwargs)
     else:
@@ -129,6 +133,19 @@ def od(
     obs_ids_all = observations["obs_id"].values
     coords = observations[observables].values
     coords_sigma = observations[["RA_sigma_deg", "Dec_sigma_deg"]].values
+    obs_codes_all = observations["observatory_code"].values
+    times_all = observations["mjd_utc"].values
+
+    sigmas = np.zeros((len(coords), 6))
+    sigmas[:, 1:3] = coords_sigma
+    coords = SphericalCoordinates.from_kwargs(
+        lon=coords[:, 0],
+        lat=coords[:, 1],
+        covariance=CoordinateCovariances.from_sigmas(sigmas),
+        time=Timestamp.from_mjd(times_all, scale="utc"),
+        origin=Origin.from_kwargs(code=obs_codes_all),
+        frame="equatorial",
+    )
 
     # Create Observers table
     observers_list = []
@@ -177,18 +194,21 @@ def od(
         # such that the chi2 improves
         orbit_prev_ = copy.deepcopy(orbit)
 
-        ephemeris_prev_ = prop._generate_ephemeris(orbit_prev_, observers)
-        ephemeris_prev_ = _ephemeris_to_dataframe(ephemeris_prev_)
-        # TODO: replace with newer types
-
-        residuals_prev_, stats_prev_ = calcResiduals(
-            coords,
-            ephemeris_prev_[observables].values,
-            sigmas_actual=coords_sigma,
-            include_probabilistic=False,
+        ephemeris_prev_ = prop.generate_ephemeris(
+            orbit_prev_, observers, chunk_size=1, max_processes=1
         )
+
+        # Calculate residuals and chi2
+        residuals_prev_ = Residuals.calculate(
+            coords,
+            ephemeris_prev_.coordinates,
+        )
+        residuals_prev_array = np.stack(
+            residuals_prev_.values.to_numpy(zero_copy_only=False)
+        )[:, 1:3]
+
         num_obs_ = len(observations)
-        chi2_prev_ = stats_prev_[0]
+        chi2_prev_ = residuals_prev_.chi2.to_numpy()
         chi2_total_prev_ = np.sum(chi2_prev_)
         rchi2_prev_ = np.sum(chi2_prev_) / (2 * num_obs - 6)
 
@@ -203,7 +223,7 @@ def od(
         rchi2_prev = rchi2_prev_
 
         ids_mask = np.array([True for i in range(num_obs)])
-        times_all = ephemeris_prev["mjd_utc"].values
+        times_all = ephemeris_prev.coordinates.time.mjd().to_numpy()
         obs_id_outlier = []
         delta_prev = delta
         iterations = 0
@@ -250,16 +270,14 @@ def od(
         else:
             num_params = 6
 
-        A = np.zeros((coords.shape[1], num_params, num_obs))
+        A = np.zeros((2, num_params, num_obs))
         ATWA = np.zeros((num_params, num_params, num_obs))
         ATWb = np.zeros((num_params, 1, num_obs))
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_nom = prop._generate_ephemeris(orbit_prev, observers)
-        ephemeris_nom = _ephemeris_to_dataframe(ephemeris_nom)
-        # TODO: replace with newer types
-
-        coords_nom = ephemeris_nom[observables].values
+        ephemeris_nom = prop.generate_ephemeris(
+            orbit_prev, observers, chunk_size=1, max_processes=1
+        )
 
         # Modify each component of the state by a small delta
         d = np.zeros((1, 7))
@@ -301,10 +319,9 @@ def od(
             )
 
             # Calculate the modified ephemerides
-            ephemeris_mod_p = prop._generate_ephemeris(orbit_iter_p, observers)
-            ephemeris_mod_p = _ephemeris_to_dataframe(ephemeris_mod_p)
-            # TODO: replace with newer types
-            coords_mod_p = ephemeris_mod_p[observables].values
+            ephemeris_mod_p = prop.generate_ephemeris(
+                orbit_iter_p, observers, chunk_size=1, max_processes=1
+            )
 
             delta_denom = d[0, i]
             if method == "central":
@@ -326,27 +343,28 @@ def od(
                 )
 
                 # Calculate the modified ephemerides
-                ephemeris_mod_n = prop._generate_ephemeris(orbit_iter_n, observers)
-                ephemeris_mod_n = _ephemeris_to_dataframe(ephemeris_mod_n)
-                # TODO: replace with newer types
-                coords_mod_n = ephemeris_mod_n[observables].values
+                ephemeris_mod_n = prop.generate_ephemeris(
+                    orbit_iter_n, observers, chunk_size=1, max_processes=1
+                )
 
                 delta_denom *= 2
 
             else:
-                coords_mod_n = coords_nom
+                ephemeris_mod_n = ephemeris_nom
 
-            residuals_mod, _ = calcResiduals(
-                coords_mod_p,
-                coords_mod_n,
-                sigmas_actual=None,
-                include_probabilistic=False,
+            residuals_mod = Residuals.calculate(
+                ephemeris_mod_p.coordinates,
+                ephemeris_mod_n.coordinates,
             )
+            residuals_mod = np.stack(
+                residuals_mod.values.to_numpy(zero_copy_only=False)
+            )
+            residuals_mod_array = residuals_mod[:, 1:3]
 
             for n in range(num_obs):
                 try:
                     A[:, i : i + 1, n] = (
-                        residuals_mod[ids_mask][n : n + 1].T / delta_denom
+                        residuals_mod_array[ids_mask][n : n + 1].T / delta_denom
                     )
                 except RuntimeError:
                     print(orbit_prev.orbit_id)
@@ -354,7 +372,7 @@ def od(
         for n in range(num_obs):
             W = np.diag(1 / coords_sigma[n] ** 2)
             ATWA[:, :, n] = A[:, :, n].T @ W @ A[:, :, n]
-            ATWb[:, :, n] = A[:, :, n].T @ W @ residuals_prev[n : n + 1].T
+            ATWb[:, :, n] = A[:, :, n].T @ W @ residuals_prev_array[n : n + 1].T
 
         ATWA = np.sum(ATWA, axis=2)
         ATWb = np.sum(ATWb, axis=2)
@@ -444,14 +462,12 @@ def od(
             continue
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_iter = prop._generate_ephemeris(orbit_iter, observers)
-        ephemeris_iter = _ephemeris_to_dataframe(ephemeris_iter)
-        coords_iter = ephemeris_iter[observables].values
-
-        residuals, stats = calcResiduals(
-            coords, coords_iter, sigmas_actual=coords_sigma, include_probabilistic=False
+        ephemeris_iter = prop.generate_ephemeris(
+            orbit_iter, observers, chunk_size=1, max_processes=1
         )
-        chi2_iter = stats[0]
+
+        residuals = Residuals.calculate(coords, ephemeris_iter.coordinates)
+        chi2_iter = residuals.chi2.to_numpy()
         chi2_total_iter = np.sum(chi2_iter[ids_mask])
         rchi2_iter = chi2_total_iter / (2 * num_obs - num_params)
         arc_length = times_all[ids_mask].max() - times_all[ids_mask].min()
@@ -541,79 +557,43 @@ def od(
 
     if not solution_found or not processable or first_solution:
 
-        od_orbit = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "mjd_tdb",
-                "x",
-                "y",
-                "z",
-                "vx",
-                "vy",
-                "vz",
-                "covariance",
-                "r",
-                "r_sigma",
-                "v",
-                "v_sigma",
-                "arc_length",
-                "num_obs",
-                "num_params",
-                "num_iterations",
-                "chi2",
-                "rchi2",
-                "improved",
-            ]
-        )
-
-        od_orbit_members = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "obs_id",
-                "residual_ra_arcsec",
-                "residual_dec_arcsec",
-                "chi2",
-                "outlier",
-            ]
-        )
+        od_orbit = FittedOrbits.empty()
+        od_orbit_members = FittedOrbitMembers.empty()
 
     else:
-        obs_times = observations["mjd_utc"].values[ids_mask]
-        od_orbit = orbit_prev.to_dataframe()
-        od_orbit["r"] = orbit_prev.coordinates.r_mag
-        od_orbit["r_sigma"] = orbit_prev.coordinates.sigma_r_mag
-        od_orbit["v"] = orbit_prev.coordinates.v_mag
-        od_orbit["v_sigma"] = orbit_prev.coordinates.sigma_v_mag
-        od_orbit["arc_length"] = np.max(obs_times) - np.min(obs_times)
-        od_orbit["num_obs"] = num_obs
-        od_orbit["num_params"] = num_params
-        od_orbit["num_iterations"] = iterations
-        od_orbit["chi2"] = chi2_total_prev
-        od_orbit["rchi2"] = rchi2_prev
-        od_orbit["improved"] = improved
 
-        od_orbit_members = pd.DataFrame(
-            {
-                "orbit_id": [
-                    orbit_prev.orbit_id[0].as_py() for i in range(len(obs_ids_all))
-                ],
-                "obs_id": obs_ids_all,
-                "residual_ra_arcsec": residuals_prev[:, 0] * 3600,
-                "residual_dec_arcsec": residuals_prev[:, 1] * 3600,
-                "chi2": chi2_prev,
-                "outlier": np.zeros(len(obs_ids_all), dtype=int),
-            }
+        obs_times = observations["mjd_utc"].values[ids_mask]
+        arc_length_ = obs_times.max() - obs_times.min()
+        assert arc_length == arc_length_
+
+        od_orbit = FittedOrbits.from_kwargs(
+            orbit_id=orbit_prev.orbit_id,
+            object_id=orbit_prev.object_id,
+            coordinates=orbit_prev.coordinates,
+            arc_length=[arc_length_],
+            num_obs=[num_obs],
+            chi2=[chi2_total_prev],
+            reduced_chi2=[rchi2_prev],
         )
-        od_orbit_members.loc[
-            od_orbit_members["obs_id"].isin(obs_id_outlier), "outlier"
-        ] = 1
+
+        # od_orbit["num_params"] = num_params
+        # od_orbit["num_iterations"] = iterations
+        # od_orbit["improved"] = improved
+
+        od_orbit_members = FittedOrbitMembers.from_kwargs(
+            orbit_id=np.full(len(obs_ids_all), orbit_prev.orbit_id[0].as_py()),
+            obs_id=obs_ids_all,
+            residuals=residuals_prev,
+            solution=np.isin(obs_ids_all, obs_id_outlier, invert=True),
+            outlier=np.isin(obs_ids_all, obs_id_outlier),
+        )
 
     return od_orbit, od_orbit_members
 
 
 def differentialCorrection(
-    orbits,
-    orbit_members,
+    orbits: FittedOrbits,
+    orbit_members: FittedOrbitMembers,
     observations,
     min_obs=5,
     min_arc_length=1.0,
@@ -628,7 +608,7 @@ def differentialCorrection(
     chunk_size=10,
     num_jobs=60,
     parallel_backend="cf",
-):
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Differentially correct (via finite/central differencing).
 
@@ -648,7 +628,9 @@ def differentialCorrection(
 
     if len(orbits) > 0 and len(orbit_members) > 0:
 
-        orbits_, orbit_members_ = sortLinkages(orbits, orbit_members, observations)
+        orbits_, orbit_members_ = sortLinkages(
+            orbits.to_dataframe(), orbit_members.to_dataframe(), observations
+        )
 
         start = time.time()
         logger.debug("Merging observations on linkage members...")
@@ -831,51 +813,12 @@ def differentialCorrection(
                 od_orbits_dfs.append(od_orbits_df)
                 od_orbit_members_dfs.append(od_orbit_members_df)
 
-        od_orbits = pd.concat(od_orbits_dfs, ignore_index=True)
-        od_orbit_members = pd.concat(od_orbit_members_dfs, ignore_index=True)
-
-        for col in ["num_obs"]:
-            od_orbits[col] = od_orbits[col].astype(int)
-        for col in ["outlier"]:
-            od_orbit_members[col] = od_orbit_members[col].astype(int)
-
-        od_orbits, od_orbit_members = sortLinkages(
-            od_orbits, od_orbit_members, observations, linkage_id_col="orbit_id"
-        )
+        od_orbits = qv.concatenate(od_orbits_dfs)
+        od_orbit_members = qv.concatenate(od_orbit_members_dfs)
 
     else:
-        od_orbits = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "mjd_tdb",
-                "x",
-                "y",
-                "z",
-                "vx",
-                "vy",
-                "vz",
-                "covariance",
-                "r",
-                "r_sigma",
-                "v",
-                "v_sigma",
-                "arc_length",
-                "num_obs",
-                "chi2",
-                "rchi2",
-            ]
-        )
-
-        od_orbit_members = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "obs_id",
-                "residual_ra_arcsec",
-                "residual_dec_arcsec",
-                "chi2",
-                "outlier",
-            ]
-        )
+        od_orbits = FittedOrbits.empty()
+        od_orbit_members = FittedOrbitMembers.empty()
 
     time_end = time.time()
     logger.info("Differentially corrected {} orbits.".format(len(od_orbits)))
