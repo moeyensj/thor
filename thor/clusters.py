@@ -85,6 +85,7 @@ def filter_clusters_by_length(clusters, dt, min_samples, min_arc_length):
         The original clusters list, filtered down.
     """
     filtered_clusters = []
+    arc_lengths = []
     for cluster in clusters:
         dt_in_cluster = dt[cluster]
         num_obs = len(dt_in_cluster)
@@ -95,7 +96,9 @@ def filter_clusters_by_length(clusters, dt, min_samples, min_arc_length):
             and (arc_length >= min_arc_length)
         ):
             filtered_clusters.append(cluster)
-    return filtered_clusters
+            arc_lengths.append(arc_length)
+
+    return filtered_clusters, arc_lengths
 
 
 def _find_clusters_hotspots_2d(points, eps, min_samples):

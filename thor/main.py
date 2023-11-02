@@ -1,4 +1,5 @@
 import os
+from typing import Optional, Tuple
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -6,27 +7,34 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-import concurrent.futures as cf
 import logging
-import multiprocessing as mp
 import time
 import uuid
-from functools import partial
 
 import numpy as np
-import pandas as pd
+import quivr as qv
+import ray
 
 from .clusters import filter_clusters_by_length, find_clusters
-from .utils import _checkParallel, _initWorker
 
 logger = logging.getLogger("thor")
 
 __all__ = [
-    "clusterVelocity",
-    "clusterVelocity_worker",
     "clusterAndLink",
 ]
 
+
+class Clusters(qv.Table):
+    cluster_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
+    vtheta_x = qv.Float64Column()
+    vtheta_y = qv.Float64Column()
+    arc_length = qv.Float64Column()
+    num_obs = qv.Int64Column()
+
+
+class ClusterMembers(qv.Table):
+    cluster_id = qv.StringColumn()
+    obs_id = qv.StringColumn()
 
 
 def clusterVelocity(
@@ -40,7 +48,7 @@ def clusterVelocity(
     min_obs=5,
     min_arc_length=1.0,
     alg="hotspot_2d",
-):
+) -> Tuple[Clusters, ClusterMembers]:
     """
     Clusters THOR projection with different velocities
     in the projection plane using `~scipy.cluster.DBSCAN`.
@@ -84,21 +92,45 @@ def clusterVelocity(
     X = np.stack((xx, yy), 1)
 
     clusters = find_clusters(X, eps, min_obs, alg=alg)
-    clusters = filter_clusters_by_length(
+    clusters, arc_lengths = filter_clusters_by_length(
         clusters,
         dt,
         min_obs,
         min_arc_length,
     )
 
-    cluster_ids = []
-    for cluster in clusters:
-        cluster_ids.append(obs_ids[cluster])
+    if len(clusters) == 0:
+        return Clusters.empty(), ClusterMembers.empty()
+    else:
 
-    if len(cluster_ids) == 0:
-        cluster_ids = np.NaN
+        cluster_ids = []
+        cluster_num_obs = []
+        cluster_members_cluster_ids = []
+        cluster_members_obs_ids = []
+        for cluster in clusters:
+            id = uuid.uuid4().hex
+            obs_ids_i = obs_ids[cluster]
+            num_obs = len(obs_ids_i)
 
-    return cluster_ids
+            cluster_ids.append(id)
+            cluster_num_obs.append(num_obs)
+            cluster_members_cluster_ids.append(np.full(num_obs, id))
+            cluster_members_obs_ids.append(obs_ids_i)
+
+        clusters = Clusters.from_kwargs(
+            cluster_id=cluster_ids,
+            vtheta_x=np.full(len(cluster_ids), vx),
+            vtheta_y=np.full(len(cluster_ids), vy),
+            arc_length=arc_lengths,
+            num_obs=cluster_num_obs,
+        )
+
+        cluster_members = ClusterMembers.from_kwargs(
+            cluster_id=np.concatenate(cluster_members_cluster_ids),
+            obs_id=np.concatenate(cluster_members_obs_ids),
+        )
+
+    return clusters, cluster_members
 
 
 def clusterVelocity_worker(
@@ -117,7 +149,7 @@ def clusterVelocity_worker(
     Helper function to multiprocess clustering.
 
     """
-    cluster_ids = clusterVelocity(
+    clusters, cluster_members = clusterVelocity(
         obs_ids,
         x,
         y,
@@ -129,8 +161,14 @@ def clusterVelocity_worker(
         min_arc_length=min_arc_length,
         alg=alg,
     )
-    return cluster_ids
+    return clusters, cluster_members
 
+
+clusterVelocity_remote = ray.remote(clusterVelocity_worker)
+clusterVelocity_remote.options(
+    num_returns=1,
+    num_cpus=1,
+)
 
 
 def clusterAndLink(
@@ -143,8 +181,7 @@ def clusterAndLink(
     min_obs=5,
     min_arc_length=1.0,
     alg="dbscan",
-    num_jobs=1,
-    parallel_backend="cf",
+    max_processes: Optional[int] = 1,
 ):
     """
     Cluster and link correctly projected (after ranging and shifting)
@@ -222,7 +259,8 @@ def clusterAndLink(
     logger.info("Max sample distance: {}".format(eps))
     logger.info("Minimum samples: {}".format(min_obs))
 
-    possible_clusters = []
+    clusters_list = []
+    cluster_members_list = []
     if len(observations) > 0:
         # Extract useful quantities
         obs_ids = observations["obs_id"].values
@@ -235,103 +273,28 @@ def clusterAndLink(
         mjd0 = mjd[first][0]
         dt = mjd - mjd0
 
-        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
-        if parallel:
-            if parallel_backend == "ray":
-                import ray
+        if max_processes is None or max_processes > 1:
 
-                if not ray.is_initialized():
-                    ray.init(address="auto")
+            if not ray.is_initialized():
+                ray.init(address="auto")
 
-                clusterVelocity_worker_ray = ray.remote(clusterVelocity_worker)
-                clusterVelocity_worker_ray = clusterVelocity_worker_ray.options(
-                    num_returns=1, num_cpus=1
-                )
+            # Put all arrays (which can be large) in ray's
+            # local object store ahead of time
+            obs_ids_oid = ray.put(obs_ids)
+            theta_x_oid = ray.put(theta_x)
+            theta_y_oid = ray.put(theta_y)
+            dt_oid = ray.put(dt)
 
-                # Put all arrays (which can be large) in ray's
-                # local object store ahead of time
-                obs_ids_oid = ray.put(obs_ids)
-                theta_x_oid = ray.put(theta_x)
-                theta_y_oid = ray.put(theta_y)
-                dt_oid = ray.put(dt)
-
-                p = []
-                for vxi, vyi in zip(vxx, vyy):
-                    p.append(
-                        clusterVelocity_worker_ray.remote(
-                            vxi,
-                            vyi,
-                            obs_ids=obs_ids_oid,
-                            x=theta_x_oid,
-                            y=theta_y_oid,
-                            dt=dt_oid,
-                            eps=eps,
-                            min_obs=min_obs,
-                            min_arc_length=min_arc_length,
-                            alg=alg,
-                        )
-                    )
-                possible_clusters = ray.get(p)
-
-            elif parallel_backend == "mp":
-                p = mp.Pool(processes=num_workers, initializer=_initWorker)
-                possible_clusters = p.starmap(
-                    partial(
-                        clusterVelocity_worker,
-                        obs_ids=obs_ids,
-                        x=theta_x,
-                        y=theta_y,
-                        dt=dt,
-                        eps=eps,
-                        min_obs=min_obs,
-                        min_arc_length=min_arc_length,
-                        alg=alg,
-                    ),
-                    zip(vxx, vyy),
-                )
-                p.close()
-
-            elif parallel_backend == "cf":
-                with cf.ProcessPoolExecutor(
-                    max_workers=num_workers, initializer=_initWorker
-                ) as executor:
-                    futures = []
-                    for vxi, vyi in zip(vxx, vyy):
-                        f = executor.submit(
-                            clusterVelocity_worker,
-                            vxi,
-                            vyi,
-                            obs_ids=obs_ids,
-                            x=theta_x,
-                            y=theta_y,
-                            dt=dt,
-                            eps=eps,
-                            min_obs=min_obs,
-                            min_arc_length=min_arc_length,
-                            alg=alg,
-                        )
-                        futures.append(f)
-
-                    possible_clusters = []
-                    for f in cf.as_completed(futures):
-                        possible_clusters.append(f.result())
-
-            else:
-                raise ValueError(
-                    "Invalid parallel_backend: {}".format(parallel_backend)
-                )
-
-        else:
-            possible_clusters = []
+            futures = []
             for vxi, vyi in zip(vxx, vyy):
-                possible_clusters.append(
-                    clusterVelocity(
-                        obs_ids,
-                        theta_x,
-                        theta_y,
-                        dt,
+                futures.append(
+                    clusterVelocity_remote.remote(
                         vxi,
                         vyi,
+                        obs_ids=obs_ids_oid,
+                        x=theta_x_oid,
+                        y=theta_y_oid,
+                        dt=dt_oid,
                         eps=eps,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
@@ -339,104 +302,38 @@ def clusterAndLink(
                     )
                 )
 
+            while futures:
+                finished, futures = ray.wait(futures, num_returns=1)
+                result = ray.get(finished[0])
+                clusters_list.append(result[0])
+                cluster_members_list.append(result[1])
+
+        else:
+
+            for vxi, vyi in zip(vxx, vyy):
+                clusters_i, cluster_members_i = clusterVelocity(
+                    obs_ids,
+                    theta_x,
+                    theta_y,
+                    dt,
+                    vxi,
+                    vyi,
+                    eps=eps,
+                    min_obs=min_obs,
+                    min_arc_length=min_arc_length,
+                    alg=alg,
+                )
+                clusters_list.append(clusters_i)
+                cluster_members_list.append(cluster_members_i)
+
+    clusters = qv.concatenate(clusters_list)
+    cluster_members = qv.concatenate(cluster_members_list)
+
     time_end_cluster = time.time()
+    logger.info("Found {} clusters.".format(len(clusters)))
     logger.info(
         "Clustering completed in {:.3f} seconds.".format(
             time_end_cluster - time_start_cluster
-        )
-    )
-
-    logger.info("Restructuring clusters...")
-    time_start_restr = time.time()
-
-    possible_clusters = pd.DataFrame({"clusters": possible_clusters})
-
-    # Remove empty clusters
-    possible_clusters = possible_clusters[~possible_clusters["clusters"].isna()]
-
-    if len(possible_clusters) != 0:
-        ### The following code is a little messy, its a lot of pandas dataframe manipulation.
-        ### I have tried doing an overhaul wherein the clusters and cluster_members dataframe are created per
-        ### velocity combination in the clusterVelocity function. However, this adds an overhead in that function
-        ### of ~ 1ms. So clustering 90,000 velocities takes 90 seconds longer which on small datasets is problematic.
-        ### On large datasets, the effect is not as pronounced because the below code takes a while to run due to
-        ### in-memory pandas dataframe restructuring.
-
-        # Make DataFrame with cluster velocities so we can figure out which
-        # velocities yielded clusters, add names to index so we can enable the join
-        cluster_velocities = pd.DataFrame({"vtheta_x": vxx, "vtheta_y": vyy})
-        cluster_velocities.index.set_names("velocity_id", inplace=True)
-
-        # Split lists of cluster ids into one column per cluster for each different velocity
-        # then stack the result
-        possible_clusters = pd.DataFrame(
-            possible_clusters["clusters"].values.tolist(), index=possible_clusters.index
-        )
-        possible_clusters = pd.DataFrame(possible_clusters.stack())
-        possible_clusters.rename(columns={0: "obs_ids"}, inplace=True)
-        possible_clusters = pd.DataFrame(
-            possible_clusters["obs_ids"].values.tolist(), index=possible_clusters.index
-        )
-
-        # Drop duplicate clusters
-        possible_clusters.drop_duplicates(inplace=True)
-
-        # Set index names
-        possible_clusters.index.set_names(["velocity_id", "cluster_id"], inplace=True)
-
-        # Reset index
-        possible_clusters.reset_index("cluster_id", drop=True, inplace=True)
-        possible_clusters["cluster_id"] = [
-            str(uuid.uuid4().hex) for i in range(len(possible_clusters))
-        ]
-
-        # Make clusters DataFrame
-        clusters = possible_clusters.join(cluster_velocities)
-        clusters.reset_index(drop=True, inplace=True)
-        clusters = clusters[["cluster_id", "vtheta_x", "vtheta_y"]]
-
-        # Make cluster_members DataFrame
-        cluster_members = possible_clusters.reset_index(drop=True).copy()
-        cluster_members.index = cluster_members["cluster_id"]
-        cluster_members.drop("cluster_id", axis=1, inplace=True)
-        cluster_members = pd.DataFrame(cluster_members.stack())
-        cluster_members.rename(columns={0: "obs_id"}, inplace=True)
-        cluster_members.reset_index(inplace=True)
-        cluster_members.drop("level_1", axis=1, inplace=True)
-
-        # Calculate arc length and add it to the clusters dataframe
-        cluster_members_time = cluster_members.merge(
-            observations[["obs_id", "mjd_utc"]], on="obs_id", how="left"
-        )
-        clusters_time = (
-            cluster_members_time.groupby(by=["cluster_id"])["mjd_utc"]
-            .apply(lambda x: x.max() - x.min())
-            .to_frame()
-        )
-        clusters_time.reset_index(inplace=True)
-        clusters_time.rename(columns={"mjd_utc": "arc_length"}, inplace=True)
-        clusters = clusters.merge(
-            clusters_time[["cluster_id", "arc_length"]],
-            on="cluster_id",
-            how="left",
-        )
-
-    else:
-        cluster_members = pd.DataFrame(columns=["cluster_id", "obs_id"])
-        clusters = pd.DataFrame(
-            columns=["cluster_id", "vtheta_x", "vtheta_y", "arc_length"]
-        )
-
-    time_end_restr = time.time()
-    logger.info(
-        "Restructuring completed in {:.3f} seconds.".format(
-            time_end_restr - time_start_restr
-        )
-    )
-    logger.info("Found {} clusters.".format(len(clusters)))
-    logger.info(
-        "Clustering and restructuring completed in {:.3f} seconds.".format(
-            time_end_restr - time_start_cluster
         )
     )
 

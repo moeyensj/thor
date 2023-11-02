@@ -429,8 +429,7 @@ def link_test_orbit(
         min_obs=config.cluster_min_obs,
         min_arc_length=config.cluster_min_arc_length,
         alg=config.cluster_algorithm,
-        num_jobs=config.max_processes,
-        parallel_backend=config.parallel_backend,
+        max_processes=config.max_processes,
     )
     yield clusters, cluster_members
 
