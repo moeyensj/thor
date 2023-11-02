@@ -1,5 +1,4 @@
 import os
-from typing import Literal, Tuple
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -7,32 +6,35 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-import concurrent.futures as cf
 import logging
-import multiprocessing as mp
 import time
-from functools import partial
 from itertools import combinations
+from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
+import numpy.typing as npt
 import pyarrow as pa
+import pyarrow.compute as pc
 import quivr as qv
-from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
+import ray
 from adam_core.coordinates.residuals import Residuals
-from adam_core.observers import Observers
-from adam_core.propagator import PYOORB
-from adam_core.time import Timestamp
+from adam_core.propagator import PYOORB, Propagator
+from adam_core.propagator.utils import _iterate_chunks
 
-from ..orbit_determination import FittedOrbitMembers, FittedOrbits
-from ..utils import _checkParallel, _initWorker, calcChunkSize, yieldChunks
+from ..main import ClusterMembers
+from ..observations.observations import Observations
+from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from .gauss import gaussIOD
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["selectObservations", "iod", "iod_worker", "initialOrbitDetermination"]
+__all__ = ["initial_orbit_determination"]
 
 
-def selectObservations(observations, method="combinations"):
+def select_observations(
+    observations: Observations,
+    method: Literal["combinations", "first+middle+last", "thirds"] = "combinations",
+) -> npt.NDArray[np.str_]:
     """
     Selects which three observations to use for IOD depending on the method.
 
@@ -57,12 +59,12 @@ def selectObservations(observations, method="combinations"):
         An array of selected observation IDs. If three unique observations could
         not be selected then returns an empty array.
     """
-    obs_ids = observations["obs_id"].values
+    obs_ids = observations.detections.id.to_numpy(zero_copy_only=False)
     if len(obs_ids) < 3:
         return np.array([])
 
     indexes = np.arange(0, len(obs_ids))
-    times = observations["mjd_utc"].values
+    times = observations.detections.time.mjd().to_numpy(zero_copy_only=False)
 
     if method == "first+middle+last":
         selected_times = np.percentile(times, [0, 50, 100], interpolation="nearest")
@@ -116,40 +118,49 @@ def selectObservations(observations, method="combinations"):
 
 
 def iod_worker(
-    observations_list,
-    observation_selection_method="combinations",
-    min_obs=6,
-    min_arc_length=1.0,
-    rchi2_threshold=10**3,
-    contamination_percentage=0.0,
-    iterate=False,
-    light_time=True,
-    linkage_id_col="cluster_id",
-    propagator: Literal["PYOORB"] = "PYOORB",
+    linkage_ids: npt.NDArray[np.str_],
+    observations: Union[Observations, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    min_obs: int = 6,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 0.0,
+    rchi2_threshold: float = 200,
+    observation_selection_method: Literal[
+        "combinations", "first+middle+last", "thirds"
+    ] = "combinations",
+    linkage_id_col: str = "cluster_id",
+    iterate: bool = False,
+    light_time: bool = True,
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+
+    prop = propagator(**propagator_kwargs)
+
     iod_orbits_list = []
     iod_orbit_members_list = []
-    for observations in observations_list:
-        assert np.all(
-            sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values
-        )
+    for linkage_id in linkage_ids:
 
         time_start = time.time()
-        linkage_id = observations[linkage_id_col].unique()[0]
         logger.debug(f"Finding initial orbit for linkage {linkage_id}...")
 
+        obs_ids = linkage_members.apply_mask(
+            pc.equal(linkage_members.column(linkage_id_col), linkage_id)
+        ).obs_id
+        observations_linkage = observations.apply_mask(
+            pc.is_in(observations.detections.id, obs_ids)
+        )
+
         iod_orbit, iod_orbit_members = iod(
-            observations,
-            observation_selection_method=observation_selection_method,
+            observations_linkage,
             min_obs=min_obs,
             min_arc_length=min_arc_length,
             rchi2_threshold=rchi2_threshold,
             contamination_percentage=contamination_percentage,
+            observation_selection_method=observation_selection_method,
             iterate=iterate,
             light_time=light_time,
-            propagator=propagator,
-            propagator_kwargs=propagator_kwargs,
+            propagator=prop,
         )
         if len(iod_orbit) > 0:
             iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id]))
@@ -170,17 +181,22 @@ def iod_worker(
     return iod_orbits, iod_orbit_members
 
 
+iod_worker_remote = ray.remote(iod_worker)
+iod_worker_remote.options(num_returns=1, num_cpus=1)
+
+
 def iod(
-    observations,
-    min_obs=6,
-    min_arc_length=1.0,
-    contamination_percentage=0.0,
-    rchi2_threshold=200,
-    observation_selection_method="combinations",
-    iterate=False,
-    light_time=True,
-    propagator: Literal["PYOORB"] = "PYOORB",
-    propagator_kwargs: dict = {},
+    observations: Observations,
+    min_obs: int = 6,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 0.0,
+    rchi2_threshold: float = 200,
+    observation_selection_method: Literal[
+        "combinations", "first+middle+last", "thirds"
+    ] = "combinations",
+    iterate: bool = False,
+    light_time: bool = True,
+    propagator: Propagator = PYOORB(),
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Run initial orbit determination on a set of observations believed to belong to a single
@@ -262,61 +278,12 @@ def iod(
     if len(observations) == 0:
         processable = False
 
-    # Extract column names
-    obs_id_col = "obs_id"
-    time_col = "mjd_utc"
-    ra_col = "RA_deg"
-    dec_col = "Dec_deg"
-    ra_err_col = "RA_sigma_deg"
-    dec_err_col = "Dec_sigma_deg"
-    obs_code_col = "observatory_code"
-    obs_x_col = "obs_x"
-    obs_y_col = "obs_y"
-    obs_z_col = "obs_z"
-
-    # Extract observation IDs, sky-plane positions, sky-plane position uncertainties, times of observation,
-    # and the location of the observer at each time
-    obs_ids_all = observations[obs_id_col].values
-    coords_all = observations[[ra_col, dec_col]].values
-    sigmas_all = observations[[ra_err_col, dec_err_col]].values
-    coords_obs_all = observations[[obs_x_col, obs_y_col, obs_z_col]].values
-    times_all = observations[time_col].values
-    obs_codes_all = observations[obs_code_col].values
-
-    # We should add a convenience function to observations (or directily convert them to coordinates)
-    sigmas = np.zeros((len(coords_all), 6))
-    sigmas[:, 1:3] = sigmas_all
-    coords_all = SphericalCoordinates.from_kwargs(
-        lon=coords_all[:, 0],
-        lat=coords_all[:, 1],
-        covariance=CoordinateCovariances.from_sigmas(sigmas),
-        time=Timestamp.from_mjd(times_all, scale="utc"),
-        origin=Origin.from_kwargs(code=obs_codes_all),
-        frame="equatorial",
-    )
-
-    observers_list = []
-    for observatory_code in observations["observatory_code"].unique():
-        observers_list.append(
-            Observers.from_code(
-                observatory_code,
-                Timestamp.from_mjd(
-                    observations[
-                        observations["observatory_code"].isin([observatory_code])
-                    ]["mjd_utc"].unique(),
-                    scale="utc",
-                ),
-            )
-        )
-    observers = qv.concatenate(observers_list)
-    observers = observers.sort_by(
-        ["coordinates.time.days", "coordinates.time.nanos", "code"]
-    )
-
-    if propagator == "PYOORB":
-        prop = PYOORB(**propagator_kwargs)
-    else:
-        raise ValueError(f"Invalid propagator '{propagator}'.")
+    obs_ids_all = observations.detections.id.to_numpy(zero_copy_only=False)
+    coords_all = observations.to_spherical_coordinates()
+    observers_with_states = observations.get_observers()
+    observers = observers_with_states.observers
+    coords_obs_all = observers_with_states.observers.coordinates.r
+    times_all = coords_all.time.mjd().to_numpy(zero_copy_only=False)
 
     chi2_sol = 1e10
     orbit_sol = None
@@ -331,7 +298,7 @@ def iod(
     num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
 
     # Select observation IDs to use for IOD
-    obs_ids = selectObservations(
+    obs_ids = select_observations(
         observations,
         method=observation_selection_method,
     )
@@ -369,7 +336,7 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = prop.generate_ephemeris(
+        ephemeris = propagator.generate_ephemeris(
             iod_orbits, observers, chunk_size=1, max_processes=1
         )
 
@@ -491,22 +458,23 @@ def iod(
     return orbit, orbit_members
 
 
-def initialOrbitDetermination(
-    observations,
-    linkage_members,
-    min_obs=6,
-    min_arc_length=1.0,
-    contamination_percentage=20.0,
-    rchi2_threshold=10**3,
-    observation_selection_method="combinations",
-    iterate=False,
-    light_time=True,
-    linkage_id_col="cluster_id",
-    propagator: Literal["PYOORB"] = "PYOORB",
+def initial_orbit_determination(
+    observations: Union[Observations, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    min_obs: int = 6,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 20.0,
+    rchi2_threshold: float = 10**3,
+    observation_selection_method: Literal[
+        "combinations", "first+middle+last", "thirds"
+    ] = "combinations",
+    iterate: bool = False,
+    light_time: bool = True,
+    linkage_id_col: str = "cluster_id",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
-    chunk_size=1,
-    num_jobs=1,
-    parallel_backend="cf",
+    chunk_size: int = 1,
+    max_processes: Optional[int] = 1,
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Run initial orbit determination on linkages found in observations.
@@ -597,175 +565,69 @@ def initialOrbitDetermination(
     time_start = time.time()
     logger.info("Running initial orbit determination...")
 
+    iod_orbits_list = []
+    iod_orbit_members_list = []
     if len(observations) > 0 and len(linkage_members) > 0:
 
-        iod_orbits_dfs = []
-        iod_orbit_members_dfs = []
+        # Extract linkage IDs
+        linkage_ids = linkage_members.column(linkage_id_col).unique()
 
-        start = time.time()
-        logger.debug("Merging observations on linkage members...")
-        linked_observations = linkage_members.merge(observations, on="obs_id")
-        logger.debug("Sorting observations by linkage ID and mjd_utc...")
-        linked_observations.sort_values(
-            by=[linkage_id_col, "mjd_utc"], inplace=True, ignore_index=True
-        )
-        duration = time.time() - start
-        logger.debug(f"Merging and sorting completed in {duration:.3f}s.")
+        if max_processes is None or max_processes > 1:
 
-        start = time.time()
-        logger.debug("Grouping observations by linkage ID...")
-        grouped_observations = linked_observations.groupby(by=[linkage_id_col])
-        logger.debug("Splitting grouped observations by linkage ID...")
-        observations_split = [
-            grouped_observations.get_group(g).reset_index(drop=True)
-            for g in grouped_observations.groups
-        ]
-        duration = time.time() - start
-        logger.debug(f"Grouping and splitting completed in {duration:.3f}s.")
+            if not ray.is_initialized():
+                ray.init(address="auto")
 
-        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
-        if parallel:
+            observations_ref = ray.put(observations)
+            linkage_members_ref = ray.put(linkage_members)
 
-            # The number of linkages that need to be fit for an initial orbit
-            num_linkages = linkage_members[linkage_id_col].nunique()
-
-            if parallel_backend == "ray":
-
-                import ray
-
-                if not ray.is_initialized():
-                    ray.init(address="auto")
-
-                iod_worker_ray = ray.remote(iod_worker)
-                iod_worker_ray = iod_worker_ray.options(num_returns=2, num_cpus=1)
-
-                # Send up to chunk_size linkages to each IOD worker for processing
-                chunk_size_ = calcChunkSize(
-                    num_linkages, num_workers, chunk_size, min_chunk_size=1
-                )
-                logger.info(
-                    f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers."
-                )
-
-                # Put the observations into ray's local object storage ("plasma")
-                observation_oids = []
-                for observations_i in yieldChunks(observations_split, chunk_size_):
-                    observation_oids.append(ray.put(observations_i))
-
-                iod_orbits_oids = []
-                iod_orbit_members_oids = []
-                for observations_oid in observation_oids:
-
-                    iod_orbits_oid, iod_orbit_members_oid = iod_worker_ray.remote(
-                        observations_oid,
-                        observation_selection_method=observation_selection_method,
-                        rchi2_threshold=rchi2_threshold,
+            futures = []
+            for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):
+                futures.append(
+                    iod_worker_remote.remote(
+                        linkage_id_chunk,
+                        observations_ref,
+                        linkage_members_ref,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
                         contamination_percentage=contamination_percentage,
+                        rchi2_threshold=rchi2_threshold,
+                        observation_selection_method=observation_selection_method,
                         iterate=iterate,
                         light_time=light_time,
                         linkage_id_col=linkage_id_col,
                         propagator=propagator,
                         propagator_kwargs=propagator_kwargs,
                     )
-                    iod_orbits_oids.append(iod_orbits_oid)
-                    iod_orbit_members_oids.append(iod_orbit_members_oid)
-
-                iod_orbits_dfs = ray.get(iod_orbits_oids)
-                iod_orbit_members_dfs = ray.get(iod_orbit_members_oids)
-
-            elif parallel_backend == "mp":
-
-                chunk_size_ = calcChunkSize(
-                    num_linkages, num_workers, chunk_size, min_chunk_size=1
-                )
-                logger.info(
-                    f"Distributing linkages in chunks of {chunk_size_} to {num_workers} workers."
                 )
 
-                p = mp.Pool(
-                    processes=num_workers,
-                    initializer=_initWorker,
-                )
-
-                results = p.starmap(
-                    partial(
-                        iod_worker,
-                        observation_selection_method=observation_selection_method,
-                        rchi2_threshold=rchi2_threshold,
-                        min_obs=min_obs,
-                        min_arc_length=min_arc_length,
-                        contamination_percentage=contamination_percentage,
-                        iterate=iterate,
-                        light_time=light_time,
-                        linkage_id_col=linkage_id_col,
-                        propagator=propagator,
-                        propagator_kwargs=propagator_kwargs,
-                    ),
-                    zip(yieldChunks(observations_split, chunk_size_)),
-                )
-                p.close()
-
-                results = list(zip(*results))
-                iod_orbits_dfs = results[0]
-                iod_orbit_members_dfs = results[1]
-
-            elif parallel_backend == "cf":
-                with cf.ProcessPoolExecutor(
-                    max_workers=num_workers, initializer=_initWorker
-                ) as executor:
-                    futures = []
-                    for observations_i in yieldChunks(observations_split, chunk_size):
-                        futures.append(
-                            executor.submit(
-                                iod_worker,
-                                observations_i,
-                                observation_selection_method=observation_selection_method,
-                                rchi2_threshold=rchi2_threshold,
-                                min_obs=min_obs,
-                                min_arc_length=min_arc_length,
-                                contamination_percentage=contamination_percentage,
-                                iterate=iterate,
-                                light_time=light_time,
-                                linkage_id_col=linkage_id_col,
-                                propagator=propagator,
-                                propagator_kwargs=propagator_kwargs,
-                            )
-                        )
-
-                    iod_orbits_dfs = []
-                    iod_orbit_members_dfs = []
-                    for f in cf.as_completed(futures):
-                        iod_orbits_df, iod_orbit_members_df = f.result()
-                        iod_orbits_dfs.append(iod_orbits_df)
-                        iod_orbit_members_dfs.append(iod_orbit_members_df)
-            else:
-                raise ValueError(
-                    f"Unknown parallel backend: {parallel_backend}. Must be one of: 'ray', 'mp', 'cf'."
-                )
+            while futures:
+                finished, futures = ray.wait(futures, num_returns=1)
+                result = ray.get(finished[0])
+                iod_orbits_list.append(result[0])
+                iod_orbit_members_list.append(result[1])
 
         else:
-
-            for observations_i in yieldChunks(observations_split, chunk_size):
-                iod_orbits_df, iod_orbit_members_df = iod_worker(
-                    observations_i,
-                    observation_selection_method=observation_selection_method,
-                    rchi2_threshold=rchi2_threshold,
+            for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):
+                iod_orbits_chunk, iod_orbit_members_chunk = iod_worker(
+                    linkage_id_chunk,
+                    observations,
+                    linkage_members,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     contamination_percentage=contamination_percentage,
+                    rchi2_threshold=rchi2_threshold,
+                    observation_selection_method=observation_selection_method,
                     iterate=iterate,
                     light_time=light_time,
                     linkage_id_col=linkage_id_col,
                     propagator=propagator,
                     propagator_kwargs=propagator_kwargs,
                 )
-                iod_orbits_dfs.append(iod_orbits_df)
-                iod_orbit_members_dfs.append(iod_orbit_members_df)
+                iod_orbits_list.append(iod_orbits_chunk)
+                iod_orbit_members_list.append(iod_orbit_members_chunk)
 
-        iod_orbits = qv.concatenate(iod_orbits_dfs)
-        iod_orbit_members = qv.concatenate(iod_orbit_members_dfs)
+        iod_orbits = qv.concatenate(iod_orbits_list)
+        iod_orbit_members = qv.concatenate(iod_orbit_members_list)
 
         logger.info("Found {} initial orbits.".format(len(iod_orbits)))
 

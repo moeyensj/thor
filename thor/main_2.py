@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Iterator, List, Optional, Union
+from typing import Any, Iterator, List, Optional, Type, Union
 
 import pandas as pd
 import pyarrow.compute as pc
@@ -20,7 +20,7 @@ from .observations.observations import Observations, ObserversWithStates
 from .orbit import TestOrbit, TestOrbitEphemeris
 from .orbits import (
     differentialCorrection,
-    initialOrbitDetermination,
+    initial_orbit_determination,
     mergeAndExtendOrbits,
 )
 from .projections import GnomonicCoordinates
@@ -86,7 +86,8 @@ range_and_transform_remote = ray.remote(range_and_transform_worker)
 def range_and_transform(
     test_orbit: TestOrbit,
     observations: Union[Observations, ray.ObjectRef],
-    propagator: Propagator = PYOORB(),
+    propagator: Type[Propagator] = PYOORB,
+    propagator_kwargs: dict = {},
     max_processes: Optional[int] = 1,
 ) -> TransformedDetections:
     """
@@ -122,11 +123,13 @@ def range_and_transform(
     if isinstance(observations, ray.ObjectRef):
         observations = ray.get(observations)
 
+    prop = propagator(**propagator_kwargs)
+
     if len(observations) > 0:
         # Compute the ephemeris of the test orbit (this will be cached)
         ephemeris = test_orbit.generate_ephemeris_from_observations(
             observations,
-            propagator=propagator,
+            propagator=prop,
             max_processes=max_processes,
         )
 
@@ -134,7 +137,7 @@ def range_and_transform(
         # the observations are the same as that of the test orbit
         ranged_detections_spherical = test_orbit.range_observations(
             observations,
-            propagator=propagator,
+            propagator=prop,
             max_processes=max_processes,
         )
 
@@ -347,7 +350,7 @@ def link_test_orbit(
         config = Config()
 
     if config.propagator == "PYOORB":
-        propagator = PYOORB()
+        propagator = PYOORB
     else:
         raise ValueError(f"Unknown propagator: {config.propagator}")
 
@@ -434,19 +437,18 @@ def link_test_orbit(
     yield clusters, cluster_members
 
     # Run initial orbit determination
-    iod_orbits, iod_orbit_members = initialOrbitDetermination(
-        observations_df,
+    iod_orbits, iod_orbit_members = initial_orbit_determination(
+        filtered_observations,
         cluster_members,
         min_obs=config.iod_min_obs,
         min_arc_length=config.iod_min_arc_length,
         contamination_percentage=config.iod_contamination_percentage,
         rchi2_threshold=config.iod_rchi2_threshold,
         observation_selection_method=config.iod_observation_selection_method,
-        propagator=config.propagator,
+        propagator=propagator,
         propagator_kwargs={},
         chunk_size=config.iod_chunk_size,
-        num_jobs=config.max_processes,
-        parallel_backend=config.parallel_backend,
+        max_processes=config.max_processes,
         # TODO: investigate whether these should be configurable
         iterate=False,
         light_time=True,
