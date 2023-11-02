@@ -16,6 +16,7 @@ scikit-learn
 scipy
 spiceypy
 pytest
+pytest-benchmark
 pytest-cov
 pre-commit
 setuptools >= 45
