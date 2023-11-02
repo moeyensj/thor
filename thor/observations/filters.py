@@ -1,14 +1,68 @@
 import abc
-from typing import TYPE_CHECKING
+import logging
+import time
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 import quivr as qv
+import ray
 from adam_core.observations import PointSourceDetections
 
-from ..orbit import TestOrbit
+from ..orbit import TestOrbit, TestOrbitEphemeris
 
 if TYPE_CHECKING:
     from .observations import Observations
+
+
+logger = logging.getLogger(__name__)
+
+
+def TestOrbitRadiusObservationFilter_worker(
+    observations: "Observations",
+    ephemeris: TestOrbitEphemeris,
+    state_id: int,
+    radius: float,
+) -> "Observations":
+    """
+    Apply the filter to a collection of observations for a particular state.
+
+    Parameters
+    ----------
+    observations : `~thor.observations.Observations`
+        The observations to filter.
+    ephemeris : `~thor.orbit.TestOrbitEphemeris`
+        The ephemeris to use for filtering.
+    state_id : int
+        The state ID.
+    radius : float
+        The radius in degrees.
+
+    Returns
+    -------
+    filtered_observations : `~thor.observations.Observations`
+        The filtered observations.
+    """
+    # Select the ephemeris and observations for this state
+    ephemeris_state = ephemeris.select("id", state_id)
+    observations_state = observations.select("state_id", state_id)
+    detections_state = observations_state.detections
+
+    assert (
+        len(ephemeris_state) == 1
+    ), "there should be exactly one ephemeris per exposure"
+
+    ephem_ra = ephemeris_state.ephemeris.coordinates.lon[0].as_py()
+    ephem_dec = ephemeris_state.ephemeris.coordinates.lat[0].as_py()
+
+    # Return the observations within the radius for this particular state
+    return observations_state.apply_mask(
+        _within_radius(detections_state, ephem_ra, ephem_dec, radius)
+    )
+
+
+TestOrbitRadiusObservationFilter_remote = ray.remote(
+    TestOrbitRadiusObservationFilter_worker
+)
 
 
 class ObservationFilter(abc.ABC):
@@ -19,7 +73,10 @@ class ObservationFilter(abc.ABC):
 
     @abc.abstractmethod
     def apply(
-        self, observations: "Observations", test_orbit: TestOrbit
+        self,
+        observations: "Observations",
+        test_orbit: TestOrbit,
+        max_processes: Optional[int] = 1,
     ) -> "Observations":
         """
         Apply the filter to a collection of observations.
@@ -30,6 +87,10 @@ class ObservationFilter(abc.ABC):
             The observations to filter.
         test_orbit : `~thor.orbit.TestOrbit`
             The test orbit to use for filtering.
+        max_processes : int, optional
+            Maximum number of processes to use for parallelization. If
+            an existing ray cluster is already running, this parameter
+            will be ignored if larger than 1 or not None.
 
         Returns
         -------
@@ -56,7 +117,10 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         self.radius = radius
 
     def apply(
-        self, observations: "Observations", test_orbit: TestOrbit
+        self,
+        observations: Union["Observations", ray.ObjectRef],
+        test_orbit: TestOrbit,
+        max_processes: Optional[int] = 1,
     ) -> "Observations":
         """
         Apply the filter to a collection of observations.
@@ -67,53 +131,85 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
             The observations to filter.
         test_orbit : `~thor.orbit.TestOrbit`
             The test orbit to use for filtering.
+        max_processes : int, optional
+            Maximum number of processes to use for parallelization. If
+            an existing ray cluster is already running, this parameter
+            will be ignored if larger than 1 or not None.
 
         Returns
         -------
         filtered_observations : `~thor.observations.Observations`
-            The filtered observations.
+            The filtered observations. This will return a copy of the original
+            observations.
         """
+        time_start = time.perf_counter()
+        logger.info("Applying TestOrbitRadiusObservationFilter...")
+        logger.info(f"Using radius = {self.radius:.5f} deg")
+
         # Generate an ephemeris for every observer time/location in the dataset
-        test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
-            observations
+        ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
+
+        filtered_observations_list = []
+        if max_processes is None or max_processes > 1:
+
+            if not ray.is_initialized():
+                logger.debug(
+                    f"Ray is not initialized. Initializing with {max_processes}..."
+                )
+                ray.init(num_cpus=max_processes)
+
+            if isinstance(observations, ray.ObjectRef):
+                observations_ref = observations
+                observations = ray.get(observations_ref)
+            else:
+                observations_ref = ray.put(observations)
+
+            if isinstance(ephemeris, ray.ObjectRef):
+                ephemeris_ref = ephemeris
+            else:
+                ephemeris_ref = ray.put(ephemeris)
+
+            state_ids = observations.state_id.unique().sort()
+            futures = []
+            for state_id in state_ids:
+                futures.append(
+                    TestOrbitRadiusObservationFilter_remote.remote(
+                        observations_ref,
+                        ephemeris_ref,
+                        state_id,
+                        self.radius,
+                    )
+                )
+
+            while futures:
+                finished, futures = ray.wait(futures, num_returns=1)
+                filtered_observations_list.append(ray.get(finished[0]))
+
+        else:
+
+            state_ids = observations.state_id.unique().sort()
+            for state_id in state_ids:
+                filtered_observations = TestOrbitRadiusObservationFilter_worker(
+                    observations,
+                    ephemeris,
+                    state_id,
+                    self.radius,
+                )
+                filtered_observations_list.append(filtered_observations)
+
+        observations_filtered = qv.concatenate(filtered_observations_list)
+        observations_filtered = observations_filtered.sort_by(
+            ["detections.time.days", "detections.time.nanos", "observatory_code"]
         )
 
-        # Link the ephemeris to the observations
-        link = qv.Linkage(
-            test_orbit_ephemeris,
-            observations,
-            left_keys=test_orbit_ephemeris.id,
-            right_keys=observations.state_id,
+        time_end = time.perf_counter()
+        logger.info(
+            f"Filtered {len(observations)} observations to {len(observations_filtered)} observations."
         )
-
-        # Loop over states and build a mask of detections within the radius
-        state_ids = observations.state_id.to_numpy(zero_copy_only=False)
-        mask = np.zeros(len(observations), dtype=bool)
-        for state_id in np.unique(state_ids):
-            # Compute the indices for observations belonging to this state
-            idx_state = np.where(state_ids == state_id)[0]
-
-            # Select the ephemeris and observations for this state
-            ephemeris_i = link.select_left(state_id)
-            observations_i = link.select_right(state_id)
-            detections_i = observations_i.detections
-
-            assert (
-                len(ephemeris_i) == 1
-            ), "there should be exactly one ephemeris per exposure"
-
-            ephem_ra = ephemeris_i.ephemeris.coordinates.lon[0].as_py()
-            ephem_dec = ephemeris_i.ephemeris.coordinates.lat[0].as_py()
-
-            # Compute indices for the detections within the radius
-            idx_within = idx_state[
-                _within_radius(detections_i, ephem_ra, ephem_dec, self.radius)
-            ]
-
-            # Update the mask
-            mask[idx_within] = True
-
-        return observations.apply_mask(mask)
+        logger.info(
+            f"TestOrbitRadiusObservationFilter completed in {time_end - time_start:.3f} seconds."
+        )
+        return observations_filtered
 
 
 def _within_radius(

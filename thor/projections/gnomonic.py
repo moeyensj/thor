@@ -131,12 +131,12 @@ class GnomonicCoordinates(qv.Table):
                     [cartesian[0].origin for _ in range(num_unique_times)]
                 ),
             )
-            link = cartesian.time.link(center_cartesian.time, precision="us")
+            link = cartesian.time.link(center_cartesian.time, precision="ms")
 
         elif center_cartesian is not None and cartesian.time is not None:
             assert cartesian.time.scale == center_cartesian.time.scale
 
-            link = cartesian.time.link(center_cartesian.time, precision="us")
+            link = cartesian.time.link(center_cartesian.time, precision="ms")
 
         else:
             raise ValueError(
@@ -146,20 +146,23 @@ class GnomonicCoordinates(qv.Table):
 
         # Round the times to the nearest microsecond and use those to select
         # the cartesian coordinates and center cartesian coordinates
-        rounded_cartesian_times = cartesian.time.rounded(precision="us")  # type: ignore
-        rounded_center_cartesian_times = center_cartesian.time.rounded(precision="us")  # type: ignore
+        rounded_cartesian_times = cartesian.time.rounded(precision="ms")  # type: ignore
+        rounded_center_cartesian_times = center_cartesian.time.rounded(precision="ms")  # type: ignore
 
         gnomonic_coords = []
         for key, time_i, center_time_i in link.iterate():
 
             cartesian_i = cartesian.apply_mask(
-                rounded_cartesian_times.equals_scalar(key[0], key[1], precision="us")
+                rounded_cartesian_times.equals_scalar(key[0], key[1], precision="ms")
             )
             center_cartesian_i = center_cartesian.apply_mask(
                 rounded_center_cartesian_times.equals_scalar(
-                    key[0], key[1], precision="us"
+                    key[0], key[1], precision="ms"
                 )
             )
+
+            if len(center_cartesian_i) == 0:
+                raise ValueError("No center cartesian coordinates found for this time.")
 
             coords_gnomonic, M = cartesian_to_gnomonic(
                 cartesian_i.values,

@@ -1,13 +1,12 @@
-name: conda - Build Lint and Test
+name: pip - Build and Integration Test
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  schedule:
+    # Run every day at 20:00 UTC
+    - cron: '0 20 * * * '
 
 jobs:
-  build-lint-test:
+  build-lint-test-coverage:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -28,21 +27,17 @@ jobs:
           activate-environment: "thor"
           auto-update-conda: true
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies (excluding adam_core and quivr since they are not available via conda)
-        run: |
-          tail +3 requirements.txt > requirements_conda.txt
-          conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements_conda.txt --yes
+      - name: Install openorb using conda
+        run: conda install -c defaults -c conda-forge openorb --yes
       - name: Update OBSCODE.dat
         run: |
           cd $CONDA_PREFIX/share/oorb && ./updateOBSCODE
           cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
-      - name: Install adam_core and quivr
-        run: |
-          pip install adam-core@git+https://github.com/B612-Asteroid-Institute/adam_core@main
-          pip install quivr>=0.7.1
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip' # caching pip dependencies
       - name: Build and install
-        run: pip install . --no-deps
-      - name: Lint
-        run: pre-commit run --all-files
-      - name: Test
-        run: pytest . --cov
+        run: pip install .[tests]
+      - name: Integration Tests
+        run: pytest . -m "integration"

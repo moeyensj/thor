@@ -379,16 +379,20 @@ def mergeAndExtendOrbits(
     time_start = time.time()
     logger.info("Running orbit extension and merging...")
 
-    orbits_iter, orbit_members_iter = sortLinkages(
-        orbits, orbit_members, observations, linkage_id_col="orbit_id"
-    )
-    observations_iter = observations.copy()
+    if len(observations) > 0:
+        orbits_iter, orbit_members_iter = sortLinkages(
+            orbits, orbit_members, observations, linkage_id_col="orbit_id"
+        )
+
+    else:
+        orbits_iter = orbits.copy()
+        orbit_members_iter = orbit_members.copy()
 
     iterations = 0
     odp_orbits_dfs = []
     odp_orbit_members_dfs = []
-
-    if len(orbits_iter) > 0:
+    observations_iter = observations.copy()
+    if len(orbits_iter) > 0 and len(observations_iter) > 0:
         converged = False
 
         while not converged:
