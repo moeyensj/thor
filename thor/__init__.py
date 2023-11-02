@@ -6,7 +6,6 @@ from .backend import *
 from .utils import *
 from .projections import *
 from .orbit import *
-from .data_processing import *
 from .orbit_selection import *
 from .filter_orbits import *
 from .main import *
