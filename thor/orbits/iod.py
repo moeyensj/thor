@@ -1,5 +1,5 @@
 import os
-from typing import Literal
+from typing import Literal, Tuple
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -15,24 +15,17 @@ from functools import partial
 from itertools import combinations
 
 import numpy as np
-import pandas as pd
+import pyarrow as pa
 import quivr as qv
+from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
+from adam_core.coordinates.residuals import Residuals
 from adam_core.observers import Observers
 from adam_core.propagator import PYOORB
 from adam_core.time import Timestamp
-from astropy.time import Time
 
-from ..utils import (
-    _checkParallel,
-    _initWorker,
-    calcChunkSize,
-    identifySubsetLinkages,
-    sortLinkages,
-    yieldChunks,
-)
+from ..orbit_determination import FittedOrbitMembers, FittedOrbits
+from ..utils import _checkParallel, _initWorker, calcChunkSize, yieldChunks
 from .gauss import gaussIOD
-from .residuals import calcResiduals
-from .utils import _ephemeris_to_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +127,9 @@ def iod_worker(
     linkage_id_col="cluster_id",
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
-):
-    iod_orbits_dfs = []
-    iod_orbit_members_dfs = []
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+    iod_orbits_list = []
+    iod_orbit_members_list = []
     for observations in observations_list:
         assert np.all(
             sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values
@@ -159,17 +152,21 @@ def iod_worker(
             propagator_kwargs=propagator_kwargs,
         )
         if len(iod_orbit) > 0:
-            iod_orbit.insert(1, linkage_id_col, linkage_id)
+            iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id]))
+            iod_orbit_members = iod_orbit_members.set_column(
+                "orbit_id",
+                pa.array([linkage_id for i in range(len(iod_orbit_members))]),
+            )
 
         time_end = time.time()
         duration = time_end - time_start
         logger.debug(f"IOD for linkage {linkage_id} completed in {duration:.3f}s.")
 
-        iod_orbits_dfs.append(iod_orbit)
-        iod_orbit_members_dfs.append(iod_orbit_members)
+        iod_orbits_list.append(iod_orbit)
+        iod_orbit_members_list.append(iod_orbit_members)
 
-    iod_orbits = pd.concat(iod_orbits_dfs, ignore_index=True)
-    iod_orbit_members = pd.concat(iod_orbit_members_dfs, ignore_index=True)
+    iod_orbits = qv.concatenate(iod_orbits_list)
+    iod_orbit_members = qv.concatenate(iod_orbit_members_list)
     return iod_orbits, iod_orbit_members
 
 
@@ -184,7 +181,7 @@ def iod(
     light_time=True,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
-):
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Run initial orbit determination on a set of observations believed to belong to a single
     object.
@@ -284,7 +281,19 @@ def iod(
     sigmas_all = observations[[ra_err_col, dec_err_col]].values
     coords_obs_all = observations[[obs_x_col, obs_y_col, obs_z_col]].values
     times_all = observations[time_col].values
-    times_all = Time(times_all, scale="utc", format="mjd")
+    obs_codes_all = observations[obs_code_col].values
+
+    # We should add a convenience function to observations (or directily convert them to coordinates)
+    sigmas = np.zeros((len(coords_all), 6))
+    sigmas[:, 1:3] = sigmas_all
+    coords_all = SphericalCoordinates.from_kwargs(
+        lon=coords_all[:, 0],
+        lat=coords_all[:, 1],
+        covariance=CoordinateCovariances.from_sigmas(sigmas),
+        time=Timestamp.from_mjd(times_all, scale="utc"),
+        origin=Origin.from_kwargs(code=obs_codes_all),
+        frame="equatorial",
+    )
 
     observers_list = []
     for observatory_code in observations["observatory_code"].unique():
@@ -341,14 +350,14 @@ def iod(
 
         # Grab sky-plane positions of the selected observations, the heliocentric ecliptic position of the observer,
         # and the times at which the observations occur
-        coords = coords_all[mask, :]
+        coords = coords_all.apply_mask(mask)
         coords_obs = coords_obs_all[mask, :]
         times = times_all[mask]
 
         # Run IOD
         iod_orbits = gaussIOD(
-            coords,
-            times.utc.mjd,
+            coords.values[:, 1:3],
+            times,
             coords_obs,
             light_time=light_time,
             iterate=iterate,
@@ -360,23 +369,22 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = prop._generate_ephemeris(iod_orbits, observers)
-        ephemeris = _ephemeris_to_dataframe(ephemeris)
+        ephemeris = prop.generate_ephemeris(
+            iod_orbits, observers, chunk_size=1, max_processes=1
+        )
 
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
         orbit_ids = iod_orbits.orbit_id.to_numpy(zero_copy_only=False)
         for i, orbit_id in enumerate(orbit_ids):
-            ephemeris_orbit = ephemeris[ephemeris["orbit_id"] == orbit_id]
+            ephemeris_orbit = ephemeris.select("orbit_id", orbit_id)
 
             # Calculate residuals and chi2
-            residuals, stats = calcResiduals(
+            residuals = Residuals.calculate(
                 coords_all,
-                ephemeris_orbit[["RA_deg", "Dec_deg"]].values,
-                sigmas_actual=sigmas_all,
-                include_probabilistic=False,
+                ephemeris_orbit.coordinates,
             )
-            chi2 = stats[0]
+            chi2 = residuals.chi2.to_numpy()
             chi2_total = np.sum(chi2)
             rchi2 = chi2_total / (2 * num_obs - 6)
 
@@ -403,7 +411,7 @@ def iod(
                 rchi2_sol = rchi2
                 residuals_sol = residuals
                 outliers = np.array([])
-                arc_length = times_all.utc.mjd.max() - times_all.utc.mjd.min()
+                arc_length = times_all.max() - times_all.min()
                 converged = True
                 break
 
@@ -431,10 +439,7 @@ def iod(
                     rchi2_new = chi2_new / (2 * num_obs_new - 6)
 
                     ids_mask = np.isin(obs_ids_all, obs_id_outlier, invert=True)
-                    arc_length = (
-                        times_all[ids_mask].utc.mjd.max()
-                        - times_all[ids_mask].utc.mjd.min()
-                    )
+                    arc_length = times_all[ids_mask].max() - times_all[ids_mask].min()
 
                     # If the updated reduced chi2 total is lower than our desired
                     # threshold, accept the soluton. If not, keep going.
@@ -448,8 +453,7 @@ def iod(
                         num_obs = num_obs_new
                         ids_mask = np.isin(obs_ids_all, outliers, invert=True)
                         arc_length = (
-                            times_all[ids_mask].utc.mjd.max()
-                            - times_all[ids_mask].utc.mjd.min()
+                            times_all[ids_mask].max() - times_all[ids_mask].min()
                         )
                         chi2_sol = chi2
                         converged = True
@@ -462,57 +466,27 @@ def iod(
 
     if not converged or not processable:
 
-        orbit = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "mjd_tdb",
-                "x",
-                "y",
-                "z",
-                "vx",
-                "vy",
-                "vz",
-                "arc_length",
-                "num_obs",
-                "chi2",
-                "rchi2",
-            ]
-        )
-
-        orbit_members = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "obs_id",
-                "residual_ra_arcsec",
-                "residual_dec_arcsec",
-                "chi2",
-                "gauss_sol",
-                "outlier",
-            ]
-        )
+        return FittedOrbits.empty(), FittedOrbitMembers.empty()
 
     else:
-        orbit = orbit_sol.to_dataframe()
-        orbit["arc_length"] = arc_length
-        orbit["num_obs"] = num_obs
-        orbit["chi2"] = chi2_total_sol
-        orbit["rchi2"] = rchi2_sol
 
-        orbit_members = pd.DataFrame(
-            {
-                "orbit_id": [
-                    orbit_sol.orbit_id[0].as_py() for i in range(len(obs_ids_all))
-                ],
-                "obs_id": obs_ids_all,
-                "residual_ra_arcsec": residuals_sol[:, 0] * 3600,
-                "residual_dec_arcsec": residuals_sol[:, 1] * 3600,
-                "chi2": chi2_sol,
-                "gauss_sol": np.zeros(len(obs_ids_all), dtype=int),
-                "outlier": np.zeros(len(obs_ids_all), dtype=int),
-            }
+        orbit = FittedOrbits.from_kwargs(
+            orbit_id=orbit_sol.orbit_id,
+            object_id=orbit_sol.object_id,
+            coordinates=orbit_sol.coordinates,
+            arc_length=[arc_length],
+            num_obs=[num_obs],
+            chi2=[chi2_total_sol],
+            reduced_chi2=[rchi2_sol],
         )
-        orbit_members.loc[orbit_members["obs_id"].isin(outliers), "outlier"] = 1
-        orbit_members.loc[orbit_members["obs_id"].isin(obs_ids_sol), "gauss_sol"] = 1
+
+        orbit_members = FittedOrbitMembers.from_kwargs(
+            orbit_id=np.full(len(obs_ids_all), orbit_sol.orbit_id[0].as_py()),
+            obs_id=obs_ids_all,
+            residuals=residuals_sol,
+            solution=np.isin(obs_ids_all, obs_ids_sol),
+            outlier=np.isin(obs_ids_all, outliers),
+        )
 
     return orbit, orbit_members
 
@@ -528,13 +502,12 @@ def initialOrbitDetermination(
     iterate=False,
     light_time=True,
     linkage_id_col="cluster_id",
-    identify_subsets=True,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
     chunk_size=1,
     num_jobs=1,
     parallel_backend="cf",
-):
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Run initial orbit determination on linkages found in observations.
 
@@ -791,59 +764,14 @@ def initialOrbitDetermination(
                 iod_orbits_dfs.append(iod_orbits_df)
                 iod_orbit_members_dfs.append(iod_orbit_members_df)
 
-        iod_orbits = pd.concat(iod_orbits_dfs, ignore_index=True)
-        iod_orbit_members = pd.concat(iod_orbit_members_dfs, ignore_index=True)
-
-        for col in ["num_obs"]:
-            iod_orbits[col] = iod_orbits[col].astype(int)
-        for col in ["gauss_sol", "outlier"]:
-            iod_orbit_members[col] = iod_orbit_members[col].astype(int)
+        iod_orbits = qv.concatenate(iod_orbits_dfs)
+        iod_orbit_members = qv.concatenate(iod_orbit_members_dfs)
 
         logger.info("Found {} initial orbits.".format(len(iod_orbits)))
 
-        if identify_subsets and len(iod_orbits) > 0:
-            iod_orbits, iod_orbit_members = identifySubsetLinkages(
-                iod_orbits, iod_orbit_members, linkage_id_col="orbit_id"
-            )
-            logger.info(
-                "{} subset orbits identified.".format(
-                    len(iod_orbits[~iod_orbits["subset_of"].isna()])
-                )
-            )
-
-        iod_orbits, iod_orbit_members = sortLinkages(
-            iod_orbits, iod_orbit_members, observations, linkage_id_col="orbit_id"
-        )
-
     else:
-        iod_orbits = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "mjd_tdb",
-                "x",
-                "y",
-                "z",
-                "vx",
-                "vy",
-                "vz",
-                "arc_length",
-                "num_obs",
-                "chi2",
-                "rchi2",
-            ]
-        )
-
-        iod_orbit_members = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "obs_id",
-                "residual_ra_arcsec",
-                "residual_dec_arcsec",
-                "chi2",
-                "gauss_sol",
-                "outlier",
-            ]
-        )
+        iod_orbits = FittedOrbits.empty()
+        iod_orbit_members = FittedOrbitMembers.empty()
 
     time_end = time.time()
     logger.info(

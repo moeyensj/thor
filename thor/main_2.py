@@ -450,7 +450,6 @@ def link_test_orbit(
         parallel_backend=config.parallel_backend,
         # TODO: investigate whether these should be configurable
         iterate=False,
-        identify_subsets=False,
         light_time=True,
         linkage_id_col="cluster_id",
     )
