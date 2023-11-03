@@ -21,7 +21,7 @@ from .orbit import TestOrbit, TestOrbitEphemeris
 from .orbits import (
     differential_correction,
     initial_orbit_determination,
-    mergeAndExtendOrbits,
+    merge_and_extend_orbits,
 )
 from .projections import GnomonicCoordinates
 
@@ -478,22 +478,21 @@ def link_test_orbit(
     yield od_orbits, od_orbit_members
 
     # Run arc extension
-    recovered_orbits, recovered_orbit_members = mergeAndExtendOrbits(
+    recovered_orbits, recovered_orbit_members = merge_and_extend_orbits(
         od_orbits,
         od_orbit_members,
-        observations_df,
+        filtered_observations,
         min_obs=config.arc_extension_min_obs,
         min_arc_length=config.arc_extension_min_arc_length,
         contamination_percentage=config.arc_extension_contamination_percentage,
         rchi2_threshold=config.arc_extension_rchi2_threshold,
-        eps=config.arc_extension_radius,
+        radius=config.arc_extension_radius,
         delta=config.od_delta,
         max_iter=config.od_max_iter,
         propagator=config.propagator,
         propagator_kwargs={},
         orbits_chunk_size=config.arc_extension_chunk_size,
-        num_jobs=config.max_processes,
-        parallel_backend=config.parallel_backend,
+        max_processes=config.max_processes,
         # TODO: investigate whether these should be configurable
         method="central",
         fit_epoch=False,
