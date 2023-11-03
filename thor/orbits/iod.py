@@ -629,6 +629,21 @@ def initial_orbit_determination(
         iod_orbits = qv.concatenate(iod_orbits_list)
         iod_orbit_members = qv.concatenate(iod_orbit_members_list)
 
+        iod_orbits, iod_orbit_members = iod_orbits.drop_duplicates(
+            iod_orbit_members,
+            subset=[
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.x",
+                "coordinates.y",
+                "coordinates.z",
+                "coordinates.vx",
+                "coordinates.vy",
+                "coordinates.vz",
+            ],
+            keep="first",
+        )
+
         logger.info("Found {} initial orbits.".format(len(iod_orbits)))
 
     else:
