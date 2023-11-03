@@ -3,7 +3,6 @@ from .iterators import *
 from .gauss import *
 from .gibbs import *
 from .herrick_gibbs import *
-from .residuals import *
 from .attribution import *
 from .iod import *
 from .od import *
