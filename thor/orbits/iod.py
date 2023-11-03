@@ -21,7 +21,7 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.propagator import PYOORB, Propagator
 from adam_core.propagator.utils import _iterate_chunks
 
-from ..main import ClusterMembers
+from ..clusters import ClusterMembers
 from ..observations.observations import Observations
 from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from .gauss import gaussIOD
