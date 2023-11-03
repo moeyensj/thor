@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -12,15 +12,17 @@ import time
 import uuid
 
 import numpy as np
+import numpy.typing as npt
 import quivr as qv
 import ray
 
 from .clusters import filter_clusters_by_length, find_clusters
+from .range_and_transform import TransformedDetections
 
 logger = logging.getLogger("thor")
 
 __all__ = [
-    "clusterAndLink",
+    "cluster_and_link",
 ]
 
 
@@ -37,17 +39,17 @@ class ClusterMembers(qv.Table):
     obs_id = qv.StringColumn()
 
 
-def clusterVelocity(
-    obs_ids,
-    x,
-    y,
-    dt,
-    vx,
-    vy,
-    eps=0.005,
-    min_obs=5,
-    min_arc_length=1.0,
-    alg="hotspot_2d",
+def cluster_velocity(
+    obs_ids: npt.ArrayLike,
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    dt: npt.NDArray[np.float64],
+    vx: float,
+    vy: float,
+    radius: float = 0.005,
+    min_obs: int = 5,
+    min_arc_length: float = 1.0,
+    alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
 ) -> Tuple[Clusters, ClusterMembers]:
     """
     Clusters THOR projection with different velocities
@@ -62,11 +64,11 @@ def clusterVelocity(
         Projection space y coordinate in degrees or radians.
     dt : `~numpy.ndarray' (N)
         Change in time from 0th exposure in units of MJD.
-    vx : `~numpy.ndarray' (N)
+    vx : float
         Projection space x velocity in units of degrees or radians per day in MJD.
-    vy : `~numpy.ndarray' (N)
+    vy : float
         Projection space y velocity in units of degrees or radians per day in MJD.
-    eps : float, optional
+    radius : float, optional
         The maximum distance between two samples for them to be considered
         as in the same neighborhood.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -91,7 +93,7 @@ def clusterVelocity(
 
     X = np.stack((xx, yy), 1)
 
-    clusters = find_clusters(X, eps, min_obs, alg=alg)
+    clusters = find_clusters(X, radius, min_obs, alg=alg)
     clusters, arc_lengths = filter_clusters_by_length(
         clusters,
         dt,
@@ -133,14 +135,14 @@ def clusterVelocity(
     return clusters, cluster_members
 
 
-def clusterVelocity_worker(
+def cluster_velocity_worker(
     vx,
     vy,
     obs_ids=None,
     x=None,
     y=None,
     dt=None,
-    eps=None,
+    radius=None,
     min_obs=None,
     min_arc_length=None,
     alg=None,
@@ -149,14 +151,14 @@ def clusterVelocity_worker(
     Helper function to multiprocess clustering.
 
     """
-    clusters, cluster_members = clusterVelocity(
+    clusters, cluster_members = cluster_velocity(
         obs_ids,
         x,
         y,
         dt,
         vx,
         vy,
-        eps=eps,
+        radius=radius,
         min_obs=min_obs,
         min_arc_length=min_arc_length,
         alg=alg,
@@ -164,25 +166,25 @@ def clusterVelocity_worker(
     return clusters, cluster_members
 
 
-clusterVelocity_remote = ray.remote(clusterVelocity_worker)
-clusterVelocity_remote.options(
+cluster_velocity_remote = ray.remote(cluster_velocity_worker)
+cluster_velocity_remote.options(
     num_returns=1,
     num_cpus=1,
 )
 
 
-def clusterAndLink(
-    observations,
-    vx_range=[-0.1, 0.1],
-    vy_range=[-0.1, 0.1],
-    vx_bins=100,
-    vy_bins=100,
-    eps=0.005,
-    min_obs=5,
-    min_arc_length=1.0,
-    alg="dbscan",
+def cluster_and_link(
+    observations: TransformedDetections,
+    vx_range: List[float] = [-0.1, 0.1],
+    vy_range: List[float] = [-0.1, 0.1],
+    vx_bins: int = 100,
+    vy_bins: int = 100,
+    radius: float = 0.005,
+    min_obs: int = 5,
+    min_arc_length: float = 1.0,
+    alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
     max_processes: Optional[int] = 1,
-):
+) -> Tuple[Clusters, ClusterMembers]:
     """
     Cluster and link correctly projected (after ranging and shifting)
     detections.
@@ -205,7 +207,7 @@ def clusterAndLink(
         Length of y-velocity grid between vy_range[0]
         and vy_range[-1].
         [Default = 100]
-    eps : float, optional
+    radius : float, optional
         The maximum distance between two samples for them to be considered
         as in the same neighborhood.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
@@ -236,10 +238,10 @@ def clusterAndLink(
 
     alg="dbscan" uses the DBSCAN algorithm of Ester et. al. It's relatively slow
     but works with high accuracy; it is certain to find all clusters with at
-    least min_obs points that are separated by at most eps.
+    least min_obs points that are separated by at most radius.
 
     alg="hotspot_2d" is much faster (perhaps 10-20x faster) than dbscan, but it
-    may miss some clusters, particularly when points are spaced a distance of 'eps'
+    may miss some clusters, particularly when points are spaced a distance of 'radius'
     apart.
     """
     time_start_cluster = time.time()
@@ -256,17 +258,17 @@ def clusterAndLink(
     logger.debug("Y velocity range: {}".format(vy_range))
     logger.debug("Y velocity bins: {}".format(vy_bins))
     logger.debug("Velocity grid size: {}".format(vx_bins))
-    logger.info("Max sample distance: {}".format(eps))
+    logger.info("Max sample distance: {}".format(radius))
     logger.info("Minimum samples: {}".format(min_obs))
 
     clusters_list = []
     cluster_members_list = []
     if len(observations) > 0:
         # Extract useful quantities
-        obs_ids = observations["obs_id"].values
-        theta_x = observations["theta_x_deg"].values
-        theta_y = observations["theta_y_deg"].values
-        mjd = observations["mjd_utc"].values
+        obs_ids = observations.id.to_numpy(zero_copy_only=False)
+        theta_x = observations.coordinates.theta_x.to_numpy(zero_copy_only=False)
+        theta_y = observations.coordinates.theta_y.to_numpy(zero_copy_only=False)
+        mjd = observations.coordinates.time.mjd().to_numpy(zero_copy_only=False)
 
         # Select detections in first exposure
         first = np.where(mjd == mjd.min())[0]
@@ -288,14 +290,14 @@ def clusterAndLink(
             futures = []
             for vxi, vyi in zip(vxx, vyy):
                 futures.append(
-                    clusterVelocity_remote.remote(
+                    cluster_velocity_remote.remote(
                         vxi,
                         vyi,
                         obs_ids=obs_ids_oid,
                         x=theta_x_oid,
                         y=theta_y_oid,
                         dt=dt_oid,
-                        eps=eps,
+                        radius=radius,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
                         alg=alg,
@@ -311,14 +313,14 @@ def clusterAndLink(
         else:
 
             for vxi, vyi in zip(vxx, vyy):
-                clusters_i, cluster_members_i = clusterVelocity(
-                    obs_ids,
-                    theta_x,
-                    theta_y,
-                    dt,
+                clusters_i, cluster_members_i = cluster_velocity_worker(
                     vxi,
                     vyi,
-                    eps=eps,
+                    obs_ids=obs_ids,
+                    x=theta_x,
+                    y=theta_y,
+                    dt=dt,
+                    radius=radius,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     alg=alg,

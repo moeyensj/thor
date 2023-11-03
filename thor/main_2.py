@@ -2,122 +2,23 @@ import logging
 import time
 from typing import Any, Iterator, List, Optional
 
-import pandas as pd
 import quivr as qv
 import ray
 from adam_core.propagator import PYOORB
 
 from .config import Config
-from .main import clusterAndLink
+from .main import cluster_and_link
 from .observations.filters import ObservationFilter, TestOrbitRadiusObservationFilter
-from .observations.observations import Observations, ObserversWithStates
+from .observations.observations import Observations
 from .orbit import TestOrbit
 from .orbits import (
     differential_correction,
     initial_orbit_determination,
     merge_and_extend_orbits,
 )
-from .range_and_transform import TransformedDetections, range_and_transform
+from .range_and_transform import range_and_transform
 
 logger = logging.getLogger(__name__)
-
-
-def _observations_to_observations_df(observations: Observations) -> pd.DataFrame:
-    """
-    Convert THOR observations (v2.0) to the older format used by the rest of the
-    pipeline. This will eventually be removed once the rest of the pipeline is
-    updated to use the new format.
-
-    Parameters
-    ----------
-    observations : `~thor.observations.observations.Observations`
-        Observations to convert.
-
-    Returns
-    -------
-    observations_df : `~pandas.DataFrame`
-        Observations in the old format.
-    """
-    observations_df = observations.to_dataframe()
-    observations_df.rename(
-        columns={
-            "detections.id": "obs_id",
-            "detections.ra": "RA_deg",
-            "detections.dec": "Dec_deg",
-            "detections.ra_sigma": "RA_sigma_deg",
-            "detections.dec_sigma": "Dec_sigma_deg",
-            "detections.mag": "mag",
-            "detections.mag_sigma": "mag_sigma",
-        },
-        inplace=True,
-    )
-    observations_df["mjd_utc"] = (
-        observations.detections.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
-    )
-    return observations_df
-
-
-def _observers_with_states_to_observers_df(
-    observers: ObserversWithStates,
-) -> pd.DataFrame:
-    """
-    Convert THOR observers (v2.0) to the older format used by the rest of the
-    pipeline. This will eventually be removed once the rest of the pipeline is
-    updated to use the new format.
-
-    Parameters
-    ----------
-    observers : `~adam_core.observers.observers.Observers`
-        Observers to convert to a dataframe.
-
-    Returns
-    -------
-    observers_df : `~pandas.DataFrame`
-        Observers in the old format.
-    """
-    observers_df = observers.to_dataframe()
-    observers_df.rename(
-        columns={
-            "observers.coordinates.x": "obs_x",
-            "observers.coordinates.y": "obs_y",
-            "observers.coordinates.z": "obs_z",
-            "observers.coordinates.vx": "obs_vx",
-            "observers.coordinates.vy": "obs_vy",
-            "observers.coordinates.vz": "obs_vz",
-        },
-        inplace=True,
-    )
-    return observers_df
-
-
-def _transformed_detections_to_transformed_detections_df(
-    transformed_detections: TransformedDetections,
-) -> pd.DataFrame:
-    """
-    Convert THOR transformed detections (v2.0) to the older format used by the
-    rest of the pipeline. This will eventually be removed once the rest of the
-    pipeline is updated to use the new format.
-
-    Parameters
-    ----------
-    transformed_detections : `~thor.main.TransformedDetections`
-        Transformed detections to convert to a dataframe.
-
-    Returns
-    -------
-    transformed_detections_df : `~pandas.DataFrame`
-        Transformed detections in the old format.
-    """
-    transformed_detections_df = transformed_detections.to_dataframe()
-    transformed_detections_df.rename(
-        columns={
-            "id": "obs_id",
-            "coordinates.theta_x": "theta_x_deg",
-            "coordinates.theta_y": "theta_y_deg",
-        },
-        inplace=True,
-    )
-    return transformed_detections_df
 
 
 def link_test_orbit(
@@ -208,33 +109,14 @@ def link_test_orbit(
     if use_ray:
         filtered_observations = ray.get(filtered_observations)
 
-    if len(filtered_observations) > 0:
-        # Convert quivr tables to dataframes used by the rest of the pipeline
-        observations_df = _observations_to_observations_df(filtered_observations)
-        observers_df = _observers_with_states_to_observers_df(
-            filtered_observations.get_observers()
-        )
-        transformed_detections_df = (
-            _transformed_detections_to_transformed_detections_df(transformed_detections)
-        )
-
-        # Merge dataframes together
-        observations_df = observations_df.merge(observers_df, on="state_id")
-        transformed_detections_df = transformed_detections_df.merge(
-            observations_df[["obs_id", "mjd_utc", "observatory_code"]], on="obs_id"
-        )
-    else:
-        transformed_detections_df = pd.DataFrame()
-        observations_df = pd.DataFrame()
-
     # Run clustering
-    clusters, cluster_members = clusterAndLink(
-        transformed_detections_df,
+    clusters, cluster_members = cluster_and_link(
+        transformed_detections,
         vx_range=[config.vx_min, config.vx_max],
         vy_range=[config.vy_min, config.vy_max],
         vx_bins=config.vx_bins,
         vy_bins=config.vy_bins,
-        eps=config.cluster_radius,
+        radius=config.cluster_radius,
         min_obs=config.cluster_min_obs,
         min_arc_length=config.cluster_min_arc_length,
         alg=config.cluster_algorithm,
