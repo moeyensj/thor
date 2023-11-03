@@ -16,6 +16,7 @@ import numpy as np
 import numpy.typing as npt
 import quivr as qv
 import ray
+from adam_core.propagator import _iterate_chunks
 
 from .range_and_transform import TransformedDetections
 
@@ -498,34 +499,42 @@ def cluster_velocity(
 
 
 def cluster_velocity_worker(
-    vx,
-    vy,
-    obs_ids=None,
-    x=None,
-    y=None,
-    dt=None,
-    radius=None,
-    min_obs=None,
-    min_arc_length=None,
-    alg=None,
-):
+    vx: npt.NDArray[np.float64],
+    vy: npt.NDArray[np.float64],
+    obs_ids: npt.ArrayLike,
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    dt: npt.NDArray[np.float64],
+    radius: float = 0.005,
+    min_obs: int = 5,
+    min_arc_length: float = 1.0,
+    alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
+) -> Tuple[Clusters, ClusterMembers]:
     """
-    Helper function to multiprocess clustering.
+    Helper function for parallelizing cluster_velocity. This function takes a
+    batch or chunk of velocities and returns the clusters and cluster members
+    for that batch.
 
     """
-    clusters, cluster_members = cluster_velocity(
-        obs_ids,
-        x,
-        y,
-        dt,
-        vx,
-        vy,
-        radius=radius,
-        min_obs=min_obs,
-        min_arc_length=min_arc_length,
-        alg=alg,
-    )
-    return clusters, cluster_members
+    clusters_list = []
+    cluster_members_list = []
+    for vx_i, vy_i in zip(vx, vy):
+        clusters_i, cluster_members_i = cluster_velocity(
+            obs_ids,
+            x,
+            y,
+            dt,
+            vx_i,
+            vy_i,
+            radius=radius,
+            min_obs=min_obs,
+            min_arc_length=min_arc_length,
+            alg=alg,
+        )
+        clusters_list.append(clusters_i)
+        cluster_members_list.append(cluster_members_i)
+
+    return qv.concatenate(clusters_list), qv.concatenate(cluster_members_list)
 
 
 cluster_velocity_remote = ray.remote(cluster_velocity_worker)
@@ -545,6 +554,7 @@ def cluster_and_link(
     min_obs: int = 5,
     min_arc_length: float = 1.0,
     alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
+    chunk_size: int = 1000,
     max_processes: Optional[int] = 1,
 ) -> Tuple[Clusters, ClusterMembers]:
     """
@@ -650,15 +660,17 @@ def cluster_and_link(
             dt_oid = ray.put(dt)
 
             futures = []
-            for vxi, vyi in zip(vxx, vyy):
+            for vxi_chunk, vyi_chunk in zip(
+                _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
+            ):
                 futures.append(
                     cluster_velocity_remote.remote(
-                        vxi,
-                        vyi,
-                        obs_ids=obs_ids_oid,
-                        x=theta_x_oid,
-                        y=theta_y_oid,
-                        dt=dt_oid,
+                        vxi_chunk,
+                        vyi_chunk,
+                        obs_ids_oid,
+                        theta_x_oid,
+                        theta_y_oid,
+                        dt_oid,
                         radius=radius,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
@@ -674,14 +686,16 @@ def cluster_and_link(
 
         else:
 
-            for vxi, vyi in zip(vxx, vyy):
+            for vxi_chunk, vyi_chunk in zip(
+                _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
+            ):
                 clusters_i, cluster_members_i = cluster_velocity_worker(
-                    vxi,
-                    vyi,
-                    obs_ids=obs_ids,
-                    x=theta_x,
-                    y=theta_y,
-                    dt=dt,
+                    vxi_chunk,
+                    vyi_chunk,
+                    obs_ids,
+                    theta_x,
+                    theta_y,
+                    dt,
                     radius=radius,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
