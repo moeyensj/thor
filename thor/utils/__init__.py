@@ -5,3 +5,4 @@ from .logging import *
 from .multiprocessing import *
 from .observations import *
 from .patches import *
+from .quivr import *
