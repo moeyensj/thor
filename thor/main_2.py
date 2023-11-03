@@ -19,7 +19,7 @@ from .observations.filters import ObservationFilter, TestOrbitRadiusObservationF
 from .observations.observations import Observations, ObserversWithStates
 from .orbit import TestOrbit, TestOrbitEphemeris
 from .orbits import (
-    differentialCorrection,
+    differential_correction,
     initial_orbit_determination,
     mergeAndExtendOrbits,
 )
@@ -457,10 +457,10 @@ def link_test_orbit(
     yield iod_orbits, iod_orbit_members
 
     # Run differential correction
-    od_orbits, od_orbit_members = differentialCorrection(
+    od_orbits, od_orbit_members = differential_correction(
         iod_orbits,
         iod_orbit_members,
-        observations_df,
+        filtered_observations,
         min_obs=config.od_min_obs,
         min_arc_length=config.od_min_arc_length,
         contamination_percentage=config.od_contamination_percentage,
@@ -470,8 +470,7 @@ def link_test_orbit(
         propagator=config.propagator,
         propagator_kwargs={},
         chunk_size=config.od_chunk_size,
-        num_jobs=config.max_processes,
-        parallel_backend=config.parallel_backend,
+        max_processes=config.max_processes,
         # TODO: investigate whether these should be configurable
         method="central",
         fit_epoch=False,
