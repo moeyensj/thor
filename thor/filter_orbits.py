@@ -2,7 +2,6 @@ from typing import Tuple
 
 import pandas as pd
 
-from .data_processing import UNKNOWN_ID_REGEX
 from .utils import calcDeltas
 
 __all__ = ["filterKnownOrbits", "filterOrbits"]

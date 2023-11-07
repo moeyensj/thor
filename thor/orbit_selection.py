@@ -2,9 +2,9 @@ from typing import List, Optional
 
 import numpy as np
 import pandas as pd
+from adam_core.orbits import Orbits
 from astropy.time import Time
 
-from .orbits import Orbits
 from .utils import assignPatchesHEALPix, assignPatchesSquare
 
 __all__ = [
