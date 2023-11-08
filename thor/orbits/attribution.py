@@ -12,6 +12,7 @@ import time
 
 import numpy as np
 import numpy.typing as npt
+import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
@@ -37,25 +38,77 @@ LATLOT_INDEX = np.array([2, 1])
 class Attributions(qv.Table):
     orbit_id = qv.StringColumn()
     obs_id = qv.StringColumn()
-    residuals = Residuals.as_column()
-    distance = qv.Float64Column()
+    residuals = Residuals.as_column(nullable=True)
+    distance = qv.Float64Column(nullable=True)
 
-    def remove_duplicate_observations(self) -> "Attributions":
+    def drop_coincident_attributions(
+        self, observations: Observations
+    ) -> "Attributions":
         """
-        Remove duplicate observations from the Attributions table. For any observation
-        ID linked to multiple orbits, the observation ID and orbit ID pair
-        with the smallest distance is kept.
+        Drop attributions that are coincident in time: two or more observations attributed
+        to the same orbit that occur at the same time. The observation with the lowest
+        distance is kept.
+
+        Parameters
+        ----------
+        observations : `~thor.observations.observations.Observations`
+            Observations which will be used to get the observation times.
 
         Returns
         -------
         attributions : `~thor.orbits.attribution.Attributions`
-            Attributions table with duplicate observations removed.
+            Attributions table with coincident attributions removed.
         """
-        # TODO: We should be able to achieve the same purely with pyarrow
-        df = self.to_dataframe()
-        df.sort_values(["obs_id", "distance", "orbit_id"], inplace=True)
-        df.drop_duplicates(subset=["obs_id"], keep="first", inplace=True)
-        return self.from_flat_dataframe(df)
+        # Flatten the table so nested columns are dot-delimited at the top level
+        flattened_table = self.flattened_table()
+
+        # Drop the residual values (a list column) due to: https://github.com/apache/arrow/issues/32504
+        flattened_table = flattened_table.drop(["residuals.values"])
+
+        # Filter the observations to only include those that have been attributed
+        # to an orbit
+        observations_filtered = observations.apply_mask(
+            pc.is_in(observations.detections.id, flattened_table.column("obs_id"))
+        )
+
+        # Flatten the observations table
+        flattened_observations = observations_filtered.flattened_table()
+
+        # Only keep relevant columns
+        flattened_observations = flattened_observations.select(
+            ["detections.id", "detections.time.days", "detections.time.nanos"]
+        )
+
+        # Join the time column back to the flattened attributions table
+        flattened_table = flattened_table.join(
+            flattened_observations, ["obs_id"], right_keys=["detections.id"]
+        )
+
+        # Add index column
+        flattened_table = flattened_table.add_column(
+            0, "index", pa.array(np.arange(len(flattened_table)))
+        )
+
+        # Sort the table
+        flattened_table = flattened_table.sort_by(
+            [
+                ("orbit_id", "ascending"),
+                ("detections.time.days", "ascending"),
+                ("detections.time.nanos", "ascending"),
+            ]
+        )
+
+        # Group by orbit ID and observation time
+        indices = (
+            flattened_table.group_by(
+                ["orbit_id", "detections.time.days", "detections.time.nanos"],
+                use_threads=False,
+            )
+            .aggregate([("index", "first")])
+            .column("index_first")
+        )
+
+        return self.take(indices)
 
 
 def attribution_worker(
@@ -328,10 +381,9 @@ def merge_and_extend_orbits(
                 max_processes=max_processes,
             )
 
-            # Attributions are sorted by orbit ID, observation time and
-            # angular distance. Keep only the one observation with smallest distance
-            # for any orbits that have multiple observations attributed at the same observation time.
-            attributions = attributions.remove_duplicate_observations()
+            # For orbits with coincident observations: multiple observations attributed at
+            # the same time, keep only observation with smallest distance
+            attributions = attributions.drop_coincident_attributions(observations)
 
             # Create a new orbit members table with the newly attributed observations
             orbit_members_iter = FittedOrbitMembers.from_kwargs(
