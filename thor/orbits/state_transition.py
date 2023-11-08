@@ -1,7 +1,6 @@
 import numpy as np
 from adam_core import dynamics
-
-from ..constants import Constants as c
+from adam_core.constants import Constants as c
 
 __all__ = ["calcMMatrix", "calcStateTransitionMatrix"]
 
