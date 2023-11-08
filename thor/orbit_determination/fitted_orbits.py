@@ -1,6 +1,8 @@
 import uuid
 from typing import List, Literal, Optional, Tuple
 
+import numpy as np
+import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 from adam_core.coordinates import CartesianCoordinates
@@ -85,6 +87,72 @@ class FittedOrbits(qv.Table):
         filtered_orbit_members = orbit_members.apply_mask(
             pc.is_in(orbit_members.orbit_id, filtered.orbit_id)
         )
+        return filtered, filtered_orbit_members
+
+    def assign_duplicate_observations(
+        self, orbit_members: "FittedOrbitMembers"
+    ) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
+        """
+        Assigns observations that have been assigned to multiple orbits to the orbit with t
+        he most observations, longest arc length, and lowest reduced chi2.
+
+        Parameters
+        ----------
+        orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+            Fitted orbit members.
+
+        Returns
+        -------
+        filtered : `~thor.orbit_determination.FittedOrbits`
+            Fitted orbits with duplicate assignments removed.
+        filtered_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+            Fitted orbit members with duplicate assignments removed.
+        """
+        # Sort by number of observations, arc length, and reduced chi2
+        # Here we assume that orbits that generally have more observations, longer arc lengths, and lower reduced chi2 are better
+        # as candidates for assigning detections that have been assigned to multiple orbits
+        sorted = self.sort_by(
+            [
+                ("num_obs", "descending"),
+                ("arc_length", "descending"),
+                ("reduced_chi2", "ascending"),
+            ]
+        )
+
+        # Extract the orbit IDs from the sorted table
+        orbit_ids = sorted.orbit_id.unique()
+
+        # Calculate the order in which these orbit IDs appear in the orbit_members table
+        order_in_orbits = pc.index_in(orbit_members.orbit_id, orbit_ids)
+
+        # Create an index into the orbit_members table and append the order_in_orbits column
+        orbit_members_table = (
+            orbit_members.flattened_table()
+            .append_column("index", pa.array(np.arange(len(orbit_members))))
+            .append_column("order_in_orbits", order_in_orbits)
+        )
+
+        # Drop the residual values (a list column) due to: https://github.com/apache/arrow/issues/32504
+        orbit_members_table = orbit_members_table.drop_columns(["residuals.values"])
+
+        # Sort orbit members by the orbit IDs (in the same order as the orbits table)
+        orbit_members_table = orbit_members_table.sort_by(
+            [("order_in_orbits", "ascending")]
+        )
+
+        # Now group by the orbit ID and aggregate the index column to get the first index for each orbit ID
+        indices = (
+            orbit_members_table.group_by("obs_id", use_threads=False)
+            .aggregate([("index", "first")])
+            .column("index_first")
+        )
+
+        # Use the indices to filter the orbit_members table and then use the resulting orbit IDs to filter the orbits table
+        filtered_orbit_members = orbit_members.take(indices)
+        filtered = self.apply_mask(
+            pc.is_in(self.orbit_id, filtered_orbit_members.orbit_id)
+        )
+
         return filtered, filtered_orbit_members
 
 

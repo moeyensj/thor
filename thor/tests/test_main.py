@@ -244,7 +244,7 @@ def test_link_test_orbit(
     assert len(recovered_orbit_members) == len(obs_ids_expected)
 
     # Ensure we get all the object IDs back that we expect
-    obs_ids_actual = recovered_orbit_members["obs_id"].values
+    obs_ids_actual = recovered_orbit_members.obs_id
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
 
 
@@ -271,5 +271,5 @@ def test_benchmark_link_test_orbit(
     assert len(recovered_orbit_members) == len(obs_ids_expected)
 
     # Ensure we get all the object IDs back that we expect
-    obs_ids_actual = recovered_orbit_members["obs_id"].values
+    obs_ids_actual = recovered_orbit_members.obs_id
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))

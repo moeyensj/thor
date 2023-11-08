@@ -24,7 +24,6 @@ from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
 from ..orbit_determination import FittedOrbitMembers, FittedOrbits
-from ..utils import removeDuplicateObservations
 from .od import differential_correction
 
 logger = logging.getLogger(__name__)
@@ -385,7 +384,8 @@ def merge_and_extend_orbits(
             # the same time, keep only observation with smallest distance
             attributions = attributions.drop_coincident_attributions(observations)
 
-            # Create a new orbit members table with the newly attributed observations
+            # Create a new orbit members table with the newly attributed observations and
+            # filter the orbits to only include those that still have observations
             orbit_members_iter = FittedOrbitMembers.from_kwargs(
                 orbit_id=attributions.orbit_id,
                 obs_id=attributions.obs_id,
@@ -395,9 +395,7 @@ def merge_and_extend_orbits(
                 pc.is_in(orbits_iter.orbit_id, orbit_members_iter.orbit_id.unique())
             )
 
-            # Run differential orbit correction on all orbits
-            # with the newly added observations to the orbits
-            # that had observations attributed to them
+            # Run differential orbit correction
             orbits_iter, orbit_members_iter = differential_correction(
                 orbits_iter,
                 orbit_members_iter,
@@ -417,55 +415,74 @@ def merge_and_extend_orbits(
             )
             orbit_members_iter = orbit_members_iter.drop_outliers()
 
+            # Remove any duplicate orbits
+            orbits_iter = orbits_iter.sort_by([("reduced_chi2", "ascending")])
+            orbits_iter, orbit_members_iter = orbits_iter.drop_duplicates(
+                orbit_members_iter,
+                subset=[
+                    "coordinates.time.days",
+                    "coordinates.time.nanos",
+                    "coordinates.x",
+                    "coordinates.y",
+                    "coordinates.z",
+                    "coordinates.vx",
+                    "coordinates.vy",
+                    "coordinates.vz",
+                ],
+                keep="first",
+            )
+
             # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
             # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
             # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
-            orbits_iter = orbits_iter.apply_mask(pc.equal(orbits_iter.improved, True))
+            not_improved_mask = pc.equal(orbits_iter.improved, False)
+            orbits_out = orbits_iter.apply_mask(not_improved_mask)
+            orbit_members_out = orbit_members_iter.apply_mask(
+                pc.is_in(orbit_members_iter.orbit_id, orbits_out.orbit_id)
+            )
+
+            # If some of the orbits that haven't improved in their orbit fit still share observations
+            # then assign those observations to the orbit with the most observations, longest arc length,
+            # and lowest reduced chi2 (and remove the other instances of that observation)
+            # We will one final iteration of OD on the output orbits later
+            orbits_out, orbit_members_out = orbits_out.assign_duplicate_observations(
+                orbit_members_out
+            )
+
+            # Add these orbits to the output list
+            odp_orbits_list.append(orbits_out)
+            odp_orbit_members_list.append(orbit_members_out)
+
+            # Remove observations that have been added to the output list of orbits
+            observations_iter = observations_iter.apply_mask(
+                pc.invert(
+                    pc.is_in(
+                        observations_iter.detections.id,
+                        orbit_members_out.obs_id.unique(),
+                    )
+                )
+            )
+
+            # Identify the orbit that could still be improved more
+            improved_mask = pc.invert(not_improved_mask)
+            orbits_iter = orbits_iter.apply_mask(improved_mask)
             orbit_members_iter = orbit_members_iter.apply_mask(
                 pc.is_in(orbit_members_iter.orbit_id, orbits_iter.orbit_id)
             )
 
-            raise NotImplementedError(
-                "Duplicate observation removal is not implemented yet."
-            )
-
-            # If some orbits that were not improved still share observations, keep the orbit with the lowest
-            # reduced chi2 in the pool of orbits but delete the others.
-            obs_id_occurences = orbit_members_out["obs_id"].value_counts()
-            duplicate_obs_ids = obs_id_occurences.index.values[
-                obs_id_occurences.values > 1
-            ]
-
-            logger.info(
-                "There are {} observations that appear in more than one orbit.".format(
-                    len(duplicate_obs_ids)
+            # Remove observations that have been added to the output list of orbits
+            # from the orbits that we will continue iterating over
+            orbit_members_iter = orbit_members_iter.apply_mask(
+                pc.invert(
+                    pc.is_in(
+                        orbit_members_iter.obs_id,
+                        orbit_members_out.obs_id.unique(),
+                    )
                 )
             )
-            orbits_out, orbit_members_out = removeDuplicateObservations(
-                orbits_out,
-                orbit_members_out,
-                min_obs=min_obs,
-                linkage_id_col="orbit_id",
-                filter_cols=["num_obs", "arc_length", "r_sigma", "v_sigma"],
-                ascending=[False, False, True, True],
+            orbits_iter = orbits_iter.apply_mask(
+                pc.is_in(orbits_iter.orbit_id, orbit_members_iter.orbit_id.unique())
             )
-
-            observations_iter = observations_iter[
-                ~observations_iter["obs_id"].isin(orbit_members_out["obs_id"].values)
-            ]
-            orbit_members_iter = orbit_members_iter[
-                ~orbit_members_iter["orbit_id"].isin(orbits_out["orbit_id"].values)
-            ]
-            orbit_members_iter = orbit_members_iter[
-                orbit_members_iter["obs_id"].isin(observations_iter["obs_id"].values)
-            ]
-            orbits_iter = orbits_iter[
-                orbits_iter["orbit_id"].isin(orbit_members_iter["orbit_id"].unique())
-            ]
-            orbit_members_iter = orbit_members_iter[["orbit_id", "obs_id"]]
-
-            odp_orbits_list.append(orbits_out)
-            odp_orbit_members_list.append(orbit_members_out)
 
             iterations += 1
             if len(orbits_iter) == 0:
