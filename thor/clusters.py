@@ -704,8 +704,13 @@ def cluster_and_link(
                 clusters_list.append(clusters_i)
                 cluster_members_list.append(cluster_members_i)
 
-    clusters = qv.concatenate(clusters_list)
-    cluster_members = qv.concatenate(cluster_members_list)
+        clusters = qv.concatenate(clusters_list)
+        cluster_members = qv.concatenate(cluster_members_list)
+
+    else:
+
+        clusters = Clusters.empty()
+        cluster_members = ClusterMembers.empty()
 
     time_end_cluster = time.time()
     logger.info("Found {} clusters.".format(len(clusters)))
