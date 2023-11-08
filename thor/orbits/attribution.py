@@ -491,6 +491,29 @@ def merge_and_extend_orbits(
         odp_orbits = qv.concatenate(odp_orbits_list)
         odp_orbit_members = qv.concatenate(odp_orbit_members_list)
 
+        if len(odp_orbits) > 0:
+            # Do one final iteration of OD on the output orbits. This
+            # will update any fits of orbits that might have had observations
+            # removed during the assign_duplicate_observations step
+            odp_orbits, odp_orbit_members = differential_correction(
+                odp_orbits,
+                odp_orbit_members,
+                observations,
+                rchi2_threshold=rchi2_threshold,
+                min_obs=min_obs,
+                min_arc_length=min_arc_length,
+                contamination_percentage=contamination_percentage,
+                delta=delta,
+                method=method,
+                max_iter=max_iter,
+                fit_epoch=fit_epoch,
+                propagator=propagator,
+                propagator_kwargs=propagator_kwargs,
+                chunk_size=orbits_chunk_size,
+                max_processes=max_processes,
+            )
+            odp_orbit_members = odp_orbit_members.drop_outliers()
+
     else:
         odp_orbits = FittedOrbits.empty()
         odp_orbit_members = FittedOrbitMembers.empty()
