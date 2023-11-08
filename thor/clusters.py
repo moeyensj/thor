@@ -1,15 +1,7 @@
-import os
-from typing import List, Literal, Optional, Tuple
-
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
 import logging
 import time
 import uuid
+from typing import List, Literal, Optional, Tuple
 
 import numba
 import numpy as np
