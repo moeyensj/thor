@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE_TAG: ${{ github.sha }}
+
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v3
@@ -24,4 +25,5 @@ jobs:
       - name: Lint
         run: docker run -i thor:$IMAGE_TAG pre-commit run --all-files
       - name: Test
+        if: always()
         run: docker run -i thor:$IMAGE_TAG pytest . --cov
