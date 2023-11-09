@@ -1,81 +1,62 @@
-import os
-from typing import Literal
-
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
-import concurrent.futures as cf
-import copy
 import logging
-import multiprocessing as mp
 import time
-from functools import partial
+from typing import Literal, Optional, Tuple
 
 import numpy as np
-import pandas as pd
+import numpy.typing as npt
+import pyarrow.compute as pc
 import quivr as qv
+import ray
 from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
-from adam_core.observers import Observers
+from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
-from adam_core.propagator import PYOORB
-from adam_core.time import Timestamp
+from adam_core.propagator import PYOORB, _iterate_chunks
 from scipy.linalg import solve
 
-from ..utils import (
-    _checkParallel,
-    _initWorker,
-    calcChunkSize,
-    sortLinkages,
-    yieldChunks,
-)
-from .residuals import calcResiduals
-from .utils import _ephemeris_to_dataframe
+from ..observations.observations import Observations
+from ..orbit_determination import FittedOrbitMembers, FittedOrbits
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["od_worker", "od", "differentialCorrection"]
+__all__ = ["differential_correction"]
 
 
 def od_worker(
-    orbits_list,
-    observations_list,
-    rchi2_threshold=100,
-    min_obs=5,
-    min_arc_length=1.0,
-    contamination_percentage=20,
-    delta=1e-6,
-    max_iter=20,
-    method="central",
-    fit_epoch=False,
+    orbit_ids: npt.NDArray[np.str_],
+    orbits: FittedOrbits,
+    orbit_members: FittedOrbitMembers,
+    observations: Observations,
+    rchi2_threshold: float = 100,
+    min_obs: int = 5,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 0.0,
+    delta: float = 1e-6,
+    max_iter: int = 20,
+    method: Literal["central", "finite"] = "central",
+    fit_epoch: bool = False,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
-):
-    od_orbits_dfs = []
-    od_orbit_members_dfs = []
-    for orbit, observations in zip(orbits_list, observations_list):
-        try:
-            assert orbit.orbit_id[0].as_py() == observations["orbit_id"].unique()[0]
-            assert np.all(
-                sorted(observations["mjd_utc"].values) == observations["mjd_utc"].values
-            )
-            assert len(np.unique(observations["mjd_utc"].values)) == len(
-                observations["mjd_utc"].values
-            )
-        except:
-            err = (
-                "Invalid observations and orbit have been passed to the OD code.\n"
-                "Orbit ID: {}".format(orbit.orbit_id[0].as_py())
-            )
-            raise ValueError(err)
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+
+    od_orbits_list = []
+    od_orbit_members_list = []
+
+    for orbit_id in orbit_ids:
 
         time_start = time.time()
-        logger.debug(f"Differentially correcting orbit {orbit.orbit_id[0].as_py()}...")
+        logger.debug(f"Differentially correcting orbit {orbit_id}...")
+
+        orbit = orbits.select("orbit_id", orbit_id)
+        obs_ids = orbit_members.apply_mask(
+            pc.equal(orbit_members.orbit_id, orbit_id)
+        ).obs_id
+        orbit_observations = observations.apply_mask(
+            pc.is_in(observations.detections.id, obs_ids)
+        )
+
         od_orbit, od_orbit_members = od(
             orbit,
-            observations,
+            orbit_observations,
             rchi2_threshold=rchi2_threshold,
             min_obs=min_obs,
             min_arc_length=min_arc_length,
@@ -89,32 +70,35 @@ def od_worker(
         )
         time_end = time.time()
         duration = time_end - time_start
-        logger.debug(
-            f"OD for orbit {orbit.orbit_id[0].as_py()} completed in {duration:.3f}s."
-        )
+        logger.debug(f"OD for orbit {orbit_id} completed in {duration:.3f}s.")
 
-        od_orbits_dfs.append(od_orbit)
-        od_orbit_members_dfs.append(od_orbit_members)
+        od_orbits_list.append(od_orbit)
+        od_orbit_members_list.append(od_orbit_members)
 
-    od_orbits = pd.concat(od_orbits_dfs, ignore_index=True)
-    od_orbit_members = pd.concat(od_orbit_members_dfs, ignore_index=True)
+    od_orbits = qv.concatenate(od_orbits_list)
+    od_orbit_members = qv.concatenate(od_orbit_members_list)
     return od_orbits, od_orbit_members
 
 
+od_worker_remote = ray.remote(od_worker)
+od_worker_remote.options(num_returns=1, num_cpus=1)
+
+
 def od(
-    orbit,
-    observations,
-    rchi2_threshold=100,
-    min_obs=5,
-    min_arc_length=1.0,
-    contamination_percentage=0.0,
-    delta=1e-6,
-    max_iter=20,
-    method="central",
-    fit_epoch=False,
+    orbit: FittedOrbits,
+    observations: Observations,
+    rchi2_threshold: float = 100,
+    min_obs: int = 5,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 0.0,
+    delta: float = 1e-6,
+    max_iter: int = 20,
+    method: Literal["central", "finite"] = "central",
+    fit_epoch: bool = False,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
-):
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+
     if propagator == "PYOORB":
         prop = PYOORB(**propagator_kwargs)
     else:
@@ -124,30 +108,12 @@ def od(
         err = "method should be one of 'central' or 'finite'."
         raise ValueError(err)
 
-    observables = ["RA_deg", "Dec_deg"]
-
-    obs_ids_all = observations["obs_id"].values
-    coords = observations[observables].values
-    coords_sigma = observations[["RA_sigma_deg", "Dec_sigma_deg"]].values
-
-    # Create Observers table
-    observers_list = []
-    for observatory_code in observations["observatory_code"].unique():
-        observers_list.append(
-            Observers.from_code(
-                observatory_code,
-                Timestamp.from_mjd(
-                    observations[
-                        observations["observatory_code"].isin([observatory_code])
-                    ]["mjd_utc"].unique(),
-                    scale="utc",
-                ),
-            )
-        )
-    observers = qv.concatenate(observers_list)
-    observers = observers.sort_by(
-        ["coordinates.time.days", "coordinates.time.nanos", "code"]
-    )
+    obs_ids_all = observations.detections.id.to_numpy(zero_copy_only=False)
+    coords = observations.to_spherical_coordinates()
+    coords_sigma = coords.covariance.sigmas[:, 1:3]
+    observers_with_states = observations.get_observers()
+    observers = observers_with_states.observers
+    times_all = coords.time.mjd().to_numpy(zero_copy_only=False)
 
     # FLAG: can we stop iterating to find a solution?
     converged = False
@@ -175,20 +141,23 @@ def od(
         # Calculate chi2 for residuals on the given observations
         # for the current orbit, the goal is for the orbit to improve
         # such that the chi2 improves
-        orbit_prev_ = copy.deepcopy(orbit)
+        orbit_prev_ = orbit.to_orbits()
 
-        ephemeris_prev_ = prop._generate_ephemeris(orbit_prev_, observers)
-        ephemeris_prev_ = _ephemeris_to_dataframe(ephemeris_prev_)
-        # TODO: replace with newer types
-
-        residuals_prev_, stats_prev_ = calcResiduals(
-            coords,
-            ephemeris_prev_[observables].values,
-            sigmas_actual=coords_sigma,
-            include_probabilistic=False,
+        ephemeris_prev_ = prop.generate_ephemeris(
+            orbit_prev_, observers, chunk_size=1, max_processes=1
         )
+
+        # Calculate residuals and chi2
+        residuals_prev_ = Residuals.calculate(
+            coords,
+            ephemeris_prev_.coordinates,
+        )
+        residuals_prev_array = np.stack(
+            residuals_prev_.values.to_numpy(zero_copy_only=False)
+        )[:, 1:3]
+
         num_obs_ = len(observations)
-        chi2_prev_ = stats_prev_[0]
+        chi2_prev_ = residuals_prev_.chi2.to_numpy()
         chi2_total_prev_ = np.sum(chi2_prev_)
         rchi2_prev_ = np.sum(chi2_prev_) / (2 * num_obs - 6)
 
@@ -203,7 +172,7 @@ def od(
         rchi2_prev = rchi2_prev_
 
         ids_mask = np.array([True for i in range(num_obs)])
-        times_all = ephemeris_prev["mjd_utc"].values
+        times_all = ephemeris_prev.coordinates.time.mjd().to_numpy()
         obs_id_outlier = []
         delta_prev = delta
         iterations = 0
@@ -250,16 +219,14 @@ def od(
         else:
             num_params = 6
 
-        A = np.zeros((coords.shape[1], num_params, num_obs))
+        A = np.zeros((2, num_params, num_obs))
         ATWA = np.zeros((num_params, num_params, num_obs))
         ATWb = np.zeros((num_params, 1, num_obs))
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_nom = prop._generate_ephemeris(orbit_prev, observers)
-        ephemeris_nom = _ephemeris_to_dataframe(ephemeris_nom)
-        # TODO: replace with newer types
-
-        coords_nom = ephemeris_nom[observables].values
+        ephemeris_nom = prop.generate_ephemeris(
+            orbit_prev, observers, chunk_size=1, max_processes=1
+        )
 
         # Modify each component of the state by a small delta
         d = np.zeros((1, 7))
@@ -301,10 +268,9 @@ def od(
             )
 
             # Calculate the modified ephemerides
-            ephemeris_mod_p = prop._generate_ephemeris(orbit_iter_p, observers)
-            ephemeris_mod_p = _ephemeris_to_dataframe(ephemeris_mod_p)
-            # TODO: replace with newer types
-            coords_mod_p = ephemeris_mod_p[observables].values
+            ephemeris_mod_p = prop.generate_ephemeris(
+                orbit_iter_p, observers, chunk_size=1, max_processes=1
+            )
 
             delta_denom = d[0, i]
             if method == "central":
@@ -326,27 +292,28 @@ def od(
                 )
 
                 # Calculate the modified ephemerides
-                ephemeris_mod_n = prop._generate_ephemeris(orbit_iter_n, observers)
-                ephemeris_mod_n = _ephemeris_to_dataframe(ephemeris_mod_n)
-                # TODO: replace with newer types
-                coords_mod_n = ephemeris_mod_n[observables].values
+                ephemeris_mod_n = prop.generate_ephemeris(
+                    orbit_iter_n, observers, chunk_size=1, max_processes=1
+                )
 
                 delta_denom *= 2
 
             else:
-                coords_mod_n = coords_nom
+                ephemeris_mod_n = ephemeris_nom
 
-            residuals_mod, _ = calcResiduals(
-                coords_mod_p,
-                coords_mod_n,
-                sigmas_actual=None,
-                include_probabilistic=False,
+            residuals_mod = Residuals.calculate(
+                ephemeris_mod_p.coordinates,
+                ephemeris_mod_n.coordinates,
             )
+            residuals_mod = np.stack(
+                residuals_mod.values.to_numpy(zero_copy_only=False)
+            )
+            residuals_mod_array = residuals_mod[:, 1:3]
 
             for n in range(num_obs):
                 try:
                     A[:, i : i + 1, n] = (
-                        residuals_mod[ids_mask][n : n + 1].T / delta_denom
+                        residuals_mod_array[ids_mask][n : n + 1].T / delta_denom
                     )
                 except RuntimeError:
                     print(orbit_prev.orbit_id)
@@ -354,7 +321,7 @@ def od(
         for n in range(num_obs):
             W = np.diag(1 / coords_sigma[n] ** 2)
             ATWA[:, :, n] = A[:, :, n].T @ W @ A[:, :, n]
-            ATWb[:, :, n] = A[:, :, n].T @ W @ residuals_prev[n : n + 1].T
+            ATWb[:, :, n] = A[:, :, n].T @ W @ residuals_prev_array[n : n + 1].T
 
         ATWA = np.sum(ATWA, axis=2)
         ATWb = np.sum(ATWb, axis=2)
@@ -444,14 +411,12 @@ def od(
             continue
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_iter = prop._generate_ephemeris(orbit_iter, observers)
-        ephemeris_iter = _ephemeris_to_dataframe(ephemeris_iter)
-        coords_iter = ephemeris_iter[observables].values
-
-        residuals, stats = calcResiduals(
-            coords, coords_iter, sigmas_actual=coords_sigma, include_probabilistic=False
+        ephemeris_iter = prop.generate_ephemeris(
+            orbit_iter, observers, chunk_size=1, max_processes=1
         )
-        chi2_iter = stats[0]
+
+        residuals = Residuals.calculate(coords, ephemeris_iter.coordinates)
+        chi2_iter = residuals.chi2.to_numpy()
         chi2_total_iter = np.sum(chi2_iter[ids_mask])
         rchi2_iter = chi2_total_iter / (2 * num_obs - num_params)
         arc_length = times_all[ids_mask].max() - times_all[ids_mask].min()
@@ -541,94 +506,58 @@ def od(
 
     if not solution_found or not processable or first_solution:
 
-        od_orbit = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "mjd_tdb",
-                "x",
-                "y",
-                "z",
-                "vx",
-                "vy",
-                "vz",
-                "covariance",
-                "r",
-                "r_sigma",
-                "v",
-                "v_sigma",
-                "arc_length",
-                "num_obs",
-                "num_params",
-                "num_iterations",
-                "chi2",
-                "rchi2",
-                "improved",
-            ]
-        )
-
-        od_orbit_members = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "obs_id",
-                "residual_ra_arcsec",
-                "residual_dec_arcsec",
-                "chi2",
-                "outlier",
-            ]
-        )
+        od_orbit = FittedOrbits.empty()
+        od_orbit_members = FittedOrbitMembers.empty()
 
     else:
-        obs_times = observations["mjd_utc"].values[ids_mask]
-        od_orbit = orbit_prev.to_dataframe()
-        od_orbit["r"] = orbit_prev.coordinates.r_mag
-        od_orbit["r_sigma"] = orbit_prev.coordinates.sigma_r_mag
-        od_orbit["v"] = orbit_prev.coordinates.v_mag
-        od_orbit["v_sigma"] = orbit_prev.coordinates.sigma_v_mag
-        od_orbit["arc_length"] = np.max(obs_times) - np.min(obs_times)
-        od_orbit["num_obs"] = num_obs
-        od_orbit["num_params"] = num_params
-        od_orbit["num_iterations"] = iterations
-        od_orbit["chi2"] = chi2_total_prev
-        od_orbit["rchi2"] = rchi2_prev
-        od_orbit["improved"] = improved
 
-        od_orbit_members = pd.DataFrame(
-            {
-                "orbit_id": [
-                    orbit_prev.orbit_id[0].as_py() for i in range(len(obs_ids_all))
-                ],
-                "obs_id": obs_ids_all,
-                "residual_ra_arcsec": residuals_prev[:, 0] * 3600,
-                "residual_dec_arcsec": residuals_prev[:, 1] * 3600,
-                "chi2": chi2_prev,
-                "outlier": np.zeros(len(obs_ids_all), dtype=int),
-            }
+        obs_times = observations.detections.time.mjd().to_numpy()[ids_mask]
+        arc_length_ = obs_times.max() - obs_times.min()
+        assert arc_length == arc_length_
+
+        od_orbit = FittedOrbits.from_kwargs(
+            orbit_id=orbit_prev.orbit_id,
+            object_id=orbit_prev.object_id,
+            coordinates=orbit_prev.coordinates,
+            arc_length=[arc_length_],
+            num_obs=[num_obs],
+            chi2=[chi2_total_prev],
+            reduced_chi2=[rchi2_prev],
+            improved=[improved],
         )
-        od_orbit_members.loc[
-            od_orbit_members["obs_id"].isin(obs_id_outlier), "outlier"
-        ] = 1
+
+        # od_orbit["num_params"] = num_params
+        # od_orbit["num_iterations"] = iterations
+        # od_orbit["improved"] = improved
+
+        od_orbit_members = FittedOrbitMembers.from_kwargs(
+            orbit_id=np.full(len(obs_ids_all), orbit_prev.orbit_id[0].as_py()),
+            obs_id=obs_ids_all,
+            residuals=residuals_prev,
+            solution=np.isin(obs_ids_all, obs_id_outlier, invert=True),
+            outlier=np.isin(obs_ids_all, obs_id_outlier),
+        )
 
     return od_orbit, od_orbit_members
 
 
-def differentialCorrection(
-    orbits,
-    orbit_members,
-    observations,
-    min_obs=5,
-    min_arc_length=1.0,
-    contamination_percentage=20,
-    rchi2_threshold=100,
-    delta=1e-8,
-    max_iter=20,
-    method="central",
-    fit_epoch=False,
+def differential_correction(
+    orbits: FittedOrbits,
+    orbit_members: FittedOrbitMembers,
+    observations: Observations,
+    min_obs: int = 5,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 20,
+    rchi2_threshold: float = 100,
+    delta: float = 1e-8,
+    max_iter: int = 20,
+    method: Literal["central", "finite"] = "central",
+    fit_epoch: bool = False,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
-    chunk_size=10,
-    num_jobs=60,
-    parallel_backend="cf",
-):
+    chunk_size: int = 10,
+    max_processes: Optional[int] = 1,
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Differentially correct (via finite/central differencing).
 
@@ -648,70 +577,27 @@ def differentialCorrection(
 
     if len(orbits) > 0 and len(orbit_members) > 0:
 
-        orbits_, orbit_members_ = sortLinkages(orbits, orbit_members, observations)
+        orbit_ids = orbits.orbit_id.to_numpy(zero_copy_only=False)
 
-        start = time.time()
-        logger.debug("Merging observations on linkage members...")
-        linked_observations = orbit_members_[
-            orbit_members_[["orbit_id", "obs_id"]]["orbit_id"].isin(
-                orbits_["orbit_id"].values
-            )
-        ].merge(observations, on="obs_id", how="left")
-        duration = time.time() - start
-        logger.debug(f"Merging completed in {duration:.3f}s.")
+        od_orbits_list = []
+        od_orbit_members_list = []
+        if max_processes is None or max_processes > 1:
 
-        start = time.time()
-        logger.debug("Grouping observations by orbit ID...")
-        grouped_observations = linked_observations.groupby(by=["orbit_id"])
-        logger.debug("Splitting grouped observations by orbit ID...")
-        observations_split = [
-            grouped_observations.get_group(g).reset_index(drop=True)
-            for g in grouped_observations.groups
-        ]
-        duration = time.time() - start
-        logger.debug(f"Grouping and splitting completed in {duration:.3f}s.")
+            if not ray.is_initialized():
+                ray.init(address="auto")
 
-        orbits_initial = Orbits.from_flat_dataframe(orbits_)
-        orbits_split = [orbit for orbit in orbits_initial]
-        num_orbits = len(orbits)
+            orbits_ref = ray.put(orbits)
+            orbit_members_ref = ray.put(orbit_members)
+            observations_ref = ray.put(observations)
 
-        parallel, num_workers = _checkParallel(num_jobs, parallel_backend)
-        if num_workers > 1:
-
-            if parallel_backend == "ray":
-                import ray
-
-                if not ray.is_initialized():
-                    ray.init(address="auto")
-
-                od_worker_ray = ray.remote(od_worker)
-                od_worker_ray = od_worker_ray.options(num_returns=2, num_cpus=1)
-
-                # Send up to chunk_size orbits to each OD worker for processing
-                chunk_size_ = calcChunkSize(
-                    num_orbits, num_workers, chunk_size, min_chunk_size=1
-                )
-                logger.info(
-                    f"Distributing linkages in chunks of {chunk_size_} to {num_workers} ray workers."
-                )
-
-                # Put the observations and orbits into ray's local object storage ("plasma")
-                orbit_oids = []
-                observation_oids = []
-                for orbits_i, observations_i in zip(
-                    yieldChunks(orbits_split, chunk_size_),
-                    yieldChunks(observations_split, chunk_size_),
-                ):
-                    orbit_oids.append(ray.put(orbits_i))
-                    observation_oids.append(ray.put(observations_i))
-
-                od_orbits_oids = []
-                od_orbit_members_oids = []
-                for orbits_oid, observations_oid in zip(orbit_oids, observation_oids):
-
-                    od_orbits_oid, od_orbit_members_oid = od_worker_ray.remote(
-                        orbits_oid,
-                        observations_oid,
+            futures = []
+            for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):
+                futures.append(
+                    od_worker_remote.remote(
+                        orbit_ids_chunk,
+                        orbits_ref,
+                        orbit_members_ref,
+                        observations_ref,
                         rchi2_threshold=rchi2_threshold,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
@@ -723,100 +609,22 @@ def differentialCorrection(
                         propagator=propagator,
                         propagator_kwargs=propagator_kwargs,
                     )
-                    od_orbits_oids.append(od_orbits_oid)
-                    od_orbit_members_oids.append(od_orbit_members_oid)
-
-                od_orbits_dfs = ray.get(od_orbits_oids)
-                od_orbit_members_dfs = ray.get(od_orbit_members_oids)
-
-            elif parallel_backend == "mp":
-
-                chunk_size_ = calcChunkSize(
-                    num_orbits, num_workers, chunk_size, min_chunk_size=1
-                )
-                logger.info(
-                    f"Distributing linkages in chunks of {chunk_size_} to {num_workers} workers."
                 )
 
-                p = mp.Pool(
-                    processes=num_workers,
-                    initializer=_initWorker,
-                )
-                results = p.starmap(
-                    partial(
-                        od_worker,
-                        rchi2_threshold=rchi2_threshold,
-                        min_obs=min_obs,
-                        min_arc_length=min_arc_length,
-                        contamination_percentage=contamination_percentage,
-                        delta=delta,
-                        max_iter=max_iter,
-                        method=method,
-                        fit_epoch=fit_epoch,
-                        propagator=propagator,
-                        propagator_kwargs=propagator_kwargs,
-                    ),
-                    zip(
-                        yieldChunks(orbits_split, chunk_size_),
-                        yieldChunks(observations_split, chunk_size_),
-                    ),
-                )
-                p.close()
-
-                results = list(zip(*results))
-                od_orbits_dfs = results[0]
-                od_orbit_members_dfs = results[1]
-
-            elif parallel_backend == "cf":
-                with cf.ProcessPoolExecutor(
-                    max_workers=num_workers, initializer=_initWorker
-                ) as executor:
-                    futures = []
-                    for orbits_i, observations_i in zip(
-                        yieldChunks(orbits_split, chunk_size),
-                        yieldChunks(observations_split, chunk_size),
-                    ):
-                        futures.append(
-                            executor.submit(
-                                od_worker,
-                                orbits_i,
-                                observations_i,
-                                rchi2_threshold=rchi2_threshold,
-                                min_obs=min_obs,
-                                min_arc_length=min_arc_length,
-                                contamination_percentage=contamination_percentage,
-                                delta=delta,
-                                max_iter=max_iter,
-                                method=method,
-                                fit_epoch=fit_epoch,
-                                propagator=propagator,
-                                propagator_kwargs=propagator_kwargs,
-                            )
-                        )
-                    od_orbits_dfs = []
-                    od_orbit_members_dfs = []
-                    for future in cf.as_completed(futures):
-                        od_orbits_df, od_orbit_members_df = future.result()
-                        od_orbits_dfs.append(od_orbits_df)
-                        od_orbit_members_dfs.append(od_orbit_members_df)
-
-            else:
-                raise ValueError(
-                    f"Unknown parallel backend: {parallel_backend}. Must be one of: 'ray', 'mp', 'cf'."
-                )
+            while futures:
+                finished, futures = ray.wait(futures, num_returns=1)
+                results = ray.get(finished[0])
+                od_orbits_list.append(results[0])
+                od_orbit_members_list.append(results[1])
 
         else:
 
-            od_orbits_dfs = []
-            od_orbit_members_dfs = []
-            for orbits_i, observations_i in zip(
-                yieldChunks(orbits_split, chunk_size),
-                yieldChunks(observations_split, chunk_size),
-            ):
-
-                od_orbits_df, od_orbit_members_df = od_worker(
-                    orbits_i,
-                    observations_i,
+            for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):
+                od_orbits_chunk, od_orbit_members_chunk = od_worker(
+                    orbit_ids_chunk,
+                    orbits,
+                    orbit_members,
+                    observations,
                     rchi2_threshold=rchi2_threshold,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
@@ -828,54 +636,15 @@ def differentialCorrection(
                     propagator=propagator,
                     propagator_kwargs=propagator_kwargs,
                 )
-                od_orbits_dfs.append(od_orbits_df)
-                od_orbit_members_dfs.append(od_orbit_members_df)
+                od_orbits_list.append(od_orbits_chunk)
+                od_orbit_members_list.append(od_orbit_members_chunk)
 
-        od_orbits = pd.concat(od_orbits_dfs, ignore_index=True)
-        od_orbit_members = pd.concat(od_orbit_members_dfs, ignore_index=True)
-
-        for col in ["num_obs"]:
-            od_orbits[col] = od_orbits[col].astype(int)
-        for col in ["outlier"]:
-            od_orbit_members[col] = od_orbit_members[col].astype(int)
-
-        od_orbits, od_orbit_members = sortLinkages(
-            od_orbits, od_orbit_members, observations, linkage_id_col="orbit_id"
-        )
+        od_orbits = qv.concatenate(od_orbits_list)
+        od_orbit_members = qv.concatenate(od_orbit_members_list)
 
     else:
-        od_orbits = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "mjd_tdb",
-                "x",
-                "y",
-                "z",
-                "vx",
-                "vy",
-                "vz",
-                "covariance",
-                "r",
-                "r_sigma",
-                "v",
-                "v_sigma",
-                "arc_length",
-                "num_obs",
-                "chi2",
-                "rchi2",
-            ]
-        )
-
-        od_orbit_members = pd.DataFrame(
-            columns=[
-                "orbit_id",
-                "obs_id",
-                "residual_ra_arcsec",
-                "residual_dec_arcsec",
-                "chi2",
-                "outlier",
-            ]
-        )
+        od_orbits = FittedOrbits.empty()
+        od_orbit_members = FittedOrbitMembers.empty()
 
     time_end = time.time()
     logger.info("Differentially corrected {} orbits.".format(len(od_orbits)))

@@ -4,6 +4,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
+from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
 from adam_core.observations import Exposures, PointSourceDetections
 from adam_core.observers import Observers
 from adam_core.time import Timestamp
@@ -192,6 +193,28 @@ class Observations(qv.Table):
 
         observers = qv.concatenate(observers_with_states)
         return observers.sort_by("state_id")
+
+    def to_spherical_coordinates(self) -> SphericalCoordinates:
+        """
+        Convert the observations to spherical coordinates which can be used
+        to calculate residuals.
+
+        Returns
+        -------
+        coordinates : `~adam_core.coordinates.spherical.SphericalCoordinates`
+            The detections represented as spherical coordinates.
+        """
+        sigmas = np.zeros((len(self), 6))
+        sigmas[:, 1] = self.detections.ra_sigma.to_numpy(zero_copy_only=False)
+        sigmas[:, 2] = self.detections.dec_sigma.to_numpy(zero_copy_only=False)
+        return SphericalCoordinates.from_kwargs(
+            lon=self.detections.ra,
+            lat=self.detections.dec,
+            time=self.detections.time,
+            covariance=CoordinateCovariances.from_sigmas(sigmas),
+            origin=Origin.from_kwargs(code=self.observatory_code),
+            frame="equatorial",
+        )
 
     def select_exposure(self, exposure_id: int) -> "Observations":
         """

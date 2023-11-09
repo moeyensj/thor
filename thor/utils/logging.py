@@ -1,9 +1,8 @@
 import logging
 import os
 import sys
-import time
 
-__all__ = ["setupLogger", "Timer"]
+__all__ = ["setupLogger"]
 
 logger = logging.getLogger(__name__)
 
@@ -57,72 +56,3 @@ def setupLogger(name, out_dir=None):
         logger.addHandler(file_handler)
 
     return logger
-
-
-class Timer:
-    def __init__(
-        self,
-        file_name=None,
-        file_dir="/tmp/thor/",
-        prepend_data=[],
-        sep=",",
-        open_kwargs={
-            "mode": "a",
-            "buffering": -1,
-            "encoding": "utf-8",
-        },
-    ):
-        """
-        Timing context manager that stores timing results and given user
-        data to a file if desired.
-
-
-        Parameters
-        ----------
-        file_name : {str, None}
-            Name of file including extension but excluding file directory.
-        file_dir : str
-            Directory where to save file. Defaults to /tmp/thor/.
-        prepend_data : list
-            Additional data that should be prepended to outputs.
-        sep : str
-            If prepend_data is not an empty list, this separator will be used to concatenate
-            data and the time elapsed into a single line.
-        open_kwargs : dict
-            Parameters with which to open the file.
-        """
-        self.time_start = 0
-        self.time_end = 0
-        self.file_name = file_name
-        self.file_dir = file_dir
-        self.file_path = None
-        self.file = None
-        self.prepend_data = prepend_data
-        self.sep = sep
-
-        if isinstance(file_name, str):
-            if not os.path.isdir(file_dir):
-                os.makedirs(file_dir, exist_ok=False)
-            self.file_path = os.path.join(file_dir, file_name)
-            self.file = open(self.file_path, **open_kwargs)
-        return
-
-    def __enter__(self):
-        self.time_start = time.time()
-        return
-
-    def __exit__(self, type, value, traceback):
-        self.time_end = time.time()
-        duration = self.time_end - self.time_start
-        data = self.prepend_data + [duration]
-        string = self.sep.join([str(d) for d in data])
-
-        if self.file is not None:
-            self.file.writelines([string + "\n"])
-            self.file.close()
-        else:
-            if len(self.prepend_data) == 0:
-                string = f"Time elapsed: {duration:.8f}s"
-            logger.info(string)
-
-        return

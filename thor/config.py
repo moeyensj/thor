@@ -21,6 +21,7 @@ class Config:
     cluster_min_obs: int = 6
     cluster_min_arc_length: float = 1.0
     cluster_algorithm: Literal["hotspot_2d", "dbscan"] = "dbscan"
+    cluster_chunk_size: int = 1000
     iod_min_obs: int = 6
     iod_min_arc_length: float = 1.0
     iod_contamination_percentage: float = 20.0

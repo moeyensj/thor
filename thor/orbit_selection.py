@@ -5,8 +5,6 @@ import pandas as pd
 from adam_core.orbits import Orbits
 from astropy.time import Time
 
-from .utils import assignPatchesHEALPix, assignPatchesSquare
-
 __all__ = [
     "findAverageOrbits",
     "findTestOrbitsPatch",

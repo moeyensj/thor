@@ -3,10 +3,11 @@ import pytest
 from adam_core.utils.helpers import make_observations, make_real_orbits
 
 from ..config import Config
-from ..main_2 import link_test_orbit, range_and_transform
+from ..main import link_test_orbit
 from ..observations import Observations
 from ..observations.filters import TestOrbitRadiusObservationFilter
 from ..orbit import TestOrbit as THORbit
+from ..range_and_transform import range_and_transform
 
 OBJECT_IDS = [
     "594913 'Aylo'chaxnim (2020 AV2)",
@@ -243,7 +244,7 @@ def test_link_test_orbit(
     assert len(recovered_orbit_members) == len(obs_ids_expected)
 
     # Ensure we get all the object IDs back that we expect
-    obs_ids_actual = recovered_orbit_members["obs_id"].values
+    obs_ids_actual = recovered_orbit_members.obs_id
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
 
 
@@ -270,5 +271,5 @@ def test_benchmark_link_test_orbit(
     assert len(recovered_orbit_members) == len(obs_ids_expected)
 
     # Ensure we get all the object IDs back that we expect
-    obs_ids_actual = recovered_orbit_members["obs_id"].values
+    obs_ids_actual = recovered_orbit_members.obs_id
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
