@@ -9,8 +9,7 @@ logger = logging.getLogger("thor")
 
 class Config(BaseModel):
     max_processes: Optional[int] = None
-    propagator: str = "PYOORB"
-    parallel_backend: Literal["cf"] = "cf"
+    propagator: Literal["PYOORB"] = "PYOORB"
     cell_radius: float = 10
     vx_min: float = -0.1
     vx_max: float = 0.1
