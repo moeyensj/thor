@@ -238,12 +238,7 @@ def test_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (
-        test_orbit,
-        observations,
-        obs_ids_expected,
-        integration_config,
-    ) = setup_test_data(
+    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -270,12 +265,7 @@ def test_benchmark_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (
-        test_orbit,
-        observations,
-        obs_ids_expected,
-        integration_config,
-    ) = setup_test_data(
+    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -317,7 +307,7 @@ def test_load_initial_checkpoint_values(working_dir):
 
     assert checkpoint.stage == "range_and_transform"
     assert len(checkpoint.filtered_observations) == len(filtered_observations)
-    assert checkpoint.filtered_observations.detections.time.scale == "utc"
+    assert checkpoint.filtered_observations.coordinates.time.scale == "utc"
 
     # Create transformed_detections file to simulate second checkpoint
     TransformedDetections.empty().to_parquet(
