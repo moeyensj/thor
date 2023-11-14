@@ -1,23 +1,27 @@
 import pytest
-from adam_core.observations import PointSourceDetections
+from adam_core.coordinates import Origin, SphericalCoordinates
 from adam_core.time import Timestamp
 
 from ...observations.observations import Observations
+from ...observations.photometry import Photometry
 from ..attribution import Attributions
 
 
 def test_Attributions_drop_coincident_attributions():
     observations = Observations.from_kwargs(
-        detections=PointSourceDetections.from_kwargs(
-            id=["01", "02", "03", "04"],
-            exposure_id=["e01", "e01", "e02", "e02"],
+        id=["01", "02", "03", "04"],
+        exposure_id=["e01", "e01", "e02", "e02"],
+        coordinates=SphericalCoordinates.from_kwargs(
             time=Timestamp.from_mjd([59001.1, 59001.1, 59002.1, 59002.1], scale="utc"),
-            ra=[1, 2, 3, 4],
-            dec=[5, 6, 7, 8],
+            lon=[1, 2, 3, 4],
+            lat=[5, 6, 7, 8],
+            origin=Origin.from_kwargs(code=["500", "500", "500", "500"]),
+        ),
+        photometry=Photometry.from_kwargs(
+            filter=["g", "g", "g", "g"],
             mag=[10, 11, 12, 13],
         ),
         state_id=[0, 0, 1, 1],
-        observatory_code=["500", "500", "500", "500"],
     )
 
     attributions = Attributions.from_kwargs(

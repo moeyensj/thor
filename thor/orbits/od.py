@@ -50,9 +50,7 @@ def od_worker(
         obs_ids = orbit_members.apply_mask(
             pc.equal(orbit_members.orbit_id, orbit_id)
         ).obs_id
-        orbit_observations = observations.apply_mask(
-            pc.is_in(observations.detections.id, obs_ids)
-        )
+        orbit_observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
 
         od_orbit, od_orbit_members = od(
             orbit,
@@ -108,8 +106,8 @@ def od(
         err = "method should be one of 'central' or 'finite'."
         raise ValueError(err)
 
-    obs_ids_all = observations.detections.id.to_numpy(zero_copy_only=False)
-    coords = observations.to_spherical_coordinates()
+    obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
+    coords = observations.coordinates
     coords_sigma = coords.covariance.sigmas[:, 1:3]
     observers_with_states = observations.get_observers()
     observers = observers_with_states.observers
@@ -511,7 +509,7 @@ def od(
 
     else:
 
-        obs_times = observations.detections.time.mjd().to_numpy()[ids_mask]
+        obs_times = observations.coordinates.time.mjd().to_numpy()[ids_mask]
         arc_length_ = obs_times.max() - obs_times.min()
         assert arc_length == arc_length_
 

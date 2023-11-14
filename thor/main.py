@@ -104,9 +104,9 @@ def load_initial_checkpoint_values(
     filtered_observations = qv.defragment(filtered_observations)
     filtered_observations = filtered_observations.sort_by(
         [
-            "detections.time.days",
-            "detections.time.nanos",
-            "observatory_code",
+            "coordinates.time.days",
+            "coordinates.time.nanos",
+            "coordinates.origin.code",
         ]
     )
 

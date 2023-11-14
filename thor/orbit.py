@@ -76,7 +76,6 @@ def range_observations_worker(
     """
     observations_state = observations.select("state_id", state_id)
     ephemeris_state = ephemeris.select("id", state_id)
-    detections_state = observations_state.detections
 
     # Get the heliocentric position vector of the object at the time of the exposure
     r = ephemeris_state.ephemeris.aberrated_coordinates.r[0]
@@ -84,40 +83,12 @@ def range_observations_worker(
     # Get the observer's heliocentric coordinates
     observer_i = ephemeris_state.observer
 
-    # Create an array of observatory codes for the detections
-    num_detections = len(observations_state)
-    observatory_codes = np.repeat(
-        observations_state.observatory_code[0].as_py(), num_detections
-    )
-
-    # The following can be replaced with:
-    # coords = observations_state.to_spherical(observatory_codes)
-    # Start replacement:
-    sigma_data = np.vstack(
-        [
-            pa.nulls(num_detections, pa.float64()),
-            detections_state.ra_sigma.to_numpy(zero_copy_only=False),
-            detections_state.dec_sigma.to_numpy(zero_copy_only=False),
-            pa.nulls(num_detections, pa.float64()),
-            pa.nulls(num_detections, pa.float64()),
-            pa.nulls(num_detections, pa.float64()),
-        ]
-    ).T
-    coords = SphericalCoordinates.from_kwargs(
-        lon=detections_state.ra,
-        lat=detections_state.dec,
-        time=detections_state.time,
-        covariance=CoordinateCovariances.from_sigmas(sigma_data),
-        origin=Origin.from_kwargs(code=observatory_codes),
-        frame="equatorial",
-    )
-    # End replacement (only once
-    # https://github.com/B612-Asteroid-Institute/adam_core/pull/45 is merged)
-
     return RangedPointSourceDetections.from_kwargs(
-        id=detections_state.id,
-        exposure_id=detections_state.exposure_id,
-        coordinates=assume_heliocentric_distance(r, coords, observer_i.coordinates),
+        id=observations_state.id,
+        exposure_id=observations_state.exposure_id,
+        coordinates=assume_heliocentric_distance(
+            r, observations_state.coordinates, observer_i.coordinates
+        ),
         state_id=observations_state.state_id,
     )
 
@@ -174,7 +145,7 @@ class TestOrbits(qv.Table):
             and getattr(self, "_cached_observation_ids") is not None
             and pc.all(
                 pc.is_in(
-                    observations.detections.id.sort(),
+                    observations.id.sort(),
                     self._cached_observation_ids.sort(),
                 )
             ).as_py()
@@ -201,7 +172,7 @@ class TestOrbits(qv.Table):
         None
         """
         self._cached_ephemeris = ephemeris
-        self._cached_observation_ids = observations.detections.id
+        self._cached_observation_ids = observations.id
 
     def propagate(
         self,

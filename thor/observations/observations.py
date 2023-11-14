@@ -9,6 +9,8 @@ from adam_core.observations import Exposures, PointSourceDetections
 from adam_core.observers import Observers
 from adam_core.time import Timestamp
 
+from .photometry import Photometry
+
 
 class ObserversWithStates(qv.Table):
     state_id = qv.Int64Column()
@@ -26,19 +28,12 @@ class Observations(qv.Table):
     assign a unique state ID. If not using this constructor, please ensure that the detections are sorted
     by time and observatory code and that each unique combination of time and observatory code has a unique
     state ID.
-
-    Columns
-    -------
-    detections : `~adam_core.observations.detections.PointSourceDetections`
-        A table of point source detections.
-    observatory_code : `~qv.StringColumn`
-        The observatory code for each detection.
-    state_id : `~qv.Int64Column`
-        The state ID for each detection.
     """
 
-    detections = PointSourceDetections.as_column()
-    observatory_code = qv.StringColumn()
+    id = qv.StringColumn()
+    exposure_id = qv.StringColumn()
+    coordinates = SphericalCoordinates.as_column()
+    photometry = Photometry.as_column()
     state_id = qv.Int64Column()
 
     @classmethod
@@ -100,13 +95,15 @@ class Observations(qv.Table):
         )
 
         # Extract the exposure IDs and the observatory codes from the exposures table
-        exposure_obscodes = pa.table(
-            [exposures.id, exposures.observatory_code],
-            names=["exposure_id", "observatory_code"],
+        exposure_filters_obscodes = pa.table(
+            [exposures.id, exposures.filter, exposures.observatory_code],
+            names=["exposure_id", "filter", "observatory_code"],
         )
 
         # Join the detection times and the exposure IDs so that each detection has an observatory code
-        obscode_times = detections_flattened.join(exposure_obscodes, ["exposure_id"])
+        obscode_times = detections_flattened.join(
+            exposure_filters_obscodes, ["exposure_id"]
+        )
 
         # Group the detections by the observatory code and the detection times and then grab the unique ones
         unique_obscode_times = obscode_times.group_by(
@@ -139,23 +136,34 @@ class Observations(qv.Table):
             [("state_id", "ascending")]
         )
 
+        sigmas = np.zeros((len(detections_with_states), 6))
+        sigmas[:, 1] = detections_with_states["ra_sigma"].to_numpy(zero_copy_only=False)
+        sigmas[:, 2] = detections_with_states["dec_sigma"].to_numpy(
+            zero_copy_only=False
+        )
+
         return cls.from_kwargs(
-            detections=PointSourceDetections.from_kwargs(
-                id=detections_with_states["id"],
-                exposure_id=detections_with_states["exposure_id"],
+            id=detections_with_states["id"],
+            exposure_id=detections_with_states["exposure_id"],
+            coordinates=SphericalCoordinates.from_kwargs(
+                lon=detections_with_states["ra"],
+                lat=detections_with_states["dec"],
                 time=Timestamp.from_kwargs(
                     days=detections_with_states["days"],
                     nanos=detections_with_states["nanos"],
                     scale="utc",
                 ),
-                ra=detections_with_states["ra"],
-                ra_sigma=detections_with_states["ra_sigma"],
-                dec=detections_with_states["dec"],
-                dec_sigma=detections_with_states["dec_sigma"],
+                covariance=CoordinateCovariances.from_sigmas(sigmas),
+                origin=Origin.from_kwargs(
+                    code=detections_with_states["observatory_code"]
+                ),
+                frame="equatorial",
+            ),
+            photometry=Photometry.from_kwargs(
+                filter=detections_with_states["filter"],
                 mag=detections_with_states["mag"],
                 mag_sigma=detections_with_states["mag_sigma"],
             ),
-            observatory_code=detections_with_states["observatory_code"],
             state_id=detections_with_states["state_id"],
         )
 
@@ -174,7 +182,7 @@ class Observations(qv.Table):
         for code, observations_i in self.group_by_observatory_code():
             # Extract unique times and make sure they are sorted
             # by time in ascending order
-            unique_times = observations_i.detections.time.unique()
+            unique_times = observations_i.coordinates.time.unique()
             unique_times = unique_times.sort_by(["days", "nanos"])
 
             # States are defined by unique times and observatory codes and
@@ -194,28 +202,6 @@ class Observations(qv.Table):
         observers = qv.concatenate(observers_with_states)
         return observers.sort_by("state_id")
 
-    def to_spherical_coordinates(self) -> SphericalCoordinates:
-        """
-        Convert the observations to spherical coordinates which can be used
-        to calculate residuals.
-
-        Returns
-        -------
-        coordinates : `~adam_core.coordinates.spherical.SphericalCoordinates`
-            The detections represented as spherical coordinates.
-        """
-        sigmas = np.zeros((len(self), 6))
-        sigmas[:, 1] = self.detections.ra_sigma.to_numpy(zero_copy_only=False)
-        sigmas[:, 2] = self.detections.dec_sigma.to_numpy(zero_copy_only=False)
-        return SphericalCoordinates.from_kwargs(
-            lon=self.detections.ra,
-            lat=self.detections.dec,
-            time=self.detections.time,
-            covariance=CoordinateCovariances.from_sigmas(sigmas),
-            origin=Origin.from_kwargs(code=self.observatory_code),
-            frame="equatorial",
-        )
-
     def select_exposure(self, exposure_id: int) -> "Observations":
         """
         Select observations from a single exposure.
@@ -230,7 +216,7 @@ class Observations(qv.Table):
         observations : `~Observations`
             Observations from the specified exposure.
         """
-        return self.apply_mask(pc.equal(self.detections.exposure_id, exposure_id))
+        return self.apply_mask(pc.equal(self.exposure_id, exposure_id))
 
     def group_by_exposure(self) -> Iterator[Tuple[str, "Observations"]]:
         """
@@ -242,7 +228,7 @@ class Observations(qv.Table):
         observations : Iterator[`~thor.observations.observations.Observations`]
             Observations belonging to individual exposures.
         """
-        exposure_ids = self.detections.exposure_id
+        exposure_ids = self.exposure_id
         for exposure_id in exposure_ids.unique().sort():
             yield exposure_id.as_py(), self.select_exposure(exposure_id)
 
@@ -260,7 +246,7 @@ class Observations(qv.Table):
         observations : `~Observations`
             Observations from the specified observatory.
         """
-        return self.apply_mask(pc.equal(self.observatory_code, observatory_code))
+        return self.apply_mask(pc.equal(self.coordinates.origin.code, observatory_code))
 
     def group_by_observatory_code(self) -> Iterator[Tuple[str, "Observations"]]:
         """
@@ -271,7 +257,7 @@ class Observations(qv.Table):
         observations : Iterator[`~thor.observations.observations.Observations`]
             Observations belonging to individual observatories.
         """
-        observatory_codes = self.observatory_code
+        observatory_codes = self.coordinates.origin.code
         for observatory_code in observatory_codes.unique().sort():
             yield observatory_code.as_py(), self.select_observatory_code(
                 observatory_code

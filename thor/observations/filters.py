@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, List, Optional, Union
 import numpy as np
 import quivr as qv
 import ray
-from adam_core.observations import PointSourceDetections
+from adam_core.coordinates import SphericalCoordinates
 
 from thor.config import Config
 from thor.observations.observations import Observations
@@ -48,7 +48,7 @@ def TestOrbitRadiusObservationFilter_worker(
     # Select the ephemeris and observations for this state
     ephemeris_state = ephemeris.select("id", state_id)
     observations_state = observations.select("state_id", state_id)
-    detections_state = observations_state.detections
+    coordinates_state = observations_state.coordinates
 
     assert (
         len(ephemeris_state) == 1
@@ -59,7 +59,7 @@ def TestOrbitRadiusObservationFilter_worker(
 
     # Return the observations within the radius for this particular state
     return observations_state.apply_mask(
-        _within_radius(detections_state, ephem_ra, ephem_dec, radius)
+        _within_radius(coordinates_state, ephem_ra, ephem_dec, radius)
     )
 
 
@@ -200,7 +200,11 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
         observations_filtered = qv.concatenate(filtered_observations_list)
         observations_filtered = observations_filtered.sort_by(
-            ["detections.time.days", "detections.time.nanos", "observatory_code"]
+            [
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.origin.code",
+            ]
         )
 
         time_end = time.perf_counter()
@@ -214,19 +218,19 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
 
 def _within_radius(
-    detections: PointSourceDetections,
+    coords: SphericalCoordinates,
     ra: float,
     dec: float,
     radius: float,
 ) -> np.array:
     """
     Return a boolean mask that identifies which of
-    the detections are within a given radius of a given ra and dec.
+    the coords are within a given radius of a given ra and dec.
 
     Parameters
     ----------
-    detections : `~adam_core.observations.detections.PointSourceDetections`
-        The detections to filter.
+    coords : `~adam_core.coordinates.spherical.SphericalCoordinates`
+        The coords to filter.
     ra : float
         The right ascension of the center of the radius in degrees.
     dec : float
@@ -237,11 +241,11 @@ def _within_radius(
     Returns
     -------
     mask : `~numpy.ndarray`
-        A boolean mask that identifies which of the detections are within
+        A boolean mask that identifies which of the coords are within
         the radius.
     """
-    det_ra = np.deg2rad(detections.ra.to_numpy())
-    det_dec = np.deg2rad(detections.dec.to_numpy())
+    det_ra = np.deg2rad(coords.lon.to_numpy())
+    det_dec = np.deg2rad(coords.lat.to_numpy())
 
     center_ra = np.deg2rad(ra)
     center_dec = np.deg2rad(dec)
@@ -310,7 +314,7 @@ def filter_observations(
     if len(filtered_observations) > 0:
         filtered_observations = qv.defragment(filtered_observations)
         filtered_observations = filtered_observations.sort_by(
-            ["detections.time.days", "detections.time.nanos", "observatory_code"]
+            ["coordinates.time.days", "coordinates.time.nanos", "coordinates.origin.code"]
         )
 
     time_end = time.perf_counter()

@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 import numpy as np
 import pyarrow as pa
 import quivr as qv
+from typing_extensions import Final
 
 __all__ = [
     "drop_duplicates",
@@ -46,12 +47,10 @@ def drop_duplicates(
         0, "index", pa.array(np.arange(len(flattened_table)))
     )
 
-    if keep == "first":
-        agg_func = keep
-    elif keep == "last":
-        agg_func = keep
-    else:
-        raise ValueError("keep must be either 'first' or 'last'")
+    if keep not in ["first", "last"]:
+        raise ValueError(f"keep must be 'first' or 'last', got {keep}.")
+
+    agg_func = keep
     indices = (
         flattened_table.group_by(subset, use_threads=False)
         .aggregate([("index", agg_func)])
