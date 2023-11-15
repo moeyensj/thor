@@ -1,3 +1,5 @@
+from unittest import mock
+
 import astropy.time
 import numpy as np
 import pyarrow as pa
@@ -10,8 +12,9 @@ from adam_core.observers import Observers
 from adam_core.propagator import PYOORB
 from adam_core.time import Timestamp
 
+from ...config import Config
 from ...orbit import TestOrbit
-from ..filters import TestOrbitRadiusObservationFilter
+from ..filters import TestOrbitRadiusObservationFilter, filter_observations
 from ..observations import Observations
 
 
@@ -130,3 +133,28 @@ def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
     # Should be about pi/4 fraction of the detections (0.785
     assert len(have.detections) < 0.80 * len(fixed_observations.detections)
     assert len(have.detections) > 0.76 * len(fixed_observations.detections)
+
+
+def test_filter_observations(fixed_observations, fixed_test_orbit):
+    # Test that if not filters are passed, we use
+    # TestOrbitRadiusObservationFilter by defualt
+    config = Config(cell_radius=0.5)
+
+    have = filter_observations(fixed_observations, fixed_test_orbit, config)
+    assert len(pc.unique(have.detections.exposure_id)) == 5
+    assert len(have.detections) < 0.80 * len(fixed_observations.detections)
+    assert len(have.detections) > 0.76 * len(fixed_observations.detections)
+
+    # Make sure if we pass a custom list of filters, they are used
+    # instead
+    noop_filter = mock.Mock()
+    noop_filter.apply.return_value = fixed_observations
+
+    filters = [noop_filter]
+    have = filter_observations(
+        fixed_observations, fixed_test_orbit, config, filters=filters
+    )
+    assert len(have.detections) == len(fixed_observations.detections)
+
+    # Ensure NOOPFilter.apply was run
+    filters[0].apply.assert_called_once()

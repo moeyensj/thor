@@ -1,12 +1,13 @@
-from dataclasses import dataclass
-from typing import Literal, Optional
+import logging
+import pathlib
+from typing import Literal, Optional, Union
 
-import numpy as np
-import numpy.typing as npt
+from pydantic import BaseModel
+
+logger = logging.getLogger("thor")
 
 
-@dataclass
-class Config:
+class Config(BaseModel):
     max_processes: Optional[int] = None
     propagator: str = "PYOORB"
     parallel_backend: Literal["cf"] = "cf"
@@ -71,3 +72,36 @@ class Config:
         self.iod_min_arc_length = min_arc_length
         self.od_min_arc_length = min_arc_length
         self.arc_extension_min_arc_length = min_arc_length
+
+
+def initialize_config(
+    config: Config,
+    working_dir: Optional[Union[pathlib.Path, str]],
+):
+    """
+    Compare the given configuration to the configuration in the checkpoint directory
+    and raise an exception if they do not match.
+
+    Parameters
+    ----------
+    config : `~thor.config.Config`
+        Configuration to compare.
+    working_dir : str, optional
+        Directory to compare the configuration to. If None, no comparison will be made.
+    """
+    if working_dir is not None:
+        config_path = pathlib.Path(working_dir) / "inputs/config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        if config_path.exists():
+            checkpoint_config = Config.parse_file(config_path)
+            # Compare the configurations
+            if config != checkpoint_config:
+                raise ValueError(
+                    f"Configuration does not match configuration in checkpoint directory: {config_path}"
+                )
+        else:
+            logger.info(f"Configuration file does not exist: {config_path}")
+
+        # Save the new configuration
+        logger.info(f"Saving configuration to {config_path}...")
+        config_path.write_text(config.json(indent=4))

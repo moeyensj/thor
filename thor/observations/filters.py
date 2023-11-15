@@ -1,12 +1,15 @@
 import abc
 import logging
 import time
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 import numpy as np
 import quivr as qv
 import ray
 from adam_core.observations import PointSourceDetections
+
+from thor.config import Config
+from thor.observations.observations import Observations
 
 from ..orbit import TestOrbit, TestOrbitEphemeris
 
@@ -151,7 +154,6 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
         filtered_observations_list = []
         if max_processes is None or max_processes > 1:
-
             if not ray.is_initialized():
                 logger.debug(
                     f"Ray is not initialized. Initializing with {max_processes}..."
@@ -186,7 +188,6 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
                 filtered_observations_list.append(ray.get(finished[0]))
 
         else:
-
             state_ids = observations.state_id.unique().sort()
             for state_id in state_ids:
                 filtered_observations = TestOrbitRadiusObservationFilter_worker(
@@ -262,3 +263,44 @@ def _within_radius(
 
     distances = np.arctan2(np.hypot(num1, num2), denominator)
     return distances <= np.deg2rad(radius)
+
+
+def filter_observations(
+    observations: Observations,
+    test_orbit: TestOrbit,
+    config: Config,
+    filters: Optional[List[ObservationFilter]] = None,
+) -> Observations:
+    """
+    Apply a list of filters to the observations.
+
+    Parameters
+    ----------
+    observations : `~thor.observations.observations.Observations`
+        Observations to filter.
+    filters : list of `~thor.observations.filters.ObservationFilter`
+        List of filters to apply to the observations.
+
+    Returns
+    -------
+    filtered_observations : `~thor.observations.observations.Observations`
+        Filtered observations.
+    """
+    if filters is None:
+        # By default we always filter by radius from the predicted position of the test orbit
+        filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
+
+    filtered_observations = observations
+    for filter_i in filters:
+        filtered_observations = filter_i.apply(
+            filtered_observations, test_orbit, config.max_processes
+        )
+
+    # Defragment the observations
+    if len(filtered_observations) > 0:
+        filtered_observations = qv.defragment(filtered_observations)
+        filtered_observations = filtered_observations.sort_by(
+            ["detections.time.days", "detections.time.nanos", "observatory_code"]
+        )
+
+    return filtered_observations
