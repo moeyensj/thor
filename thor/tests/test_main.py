@@ -1,9 +1,20 @@
+import os
+import shutil
+
 import pyarrow.compute as pc
 import pytest
 from adam_core.utils.helpers import make_observations, make_real_orbits
 
 from ..config import Config
-from ..main import link_test_orbit
+from ..main import (
+    ClusterMembers,
+    Clusters,
+    FittedOrbitMembers,
+    FittedOrbits,
+    TransformedDetections,
+    link_test_orbit,
+    load_initial_checkpoint_values,
+)
 from ..observations import Observations
 from ..observations.filters import TestOrbitRadiusObservationFilter
 from ..orbit import TestOrbit as THORbit
@@ -148,7 +159,6 @@ def test_Orbit_generate_ephemeris_from_observations_empty(orbits):
 
 @pytest.mark.parametrize("object_id", OBJECT_IDS)
 def test_range_and_transform(object_id, orbits, observations, integration_config):
-
     integration_config.max_processes = 1
     (
         test_orbit,
@@ -193,14 +203,11 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
 
 
 def run_link_test_orbit(test_orbit, observations, config):
-    for i, results in enumerate(
-        link_test_orbit(test_orbit, observations, config=config)
-    ):
-        if i == 4:
-            recovered_orbits, recovered_orbit_members = results
-        else:
-            continue
-    return recovered_orbits, recovered_orbit_members
+    for stage_results in link_test_orbit(test_orbit, observations, config=config):
+        print(stage_results.name)
+        if stage_results.name == "recover_orbits":
+            recovered_orbits, recovered_orbit_members = stage_results.result
+            return recovered_orbits, recovered_orbit_members
 
 
 @pytest.mark.parametrize(
@@ -226,13 +233,17 @@ def run_link_test_orbit(test_orbit, observations, config):
 def test_link_test_orbit(
     object_id, orbits, observations, parallelized, integration_config, ray_cluster
 ):
-
     if parallelized:
         integration_config.max_processes = 4
     else:
         integration_config.max_processes = 1
 
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -253,14 +264,18 @@ def test_link_test_orbit(
 def test_benchmark_link_test_orbit(
     orbits, observations, integration_config, parallelized, ray_cluster, benchmark
 ):
-
     object_id = "202930 Ivezic (1998 SG172)"
     if parallelized:
         integration_config.max_processes = 4
     else:
         integration_config.max_processes = 1
 
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -273,3 +288,99 @@ def test_benchmark_link_test_orbit(
     # Ensure we get all the object IDs back that we expect
     obs_ids_actual = recovered_orbit_members.obs_id
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
+
+
+@pytest.fixture
+def working_dir():
+    path = os.path.join(os.path.dirname(__file__), "data", "checkpoint")
+    os.makedirs(path, exist_ok=True)
+    yield path
+    shutil.rmtree(os.path.join(os.path.dirname(__file__), "data", "checkpoint"))
+
+
+def test_load_initial_checkpoint_values(working_dir):
+    # With an empty directly, ensure checkpoint starts at first stage
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "filter_observations"
+
+    # Create filtered_observations file to simulate first checkpoint
+    exposures, detections, associations = make_observations()
+    filtered_observations = Observations.from_detections_and_exposures(
+        detections, exposures
+    )
+    filtered_observations_path = os.path.join(
+        working_dir, "filtered_observations.parquet"
+    )
+    filtered_observations.to_parquet(filtered_observations_path)
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+
+    assert checkpoint.stage == "range_and_transform"
+    assert len(checkpoint.filtered_observations) == len(filtered_observations)
+    assert checkpoint.filtered_observations.detections.time.scale == "utc"
+
+    # Create transformed_detections file to simulate second checkpoint
+    TransformedDetections.empty().to_parquet(
+        os.path.join(working_dir, "transformed_detections.parquet")
+    )
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "cluster_and_link"
+    assert checkpoint.filtered_observations is not None
+    assert checkpoint.transformed_detections is not None
+    assert checkpoint.transformed_detections.coordinates.time.scale == "utc"
+
+    # Create clusters file to simulate third checkpoint
+    Clusters.empty().to_parquet(os.path.join(working_dir, "clusters.parquet"))
+    ClusterMembers.empty().to_parquet(
+        os.path.join(working_dir, "cluster_members.parquet")
+    )
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "initial_orbit_determination"
+    assert checkpoint.filtered_observations is not None
+    assert checkpoint.clusters is not None
+    assert checkpoint.cluster_members is not None
+
+    # Create iod_orbits file to simulate fourth checkpoint
+    FittedOrbits.empty().to_parquet(os.path.join(working_dir, "iod_orbits.parquet"))
+    FittedOrbitMembers.empty().to_parquet(
+        os.path.join(working_dir, "iod_orbit_members.parquet")
+    )
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "differential_correction"
+    assert checkpoint.filtered_observations is not None
+    assert checkpoint.iod_orbits is not None
+    assert checkpoint.iod_orbit_members is not None
+    assert checkpoint.iod_orbits.coordinates.time.scale == "tbd"
+    assert checkpoint.iod_orbits.coordinates.frame == "ecliptic"
+
+    # Create od_orbits files to simulate fifth checkpoint
+    FittedOrbits.empty().to_parquet(os.path.join(working_dir, "od_orbits.parquet"))
+    FittedOrbitMembers.empty().to_parquet(
+        os.path.join(working_dir, "od_orbit_members.parquet")
+    )
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "recover_orbits"
+    assert checkpoint.filtered_observations is not None
+    assert checkpoint.od_orbits is not None
+    assert checkpoint.od_orbit_members is not None
+    assert checkpoint.od_orbits.coordinates.time.scale == "tbd"
+    assert checkpoint.od_orbits.coordinates.frame == "ecliptic"
+
+    # Create recovered_orbits files to simulate completed run folder
+    FittedOrbits.empty().to_parquet(
+        os.path.join(working_dir, "recovered_orbits.parquet")
+    )
+    FittedOrbitMembers.empty().to_parquet(
+        os.path.join(working_dir, "recovered_orbit_members.parquet")
+    )
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "complete"
+    assert checkpoint.recovered_orbits is not None
+    assert checkpoint.recovered_orbit_members is not None
+    assert checkpoint.recovered_orbits.coordinates.time.scale == "tbd"
+    assert checkpoint.recovered_orbits.coordinates.frame == "ecliptic"
