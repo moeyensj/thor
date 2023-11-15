@@ -1,5 +1,7 @@
 import quivr as qv
 
+__all__ = ["Photometry"]
+
 
 class Photometry(qv.Table):
 
