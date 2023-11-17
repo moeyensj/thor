@@ -3,19 +3,17 @@ import os
 import pathlib
 import time
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, List, Literal, Optional, Union
+from typing import Any, Iterable, Iterator, List, Literal, Optional
 
 import quivr as qv
 import ray
-from adam_core.coordinates import CartesianCoordinates
 from adam_core.propagator import PYOORB
-from adam_core.time import Timestamp
 
 from .clusters import ClusterMembers, Clusters, cluster_and_link
 from .config import Config, initialize_config
 from .observations.filters import ObservationFilter, filter_observations
 from .observations.observations import Observations
-from .orbit import TestOrbit
+from .orbit import TestOrbits
 from .orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from .orbits import (
     differential_correction,
@@ -65,7 +63,7 @@ class CheckpointData:
 
 
 def initialize_test_orbit(
-    test_orbit: TestOrbit,
+    test_orbit: TestOrbits,
     working_dir: Optional[str] = None,
 ):
     """
@@ -75,7 +73,7 @@ def initialize_test_orbit(
         test_orbit_directory = pathlib.Path(working_dir, "inputs", test_orbit.orbit_id)
         test_orbit_directory.mkdir(parents=True, exist_ok=True)
         test_orbit_path = os.path.join(test_orbit_directory, "test_orbit.parquet")
-        test_orbit.orbit.to_parquet(test_orbit_path)
+        test_orbit.to_parquet(test_orbit_path)
 
 
 def load_initial_checkpoint_values(
@@ -250,7 +248,7 @@ class LinkTestOrbitStageResult:
 
 
 def link_test_orbit(
-    test_orbit: TestOrbit,
+    test_orbit: TestOrbits,
     observations: Observations,
     working_dir: Optional[str] = None,
     filters: Optional[List[ObservationFilter]] = None,
@@ -281,6 +279,11 @@ def link_test_orbit(
     """
     time_start = time.perf_counter()
     logger.info("Running test orbit...")
+
+    if len(test_orbit) != 1:
+        raise ValueError(
+            f"link_test_orbit received {len(test_orbit)} orbits but expected 1."
+        )
 
     test_orbit_directory = None
     if working_dir is not None:

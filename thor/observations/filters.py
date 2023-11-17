@@ -11,7 +11,7 @@ from adam_core.observations import PointSourceDetections
 from thor.config import Config
 from thor.observations.observations import Observations
 
-from ..orbit import TestOrbit, TestOrbitEphemeris
+from ..orbit import TestOrbitEphemeris, TestOrbits
 
 if TYPE_CHECKING:
     from .observations import Observations
@@ -78,7 +78,7 @@ class ObservationFilter(abc.ABC):
     def apply(
         self,
         observations: "Observations",
-        test_orbit: TestOrbit,
+        test_orbit: TestOrbits,
         max_processes: Optional[int] = 1,
     ) -> "Observations":
         """
@@ -88,7 +88,7 @@ class ObservationFilter(abc.ABC):
         ----------
         observations : `~thor.observations.Observations`
             The observations to filter.
-        test_orbit : `~thor.orbit.TestOrbit`
+        test_orbit : `~thor.orbit.TestOrbits`
             The test orbit to use for filtering.
         max_processes : int, optional
             Maximum number of processes to use for parallelization. If
@@ -122,7 +122,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
     def apply(
         self,
         observations: Union["Observations", ray.ObjectRef],
-        test_orbit: TestOrbit,
+        test_orbit: TestOrbits,
         max_processes: Optional[int] = 1,
     ) -> "Observations":
         """
@@ -132,7 +132,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         ----------
         observations : `~thor.observations.Observations`
             The observations to filter.
-        test_orbit : `~thor.orbit.TestOrbit`
+        test_orbit : `~thor.orbit.TestOrbits`
             The test orbit to use for filtering.
         max_processes : int, optional
             Maximum number of processes to use for parallelization. If
@@ -267,7 +267,7 @@ def _within_radius(
 
 def filter_observations(
     observations: Observations,
-    test_orbit: TestOrbit,
+    test_orbit: TestOrbits,
     config: Config,
     filters: Optional[List[ObservationFilter]] = None,
 ) -> Observations:
@@ -278,6 +278,8 @@ def filter_observations(
     ----------
     observations : `~thor.observations.observations.Observations`
         Observations to filter.
+    test_orbit : `~thor.orbit.TestOrbits`
+        Test orbit to use for filtering.
     filters : list of `~thor.observations.filters.ObservationFilter`
         List of filters to apply to the observations.
 
@@ -286,6 +288,14 @@ def filter_observations(
     filtered_observations : `~thor.observations.observations.Observations`
         Filtered observations.
     """
+    time_start = time.perf_counter()
+    logger.info("Running observation filters...")
+
+    if len(test_orbit) != 1:
+        raise ValueError(
+            f"link_test_orbit received {len(test_orbit)} orbits but expected 1."
+        )
+
     if filters is None:
         # By default we always filter by radius from the predicted position of the test orbit
         filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
@@ -303,4 +313,8 @@ def filter_observations(
             ["detections.time.days", "detections.time.nanos", "observatory_code"]
         )
 
+    time_end = time.perf_counter()
+    logger.info(
+        f"Observations filters completed in {time_end - time_start:.3f} seconds."
+    )
     return filtered_observations

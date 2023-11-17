@@ -1,6 +1,5 @@
 from unittest import mock
 
-import astropy.time
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -9,17 +8,17 @@ import quivr as qv
 from adam_core.coordinates import CartesianCoordinates, Origin
 from adam_core.observations import Exposures, PointSourceDetections
 from adam_core.observers import Observers
-from adam_core.propagator import PYOORB
+from adam_core.orbits import Ephemeris
 from adam_core.time import Timestamp
 
 from ...config import Config
-from ...orbit import TestOrbit
+from ...orbit import TestOrbits
 from ..filters import TestOrbitRadiusObservationFilter, filter_observations
 from ..observations import Observations
 
 
 @pytest.fixture
-def fixed_test_orbit():
+def fixed_test_orbit() -> TestOrbits:
     # An orbit at 1AU going around at (about) 1 degree per day
     coords = CartesianCoordinates.from_kwargs(
         x=[1],
@@ -33,14 +32,14 @@ def fixed_test_orbit():
         frame="ecliptic",
     )
 
-    return TestOrbit(
+    return TestOrbits.from_kwargs(
+        orbit_id=["test_orbit"],
         coordinates=coords,
-        orbit_id="test_orbit",
     )
 
 
 @pytest.fixture
-def fixed_observers():
+def fixed_observers() -> Observers:
     times = Timestamp.from_iso8601(
         [
             "2020-01-01T00:00:00",
@@ -54,9 +53,8 @@ def fixed_observers():
 
 
 @pytest.fixture
-def fixed_ephems(fixed_test_orbit, fixed_observers):
-    prop = PYOORB()
-    return prop.generate_ephemeris(fixed_test_orbit.orbit, fixed_observers)
+def fixed_ephems(fixed_test_orbit: TestOrbits, fixed_observers: Observers) -> Ephemeris:
+    return fixed_test_orbit.generate_ephemeris(fixed_observers)
 
 
 @pytest.fixture
@@ -108,12 +106,14 @@ def fixed_detections(fixed_ephems, fixed_exposures):
 
 
 @pytest.fixture
-def fixed_observations(fixed_detections, fixed_exposures):
+def fixed_observations(
+    fixed_detections: PointSourceDetections, fixed_exposures: Exposures
+) -> Observations:
     return Observations.from_detections_and_exposures(fixed_detections, fixed_exposures)
 
 
 def test_observation_fixtures(fixed_test_orbit, fixed_observations):
-    assert len(fixed_test_orbit.orbit) == 1
+    assert len(fixed_test_orbit) == 1
     assert len(pc.unique(fixed_observations.detections.exposure_id)) == 5
     assert len(fixed_observations.detections) == 100 * 100 * 5
 

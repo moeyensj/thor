@@ -13,7 +13,7 @@ from adam_core.coordinates import (
 from adam_core.propagator import PYOORB, Propagator
 
 from .observations.observations import Observations
-from .orbit import TestOrbit, TestOrbitEphemeris
+from .orbit import TestOrbitEphemeris, TestOrbits
 from .projections import GnomonicCoordinates
 
 __all__ = [
@@ -81,7 +81,7 @@ range_and_transform_remote = ray.remote(range_and_transform_worker)
 
 
 def range_and_transform(
-    test_orbit: TestOrbit,
+    test_orbit: TestOrbits,
     observations: Union[Observations, ray.ObjectRef],
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
@@ -94,7 +94,7 @@ def range_and_transform(
 
     Parameters
     ----------
-    test_orbit : `~thor.orbit.TestOrbit`
+    test_orbit : `~thor.orbit.TestOrbits`
         Test orbit to use to gather and transform observations.
     observations : `~thor.observations.observations.Observations`
         Observations from which range and transform the detections.
@@ -114,8 +114,14 @@ def range_and_transform(
     """
     time_start = time.perf_counter()
     logger.info("Running range and transform...")
-    logger.info(f"Assuming r = {test_orbit.orbit.coordinates.r[0]} au")
-    logger.info(f"Assuming v = {test_orbit.orbit.coordinates.v[0]} au/d")
+
+    if len(test_orbit) != 1:
+        raise ValueError(
+            f"range_and_transform received {len(test_orbit)} orbits but expected 1."
+        )
+
+    logger.info(f"Assuming r = {test_orbit.coordinates.r[0]} au")
+    logger.info(f"Assuming v = {test_orbit.coordinates.v[0]} au/d")
 
     if isinstance(observations, ray.ObjectRef):
         observations = ray.get(observations)
