@@ -3,7 +3,7 @@ import os
 import pathlib
 import time
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, List, Literal, Optional
+from typing import Iterable, Iterator, List, Literal, Optional, Tuple
 
 import quivr as qv
 import ray
@@ -24,6 +24,16 @@ from .range_and_transform import TransformedDetections, range_and_transform
 
 logger = logging.getLogger("thor")
 
+VALID_STAGES = Literal[
+    "filter_observations",
+    "range_and_transform",
+    "cluster_and_link",
+    "initial_orbit_determination",
+    "differential_correction",
+    "recover_orbits",
+    "complete",
+]
+
 
 def initialize_use_ray(config: Config) -> bool:
     use_ray = False
@@ -41,25 +51,17 @@ def initialize_use_ray(config: Config) -> bool:
 
 @dataclass
 class CheckpointData:
-    stage: Literal[
-        "filter_observations",
-        "range_and_transform",
-        "cluster_and_link",
-        "initial_orbit_determination",
-        "differential_correction",
-        "recover_orbits",
-        "complete",
-    ]
-    filtered_observations: Optional[Observations] = None
-    transformed_detections: Optional[TransformedDetections] = None
-    clusters: Optional[Clusters] = None
-    cluster_members: Optional[ClusterMembers] = None
-    iod_orbits: Optional[FittedOrbits] = None
-    iod_orbit_members: Optional[FittedOrbitMembers] = None
-    od_orbits: Optional[FittedOrbits] = None
-    od_orbit_members: Optional[FittedOrbitMembers] = None
-    recovered_orbits: Optional[FittedOrbits] = None
-    recovered_orbit_members: Optional[FittedOrbitMembers] = None
+    stage: VALID_STAGES
+    filtered_observations: Observations = Observations.empty()
+    transformed_detections: TransformedDetections = TransformedDetections.empty()
+    clusters: Clusters = Clusters.empty()
+    cluster_members: ClusterMembers = ClusterMembers.empty()
+    iod_orbits: FittedOrbits = FittedOrbits.empty()
+    iod_orbit_members: FittedOrbitMembers = FittedOrbitMembers.empty()
+    od_orbits: FittedOrbits = FittedOrbits.empty()
+    od_orbit_members: FittedOrbitMembers = FittedOrbitMembers.empty()
+    recovered_orbits: FittedOrbits = FittedOrbits.empty()
+    recovered_orbit_members: FittedOrbitMembers = FittedOrbitMembers.empty()
 
 
 def initialize_test_orbit(
@@ -84,7 +86,7 @@ def load_initial_checkpoint_values(
 
     We want to avoid loading objects into memory that are not required.
     """
-    stage = "filter_observations"
+    stage: VALID_STAGES = "filter_observations"
     # Without a checkpoint directory, we always start at the beginning
     if test_orbit_directory is None:
         return CheckpointData(stage=stage)
@@ -243,8 +245,8 @@ class LinkTestOrbitStageResult:
         "differential_correction",
         "recover_orbits",
     ]
-    result: Iterable[Any]
-    path: Optional[Iterable[str]] = None
+    result: Iterable[qv.AnyTable]
+    path: Tuple[Optional[str], ...] = (None,)
 
 
 def link_test_orbit(
@@ -287,11 +289,11 @@ def link_test_orbit(
 
     test_orbit_directory = None
     if working_dir is not None:
-        working_dir = pathlib.Path(working_dir)
+        working_dir_path = pathlib.Path(working_dir)
         logger.info(f"Using working directory: {working_dir}")
-        test_orbit_directory = pathlib.Path(working_dir, test_orbit.orbit_id)
+        test_orbit_directory = pathlib.Path(working_dir_path, test_orbit.orbit_id)
         test_orbit_directory.mkdir(parents=True, exist_ok=True)
-        inputs_dir = pathlib.Path(working_dir, "inputs")
+        inputs_dir = pathlib.Path(working_dir_path, "inputs")
         inputs_dir.mkdir(parents=True, exist_ok=True)
 
     initialize_test_orbit(test_orbit, working_dir)
@@ -320,7 +322,7 @@ def link_test_orbit(
 
     if checkpoint.stage == "complete":
         logger.info("Found recovered orbits in checkpoint, exiting early...")
-        path = None
+        path: Tuple[Optional[str], ...] = (None,)
         if test_orbit_directory:
             path = (
                 os.path.join(test_orbit_directory, "recovered_orbits.parquet"),

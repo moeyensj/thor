@@ -314,7 +314,11 @@ def filter_observations(
     if len(filtered_observations) > 0:
         filtered_observations = qv.defragment(filtered_observations)
         filtered_observations = filtered_observations.sort_by(
-            ["coordinates.time.days", "coordinates.time.nanos", "coordinates.origin.code"]
+            [
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.origin.code",
+            ]
         )
 
     time_end = time.perf_counter()
