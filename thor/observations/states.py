@@ -28,8 +28,7 @@ def calculate_state_ids(
 
     # Append index column so we can maintain the original order
     table = table.append_column(
-        pa.field("index", pa.int64()),
-        pa.array(np.arange(0, len(table)))
+        pa.field("index", pa.int64()), pa.array(np.arange(0, len(table)))
     )
 
     # Select only the relevant columns
@@ -62,7 +61,6 @@ def calculate_state_ids(
     coordinates_with_states = table.join(
         unique_time_origins, ["time.days", "time.nanos", "origin.code"]
     ).sort_by([("index", "ascending")])
-
 
     # Now return the state IDs
     return coordinates_with_states.column("state_id").combine_chunks()
