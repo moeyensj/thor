@@ -138,7 +138,7 @@ def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
 def test_filter_observations(fixed_observations, fixed_test_orbit):
     # Test that if not filters are passed, we use
     # TestOrbitRadiusObservationFilter by defualt
-    config = Config(cell_radius=0.5)
+    config = Config(cell_radius=0.5, max_processes=1)
 
     have = filter_observations(fixed_observations, fixed_test_orbit, config)
     assert len(pc.unique(have.exposure_id)) == 5

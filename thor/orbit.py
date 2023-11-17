@@ -138,7 +138,7 @@ class TestOrbits(qv.Table):
             and getattr(self, "_cached_observation_ids", None) is None
         ):
             self._cached_ephemeris: Optional[TestOrbitEphemeris] = None
-            self._cached_observation_ids: Optional[TestOrbitEphemeris] = None
+            self._cached_observation_ids: Optional[pa.Array] = None
             return False
         elif (
             getattr(self, "_cached_ephemeris", None) is not None
@@ -146,7 +146,7 @@ class TestOrbits(qv.Table):
             and pc.all(
                 pc.is_in(
                     observations.id.sort(),
-                    self._cached_observation_ids.sort(),
+                    self._cached_observation_ids.sort(),  # type: ignore
                 )
             ).as_py()
         ):
