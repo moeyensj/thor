@@ -3,36 +3,37 @@ import os
 import pathlib
 import time
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, List, Literal, Optional, Tuple
+from typing import (
+    Annotated,
+    Any,
+    Iterable,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+)
 
+import pydantic
 import quivr as qv
 import ray
 from adam_core.propagator import PYOORB
 
-from .clusters import ClusterMembers, Clusters, cluster_and_link
+from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
+from .clusters import cluster_and_link
 from .config import Config, initialize_config
 from .observations.filters import ObservationFilter, filter_observations
 from .observations.observations import Observations
 from .orbit import TestOrbit
-from .orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from .orbits import (
     differential_correction,
     initial_orbit_determination,
     merge_and_extend_orbits,
 )
-from .range_and_transform import TransformedDetections, range_and_transform
+from .range_and_transform import range_and_transform
 
 logger = logging.getLogger("thor")
-
-VALID_STAGES = Literal[
-    "filter_observations",
-    "range_and_transform",
-    "cluster_and_link",
-    "initial_orbit_determination",
-    "differential_correction",
-    "recover_orbits",
-    "complete",
-]
 
 
 def initialize_use_ray(config: Config) -> bool:
@@ -49,21 +50,6 @@ def initialize_use_ray(config: Config) -> bool:
     return use_ray
 
 
-@dataclass
-class CheckpointData:
-    stage: VALID_STAGES
-    filtered_observations: Observations = Observations.empty()
-    transformed_detections: TransformedDetections = TransformedDetections.empty()
-    clusters: Clusters = Clusters.empty()
-    cluster_members: ClusterMembers = ClusterMembers.empty()
-    iod_orbits: FittedOrbits = FittedOrbits.empty()
-    iod_orbit_members: FittedOrbitMembers = FittedOrbitMembers.empty()
-    od_orbits: FittedOrbits = FittedOrbits.empty()
-    od_orbit_members: FittedOrbitMembers = FittedOrbitMembers.empty()
-    recovered_orbits: FittedOrbits = FittedOrbits.empty()
-    recovered_orbit_members: FittedOrbitMembers = FittedOrbitMembers.empty()
-
-
 def initialize_test_orbit(
     test_orbit: TestOrbit,
     working_dir: Optional[str] = None,
@@ -76,159 +62,6 @@ def initialize_test_orbit(
         test_orbit_directory.mkdir(parents=True, exist_ok=True)
         test_orbit_path = os.path.join(test_orbit_directory, "test_orbit.parquet")
         test_orbit.orbit.to_parquet(test_orbit_path)
-
-
-def load_initial_checkpoint_values(
-    test_orbit_directory: Optional[pathlib.Path] = None,
-) -> CheckpointData:
-    """
-    Check for completed stages and return values from disk if they exist.
-
-    We want to avoid loading objects into memory that are not required.
-    """
-    stage: VALID_STAGES = "filter_observations"
-    # Without a checkpoint directory, we always start at the beginning
-    if test_orbit_directory is None:
-        return CheckpointData(stage=stage)
-
-    # filtered_observations is always needed when it exists
-    filtered_observations_path = pathlib.Path(
-        test_orbit_directory, "filtered_observations.parquet"
-    )
-    # If it doesn't exist, start at the beginning.
-    if not filtered_observations_path.exists():
-        return CheckpointData(stage=stage)
-    logger.info("Found filtered observations")
-    filtered_observations = Observations.from_parquet(filtered_observations_path)
-
-    # Unfortunately we have to reinitialize the times to set the attribute
-    # correctly.
-    filtered_observations = qv.defragment(filtered_observations)
-    filtered_observations = filtered_observations.sort_by(
-        [
-            "coordinates.time.days",
-            "coordinates.time.nanos",
-            "coordinates.origin.code",
-        ]
-    )
-
-    # If the pipeline was started but we have recovered_orbits already, we
-    # are done and should exit early.
-    recovered_orbits_path = pathlib.Path(
-        test_orbit_directory, "recovered_orbits.parquet"
-    )
-    recovered_orbit_members_path = pathlib.Path(
-        test_orbit_directory, "recovered_orbit_members.parquet"
-    )
-    if recovered_orbits_path.exists() and recovered_orbit_members_path.exists():
-        logger.info("Found recovered orbits in checkpoint")
-        recovered_orbits = FittedOrbits.from_parquet(recovered_orbits_path)
-        recovered_orbit_members = FittedOrbitMembers.from_parquet(
-            recovered_orbit_members_path
-        )
-
-        # Unfortunately we have to reinitialize the times to set the attribute
-        # correctly.
-        recovered_orbits = qv.defragment(recovered_orbits)
-        recovered_orbits = recovered_orbits.sort_by(
-            [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-            ]
-        )
-
-        return CheckpointData(
-            stage="complete",
-            recovered_orbits=recovered_orbits,
-            recovered_orbit_members=recovered_orbit_members,
-        )
-
-    # Now with filtered_observations available, we can check for the later
-    # stages in reverse order.
-    od_orbits_path = pathlib.Path(test_orbit_directory, "od_orbits.parquet")
-    od_orbit_members_path = pathlib.Path(
-        test_orbit_directory, "od_orbit_members.parquet"
-    )
-    if od_orbits_path.exists() and od_orbit_members_path.exists():
-        logger.info("Found OD orbits in checkpoint")
-        od_orbits = FittedOrbits.from_parquet(od_orbits_path)
-        od_orbit_members = FittedOrbitMembers.from_parquet(od_orbit_members_path)
-
-        # Unfortunately we have to reinitialize the times to set the attribute
-        # correctly.
-        od_orbits = qv.defragment(od_orbits)
-        od_orbits = od_orbits.sort_by(
-            [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-            ]
-        )
-
-        return CheckpointData(
-            stage="recover_orbits",
-            filtered_observations=filtered_observations,
-            od_orbits=od_orbits,
-            od_orbit_members=od_orbit_members,
-        )
-
-    iod_orbits_path = pathlib.Path(test_orbit_directory, "iod_orbits.parquet")
-    iod_orbit_members_path = pathlib.Path(
-        test_orbit_directory, "iod_orbit_members.parquet"
-    )
-    if iod_orbits_path.exists() and iod_orbit_members_path.exists():
-        logger.info("Found IOD orbits")
-        iod_orbits = FittedOrbits.from_parquet(iod_orbits_path)
-        iod_orbit_members = FittedOrbitMembers.from_parquet(iod_orbit_members_path)
-
-        # Unfortunately we have to reinitialize the times to set the attribute
-        # correctly.
-        iod_orbits = qv.defragment(iod_orbits)
-        iod_orbits = iod_orbits.sort_by(
-            [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-            ]
-        )
-
-        return CheckpointData(
-            stage="differential_correction",
-            filtered_observations=filtered_observations,
-            iod_orbits=iod_orbits,
-            iod_orbit_members=iod_orbit_members,
-        )
-
-    clusters_path = pathlib.Path(test_orbit_directory, "clusters.parquet")
-    cluster_members_path = pathlib.Path(test_orbit_directory, "cluster_members.parquet")
-    if clusters_path.exists() and cluster_members_path.exists():
-        logger.info("Found clusters")
-        clusters = Clusters.from_parquet(clusters_path)
-        cluster_members = ClusterMembers.from_parquet(cluster_members_path)
-
-        return CheckpointData(
-            stage="initial_orbit_determination",
-            filtered_observations=filtered_observations,
-            clusters=clusters,
-            cluster_members=cluster_members,
-        )
-
-    transformed_detections_path = pathlib.Path(
-        test_orbit_directory, "transformed_detections.parquet"
-    )
-    if transformed_detections_path.exists():
-        logger.info("Found transformed detections")
-        transformed_detections = TransformedDetections.from_parquet(
-            transformed_detections_path
-        )
-
-        return CheckpointData(
-            stage="cluster_and_link",
-            filtered_observations=filtered_observations,
-            transformed_detections=transformed_detections,
-        )
-
-    return CheckpointData(
-        stage="range_and_transform", filtered_observations=filtered_observations
-    )
 
 
 @dataclass
@@ -347,8 +180,8 @@ def link_test_orbit(
             path=(filtered_observations_path,),
         )
 
-        checkpoint = CheckpointData(
-            stage="range_and_transform",
+        checkpoint = create_checkpoint_data(
+            "range_and_transform",
             filtered_observations=filtered_observations,
         )
 
@@ -382,8 +215,8 @@ def link_test_orbit(
             path=(transformed_detections_path,),
         )
 
-        checkpoint = CheckpointData(
-            stage="cluster_and_link",
+        checkpoint = create_checkpoint_data(
+            "cluster_and_link",
             filtered_observations=filtered_observations,
             transformed_detections=transformed_detections,
         )
@@ -429,8 +262,8 @@ def link_test_orbit(
             path=(clusters_path, cluster_members_path),
         )
 
-        checkpoint = CheckpointData(
-            stage="initial_orbit_determination",
+        checkpoint = create_checkpoint_data(
+            "initial_orbit_determination",
             filtered_observations=filtered_observations,
             clusters=clusters,
             cluster_members=cluster_members,
@@ -477,8 +310,8 @@ def link_test_orbit(
             path=(iod_orbits_path, iod_orbit_members_path),
         )
 
-        checkpoint = CheckpointData(
-            stage="differential_correction",
+        checkpoint = create_checkpoint_data(
+            "differential_correction",
             filtered_observations=filtered_observations,
             iod_orbits=iod_orbits,
             iod_orbit_members=iod_orbit_members,
@@ -525,8 +358,8 @@ def link_test_orbit(
             path=(od_orbits_path, od_orbit_members_path),
         )
 
-        checkpoint = CheckpointData(
-            stage="recover_orbits",
+        checkpoint = create_checkpoint_data(
+            "recover_orbits",
             filtered_observations=filtered_observations,
             od_orbits=od_orbits,
             od_orbit_members=od_orbit_members,

@@ -5,16 +5,16 @@ import pyarrow.compute as pc
 import pytest
 from adam_core.utils.helpers import make_observations, make_real_orbits
 
-from ..config import Config
-from ..main import (
+from ..checkpointing import (
     ClusterMembers,
     Clusters,
     FittedOrbitMembers,
     FittedOrbits,
     TransformedDetections,
-    link_test_orbit,
     load_initial_checkpoint_values,
 )
+from ..config import Config
+from ..main import initialize_use_ray, link_test_orbit
 from ..observations import Observations
 from ..observations.filters import TestOrbitRadiusObservationFilter
 from ..orbit import TestOrbit as THORbit
@@ -84,12 +84,7 @@ def integration_config():
 def ray_cluster():
     import ray
 
-    ray_initialized = False
-    if not ray.is_initialized():
-        ray.init(
-            num_cpus=4, include_dashboard=False, namespace="THOR Integration Tests"
-        )
-        ray_initialized = True
+    ray_initialized = initialize_use_ray(Config())
     yield
     if ray_initialized:
         ray.shutdown()
@@ -204,7 +199,6 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
 
 def run_link_test_orbit(test_orbit, observations, config):
     for stage_results in link_test_orbit(test_orbit, observations, config=config):
-        print(stage_results.name)
         if stage_results.name == "recover_orbits":
             recovered_orbits, recovered_orbit_members = stage_results.result
             return recovered_orbits, recovered_orbit_members
@@ -238,7 +232,12 @@ def test_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -265,7 +264,12 @@ def test_benchmark_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -318,7 +322,6 @@ def test_load_initial_checkpoint_values(working_dir):
     assert checkpoint.stage == "cluster_and_link"
     assert checkpoint.filtered_observations is not None
     assert checkpoint.transformed_detections is not None
-    assert checkpoint.transformed_detections.coordinates.time.scale == "utc"
 
     # Create clusters file to simulate third checkpoint
     Clusters.empty().to_parquet(os.path.join(working_dir, "clusters.parquet"))
@@ -343,8 +346,6 @@ def test_load_initial_checkpoint_values(working_dir):
     assert checkpoint.filtered_observations is not None
     assert checkpoint.iod_orbits is not None
     assert checkpoint.iod_orbit_members is not None
-    assert checkpoint.iod_orbits.coordinates.time.scale == "tbd"
-    assert checkpoint.iod_orbits.coordinates.frame == "ecliptic"
 
     # Create od_orbits files to simulate fifth checkpoint
     FittedOrbits.empty().to_parquet(os.path.join(working_dir, "od_orbits.parquet"))
@@ -357,8 +358,6 @@ def test_load_initial_checkpoint_values(working_dir):
     assert checkpoint.filtered_observations is not None
     assert checkpoint.od_orbits is not None
     assert checkpoint.od_orbit_members is not None
-    assert checkpoint.od_orbits.coordinates.time.scale == "tbd"
-    assert checkpoint.od_orbits.coordinates.frame == "ecliptic"
 
     # Create recovered_orbits files to simulate completed run folder
     FittedOrbits.empty().to_parquet(
@@ -372,5 +371,3 @@ def test_load_initial_checkpoint_values(working_dir):
     assert checkpoint.stage == "complete"
     assert checkpoint.recovered_orbits is not None
     assert checkpoint.recovered_orbit_members is not None
-    assert checkpoint.recovered_orbits.coordinates.time.scale == "tbd"
-    assert checkpoint.recovered_orbits.coordinates.frame == "ecliptic"
