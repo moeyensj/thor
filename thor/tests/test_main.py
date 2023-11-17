@@ -17,7 +17,7 @@ from ..main import (
 )
 from ..observations import Observations
 from ..observations.filters import TestOrbitRadiusObservationFilter
-from ..orbit import TestOrbit as THORbit
+from ..orbit import TestOrbits as THORbits
 from ..range_and_transform import range_and_transform
 
 OBJECT_IDS = [
@@ -143,7 +143,7 @@ def setup_test_data(
         integration_config.cell_radius = TOLERANCES["default"]
 
     # Create a test orbit for this object
-    test_orbit = THORbit.from_orbits(orbit)
+    test_orbit = THORbits.from_orbits(orbit)
 
     return test_orbit, observations, obs_ids_expected, integration_config
 
@@ -152,7 +152,7 @@ def test_Orbit_generate_ephemeris_from_observations_empty(orbits):
     # Test that when passed empty observations, TestOrbit.generate_ephemeris_from_observations
     # returns a Value Error
     observations = Observations.empty()
-    test_orbit = THORbit.from_orbits(orbits[0])
+    test_orbit = THORbits.from_orbits(orbits[0])
     with pytest.raises(ValueError, match="Observations must not be empty."):
         test_orbit.generate_ephemeris_from_observations(observations)
 
@@ -238,12 +238,7 @@ def test_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (
-        test_orbit,
-        observations,
-        obs_ids_expected,
-        integration_config,
-    ) = setup_test_data(
+    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -270,12 +265,7 @@ def test_benchmark_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (
-        test_orbit,
-        observations,
-        obs_ids_expected,
-        integration_config,
-    ) = setup_test_data(
+    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 

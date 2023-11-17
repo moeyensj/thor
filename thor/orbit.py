@@ -125,66 +125,26 @@ def range_observations_worker(
 range_observations_remote = ray.remote(range_observations_worker)
 
 
-class TestOrbit:
-    def __init__(
-        self,
-        coordinates: CoordinateType,
-        orbit_id: Optional[str] = None,
-        object_id: Optional[str] = None,
-    ):
-        """
-        Create a test orbit from a set of orbital elements.
+class TestOrbits(qv.Table):
 
-        Parameters
-        ----------
-        coordinates :  `~adam_core.coordinates.cartesian.CartesianCoordinates`,
-                       `~adam_core.coordinates.spherical.SphericalCoordinates`,
-                       `~adam_core.coordinates.keplerian.KeplerianCoordinates`,
-                       `~adam_core.coordinates.cometary.CometaryCoordinates`
-            The orbital elements that define this test orbit. Can be any representation but will
-            be stored internally as Cartesian elements.
-        orbit_id : str, optional
-            Orbit ID. If not provided, a random UUID will be generated.
-        object_id : str, optional
-            Object ID, if it exists.
-        """
-        # Test orbits should be singletons
-        assert len(coordinates) == 1
-
-        # Test orbit selection will likely occur in a non-Cartesian coordinate system
-        # so we should accept any coordinate system and convert to Cartesian as the
-        # most stable representation
-        if not isinstance(coordinates, CartesianCoordinates):
-            cartesian_coordinates = coordinates.to_cartesian()
-        else:
-            cartesian_coordinates = coordinates
-
-        if orbit_id is not None:
-            self.orbit_id = orbit_id
-        else:
-            self.orbit_id = uuid.uuid4().hex
-
-        self.object_id = object_id
-
-        self._orbit = Orbits.from_kwargs(
-            orbit_id=[self.orbit_id],
-            object_id=[self.object_id],
-            coordinates=cartesian_coordinates,
-        )
-
-        self._cached_ephemeris: Optional[TestOrbitEphemeris] = None
-        self._cached_observation_ids: Optional[pa.array] = None
+    orbit_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
+    object_id = qv.StringColumn(nullable=True)
+    coordinates = CartesianCoordinates.as_column()
 
     @classmethod
     def from_orbits(cls, orbits):
-        assert len(orbits) == 1
-        return cls(
-            orbits.coordinates, orbits.orbit_id[0].as_py(), orbits.object_id[0].as_py()
+        return cls.from_kwargs(
+            orbit_id=orbits.orbit_id,
+            object_id=orbits.object_id,
+            coordinates=orbits.coordinates,
         )
 
-    @property
-    def orbit(self):
-        return self._orbit
+    def to_orbits(self):
+        return Orbits.from_kwargs(
+            coordinates=self.coordinates,
+            orbit_id=self.orbit_id,
+            object_id=self.object_id,
+        )
 
     def _is_cache_fresh(self, observations: Observations) -> bool:
         """
@@ -202,13 +162,23 @@ class TestOrbit:
         is_fresh : bool
             True if the cache is fresh, False otherwise.
         """
-        if self._cached_ephemeris is None or self._cached_observation_ids is None:
+        if (
+            getattr(self, "_cached_ephemeris", None) is None
+            and getattr(self, "_cached_observation_ids", None) is None
+        ):
+            self._cached_ephemeris: Optional[TestOrbitEphemeris] = None
+            self._cached_observation_ids: Optional[TestOrbitEphemeris] = None
             return False
-        elif pc.all(
-            pc.is_in(
-                observations.detections.id.sort(), self._cached_observation_ids.sort()
-            )
-        ).as_py():
+        elif (
+            getattr(self, "_cached_ephemeris", None) is not None
+            and getattr(self, "_cached_observation_ids") is not None
+            and pc.all(
+                pc.is_in(
+                    observations.detections.id.sort(),
+                    self._cached_observation_ids.sort(),
+                )
+            ).as_py()
+        ):
             return True
         else:
             return False
@@ -257,7 +227,7 @@ class TestOrbit:
             The test orbit propagated to the given times.
         """
         return propagator.propagate_orbits(
-            self.orbit, times, max_processes=max_processes, chunk_size=1
+            self.to_orbits(), times, max_processes=max_processes, chunk_size=1
         )
 
     def generate_ephemeris(
@@ -284,7 +254,7 @@ class TestOrbit:
             The ephemeris of the test orbit at the given observers.
         """
         return propagator.generate_ephemeris(
-            self.orbit, observers, max_processes=max_processes, chunk_size=1
+            self.to_orbits(), observers, max_processes=max_processes, chunk_size=1
         )
 
     def generate_ephemeris_from_observations(
@@ -336,7 +306,6 @@ class TestOrbit:
 
         logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
 
-        state_ids = observations.state_id.unique()
         observers_with_states = observations.get_observers()
 
         # Generate ephemerides for each unique state and then sort by time and code
