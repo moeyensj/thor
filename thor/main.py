@@ -47,7 +47,9 @@ def initialize_test_orbit(
     Initialize the test orbit by saving it to disk if a working directory is provided.
     """
     if working_dir is not None:
-        test_orbit_directory = pathlib.Path(working_dir, "inputs", test_orbit.orbit_id)
+        test_orbit_directory = pathlib.Path(
+            working_dir, "inputs", test_orbit.orbit_id[0].as_py()
+        )
         test_orbit_directory.mkdir(parents=True, exist_ok=True)
         test_orbit_path = os.path.join(test_orbit_directory, "test_orbit.parquet")
         test_orbit.to_parquet(test_orbit_path)
@@ -113,7 +115,7 @@ def link_test_orbit(
     if working_dir is not None:
         working_dir_path = pathlib.Path(working_dir)
         logger.info(f"Using working directory: {working_dir}")
-        test_orbit_directory = pathlib.Path(working_dir_path, test_orbit.orbit_id)
+        test_orbit_directory = pathlib.Path(working_dir, test_orbit.orbit_id[0].as_py())
         test_orbit_directory.mkdir(parents=True, exist_ok=True)
         inputs_dir = pathlib.Path(working_dir_path, "inputs")
         inputs_dir.mkdir(parents=True, exist_ok=True)
