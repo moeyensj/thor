@@ -100,6 +100,7 @@ class TestOrbits(qv.Table):
 
     orbit_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
     object_id = qv.StringColumn(nullable=True)
+    bundle_id = qv.Int64Column(nullable=True)
     coordinates = CartesianCoordinates.as_column()
 
     @classmethod
