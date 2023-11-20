@@ -118,7 +118,7 @@ def attribution_worker(
 
     # Select the orbits and observations for this batch
     observations = observations.take(observation_indices)
-    orbits = orbits.apply_mask(pc.equal(orbits.orbit_id, orbit_ids))
+    orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_ids))
 
     # Get the unique observers for this batch of observations
     observers_with_states = observations.get_observers()
