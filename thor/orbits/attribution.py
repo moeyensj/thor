@@ -59,7 +59,7 @@ class Attributions(qv.Table):
         # Filter the observations to only include those that have been attributed
         # to an orbit
         observations_filtered = observations.apply_mask(
-            pc.is_in(observations.detections.id, flattened_table.column("obs_id"))
+            pc.is_in(observations.id, flattened_table.column("obs_id"))
         )
 
         # Flatten the observations table
@@ -67,12 +67,12 @@ class Attributions(qv.Table):
 
         # Only keep relevant columns
         flattened_observations = flattened_observations.select(
-            ["detections.id", "detections.time.days", "detections.time.nanos"]
+            ["id", "coordinates.time.days", "coordinates.time.nanos"]
         )
 
         # Join the time column back to the flattened attributions table
         flattened_table = flattened_table.join(
-            flattened_observations, ["obs_id"], right_keys=["detections.id"]
+            flattened_observations, ["obs_id"], right_keys=["id"]
         )
 
         # Add index column
@@ -84,15 +84,15 @@ class Attributions(qv.Table):
         flattened_table = flattened_table.sort_by(
             [
                 ("orbit_id", "ascending"),
-                ("detections.time.days", "ascending"),
-                ("detections.time.nanos", "ascending"),
+                ("coordinates.time.days", "ascending"),
+                ("coordinates.time.nanos", "ascending"),
             ]
         )
 
         # Group by orbit ID and observation time
         indices = (
             flattened_table.group_by(
-                ["orbit_id", "detections.time.days", "detections.time.nanos"],
+                ["orbit_id", "coordinates.time.days", "coordinates.time.nanos"],
                 use_threads=False,
             )
             .aggregate([("index", "first")])
@@ -118,7 +118,7 @@ def attribution_worker(
 
     # Select the orbits and observations for this batch
     observations = observations.take(observation_indices)
-    orbits = orbits.apply_mask(pc.equal(orbits.orbit_id, orbit_ids))
+    orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_ids))
 
     # Get the unique observers for this batch of observations
     observers_with_states = observations.get_observers()
@@ -134,7 +134,7 @@ def attribution_worker(
         "coordinates.time", ephemeris.coordinates.time.rounded(precision="ms")
     )
     observations_rounded = observations.set_column(
-        "detections.time", observations.detections.time.rounded(precision="ms")
+        "coordinates.time", observations.coordinates.time.rounded(precision="ms")
     )
 
     # Create a linkage between the ephemeris and observations
@@ -147,9 +147,9 @@ def attribution_worker(
             "code": ephemeris.coordinates.origin.code,
         },
         right_keys={
-            "days": observations_rounded.detections.time.days,
-            "nanos": observations_rounded.detections.time.nanos,
-            "code": observations_rounded.observatory_code,
+            "days": observations_rounded.coordinates.time.days,
+            "nanos": observations_rounded.coordinates.time.nanos,
+            "code": observations_rounded.coordinates.origin.code,
         },
     )
 
@@ -164,13 +164,13 @@ def attribution_worker(
     for _, ephemeris_i, observations_i in linkage.iterate():
 
         # Extract the observation IDs and times
-        obs_ids = observations_i.detections.id.to_numpy(zero_copy_only=False)
-        obs_times = observations_i.detections.time.mjd().to_numpy(zero_copy_only=False)
+        obs_ids = observations_i.id.to_numpy(zero_copy_only=False)
+        obs_times = observations_i.coordinates.time.mjd().to_numpy(zero_copy_only=False)
         orbit_ids = ephemeris_i.orbit_id.to_numpy(zero_copy_only=False)
 
         # Extract the spherical coordinates for both the observations
         # and ephemeris
-        coords = observations_i.to_spherical_coordinates()
+        coords = observations_i.coordinates
         coords_predicted = ephemeris_i.coordinates
 
         # Haversine metric requires latitude first then longitude...
@@ -449,7 +449,7 @@ def merge_and_extend_orbits(
             observations_iter = observations_iter.apply_mask(
                 pc.invert(
                     pc.is_in(
-                        observations_iter.detections.id,
+                        observations_iter.id,
                         orbit_members_out.obs_id.unique(),
                     )
                 )

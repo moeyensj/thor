@@ -51,12 +51,12 @@ def select_observations(
         An array of selected observation IDs. If three unique observations could
         not be selected then returns an empty array.
     """
-    obs_ids = observations.detections.id.to_numpy(zero_copy_only=False)
+    obs_ids = observations.id.to_numpy(zero_copy_only=False)
     if len(obs_ids) < 3:
         return np.array([])
 
     indexes = np.arange(0, len(obs_ids))
-    times = observations.detections.time.mjd().to_numpy(zero_copy_only=False)
+    times = observations.coordinates.time.mjd().to_numpy(zero_copy_only=False)
 
     if method == "first+middle+last":
         selected_times = np.percentile(times, [0, 50, 100], interpolation="nearest")
@@ -140,7 +140,7 @@ def iod_worker(
             pc.equal(linkage_members.column(linkage_id_col), linkage_id)
         ).obs_id
         observations_linkage = observations.apply_mask(
-            pc.is_in(observations.detections.id, obs_ids)
+            pc.is_in(observations.id, obs_ids)
         )
 
         iod_orbit, iod_orbit_members = iod(
@@ -270,15 +270,15 @@ def iod(
     if len(observations) == 0:
         processable = False
 
-    obs_ids_all = observations.detections.id.to_numpy(zero_copy_only=False)
-    coords_all = observations.to_spherical_coordinates()
+    obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
+    coords_all = observations.coordinates
     observers_with_states = observations.get_observers()
     observers = observers_with_states.observers
     coords_obs_all = observers_with_states.observers.coordinates.r
     times_all = coords_all.time.mjd().to_numpy(zero_copy_only=False)
 
     chi2_sol = 1e10
-    orbit_sol = None
+    orbit_sol: FittedOrbits = FittedOrbits.empty()
     obs_ids_sol = None
     arc_length = None
     outliers = np.array([])

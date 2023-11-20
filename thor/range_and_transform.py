@@ -68,7 +68,7 @@ def range_and_transform_worker(
 
     # Transform the detections into the co-rotating frame
     return TransformedDetections.from_kwargs(
-        id=observations_state.detections.id,
+        id=observations_state.id,
         coordinates=GnomonicCoordinates.from_cartesian(
             ranged_detections_state,
             center_cartesian=ephemeris_state.ephemeris.aberrated_coordinates,
@@ -78,6 +78,10 @@ def range_and_transform_worker(
 
 
 range_and_transform_remote = ray.remote(range_and_transform_worker)
+range_and_transform_remote = range_and_transform_remote.options(
+    num_cpus=1,
+    num_returns=1,
+)
 
 
 def range_and_transform(
