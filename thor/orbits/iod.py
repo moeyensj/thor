@@ -560,12 +560,14 @@ def initial_orbit_determination(
     if isinstance(linkage_members, ray.ObjectRef):
         linkage_members_ref = linkage_members
         linkage_members = ray.get(linkage_members)
+        logger.info("Retrieved linkage members from the object store.")
     else:
         linkage_members_ref = None
 
     if isinstance(observations, ray.ObjectRef):
         observations_ref = observations
         observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
     else:
         observations_ref = None
 
@@ -589,15 +591,11 @@ def initial_orbit_determination(
                 linkage_members_ref = ray.put(linkage_members)
                 refs_to_free.append(linkage_members_ref)
                 logger.info("Placed linkage members in the object store.")
-            else:
-                logger.info("Linkage members are already in the object store.")
 
             if observations_ref is None:
                 observations_ref = ray.put(observations)
                 refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
-            else:
-                logger.info("Observations are already in the object store.")
 
             futures = []
             for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):

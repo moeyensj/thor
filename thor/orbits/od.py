@@ -575,18 +575,21 @@ def differential_correction(
     if isinstance(orbits, ray.ObjectRef):
         orbits_ref = orbits
         orbits = ray.get(orbits)
+        logger.info("Retrieved orbits from the object store.")
     else:
         orbits_ref = None
 
     if isinstance(orbit_members, ray.ObjectRef):
         orbit_members_ref = orbit_members
         orbit_members = ray.get(orbit_members)
+        logger.info("Retrieved orbit members from the object store.")
     else:
         orbit_members_ref = None
 
     if isinstance(observations, ray.ObjectRef):
         observations_ref = observations
         observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
     else:
         observations_ref = None
 
@@ -609,22 +612,16 @@ def differential_correction(
                 orbits_ref = ray.put(orbits)
                 refs_to_free.append(orbits_ref)
                 logger.info("Placed orbits in the object store.")
-            else:
-                logger.info("Orbits are already in the object store.")
 
             if orbit_members_ref is None:
                 orbit_members_ref = ray.put(orbit_members)
                 refs_to_free.append(orbit_members_ref)
                 logger.info("Placed orbit members in the object store.")
-            else:
-                logger.info("Orbit members are already in the object store.")
 
             if observations_ref is None:
                 observations_ref = ray.put(observations)
                 refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
-            else:
-                logger.info("Observations are already in the object store.")
 
             futures = []
             for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):

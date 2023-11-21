@@ -130,6 +130,7 @@ def range_and_transform(
     if isinstance(observations, ray.ObjectRef):
         observations_ref = observations
         observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
     else:
         observations_ref = None
 
@@ -173,8 +174,6 @@ def range_and_transform(
                 observations_ref = ray.put(observations)
                 refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
-            else:
-                logger.info("Observations are already in the object store.")
 
             if not isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ray.put(ephemeris)
@@ -182,7 +181,6 @@ def range_and_transform(
                 logger.info("Placed ephemeris in the object store.")
             else:
                 ephemeris_ref = ephemeris
-                logger.info("Ephemeris is already in the object store.")
 
             ranged_detections_cartesian_ref = ray.put(ranged_detections_cartesian)
 

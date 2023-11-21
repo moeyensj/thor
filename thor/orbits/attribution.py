@@ -350,12 +350,15 @@ def merge_and_extend_orbits(
 
     if isinstance(orbits, ray.ObjectRef):
         orbits = ray.get(orbits)
+        logger.info("Retrieved orbits from the object store.")
 
     if isinstance(orbit_members, ray.ObjectRef):
         orbit_members = ray.get(orbit_members)
+        logger.info("Retrieved orbit members from the object store.")
 
     if isinstance(observations, ray.ObjectRef):
         observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
 
     # Set the running variables
     orbits_iter = orbits

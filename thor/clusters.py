@@ -675,6 +675,7 @@ def cluster_and_link(
 
     if isinstance(observations, ray.ObjectRef):
         observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
 
     clusters_list = []
     cluster_members_list = []

@@ -152,6 +152,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         if isinstance(observations, ray.ObjectRef):
             observations_ref = observations
             observations = ray.get(observations)
+            logger.info("Retrieved observations from the object store.")
         else:
             observations_ref = None
 
@@ -171,15 +172,12 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
                 observations_ref = ray.put(observations)
                 refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
-            else:
-                logger.info("Observations are already in the object store.")
 
             if not isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ray.put(ephemeris)
                 refs_to_free.append(ephemeris_ref)
                 logger.info("Placed ephemeris in the object store.")
             else:
-                logger.info("Ephemeris is already in the object store.")
                 ephemeris_ref = ephemeris
 
             state_ids = observations.state_id.unique().sort()
