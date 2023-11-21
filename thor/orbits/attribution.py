@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Literal, Optional, Tuple
+from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -308,9 +308,9 @@ def attribute_observations(
 
 
 def merge_and_extend_orbits(
-    orbits: FittedOrbits,
-    orbit_members: FittedOrbitMembers,
-    observations: Observations,
+    orbits: Union[FittedOrbits, ray.ObjectRef],
+    orbit_members: Union[FittedOrbitMembers, ray.ObjectRef],
+    observations: Union[Observations, ray.ObjectRef],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 20.0,
@@ -345,8 +345,17 @@ def merge_and_extend_orbits(
         Which parallelization backend to use {'ray', 'mp', cf}. Defaults to using Python's concurrent.futures
         module ('cf').
     """
-    time_start = time.time()
+    time_start = time.perf_counter()
     logger.info("Running orbit extension and merging...")
+
+    if isinstance(orbits, ray.ObjectRef):
+        orbits = ray.get(orbits)
+
+    if isinstance(orbit_members, ray.ObjectRef):
+        orbit_members = ray.get(orbit_members)
+
+    if isinstance(observations, ray.ObjectRef):
+        observations = ray.get(observations)
 
     # Set the running variables
     orbits_iter = orbits
@@ -510,7 +519,7 @@ def merge_and_extend_orbits(
         odp_orbits = FittedOrbits.empty()
         odp_orbit_members = FittedOrbitMembers.empty()
 
-    time_end = time.time()
+    time_end = time.perf_counter()
     logger.info(
         f"Number of attribution / differential correction iterations: {iterations}"
     )
