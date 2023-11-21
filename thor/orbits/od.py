@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Literal, Optional, Tuple
+from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -540,9 +540,9 @@ def od(
 
 
 def differential_correction(
-    orbits: FittedOrbits,
-    orbit_members: FittedOrbitMembers,
-    observations: Observations,
+    orbits: Union[FittedOrbits, ray.ObjectRef],
+    orbit_members: Union[FittedOrbitMembers, ray.ObjectRef],
+    observations: Union[Observations, ray.ObjectRef],
     min_obs: int = 5,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 20,
@@ -569,9 +569,26 @@ def differential_correction(
         Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures
         module ('cf').
     """
+    time_start = time.perf_counter()
     logger.info("Running differential correction...")
 
-    time_start = time.time()
+    if isinstance(orbits, ray.ObjectRef):
+        orbits_ref = orbits
+        orbits = ray.get(orbits)
+    else:
+        orbits_ref = None
+
+    if isinstance(orbit_members, ray.ObjectRef):
+        orbit_members_ref = orbit_members
+        orbit_members = ray.get(orbit_members)
+    else:
+        orbit_members_ref = None
+
+    if isinstance(observations, ray.ObjectRef):
+        observations_ref = observations
+        observations = ray.get(observations)
+    else:
+        observations_ref = None
 
     if len(orbits) > 0 and len(orbit_members) > 0:
 
@@ -582,11 +599,32 @@ def differential_correction(
         if max_processes is None or max_processes > 1:
 
             if not ray.is_initialized():
-                ray.init(address="auto")
+                logger.info(
+                    f"Ray is not initialized. Initializing with {max_processes}..."
+                )
+                ray.init(address="auto", num_cpus=max_processes)
 
-            orbits_ref = ray.put(orbits)
-            orbit_members_ref = ray.put(orbit_members)
-            observations_ref = ray.put(observations)
+            refs_to_free = []
+            if orbits_ref is None:
+                orbits_ref = ray.put(orbits)
+                refs_to_free.append(orbits_ref)
+                logger.info("Placed orbits in the object store.")
+            else:
+                logger.info("Orbits are already in the object store.")
+
+            if orbit_members_ref is None:
+                orbit_members_ref = ray.put(orbit_members)
+                refs_to_free.append(orbit_members_ref)
+                logger.info("Placed orbit members in the object store.")
+            else:
+                logger.info("Orbit members are already in the object store.")
+
+            if observations_ref is None:
+                observations_ref = ray.put(observations)
+                refs_to_free.append(observations_ref)
+                logger.info("Placed observations in the object store.")
+            else:
+                logger.info("Observations are already in the object store.")
 
             futures = []
             for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):
@@ -614,6 +652,12 @@ def differential_correction(
                 results = ray.get(finished[0])
                 od_orbits_list.append(results[0])
                 od_orbit_members_list.append(results[1])
+
+            if len(refs_to_free) > 0:
+                ray.internal.free(refs_to_free)
+                logger.info(
+                    f"Removed {len(refs_to_free)} references from the object store."
+                )
 
         else:
 
@@ -644,7 +688,7 @@ def differential_correction(
         od_orbits = FittedOrbits.empty()
         od_orbit_members = FittedOrbitMembers.empty()
 
-    time_end = time.time()
+    time_end = time.perf_counter()
     logger.info("Differentially corrected {} orbits.".format(len(od_orbits)))
     logger.info(
         "Differential correction completed in {:.3f} seconds.".format(
