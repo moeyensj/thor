@@ -105,7 +105,7 @@ class Attributions(qv.Table):
 def attribution_worker(
     orbit_ids: npt.NDArray[np.str_],
     observation_indices: npt.NDArray[np.int64],
-    orbits: FittedOrbits,
+    orbits: Union[Orbits, FittedOrbits],
     observations: Observations,
     radius: float = 1 / 3600,
     propagator: Literal["PYOORB"] = "PYOORB",
@@ -115,6 +115,9 @@ def attribution_worker(
         prop = PYOORB(**propagator_kwargs)
     else:
         raise ValueError(f"Invalid propagator '{propagator}'.")
+
+    if isinstance(orbits, FittedOrbits):
+        orbits = orbits.to_orbits()
 
     # Select the orbits and observations for this batch
     observations = observations.take(observation_indices)
@@ -233,7 +236,7 @@ attribution_worker_remote.options(
 
 
 def attribute_observations(
-    orbits: Orbits,
+    orbits: Union[Orbits, FittedOrbits],
     observations: Observations,
     radius: float = 5 / 3600,
     propagator: Literal["PYOORB"] = "PYOORB",
@@ -244,6 +247,9 @@ def attribute_observations(
 ) -> Attributions:
     logger.info("Running observation attribution...")
     time_start = time.time()
+
+    if isinstance(orbits, FittedOrbits):
+        orbits = orbits.to_orbits()
 
     orbit_ids = orbits.orbit_id
     observation_indices = np.arange(0, len(observations))
@@ -374,7 +380,7 @@ def merge_and_extend_orbits(
         while not converged:
             # Run attribution
             attributions = attribute_observations(
-                orbits_iter.to_orbits(),
+                orbits_iter,
                 observations_iter,
                 radius=radius,
                 propagator=propagator,
