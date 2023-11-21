@@ -43,7 +43,7 @@ class ClusterAndLink(pydantic.BaseModel):
 
     stage: Literal["cluster_and_link"]
     filtered_observations: Union[Observations, ray.ObjectRef]
-    transformed_detections: TransformedDetections
+    transformed_detections: Union[TransformedDetections, ray.ObjectRef]
 
 
 class InitialOrbitDetermination(pydantic.BaseModel):
@@ -51,9 +51,9 @@ class InitialOrbitDetermination(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
     stage: Literal["initial_orbit_determination"]
-    filtered_observations: Observations
-    clusters: Clusters
-    cluster_members: ClusterMembers
+    filtered_observations: Union[Observations, ray.ObjectRef]
+    clusters: Union[Clusters, ray.ObjectRef]
+    cluster_members: Union[ClusterMembers, ray.ObjectRef]
 
 
 class DifferentialCorrection(pydantic.BaseModel):
@@ -61,9 +61,9 @@ class DifferentialCorrection(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
     stage: Literal["differential_correction"]
-    filtered_observations: Observations
-    iod_orbits: FittedOrbits
-    iod_orbit_members: FittedOrbitMembers
+    filtered_observations: Union[Observations, ray.ObjectRef]
+    iod_orbits: Union[FittedOrbits, ray.ObjectRef]
+    iod_orbit_members: Union[FittedOrbitMembers, ray.ObjectRef]
 
 
 class RecoverOrbits(pydantic.BaseModel):
@@ -71,9 +71,9 @@ class RecoverOrbits(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
     stage: Literal["recover_orbits"]
-    filtered_observations: Observations
-    od_orbits: FittedOrbits
-    od_orbit_members: FittedOrbitMembers
+    filtered_observations: Union[Observations, ray.ObjectRef]
+    od_orbits: Union[FittedOrbits, ray.ObjectRef]
+    od_orbit_members: Union[FittedOrbitMembers, ray.ObjectRef]
 
 
 class Complete(pydantic.BaseModel):
@@ -81,8 +81,8 @@ class Complete(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
     stage: Literal["complete"]
-    recovered_orbits: FittedOrbits
-    recovered_orbit_members: FittedOrbitMembers
+    recovered_orbits: Union[FittedOrbits, ray.ObjectRef]
+    recovered_orbit_members: Union[FittedOrbitMembers, ray.ObjectRef]
 
 
 CheckpointData = Annotated[
