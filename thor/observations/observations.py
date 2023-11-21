@@ -34,7 +34,7 @@ class InputObservations(qv.Table):
     ra_dec_cov = qv.Float64Column(nullable=True)
     mag = qv.Float64Column()
     mag_sigma = qv.Float64Column(nullable=True)
-    filter = qv.StringColumn()
+    filter = qv.StringColumn(nullable=True)
     observatory_code = qv.StringColumn()
 
 
@@ -42,7 +42,7 @@ class Observations(qv.Table):
     id = qv.StringColumn()
     exposure_id = qv.StringColumn()
     coordinates = SphericalCoordinates.as_column()
-    photometry = Photometry.as_column()
+    photometry = Photometry.as_column(nullable=True)
     state_id = qv.Int64Column()
 
     @classmethod

@@ -4,7 +4,6 @@ __all__ = ["Photometry"]
 
 
 class Photometry(qv.Table):
-
     mag = qv.Float64Column()
     mag_sigma = qv.Float64Column(nullable=True)
-    filter = qv.StringColumn()
+    filter = qv.StringColumn(nullable=True)
