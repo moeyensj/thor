@@ -1,7 +1,7 @@
 import logging
 import time
 import uuid
-from typing import List, Literal, Optional, Tuple
+from typing import List, Literal, Optional, Tuple, Union
 
 import numba
 import numpy as np
@@ -31,7 +31,7 @@ __all__ = [
     "ClusterMembers",
 ]
 
-logger = logging.getLogger("thor")
+logger = logging.getLogger(__name__)
 
 
 class Clusters(qv.Table):
@@ -585,7 +585,7 @@ cluster_velocity_remote.options(
 
 
 def cluster_and_link(
-    observations: TransformedDetections,
+    observations: Union[TransformedDetections, ray.ObjectRef],
     vx_range: List[float] = [-0.1, 0.1],
     vy_range: List[float] = [-0.1, 0.1],
     vx_bins: int = 100,
@@ -673,6 +673,9 @@ def cluster_and_link(
     logger.info("Max sample distance: {}".format(radius))
     logger.info("Minimum samples: {}".format(min_obs))
 
+    if isinstance(observations, ray.ObjectRef):
+        observations = ray.get(observations)
+
     clusters_list = []
     cluster_members_list = []
     if len(observations) > 0:
@@ -690,14 +693,22 @@ def cluster_and_link(
         if max_processes is None or max_processes > 1:
 
             if not ray.is_initialized():
-                ray.init(address="auto")
+                logger.info(
+                    f"Ray is not initialized. Initializing with {max_processes}..."
+                )
+                ray.init(address="auto", num_cpus=max_processes)
 
             # Put all arrays (which can be large) in ray's
             # local object store ahead of time
-            obs_ids_oid = ray.put(obs_ids)
-            theta_x_oid = ray.put(theta_x)
-            theta_y_oid = ray.put(theta_y)
-            dt_oid = ray.put(dt)
+            obs_ids_ref = ray.put(obs_ids)
+            theta_x_ref = ray.put(theta_x)
+            theta_y_ref = ray.put(theta_y)
+            dt_ref = ray.put(dt)
+            refs_to_free = [obs_ids_ref, theta_x_ref, theta_y_ref, dt_ref]
+            logger.info("Placed gnomonic coordinate arrays in the object store.")
+            # TODO: transformed detections are already in the object store so we might
+            # want to instead pass references to those rather than extract arrays
+            # from them and put them in the object store again.
 
             futures = []
             for vxi_chunk, vyi_chunk in zip(
@@ -707,10 +718,10 @@ def cluster_and_link(
                     cluster_velocity_remote.remote(
                         vxi_chunk,
                         vyi_chunk,
-                        obs_ids_oid,
-                        theta_x_oid,
-                        theta_y_oid,
-                        dt_oid,
+                        obs_ids_ref,
+                        theta_x_ref,
+                        theta_y_ref,
+                        dt_ref,
                         radius=radius,
                         min_obs=min_obs,
                         min_arc_length=min_arc_length,
@@ -723,6 +734,11 @@ def cluster_and_link(
                 result = ray.get(finished[0])
                 clusters_list.append(result[0])
                 cluster_members_list.append(result[1])
+
+            ray.internal.free(refs_to_free)
+            logger.info(
+                f"Removed {len(refs_to_free)} references from the object store."
+            )
 
         else:
 
