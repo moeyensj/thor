@@ -236,32 +236,64 @@ attribution_worker_remote.options(
 
 
 def attribute_observations(
-    orbits: Union[Orbits, FittedOrbits],
-    observations: Observations,
+    orbits: Union[Orbits, FittedOrbits, ray.ObjectRef],
+    observations: Union[Observations, ray.ObjectRef],
     radius: float = 5 / 3600,
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
     orbits_chunk_size: int = 10,
     observations_chunk_size: int = 100000,
     max_processes: Optional[int] = 1,
+    orbit_ids: Optional[npt.NDArray[np.str_]] = None,
+    obs_ids: Optional[npt.NDArray[np.str_]] = None,
 ) -> Attributions:
     logger.info("Running observation attribution...")
     time_start = time.time()
 
+    if isinstance(orbits, ray.ObjectRef):
+        orbits_ref = orbits
+        orbits = ray.get(orbits)
+        logger.info("Retrieved orbits from the object store.")
+
+        if orbit_ids is not None:
+            orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_ids))
+            logger.info("Applied orbit ID mask to orbits.")
+    else:
+        orbits_ref = None
+
+    if isinstance(observations, ray.ObjectRef):
+        observations_ref = observations
+        observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
+        if obs_ids is not None:
+            observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
+            logger.info("Applied observation ID mask to observations.")
+    else:
+        observations_ref = None
+
     if isinstance(orbits, FittedOrbits):
         orbits = orbits.to_orbits()
 
-    orbit_ids = orbits.orbit_id
+    if orbit_ids is None:
+        orbit_ids = orbits.orbit_id
     observation_indices = np.arange(0, len(observations))
 
     attributions_list = []
     if max_processes is None or max_processes > 1:
 
         if not ray.is_initialized():
-            ray.init(address="auto")
+            logger.info(f"Ray is not initialized. Initializing with {max_processes}...")
+            ray.init(address="auto", max_processes=max_processes)
 
-        observations_ref = ray.put(observations)
-        orbits_ref = ray.put(orbits)
+        refs_to_free = []
+        if orbits_ref is None:
+            orbits_ref = ray.put(orbits)
+            refs_to_free.append(orbits_ref)
+            logger.info("Placed orbits in the object store.")
+        if observations_ref is None:
+            observations_ref = ray.put(observations)
+            refs_to_free.append(observations_ref)
+            logger.info("Placed observations in the object store.")
 
         futures = []
         for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
@@ -283,6 +315,12 @@ def attribute_observations(
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
             attributions_list.append(ray.get(finished[0]))
+
+        if len(refs_to_free) > 0:
+            ray.internal.free(refs_to_free)
+            logger.info(
+                f"Removed {len(refs_to_free)} references from the object store."
+            )
 
     else:
         for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
@@ -355,16 +393,24 @@ def merge_and_extend_orbits(
     logger.info("Running orbit extension and merging...")
 
     if isinstance(orbits, ray.ObjectRef):
+        orbits_ref = orbits
         orbits = ray.get(orbits)
         logger.info("Retrieved orbits from the object store.")
+    else:
+        orbits_ref = None
 
     if isinstance(orbit_members, ray.ObjectRef):
         orbit_members = ray.get(orbit_members)
         logger.info("Retrieved orbit members from the object store.")
 
     if isinstance(observations, ray.ObjectRef):
+        observations_ref = observations
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
+    else:
+        observations_ref = None
+
+    use_ray = max_processes is None or max_processes > 1
 
     # Set the running variables
     orbits_iter = orbits
@@ -376,18 +422,48 @@ def merge_and_extend_orbits(
     odp_orbit_members_list = []
     if len(orbits_iter) > 0 and len(observations_iter) > 0:
 
+        if use_ray:
+            if not ray.is_initialized():
+                logger.info(
+                    f"Ray is not initialized. Initializing with {max_processes}..."
+                )
+                ray.init(address="auto", max_processes=max_processes)
+
+            refs_to_free = []
+            if observations_ref is None:
+                observations_ref = ray.put(observations)
+                refs_to_free.append(observations_ref)
+                logger.info("Placed observations in the object store.")
+
         converged = False
         while not converged:
+
+            if use_ray:
+                # Orbits will change with differential correction so we need to add them
+                # to the object store at the start of each iteration (we cannot simply
+                # pass references to the same immutable object)
+                orbits_ref = ray.put(orbits_iter)
+                logger.info("Placed orbits in the object store.")
+
+                orbits_in = orbits_ref
+                observations_in = observations_ref
+
+            else:
+                orbits_in = orbits_iter
+                observations_in = observations_iter
+
             # Run attribution
             attributions = attribute_observations(
-                orbits_iter,
-                observations_iter,
+                orbits_in,
+                observations_in,
                 radius=radius,
                 propagator=propagator,
                 propagator_kwargs=propagator_kwargs,
                 orbits_chunk_size=orbits_chunk_size,
                 observations_chunk_size=observations_chunk_size,
                 max_processes=max_processes,
+                orbit_ids=orbits_iter.orbit_id,
+                obs_ids=observations_iter.id,
             )
 
             # For orbits with coincident observations: multiple observations attributed at
@@ -407,9 +483,9 @@ def merge_and_extend_orbits(
 
             # Run differential orbit correction
             orbits_iter, orbit_members_iter = differential_correction(
-                orbits_iter,
+                orbits_in,
                 orbit_members_iter,
-                observations_iter,
+                observations_in,
                 rchi2_threshold=rchi2_threshold,
                 min_obs=min_obs,
                 min_arc_length=min_arc_length,
@@ -422,6 +498,8 @@ def merge_and_extend_orbits(
                 propagator_kwargs=propagator_kwargs,
                 chunk_size=orbits_chunk_size,
                 max_processes=max_processes,
+                orbit_ids=orbits_iter.orbit_id,
+                obs_ids=pc.unique(orbit_members_iter.obs_id),
             )
             orbit_members_iter = orbit_members_iter.drop_outliers()
 
@@ -494,6 +572,13 @@ def merge_and_extend_orbits(
                 pc.is_in(orbits_iter.orbit_id, orbit_members_iter.orbit_id.unique())
             )
 
+            # Remove orbits from the object store (the underlying state vectors may
+            # change with differential correction so we need to add them again at
+            # the start of the next iteration)
+            if use_ray:
+                ray.internal.free([orbits_ref])
+                logger.info("Removed orbits from the object store.")
+
             iterations += 1
             if len(orbits_iter) == 0:
                 converged = True
@@ -524,6 +609,12 @@ def merge_and_extend_orbits(
             )
             odp_orbit_members = odp_orbit_members.drop_outliers()
 
+        if use_ray:
+            if len(refs_to_free) > 0:
+                ray.internal.free(refs_to_free)
+                logger.info(
+                    f"Removed {len(refs_to_free)} references from the object store."
+                )
     else:
         odp_orbits = FittedOrbits.empty()
         odp_orbit_members = FittedOrbitMembers.empty()

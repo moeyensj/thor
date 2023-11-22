@@ -30,8 +30,8 @@ def initialize_use_ray(config: Config) -> bool:
     if config.max_processes is None or config.max_processes > 1:
         # Initialize ray
         if not ray.is_initialized():
-            logger.debug(
-                f"Ray is not initialized. Initializing with {config.max_processes}..."
+            logger.info(
+                f"Ray is not initialized. Initializing with {config.max_processes} cpus..."
             )
             ray.init(num_cpus=config.max_processes)
 
@@ -199,8 +199,8 @@ def link_test_orbit(
     # Observations are no longer needed. If we are using ray
     # lets explicitly free the memory.
     if use_ray and isinstance(observations, ray.ObjectRef):
-        logger.info("Removing observations from the object store...")
         ray.internal.free([observations])
+        logger.info("Removed observations from the object store.")
     del observations
 
     if checkpoint.stage == "range_and_transform":

@@ -555,6 +555,8 @@ def differential_correction(
     propagator_kwargs: dict = {},
     chunk_size: int = 10,
     max_processes: Optional[int] = 1,
+    orbit_ids: Optional[npt.NDArray[np.str_]] = None,
+    obs_ids: Optional[npt.NDArray[np.str_]] = None,
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Differentially correct (via finite/central differencing).
@@ -576,6 +578,10 @@ def differential_correction(
         orbits_ref = orbits
         orbits = ray.get(orbits)
         logger.info("Retrieved orbits from the object store.")
+
+        if orbit_ids is not None:
+            orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_ids))
+            logger.info("Applied mask to orbit members.")
     else:
         orbits_ref = None
 
@@ -583,6 +589,17 @@ def differential_correction(
         orbit_members_ref = orbit_members
         orbit_members = ray.get(orbit_members)
         logger.info("Retrieved orbit members from the object store.")
+
+        if obs_ids is not None:
+            orbit_members = orbit_members.apply_mask(
+                pc.is_in(orbit_members.obs_id, obs_ids)
+            )
+            logger.info("Applied mask to orbit members.")
+        if orbit_ids is not None:
+            orbit_members = orbit_members.apply_mask(
+                pc.is_in(orbit_members.orbit_id, orbit_ids)
+            )
+            logger.info("Applied mask to orbit members.")
     else:
         orbit_members_ref = None
 
@@ -590,6 +607,10 @@ def differential_correction(
         observations_ref = observations
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
+
+        if obs_ids is not None:
+            observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
+            logger.info("Applied mask to observations.")
     else:
         observations_ref = None
 
