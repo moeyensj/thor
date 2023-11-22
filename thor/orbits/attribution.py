@@ -12,6 +12,7 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB
 from adam_core.propagator.utils import _iterate_chunks
+from adam_core.ray_cluster import initialize_use_ray
 from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
@@ -165,7 +166,6 @@ def attribution_worker(
     radius_rad = np.radians(radius)
     residuals = []
     for _, ephemeris_i, observations_i in linkage.iterate():
-
         # Extract the observation IDs and times
         obs_ids = observations_i.id.to_numpy(zero_copy_only=False)
         obs_times = observations_i.coordinates.time.mjd().to_numpy(zero_copy_only=False)
@@ -279,12 +279,8 @@ def attribute_observations(
     observation_indices = np.arange(0, len(observations))
 
     attributions_list = []
-    if max_processes is None or max_processes > 1:
-
-        if not ray.is_initialized():
-            logger.info(f"Ray is not initialized. Initializing with {max_processes}...")
-            ray.init(address="auto", max_processes=max_processes)
-
+    use_ray = initialize_use_ray(num_cpus=max_processes)
+    if use_ray:
         refs_to_free = []
         if orbits_ref is None:
             orbits_ref = ray.put(orbits)
@@ -421,14 +417,8 @@ def merge_and_extend_orbits(
     odp_orbits_list = []
     odp_orbit_members_list = []
     if len(orbits_iter) > 0 and len(observations_iter) > 0:
-
+        use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
-            if not ray.is_initialized():
-                logger.info(
-                    f"Ray is not initialized. Initializing with {max_processes}..."
-                )
-                ray.init(address="auto", max_processes=max_processes)
-
             refs_to_free = []
             if observations_ref is None:
                 observations_ref = ray.put(observations)
@@ -437,7 +427,6 @@ def merge_and_extend_orbits(
 
         converged = False
         while not converged:
-
             if use_ray:
                 # Orbits will change with differential correction so we need to add them
                 # to the object store at the start of each iteration (we cannot simply

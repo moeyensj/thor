@@ -84,7 +84,7 @@ def integration_config():
 def ray_cluster():
     import ray
 
-    ray_initialized = initialize_use_ray(Config())
+    ray_initialized = initialize_use_ray()
     yield
     if ray_initialized:
         ray.shutdown()
@@ -232,7 +232,12 @@ def test_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -259,7 +264,12 @@ def test_benchmark_link_test_orbit(
     else:
         integration_config.max_processes = 1
 
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
