@@ -1,283 +1,324 @@
-from typing import List, Optional
+import logging
+import time
+from dataclasses import dataclass
 
 import numpy as np
-import pandas as pd
-from adam_core.orbits import Orbits
-from astropy.time import Time
+import pyarrow as pa
+import pyarrow.compute as pc
+import quivr as qv
+from adam_core.coordinates import KeplerianCoordinates
+from adam_core.observers import Observers
+from adam_core.orbits import Ephemeris, Orbits
+from adam_core.propagator import PYOORB, Propagator
 
-__all__ = [
-    "findAverageOrbits",
-    "findTestOrbitsPatch",
-    "selectTestOrbits",
-]
+from thor.observations import Observations
+from thor.orbit import TestOrbits
+
+from .observations.utils import calculate_healpixels
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["generate_test_orbits"]
 
 
-def findAverageOrbits(
-    ephemeris: pd.DataFrame,
-    orbits: pd.DataFrame,
-    d_values: Optional[np.ndarray] = None,
-    element_type: str = "keplerian",
-) -> pd.DataFrame:
+@dataclass
+class KeplerianPhaseSpace:
+    a_min: float = -1_000_000.0
+    a_max: float = 1_000_000.0
+    e_min: float = 0.0
+    e_max: float = 1_000.0
+    i_min: float = 0.0
+    i_max: float = 180.0
+
+
+def select_average_within_region(coordinates: KeplerianCoordinates) -> int:
     """
-    Find the object with observations that represents
-    the most average in terms of cartesian velocity and the
-    heliocentric distance. Assumes that a subset of the designations in the orbits
-    dataframe are identical to at least some of the designations in the observations
-    dataframe. No propagation is done, so the orbits need to be defined at an epoch near
-    the time of observations, for example like the midpoint or start of a two-week window.
+    Select the Keplerian coordinate as close to the median in semi-major axis,
+    eccentricity, and inclination.
 
     Parameters
     ----------
-    ephemeris : `~pandas.DataFrame`
-        DataFrame containing simulated ephemerides.
-    orbits : `~pandas.DataFrame`
-        DataFrame containing orbits for each unique object in observations.
-    d_values : {list (N>=2), None}, optional
-        If None, will find average orbit in all of observations. If a list, will find an
-        average orbit between each value in the list. For example, passing d_values = [1.0, 2.0, 4.0] will
-        mean an average orbit will be found in the following bins: (1.0 <= d < 2.0), (2.0 <= d < 4.0).
-    element_type : {'keplerian', 'cartesian'}, optional
-        Find average orbits using which elements. If 'keplerian' will use a-e-i for average,
-        if 'cartesian' will use r, v.
-        [Default = 'keplerian']
+    coordinates
+        Keplerian coordinates to select from.
 
     Returns
     -------
-    average_orbits : `~pandas.DataFrame`
-        Orbits selected from
+    index
+        Index of the selected coordinates.
     """
-    if element_type == "keplerian":
-        d_col = "a"
-    elif element_type == "cartesian":
-        d_col = "r_au"
-    else:
-        err = "element_type should be one of {'keplerian', 'cartesian'}"
-        raise ValueError(err)
+    keplerian = coordinates.values
+    aei = keplerian[:, 0:3]
 
-    dataframe = pd.merge(orbits, ephemeris, on="orbit_id", how="right").copy()
+    median = np.median(aei, axis=0)
+    percent_diff = np.abs((aei - median) / median)
 
-    d_bins = []
-    if d_values is not None:
-        for d_i, d_f in zip(d_values[:-1], d_values[1:]):
-            d_bins.append(
-                dataframe[(dataframe[d_col] >= d_i) & (dataframe[d_col] < d_f)]
-            )
-    else:
-        d_bins.append(dataframe)
+    # Sum the percent differences
+    summed_diff = np.sum(percent_diff, axis=1)
 
-    average_orbits = []
-
-    for i, obs in enumerate(d_bins):
-        if len(obs) == 0:
-            continue
-
-        if element_type == "cartesian":
-            rv = obs[["vx", "vy", "vz", d_col]].values
-            median = np.median(rv, axis=0)
-            percent_diff = np.abs((rv - median) / median)
-
-        else:
-            aie = obs[["a", "i", "e"]].values
-            median = np.median(aie, axis=0)
-            percent_diff = np.abs((aie - median) / median)
-
-        # Sum the percent differences
-        summed_diff = np.sum(percent_diff, axis=1)
-
-        # Find the minimum summed percent difference and call that
-        # the average object
-        index = np.where(summed_diff == np.min(summed_diff))[0][0]
-        orbit_id = obs["orbit_id"].values[index]
-        average_orbits.append(orbit_id)
-
-    average_orbits_df = orbits[orbits["orbit_id"].isin(average_orbits)].copy()
-    average_orbits_df.reset_index(inplace=True, drop=True)
-
-    return average_orbits_df
+    # Find the minimum summed percent difference and call that
+    # the average object
+    index = np.where(summed_diff == np.min(summed_diff))[0][0]
+    return index
 
 
-def findTestOrbitsPatch(ephemeris: pd.DataFrame) -> pd.DataFrame:
+def select_test_orbits(ephemeris: Ephemeris, orbits: Orbits) -> Orbits:
     """
-    Find test orbits for a patch of ephemerides.
+    Select test orbits from orbits using the predicted ephemeris
+    for different regions of Keplerian phase space.
+
+    The regions are:
+    - 3 in the Hungarias
+    - 5 in the main belt
+    - 1 in the outer solar system
 
     Parameters
     ----------
-    ephemeris : `~pandas.DataFrame`
-        DataFrame containing predicted ephemerides (including aberrated cartesian state
-        vectors) of an input catalog of orbits for a patch or small region of the
-        sky.
+    ephemeris
+        Ephemeris for the orbits.
+    orbits
+        Orbits to select from.
 
     Returns
     -------
-    test_orbits : `~pandas.DataFrame` (<=9)
-        Up to 9 test orbits for the given patch of ephemerides.
+    test_orbits
+        Test orbits selected from the orbits.
     """
-    observation_times = Time(ephemeris["mjd_utc"].values, scale="utc", format="mjd")
-    orbits = Orbits(
-        ephemeris[["obj_x", "obj_y", "obj_z", "obj_vx", "obj_vy", "obj_vz"]].values,
-        observation_times,
-        ids=ephemeris["orbit_id"],
-        orbit_type="cartesian",
-    )
-    orbits_df = orbits.to_df(include_units=False, include_keplerian=True)
+    orbits_patch = orbits.apply_mask(pc.is_in(orbits.orbit_id, ephemeris.orbit_id))
 
-    patch_id = ephemeris["patch_id"].unique()[0]
+    # Convert to keplerian coordinates
+    keplerian = orbits_patch.coordinates.to_keplerian()
 
-    test_orbits_hun1_patch = findAverageOrbits(
-        ephemeris,
-        orbits_df[
-            (orbits_df["a"] < 2.06) & (orbits_df["a"] >= 1.7) & (orbits_df["e"] <= 0.1)
-        ],
-        element_type="keplerian",
-        d_values=[1.7, 2.06],
+    # Create 3 phase space regions for the Hungarias
+    hungarias_01 = KeplerianPhaseSpace(
+        a_min=1.7,
+        a_max=2.06,
+        e_max=0.1,
     )
-    test_orbits_hun2_patch = findAverageOrbits(
-        ephemeris,
-        orbits_df[
-            (orbits_df["a"] < 2.06)
-            & (orbits_df["a"] >= 1.7)
-            & (orbits_df["e"] > 0.1)
-            & (orbits_df["e"] <= 0.2)
-        ],
-        element_type="keplerian",
-        d_values=[1.7, 2.06],
+    hungarias_02 = KeplerianPhaseSpace(
+        a_min=hungarias_01.a_min,
+        a_max=hungarias_01.a_max,
+        e_min=hungarias_01.e_max,
+        e_max=0.2,
     )
-    test_orbits_hun3_patch = findAverageOrbits(
-        ephemeris,
-        orbits_df[
-            (orbits_df["a"] < 2.06)
-            & (orbits_df["a"] >= 1.7)
-            & (orbits_df["e"] > 0.2)
-            & (orbits_df["e"] <= 0.4)
-        ],
-        element_type="keplerian",
-        d_values=[1.7, 2.06],
+    hungarias_03 = KeplerianPhaseSpace(
+        a_min=hungarias_01.a_min,
+        a_max=hungarias_01.a_max,
+        e_min=hungarias_02.e_max,
+        e_max=0.4,
     )
 
-    test_orbits_patch = findAverageOrbits(
-        ephemeris,
-        orbits_df[(orbits_df["e"] < 0.5)],
-        element_type="keplerian",
-        d_values=[2.06, 2.5, 2.82, 2.95, 3.27, 5.0, 50.0],
+    # Create 5 phase space regions for the rest of the main belt
+    mainbelt_01 = KeplerianPhaseSpace(
+        a_min=hungarias_03.a_max,
+        a_max=2.5,
+        e_max=0.5,
     )
-    test_orbits_patch = pd.concat(
-        [
-            test_orbits_hun1_patch,
-            test_orbits_hun2_patch,
-            test_orbits_hun3_patch,
-            test_orbits_patch,
-        ],
-        ignore_index=True,
+    mainbelt_02 = KeplerianPhaseSpace(
+        a_min=mainbelt_01.a_max,
+        a_max=2.82,
+        e_max=0.5,
     )
-    test_orbits_patch.insert(0, "patch_id", patch_id)
-    test_orbits_patch["r"] = np.linalg.norm(
-        test_orbits_patch[["x", "y", "z"]].values, axis=1
+    mainbelt_03 = KeplerianPhaseSpace(
+        a_min=mainbelt_02.a_max,
+        a_max=2.95,
+        e_max=0.5,
     )
-    test_orbits_patch.sort_values(by=["r"], inplace=True)
-
-    return test_orbits_patch
-
-
-def findTestOrbits_worker(ephemeris_list: List[pd.DataFrame]) -> pd.DataFrame:
-    """
-    Find test orbits for a given list of patches of ephemerides.
-
-    Parameters
-    ----------
-    ephemeris_list : list[`~pandas.DataFrame`]
-        Small patches of ephemerides for which to find test orbits.
-
-    Returns
-    -------
-    test_orbits : `~pandas.DataFrame`
-        Test orbits for the given ephemerides.
-    """
-    test_orbits_list = []
-    for ephemeris in ephemeris_list:
-
-        test_orbits_patch = findTestOrbitsPatch(ephemeris)
-        test_orbits_list.append(test_orbits_patch)
-
-    if len(test_orbits_list) > 0:
-        test_orbits = pd.concat(test_orbits_list, ignore_index=True)
-    else:
-        test_orbits = pd.DataFrame()
-    return test_orbits
-
-
-def selectTestOrbits(
-    observations: pd.DataFrame,
-    ephemeris: pd.DataFrame,
-    patch_algorithm: str = "healpix",
-    patch_algorithm_kwargs: dict = {"nside": 32, "nest": True, "lonlat": True},
-) -> pd.DataFrame:
-    """
-    Select test orbits from ephemerides. Both the observations and the ephemerides
-    are divided into patches, for each patch up to 9 test orbits are selected in bins
-    of semi-major axis from the ephemerides. These orbits should represent
-    the average in semi-major axis, eccentricity, and inclination for each bin.
-
-    Parameters
-    ----------
-    observations : `~pandas.DataFrame`
-        DataFrame of observations containing at least the observation time ('mjd_utc'),
-        and the astrometry ('RA_deg', 'Dec_deg').
-    ephemeris : `~pandas.DataFrame`
-        DataFrame of ephemerides containing at least the observation time ('mjd_utc'),
-        and the astrometry ('RA_deg', 'Dec_deg'), and the cartesian state vector of the
-        orbit at the time of the observation (must be correctly aberrated)
-        ('obj_x', 'obj_y', 'obj_z', 'obj_vx', 'obj_vy', 'obj_vz').
-    patch_algorithm : str, optional
-        Algorithm to use for dividing the observations and ephemerides into patches.
-    patch_algorithm_kwargs : dict, optional
-        Keyword arguments to pass to the patch algorithm.
-
-    Returns
-    -------
-    test_orbits : `~pandas.DataFrame`
-        DataFrame containing test orbits. Can be read into an Orbits class using
-        Orbits.from_df(test_orbits).
-    """
-    observations_ = observations[["mjd_utc", "RA_deg", "Dec_deg"]].copy()
-    ephemeris_ = ephemeris.copy()
-
-    if patch_algorithm == "healpix":
-        patch_func = assignPatchesHEALPix  # type: ignore
-    elif patch_algorithm == "square":
-        patch_func = assignPatchesSquare  # type: ignore
-    else:
-        err = "patch_algorithm should be one of {'healpix', 'square'}"
-        raise ValueError(err)
-
-    # Divide the observations into patches of size ra_width x dec_width
-    patch_ids = patch_func(
-        observations_["RA_deg"].values,
-        observations_["Dec_deg"].values,
-        **patch_algorithm_kwargs
+    mainbelt_04 = KeplerianPhaseSpace(
+        a_min=mainbelt_03.a_max,
+        a_max=3.27,
+        e_max=0.5,
     )
-    observations_["patch_id"] = patch_ids
-    observations_.sort_values(by=["patch_id", "mjd_utc"], inplace=True)
-
-    # Divide the ephemrides into patches of size ra_width x dec_width
-    ephemeris_["patch_id"] = patch_func(
-        ephemeris_["RA_deg"].values,
-        ephemeris_["Dec_deg"].values,
-        **patch_algorithm_kwargs
+    mainbelt_05 = KeplerianPhaseSpace(
+        a_min=mainbelt_04.a_max,
+        a_max=5.0,
+        e_max=0.5,
     )
 
-    # Keep only ephemerides within the same patches as the observations
-    ephemeris_ = ephemeris_[ephemeris_["patch_id"].isin(patch_ids)]
-    ephemeris_.sort_values(
-        by=["patch_id", "mjd_utc"],
-        inplace=True,
+    # Create 1 phase space region for trojans, TNOs, etc..
+    outer = KeplerianPhaseSpace(
+        a_min=mainbelt_05.a_max,
+        a_max=50.0,
+        e_max=0.5,
     )
 
-    grouped_ephemeris = ephemeris_.groupby(by=["patch_id"])
-    ephemeris_split = [
-        grouped_ephemeris.get_group(g).reset_index(drop=True)
-        for g in grouped_ephemeris.groups
+    phase_space_regions = [
+        hungarias_01,
+        hungarias_02,
+        hungarias_03,
+        mainbelt_01,
+        mainbelt_02,
+        mainbelt_03,
+        mainbelt_04,
+        mainbelt_05,
+        outer,
     ]
 
-    test_orbits = findTestOrbits_worker(ephemeris_split)
+    test_orbits = []
+    for region in phase_space_regions:
+        mask = pc.and_(
+            pc.and_(
+                pc.and_(
+                    pc.and_(
+                        pc.and_(
+                            pc.greater_equal(keplerian.a, region.a_min),
+                            pc.less(keplerian.a, region.a_max),
+                        ),
+                        pc.greater_equal(keplerian.e, region.e_min),
+                    ),
+                    pc.less(keplerian.e, region.e_max),
+                ),
+                pc.greater_equal(keplerian.i, region.i_min),
+            ),
+            pc.less(keplerian.i, region.i_max),
+        )
 
+        keplerian_region = keplerian.apply_mask(mask)
+        orbits_region = orbits_patch.apply_mask(mask)
+
+        if len(keplerian_region) != 0:
+            index = select_average_within_region(keplerian_region)
+            test_orbits.append(orbits_region[int(index)])
+
+    if len(test_orbits) > 0:
+        return qv.concatenate(test_orbits)
+    else:
+        return Orbits.empty()
+
+
+def generate_test_orbits(
+    observations: Observations,
+    catalog: Orbits,
+    nside: int = 32,
+    propagator: Propagator = PYOORB(),
+    max_processes: int = 1,
+) -> TestOrbits:
+    """
+    Given observations and a catalog of known orbits generate test orbits
+    from the catalog. The observations are divded into healpixels (with size determined
+    by the nside parameter). For each healpixel in observations, select up to 9 orbits from
+    the catalog that are in the same healpixel as the observations. The orbits are selected
+    in bins of semi-major axis, eccentricity, and inclination.
+
+    The catalog will be propagated to start time of the observations using the propagator
+    and ephemerides will be generated for the propagated orbits (assuming a geocentric observer).
+
+    Parameters
+    ----------
+    observations
+        Observations to generate test orbits for.
+    catalog
+        Catalog of known orbits.
+    nside
+        Healpixel size.
+    propagator
+        Propagator to use to propagate the orbits.
+    max_processes
+        Maximum number of processes to use while propagating orbits and
+        generating ephemerides.
+
+    Returns
+    -------
+    test_orbits
+        Test orbits generated from the catalog.
+    """
+    # Extract the minimum time from the observations
+    start_time = observations.coordinates.time.min()
+
+    # Propagate the orbits to the minimum time
+    logger.info("Propagating orbits to the start time of the observations...")
+    propagation_start_time = time.perf_counter()
+    propagated_orbits = propagator.propagate_orbits(
+        catalog,
+        start_time,
+        max_processes=max_processes,
+        parallel_backend="ray",
+        chunk_size=1000,
+    )
+    propagation_end_time = time.perf_counter()
+    logger.info(
+        f"Propagation completed in {propagation_end_time - propagation_start_time:.3f} seconds."
+    )
+
+    # Create a geocentric observer for the observations
+    logger.info("Generating ephemerides for the propagated orbits...")
+    ephemeris_start_time = time.perf_counter()
+    observers = Observers.from_code("500", start_time)
+
+    # Generate ephemerides for the propagated orbits
+    ephemeris = propagator.generate_ephemeris(
+        propagated_orbits,
+        observers,
+        start_time,
+        max_processes=max_processes,
+        parallel_backend="ray",
+        chunk_size=1000,
+    )
+    ephemeris_end_time = time.perf_counter()
+    logger.info(
+        f"Ephemeris generation completed in {ephemeris_end_time - ephemeris_start_time:.3f} seconds."
+    )
+
+    # Calculate the healpixels for observations and ephemerides
+    observations_healpixels = calculate_healpixels(
+        observations.coordinates.lon.to_numpy(zero_copy_only=False),
+        observations.coordinates.lat.to_numpy(zero_copy_only=False),
+        nside=nside,
+    )
+    observations_healpixels = np.unique(observations_healpixels)
+    logger.info(
+        f"Observations occur in {len(observations_healpixels)} unique healpixels."
+    )
+
+    # Calculate the healpixels for the ephemerides
+    ephemeris_healpixels = calculate_healpixels(
+        ephemeris.coordinates.lon.to_numpy(zero_copy_only=False),
+        ephemeris.coordinates.lat.to_numpy(zero_copy_only=False),
+        nside=nside,
+    )
+
+    # Filter the ephemerides to only those in the observations
+    ephemeris_mask = pa.array(np.in1d(ephemeris_healpixels, observations_healpixels))
+    ephemeris_filtered = ephemeris.apply_mask(ephemeris_mask)
+    ephemeris_healpixels = ephemeris_healpixels[
+        ephemeris_mask.to_numpy(zero_copy_only=False)
+    ]
+    logger.info(
+        f"{len(ephemeris_filtered)} orbit ephemerides overlap with the observations."
+    )
+
+    # Filter the orbits to only those in the ephemeris
+    orbits_filtered = propagated_orbits.apply_mask(
+        pc.is_in(propagated_orbits.orbit_id, ephemeris_filtered.orbit_id)
+    )
+
+    logger.info("Selecting test orbits from the orbit catalog...")
+    test_orbits_list = []
+    for healpixel in observations_healpixels:
+        healpixel_mask = pc.equal(ephemeris_healpixels, healpixel)
+        ephemeris_healpixel = ephemeris_filtered.apply_mask(healpixel_mask)
+
+        if len(ephemeris_healpixel) == 0:
+            logger.debug(f"No ephemerides in healpixel {healpixel}.")
+            continue
+
+        test_orbits_healpixel = select_test_orbits(ephemeris_healpixel, orbits_filtered)
+
+        if len(test_orbits_healpixel) > 0:
+            test_orbits_list.append(
+                TestOrbits.from_kwargs(
+                    orbit_id=test_orbits_healpixel.orbit_id,
+                    object_id=test_orbits_healpixel.object_id,
+                    coordinates=test_orbits_healpixel.coordinates,
+                    bundle_id=[healpixel for _ in range(len(test_orbits_healpixel))],
+                )
+            )
+        else:
+            logger.debug(f"No orbits in healpixel {healpixel}.")
+
+    if len(test_orbits_list) > 0:
+        test_orbits = qv.concatenate(test_orbits_list)
+    else:
+        test_orbits = TestOrbits.empty()
+
+    logger.info(f"Selected {len(test_orbits)} test orbits.")
     return test_orbits
