@@ -38,7 +38,6 @@ logger = logging.getLogger(__name__)
 
 
 class RangedPointSourceDetections(qv.Table):
-
     id = qv.StringColumn()
     exposure_id = qv.StringColumn()
     coordinates = SphericalCoordinates.as_column()
@@ -46,7 +45,6 @@ class RangedPointSourceDetections(qv.Table):
 
 
 class TestOrbitEphemeris(qv.Table):
-
     id = qv.Int64Column()
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
@@ -97,7 +95,6 @@ range_observations_remote = ray.remote(range_observations_worker)
 
 
 class TestOrbits(qv.Table):
-
     orbit_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
     object_id = qv.StringColumn(nullable=True)
     bundle_id = qv.Int64Column(nullable=True)
@@ -199,7 +196,11 @@ class TestOrbits(qv.Table):
             The test orbit propagated to the given times.
         """
         return propagator.propagate_orbits(
-            self.to_orbits(), times, max_processes=max_processes, chunk_size=1
+            self.to_orbits(),
+            times,
+            max_processes=max_processes,
+            chunk_size=1,
+            parallel_backend="ray",
         )
 
     def generate_ephemeris(
@@ -226,7 +227,11 @@ class TestOrbits(qv.Table):
             The ephemeris of the test orbit at the given observers.
         """
         return propagator.generate_ephemeris(
-            self.to_orbits(), observers, max_processes=max_processes, chunk_size=1
+            self.to_orbits(),
+            observers,
+            max_processes=max_processes,
+            chunk_size=1,
+            parallel_backend="ray",
         )
 
     def generate_ephemeris_from_observations(

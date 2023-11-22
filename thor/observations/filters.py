@@ -7,6 +7,7 @@ import numpy as np
 import quivr as qv
 import ray
 from adam_core.coordinates import SphericalCoordinates
+from adam_core.ray_cluster import initialize_use_ray
 
 from thor.config import Config
 from thor.observations.observations import Observations
@@ -160,13 +161,8 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
 
         filtered_observations_list = []
-        if max_processes is None or max_processes > 1:
-            if not ray.is_initialized():
-                logger.info(
-                    f"Ray is not initialized. Initializing with {max_processes}..."
-                )
-                ray.init(num_cpus=max_processes)
-
+        use_ray = initialize_use_ray(num_cpus=max_processes)
+        if use_ray:
             refs_to_free = []
             if observations_ref is None:
                 observations_ref = ray.put(observations)

@@ -11,6 +11,7 @@ from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB, _iterate_chunks
+from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve
 
 from ..observations.observations import Observations
@@ -37,12 +38,10 @@ def od_worker(
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-
     od_orbits_list = []
     od_orbit_members_list = []
 
     for orbit_id in orbit_ids:
-
         time_start = time.time()
         logger.debug(f"Differentially correcting orbit {orbit_id}...")
 
@@ -96,7 +95,6 @@ def od(
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-
     if propagator == "PYOORB":
         prop = PYOORB(**propagator_kwargs)
     else:
@@ -229,7 +227,6 @@ def od(
         # Modify each component of the state by a small delta
         d = np.zeros((1, 7))
         for i in range(num_params):
-
             # zero the delta vector
             d *= 0.0
 
@@ -272,7 +269,6 @@ def od(
 
             delta_denom = d[0, i]
             if method == "central":
-
                 # Modify component i of the orbit by a small delta
                 cartesian_elements_n = orbit_prev.coordinates.values - d[0, :6]
                 orbit_iter_n = Orbits.from_kwargs(
@@ -426,7 +422,6 @@ def od(
         if (
             (rchi2_iter < rchi2_prev) or first_solution
         ) and arc_length >= min_arc_length:
-
             if first_solution:
                 logger.debug(
                     "Storing first successful differential correction iteration for these observations."
@@ -454,7 +449,6 @@ def od(
             and iterations > max_iter_i
             and not solution_found
         ):
-
             logger.debug("Attempting to identify possible outliers.")
             # Previous fits have failed, lets reset the current best fit orbit back to its original
             # state and re-run fitting, this time removing outliers
@@ -503,12 +497,10 @@ def od(
     logger.debug("First solution: {}".format(first_solution))
 
     if not solution_found or not processable or first_solution:
-
         od_orbit = FittedOrbits.empty()
         od_orbit_members = FittedOrbitMembers.empty()
 
     else:
-
         obs_times = observations.coordinates.time.mjd().to_numpy()[ids_mask]
         arc_length_ = obs_times.max() - obs_times.min()
         assert arc_length == arc_length_
@@ -615,19 +607,13 @@ def differential_correction(
         observations_ref = None
 
     if len(orbits) > 0 and len(orbit_members) > 0:
-
         orbit_ids = orbits.orbit_id.to_numpy(zero_copy_only=False)
 
         od_orbits_list = []
         od_orbit_members_list = []
-        if max_processes is None or max_processes > 1:
 
-            if not ray.is_initialized():
-                logger.info(
-                    f"Ray is not initialized. Initializing with {max_processes}..."
-                )
-                ray.init(address="auto", num_cpus=max_processes)
-
+        use_ray = initialize_use_ray(num_cpus=max_processes)
+        if use_ray:
             refs_to_free = []
             if orbits_ref is None:
                 orbits_ref = ray.put(orbits)
@@ -678,7 +664,6 @@ def differential_correction(
                 )
 
         else:
-
             for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):
                 od_orbits_chunk, od_orbit_members_chunk = od_worker(
                     orbit_ids_chunk,
