@@ -77,7 +77,7 @@ class ObservationFilter(abc.ABC):
     @abc.abstractmethod
     def apply(
         self,
-        observations: "Observations",
+        observations: Union["Observations", ray.ObjectRef],
         test_orbit: TestOrbits,
         max_processes: Optional[int] = 1,
     ) -> "Observations":
@@ -149,27 +149,36 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         logger.info("Applying TestOrbitRadiusObservationFilter...")
         logger.info(f"Using radius = {self.radius:.5f} deg")
 
+        if isinstance(observations, ray.ObjectRef):
+            observations_ref = observations
+            observations = ray.get(observations)
+            logger.info("Retrieved observations from the object store.")
+        else:
+            observations_ref = None
+
         # Generate an ephemeris for every observer time/location in the dataset
         ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
 
         filtered_observations_list = []
         if max_processes is None or max_processes > 1:
             if not ray.is_initialized():
-                logger.debug(
+                logger.info(
                     f"Ray is not initialized. Initializing with {max_processes}..."
                 )
                 ray.init(num_cpus=max_processes)
 
-            if isinstance(observations, ray.ObjectRef):
-                observations_ref = observations
-                observations = ray.get(observations_ref)
-            else:
+            refs_to_free = []
+            if observations_ref is None:
                 observations_ref = ray.put(observations)
+                refs_to_free.append(observations_ref)
+                logger.info("Placed observations in the object store.")
 
-            if isinstance(ephemeris, ray.ObjectRef):
-                ephemeris_ref = ephemeris
-            else:
+            if not isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ray.put(ephemeris)
+                refs_to_free.append(ephemeris_ref)
+                logger.info("Placed ephemeris in the object store.")
+            else:
+                ephemeris_ref = ephemeris
 
             state_ids = observations.state_id.unique().sort()
             futures = []
@@ -186,6 +195,12 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 filtered_observations_list.append(ray.get(finished[0]))
+
+            if len(refs_to_free) > 0:
+                ray.internal.free(refs_to_free)
+                logger.info(
+                    f"Removed {len(refs_to_free)} references from the object store."
+                )
 
         else:
             state_ids = observations.state_id.unique().sort()
@@ -270,7 +285,7 @@ def _within_radius(
 
 
 def filter_observations(
-    observations: Observations,
+    observations: Union[Observations, ray.ObjectRef],
     test_orbit: TestOrbits,
     config: Config,
     filters: Optional[List[ObservationFilter]] = None,
@@ -304,11 +319,30 @@ def filter_observations(
         # By default we always filter by radius from the predicted position of the test orbit
         filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
 
+    use_ray = config.max_processes is None or config.max_processes > 1
+    refs_to_free = []
+    if use_ray:
+        if not isinstance(observations, ray.ObjectRef):
+            observations = ray.put(observations)
+            refs_to_free.append(observations)
+            logger.info("Placed observations in the object store.")
+
     filtered_observations = observations
     for filter_i in filters:
+        if use_ray and not isinstance(filtered_observations, ray.ObjectRef):
+            filtered_observations = ray.put(filtered_observations)
+            refs_to_free.append(filtered_observations)
+            logger.info("Placed filtered observations in the object store.")
+
         filtered_observations = filter_i.apply(
             filtered_observations, test_orbit, config.max_processes
         )
+
+    # We are done filtering so lets free up the references that were added within
+    # the scope of this function
+    if len(refs_to_free) > 0:
+        ray.internal.free(refs_to_free)
+        logger.info(f"Removed {len(refs_to_free)} references from the object store.")
 
     # Defragment the observations
     if len(filtered_observations) > 0:

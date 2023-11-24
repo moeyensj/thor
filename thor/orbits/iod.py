@@ -554,8 +554,22 @@ def initial_orbit_determination(
             "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
                 the chi2 threshold) [float]
     """
-    time_start = time.time()
+    time_start = time.perf_counter()
     logger.info("Running initial orbit determination...")
+
+    if isinstance(linkage_members, ray.ObjectRef):
+        linkage_members_ref = linkage_members
+        linkage_members = ray.get(linkage_members)
+        logger.info("Retrieved linkage members from the object store.")
+    else:
+        linkage_members_ref = None
+
+    if isinstance(observations, ray.ObjectRef):
+        observations_ref = observations
+        observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
+    else:
+        observations_ref = None
 
     iod_orbits_list = []
     iod_orbit_members_list = []
@@ -567,10 +581,21 @@ def initial_orbit_determination(
         if max_processes is None or max_processes > 1:
 
             if not ray.is_initialized():
-                ray.init(address="auto")
+                logger.info(
+                    f"Ray is not initialized. Initializing with {max_processes}..."
+                )
+                ray.init(address="auto", num_cpus=max_processes)
 
-            observations_ref = ray.put(observations)
-            linkage_members_ref = ray.put(linkage_members)
+            refs_to_free = []
+            if linkage_members_ref is None:
+                linkage_members_ref = ray.put(linkage_members)
+                refs_to_free.append(linkage_members_ref)
+                logger.info("Placed linkage members in the object store.")
+
+            if observations_ref is None:
+                observations_ref = ray.put(observations)
+                refs_to_free.append(observations_ref)
+                logger.info("Placed observations in the object store.")
 
             futures = []
             for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):
@@ -597,6 +622,12 @@ def initial_orbit_determination(
                 result = ray.get(finished[0])
                 iod_orbits_list.append(result[0])
                 iod_orbit_members_list.append(result[1])
+
+            if len(refs_to_free) > 0:
+                ray.internal.free(refs_to_free)
+                logger.info(
+                    f"Removed {len(refs_to_free)} references from the object store."
+                )
 
         else:
             for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):
@@ -642,7 +673,7 @@ def initial_orbit_determination(
         iod_orbits = FittedOrbits.empty()
         iod_orbit_members = FittedOrbitMembers.empty()
 
-    time_end = time.time()
+    time_end = time.perf_counter()
     logger.info(
         "Initial orbit determination completed in {:.3f} seconds.".format(
             time_end - time_start

@@ -128,7 +128,11 @@ def range_and_transform(
     logger.info(f"Assuming v = {test_orbit.coordinates.v[0]} au/d")
 
     if isinstance(observations, ray.ObjectRef):
+        observations_ref = observations
         observations = ray.get(observations)
+        logger.info("Retrieved observations from the object store.")
+    else:
+        observations_ref = None
 
     prop = propagator(**propagator_kwargs)
 
@@ -160,21 +164,23 @@ def range_and_transform(
         if max_processes is None or max_processes > 1:
 
             if not ray.is_initialized():
-                logger.debug(
+                logger.info(
                     f"Ray is not initialized. Initializing with {max_processes}..."
                 )
-                ray.init(num_cpus=max_processes)
+                ray.init(address="auto", num_cpus=max_processes)
 
-            if isinstance(observations, ray.ObjectRef):
-                observations_ref = observations
-                observations = ray.get(observations_ref)
-            else:
+            refs_to_free = []
+            if observations_ref is None:
                 observations_ref = ray.put(observations)
+                refs_to_free.append(observations_ref)
+                logger.info("Placed observations in the object store.")
 
-            if isinstance(ephemeris, ray.ObjectRef):
-                ephemeris_ref = ephemeris
-            else:
+            if not isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ray.put(ephemeris)
+                refs_to_free.append(ephemeris_ref)
+                logger.info("Placed ephemeris in the object store.")
+            else:
+                ephemeris_ref = ephemeris
 
             ranged_detections_cartesian_ref = ray.put(ranged_detections_cartesian)
 
@@ -194,6 +200,12 @@ def range_and_transform(
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 transformed_detection_list.append(ray.get(finished[0]))
+
+            if len(refs_to_free) > 0:
+                ray.internal.free(refs_to_free)
+                logger.info(
+                    f"Removed {len(refs_to_free)} references from the object store."
+                )
 
         else:
             # Get state IDs
