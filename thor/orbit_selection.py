@@ -232,7 +232,7 @@ def generate_test_orbits(
         start_time,
         max_processes=max_processes,
         parallel_backend="ray",
-        chunk_size=1000,
+        chunk_size=500,
     )
     propagation_end_time = time.perf_counter()
     logger.info(
