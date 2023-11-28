@@ -765,15 +765,15 @@ def cluster_and_link(
         cluster_members = qv.concatenate(cluster_members_list)
 
         # Drop duplicate clusters
-        time_start_drop = time.time()
-        logger.info("Removing duplicate clusters...")
-        num_clusters = len(clusters)
-        clusters, cluster_members = clusters.drop_duplicates(cluster_members)
-        logger.info(f"Removed {num_clusters - len(clusters)} duplicate clusters.")
-        time_end_drop = time.time()
-        logger.info(
-            f"Cluster deduplication completed in {time_end_drop - time_start_drop:.3f} seconds."
-        )
+        # time_start_drop = time.time()
+        # logger.info("Removing duplicate clusters...")
+        # num_clusters = len(clusters)
+        # clusters, cluster_members = clusters.drop_duplicates(cluster_members)
+        # logger.info(f"Removed {num_clusters - len(clusters)} duplicate clusters.")
+        # time_end_drop = time.time()
+        # logger.info(
+        #     f"Cluster deduplication completed in {time_end_drop - time_start_drop:.3f} seconds."
+        # )
 
     else:
 
