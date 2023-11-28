@@ -11,6 +11,7 @@ import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.propagator import _iterate_chunks
+from adam_core.ray_cluster import initialize_use_ray
 
 from .range_and_transform import TransformedDetections
 
@@ -507,7 +508,6 @@ def cluster_velocity(
     if len(clusters) == 0:
         return Clusters.empty(), ClusterMembers.empty()
     else:
-
         cluster_ids = []
         cluster_num_obs = []
         cluster_members_cluster_ids = []
@@ -633,9 +633,6 @@ def cluster_and_link(
         Algorithm to use. Can be "dbscan" or "hotspot_2d".
     num_jobs : int, optional
         Number of jobs to launch.
-    parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp', 'cf'}.
-        Defaults to using Python's concurrent futures module ('cf').
 
     Returns
     -------
@@ -691,14 +688,8 @@ def cluster_and_link(
         mjd0 = mjd[first][0]
         dt = mjd - mjd0
 
-        if max_processes is None or max_processes > 1:
-
-            if not ray.is_initialized():
-                logger.info(
-                    f"Ray is not initialized. Initializing with {max_processes}..."
-                )
-                ray.init(address="auto", num_cpus=max_processes)
-
+        use_ray = initialize_use_ray(num_cpus=max_processes)
+        if use_ray:
             # Put all arrays (which can be large) in ray's
             # local object store ahead of time
             obs_ids_ref = ray.put(obs_ids)
@@ -742,7 +733,6 @@ def cluster_and_link(
             )
 
         else:
-
             for vxi_chunk, vyi_chunk in zip(
                 _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
             ):
@@ -776,7 +766,6 @@ def cluster_and_link(
         )
 
     else:
-
         clusters = Clusters.empty()
         cluster_members = ClusterMembers.empty()
 

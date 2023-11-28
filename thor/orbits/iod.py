@@ -12,6 +12,7 @@ import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.propagator import PYOORB, Propagator
 from adam_core.propagator.utils import _iterate_chunks
+from adam_core.ray_cluster import initialize_use_ray
 
 from ..clusters import ClusterMembers
 from ..observations.observations import Observations
@@ -126,13 +127,11 @@ def iod_worker(
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-
     prop = propagator(**propagator_kwargs)
 
     iod_orbits_list = []
     iod_orbit_members_list = []
     for linkage_id in linkage_ids:
-
         time_start = time.time()
         logger.debug(f"Finding initial orbit for linkage {linkage_id}...")
 
@@ -379,7 +378,6 @@ def iod(
             # belonging to one object yield a good initial orbit but the presence of outlier
             # observations is skewing the sum total of the residuals and chi2
             elif num_outliers > 0:
-
                 logger.debug("Attempting to identify possible outliers.")
                 for o in range(num_outliers):
                     # Select i highest observations that contribute to
@@ -424,11 +422,9 @@ def iod(
         j += 1
 
     if not converged or not processable:
-
         return FittedOrbits.empty(), FittedOrbitMembers.empty()
 
     else:
-
         orbit = FittedOrbits.from_kwargs(
             orbit_id=orbit_sol.orbit_id,
             object_id=orbit_sol.object_id,
@@ -574,18 +570,11 @@ def initial_orbit_determination(
     iod_orbits_list = []
     iod_orbit_members_list = []
     if len(observations) > 0 and len(linkage_members) > 0:
-
         # Extract linkage IDs
         linkage_ids = linkage_members.column(linkage_id_col).unique()
 
-        if max_processes is None or max_processes > 1:
-
-            if not ray.is_initialized():
-                logger.info(
-                    f"Ray is not initialized. Initializing with {max_processes}..."
-                )
-                ray.init(address="auto", num_cpus=max_processes)
-
+        use_ray = initialize_use_ray(num_cpus=max_processes)
+        if use_ray:
             refs_to_free = []
             if linkage_members_ref is None:
                 linkage_members_ref = ray.put(linkage_members)

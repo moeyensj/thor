@@ -84,7 +84,7 @@ def integration_config():
 def ray_cluster():
     import ray
 
-    ray_initialized = initialize_use_ray(Config())
+    ray_initialized = initialize_use_ray()
     yield
     if ray_initialized:
         ray.shutdown()

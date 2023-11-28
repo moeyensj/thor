@@ -8,6 +8,7 @@ from typing import Iterable, Iterator, List, Literal, Optional, Tuple
 import quivr as qv
 import ray
 from adam_core.propagator import PYOORB
+from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
 from .clusters import cluster_and_link
@@ -23,20 +24,6 @@ from .orbits import (
 from .range_and_transform import range_and_transform
 
 logger = logging.getLogger("thor")
-
-
-def initialize_use_ray(config: Config) -> bool:
-    use_ray = False
-    if config.max_processes is None or config.max_processes > 1:
-        # Initialize ray
-        if not ray.is_initialized():
-            logger.info(
-                f"Ray is not initialized. Initializing with {config.max_processes} cpus..."
-            )
-            ray.init(num_cpus=config.max_processes)
-
-        use_ray = True
-    return use_ray
 
 
 def initialize_test_orbit(
@@ -132,7 +119,9 @@ def link_test_orbit(
     else:
         raise ValueError(f"Unknown propagator: {config.propagator}")
 
-    use_ray = initialize_use_ray(config)
+    use_ray = initialize_use_ray(
+        num_cpus=config.max_processes, object_store_bytes=config.ray_memory_bytes
+    )
 
     refs_to_free = []
     if (
