@@ -43,7 +43,8 @@ class Clusters(qv.Table):
     num_obs = qv.Int64Column()
 
     def drop_duplicates(
-        self, cluster_members: "ClusterMembers"
+        self,
+        cluster_members: "ClusterMembers",
     ) -> Tuple["Clusters", "ClusterMembers"]:
         """
         Drop clusters that have identical sets of observation IDs.
@@ -58,33 +59,46 @@ class Clusters(qv.Table):
         `~thor.clusters.Clusters`
             A table of clusters with duplicate clusters removed.
         """
-
         # Sort by cluster_id and obs_id
-        sorted = self.sort_by(["cluster_id"])
-        cluster_members = cluster_members.sort_by(["cluster_id", "obs_id"])
-
-        grouped_by_cluster_id = cluster_members.table.group_by(
-            ["cluster_id"]
-        ).aggregate([("obs_id", "distinct")])
-        grouped_by_cluster_id = grouped_by_cluster_id.append_column(
-            "index", pa.array(np.arange(0, len(sorted)))
+        clusters_sorted = self.sort_by([("cluster_id", "ascending")])
+        cluster_members_sorted = cluster_members.sort_by(
+            [("cluster_id", "ascending"), ("obs_id", "ascending")]
         )
 
-        # We revert to pandas here because grouping by a list of observation IDs with
-        # pyarrow functions fails at the table creation stage during aggregation.
-        # This is likely a missing feature in pyarrow. The following code doesn't work:
+        # Group by cluster_id and aggregate a list of distinct obs_ids
+        grouped_by_cluster_id = cluster_members_sorted.table.group_by(
+            ["cluster_id"], use_threads=False
+        ).aggregate([("obs_id", "distinct")])
+        obs_ids_per_cluster = grouped_by_cluster_id["obs_id_distinct"].to_pylist()
+
+        # Group by with a distinct aggregation is not guaranteed to preserve the order of the elements within each list
+        # but does preserve the order of the lists themselves. So we sort each list of obs_ids and while we are
+        # sorting we also convert the lists to a single string on which we can group later.
+        # Pyarrow currently does not support groupby on lists of strings, this is likely a missing feature.
+        # As an example, the following code doesn't work:
         # grouped_by_obs_lists = grouped_by_cluster_id.group_by(
         #   ["obs_id_distinct"],
         #   use_threads=False
-        # ).aggregate([("index", "first")
+        # ).aggregate([("index", "first")])
+        for i, obs_ids_i in enumerate(obs_ids_per_cluster):
+            obs_ids_i.sort()
+            obs_ids_per_cluster[i] = "".join(obs_ids_i)
 
-        df = grouped_by_cluster_id.to_pandas()
-        df["obs_id_distinct"] = df["obs_id_distinct"].apply(lambda x: x.tolist())
-        indices = df.drop_duplicates(subset=["obs_id_distinct"])["index"].values
+        squashed_obs_ids = pa.table(
+            {
+                "index": pa.array(np.arange(0, len(obs_ids_per_cluster))),
+                "obs_ids": obs_ids_per_cluster,
+            }
+        )
+        indices = (
+            squashed_obs_ids.group_by(["obs_ids"], use_threads=False)
+            .aggregate([("index", "first")])["index_first"]
+            .combine_chunks()
+        )
 
-        filtered = sorted.take(indices)
-        filtered_cluster_members = cluster_members.apply_mask(
-            pc.is_in(cluster_members.cluster_id, filtered.cluster_id)
+        filtered = clusters_sorted.take(indices)
+        filtered_cluster_members = cluster_members_sorted.apply_mask(
+            pc.is_in(cluster_members_sorted.cluster_id, filtered.cluster_id)
         )
         return filtered, filtered_cluster_members
 
