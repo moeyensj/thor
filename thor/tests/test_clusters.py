@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 
 from ..clusters import (
+    ClusterMembers,
+    Clusters,
     _adjust_labels,
     _build_label_aliases,
     _extend_2d_array,
@@ -348,3 +350,57 @@ def test_label_clusters():
     expected = np.array([-1, 0, -1, 1, -1, 0])
     labels = _label_clusters(hits, points)
     np.testing.assert_array_equal(expected, labels)
+
+
+def test_Clusters_drop_duplicates():
+    # Test that the cluster deduplication works as expected
+    # Here we duplicate the same 5 clusters 10000 times and check that the
+    # deduplication correctly identifies the first 5 clusters
+    obs_ids = [
+        ["obs_01", "obs_02", "obs_03", "obs_04", "obs_05"],
+        ["obs_02", "obs_03", "obs_04", "obs_05", "obs_06"],
+        ["obs_03", "obs_04", "obs_05", "obs_06", "obs_07"],
+        ["obs_04", "obs_05", "obs_06", "obs_07", "obs_08"],
+        ["obs_05", "obs_06", "obs_07", "obs_08", "obs_09"],
+    ]
+
+    obs_ids_duplicated = []
+    for i in range(10000):
+        obs_ids_duplicated += obs_ids
+    cluster_ids = [f"c{i:05d}" for i in range(len(obs_ids_duplicated))]
+
+    clusters = Clusters.from_kwargs(
+        cluster_id=cluster_ids,
+        vtheta_x=np.full(len(cluster_ids), 0.0),
+        vtheta_y=np.full(len(cluster_ids), 0.0),
+        arc_length=np.full(len(cluster_ids), 0.0),
+        num_obs=np.full(len(cluster_ids), 5),
+    )
+    cluster_members = ClusterMembers.from_kwargs(
+        cluster_id=np.repeat(cluster_ids, 5),
+        obs_id=[
+            obs for cluster_members_i in obs_ids_duplicated for obs in cluster_members_i
+        ],
+    )
+
+    clusters_filtered, cluster_members_filtered = clusters.drop_duplicates(
+        cluster_members
+    )
+    assert len(clusters_filtered) == 5
+    assert clusters_filtered.cluster_id.to_pylist() == [
+        "c00000",
+        "c00001",
+        "c00002",
+        "c00003",
+        "c00004",
+    ]
+
+    assert len(cluster_members_filtered) == 25
+    np.testing.assert_equal(
+        cluster_members_filtered.cluster_id.to_numpy(zero_copy_only=False),
+        np.repeat(cluster_ids[:5], 5),
+    )
+    np.testing.assert_equal(
+        cluster_members_filtered.obs_id.to_numpy(zero_copy_only=False),
+        np.hstack(np.array(obs_ids)),
+    )
