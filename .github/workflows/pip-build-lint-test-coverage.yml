@@ -32,7 +32,10 @@ jobs:
         run: conda install -c defaults -c conda-forge openorb --yes
       - name: Update OBSCODE.dat
         run: |
-          cd $CONDA_PREFIX/share/oorb && ./updateOBSCODE
+          cd $CONDA_PREFIX/share/oorb
+          curl https://www.minorplanetcenter.net/iau/lists/ObsCodes.html -o ObsCodes.html
+          sed -e '2d' ObsCodes.html | grep -v "<" > OBSCODE.dat
+          rm -f ObsCodes.html
           cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
       - uses: actions/setup-python@v4
         with:

@@ -34,7 +34,10 @@ jobs:
           conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements_conda.txt --yes
       - name: Update OBSCODE.dat
         run: |
-          cd $CONDA_PREFIX/share/oorb && ./updateOBSCODE
+          cd $CONDA_PREFIX/share/oorb
+          curl https://www.minorplanetcenter.net/iau/lists/ObsCodes.html -o ObsCodes.html
+          sed -e '2d' ObsCodes.html | grep -v "<" > OBSCODE.dat
+          rm -f ObsCodes.html
           cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
       - name: Install adam_core and quivr
         run: |
