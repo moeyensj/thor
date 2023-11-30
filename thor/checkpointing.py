@@ -143,16 +143,8 @@ def load_initial_checkpoint_values(
     logger.info("Found filtered observations")
     filtered_observations = Observations.from_parquet(filtered_observations_path)
 
-    # Unfortunately we have to reinitialize the times to set the attribute
-    # correctly.
-    filtered_observations = qv.defragment(filtered_observations)
-    filtered_observations = filtered_observations.sort_by(
-        [
-            "coordinates.time.days",
-            "coordinates.time.nanos",
-            "coordinates.origin.code",
-        ]
-    )
+    if filtered_observations.fragmented():
+        filtered_observations = qv.defragment(filtered_observations)
 
     # If the pipeline was started but we have recovered_orbits already, we
     # are done and should exit early.
@@ -169,15 +161,10 @@ def load_initial_checkpoint_values(
             recovered_orbit_members_path
         )
 
-        # Unfortunately we have to reinitialize the times to set the attribute
-        # correctly.
-        recovered_orbits = qv.defragment(recovered_orbits)
-        recovered_orbits = recovered_orbits.sort_by(
-            [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-            ]
-        )
+        if recovered_orbits.fragmented():
+            recovered_orbits = qv.defragment(recovered_orbits)
+        if recovered_orbit_members.fragmented():
+            recovered_orbit_members = qv.defragment(recovered_orbit_members)
 
         return create_checkpoint_data(
             "complete",
@@ -196,15 +183,10 @@ def load_initial_checkpoint_values(
         od_orbits = FittedOrbits.from_parquet(od_orbits_path)
         od_orbit_members = FittedOrbitMembers.from_parquet(od_orbit_members_path)
 
-        # Unfortunately we have to reinitialize the times to set the attribute
-        # correctly.
-        od_orbits = qv.defragment(od_orbits)
-        od_orbits = od_orbits.sort_by(
-            [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-            ]
-        )
+        if od_orbits.fragmented():
+            od_orbits = qv.defragment(od_orbits)
+        if od_orbit_members.fragmented():
+            od_orbit_members = qv.defragment(od_orbit_members)
 
         return create_checkpoint_data(
             "recover_orbits",
@@ -222,15 +204,10 @@ def load_initial_checkpoint_values(
         iod_orbits = FittedOrbits.from_parquet(iod_orbits_path)
         iod_orbit_members = FittedOrbitMembers.from_parquet(iod_orbit_members_path)
 
-        # Unfortunately we have to reinitialize the times to set the attribute
-        # correctly.
-        iod_orbits = qv.defragment(iod_orbits)
-        iod_orbits = iod_orbits.sort_by(
-            [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-            ]
-        )
+        if iod_orbits.fragmented():
+            iod_orbits = qv.defragment(iod_orbits)
+        if iod_orbit_members.fragmented():
+            iod_orbit_members = qv.defragment(iod_orbit_members)
 
         return create_checkpoint_data(
             "differential_correction",
@@ -245,6 +222,11 @@ def load_initial_checkpoint_values(
         logger.info("Found clusters")
         clusters = Clusters.from_parquet(clusters_path)
         cluster_members = ClusterMembers.from_parquet(cluster_members_path)
+
+        if clusters.fragmented():
+            clusters = qv.defragment(clusters)
+        if cluster_members.fragmented():
+            cluster_members = qv.defragment(cluster_members)
 
         return create_checkpoint_data(
             "initial_orbit_determination",
