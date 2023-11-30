@@ -459,6 +459,7 @@ def merge_and_extend_orbits(
             # the same time, keep only observation with smallest distance
             attributions = attributions.drop_coincident_attributions(observations)
 
+            attributions = qv.defragment(attributions)
             # Create a new orbit members table with the newly attributed observations and
             # filter the orbits to only include those that still have observations
             orbit_members_iter = FittedOrbitMembers.from_kwargs(
