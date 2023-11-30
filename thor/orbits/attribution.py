@@ -54,6 +54,11 @@ class Attributions(qv.Table):
         # Flatten the table so nested columns are dot-delimited at the top level
         flattened_table = self.flattened_table()
 
+        # Add index to flattened table
+        flattened_table = flattened_table.add_column(
+            0, "index", pa.array(np.arange(len(flattened_table)))
+        )
+
         # Drop the residual values (a list column) due to: https://github.com/apache/arrow/issues/32504
         flattened_table = flattened_table.drop(["residuals.values"])
 
@@ -76,17 +81,13 @@ class Attributions(qv.Table):
             flattened_observations, ["obs_id"], right_keys=["id"]
         )
 
-        # Add index column
-        flattened_table = flattened_table.add_column(
-            0, "index", pa.array(np.arange(len(flattened_table)))
-        )
-
         # Sort the table
         flattened_table = flattened_table.sort_by(
             [
                 ("orbit_id", "ascending"),
                 ("coordinates.time.days", "ascending"),
                 ("coordinates.time.nanos", "ascending"),
+                ("distance", "ascending"),
             ]
         )
 
@@ -100,7 +101,11 @@ class Attributions(qv.Table):
             .column("index_first")
         )
 
-        return self.take(indices)
+        filtered = self.take(indices)
+        if filtered.fragmented():
+            filtered = qv.defragment(filtered)
+
+        return filtered
 
 
 def attribution_worker(
@@ -336,6 +341,8 @@ def attribute_observations(
 
     attributions = qv.concatenate(attributions_list)
     attributions = attributions.sort_by(["orbit_id", "obs_id", "distance"])
+    if attributions.fragmented():
+        attributions = qv.defragment(attributions)
 
     time_end = time.time()
     logger.info(
@@ -459,7 +466,6 @@ def merge_and_extend_orbits(
             # the same time, keep only observation with smallest distance
             attributions = attributions.drop_coincident_attributions(observations)
 
-            attributions = qv.defragment(attributions)
             # Create a new orbit members table with the newly attributed observations and
             # filter the orbits to only include those that still have observations
             orbit_members_iter = FittedOrbitMembers.from_kwargs(
