@@ -17,6 +17,7 @@ from adam_core.ray_cluster import initialize_use_ray
 from ..clusters import ClusterMembers
 from ..observations.observations import Observations
 from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
+from ..utils.linkages import sort_by_id_and_time
 from .gauss import gaussIOD
 
 logger = logging.getLogger(__name__)
@@ -641,6 +642,9 @@ def initial_orbit_determination(
         iod_orbits = qv.concatenate(iod_orbits_list)
         iod_orbit_members = qv.concatenate(iod_orbit_members_list)
 
+        time_start_drop = time.time()
+        logger.info("Removing duplicate initial orbits...")
+        num_orbits = len(iod_orbits)
         iod_orbits, iod_orbit_members = iod_orbits.drop_duplicates(
             iod_orbit_members,
             subset=[
@@ -655,18 +659,26 @@ def initial_orbit_determination(
             ],
             keep="first",
         )
+        time_end_drop = time.time()
+        logger.info(f"Removed {num_orbits - len(iod_orbits)} duplicate clusters.")
+        time_end_drop = time.time()
+        logger.info(
+            f"Inital orbit deduplication completed in {time_end_drop - time_start_drop:.3f} seconds."
+        )
 
-        logger.info("Found {} initial orbits.".format(len(iod_orbits)))
+        # Sort initial orbits by orbit ID and observation time
+        iod_orbits, iod_orbit_members = sort_by_id_and_time(
+            iod_orbits, iod_orbit_members, observations, "orbit_id"
+        )
 
     else:
         iod_orbits = FittedOrbits.empty()
         iod_orbit_members = FittedOrbitMembers.empty()
 
     time_end = time.perf_counter()
+    logger.info(f"Found {len(iod_orbits)} initial orbits.")
     logger.info(
-        "Initial orbit determination completed in {:.3f} seconds.".format(
-            time_end - time_start
-        )
+        f"Initial orbit determination completed in {time_end - time_start:.3f} seconds."
     )
 
     return iod_orbits, iod_orbit_members
