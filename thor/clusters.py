@@ -14,6 +14,7 @@ from adam_core.propagator import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
 from .range_and_transform import TransformedDetections
+from .utils.linkages import sort_by_id_and_time
 
 # Disable GPU until the GPU-accelerated clustering codes
 # are better tested and implemented
@@ -779,16 +780,19 @@ def cluster_and_link(
             f"Cluster deduplication completed in {time_end_drop - time_start_drop:.3f} seconds."
         )
 
+        # Sort clusters by cluster ID and observation time
+        clusters, cluster_members = sort_by_id_and_time(
+            clusters, cluster_members, observations, "cluster_id"
+        )
+
     else:
         clusters = Clusters.empty()
         cluster_members = ClusterMembers.empty()
 
     time_end_cluster = time.time()
-    logger.info("Found {} clusters.".format(len(clusters)))
+    logger.info(f"Found {len(clusters)} clusters.")
     logger.info(
-        "Clustering completed in {:.3f} seconds.".format(
-            time_end_cluster - time_start_cluster
-        )
+        f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds."
     )
 
     return clusters, cluster_members

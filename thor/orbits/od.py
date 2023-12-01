@@ -16,6 +16,7 @@ from scipy.linalg import solve
 
 from ..observations.observations import Observations
 from ..orbit_determination import FittedOrbitMembers, FittedOrbits
+from ..utils.linkages import sort_by_id_and_time
 
 logger = logging.getLogger(__name__)
 
@@ -687,16 +688,19 @@ def differential_correction(
         od_orbits = qv.concatenate(od_orbits_list)
         od_orbit_members = qv.concatenate(od_orbit_members_list)
 
+        # Sort orbits by orbit ID and observation time
+        od_orbits, od_orbit_members = sort_by_id_and_time(
+            od_orbits, od_orbit_members, observations, "orbit_id"
+        )
+
     else:
         od_orbits = FittedOrbits.empty()
         od_orbit_members = FittedOrbitMembers.empty()
 
     time_end = time.perf_counter()
-    logger.info("Differentially corrected {} orbits.".format(len(od_orbits)))
+    logger.info(f"Differentially corrected {len(od_orbits)} orbits.")
     logger.info(
-        "Differential correction completed in {:.3f} seconds.".format(
-            time_end - time_start
-        )
+        f"Differential correction completed in {time_end - time_start:.3f} seconds."
     )
 
     return od_orbits, od_orbit_members
