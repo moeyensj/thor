@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 import time
 from typing import Literal, Optional, Tuple, Union
 
@@ -436,6 +437,17 @@ def merge_and_extend_orbits(
                 refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
 
+        # If max_processes is None, lets determine the actual number of
+        # processes we will use so that we can dynamically set the orbit
+        # chunk size
+        if max_processes is None:
+            if use_ray:
+                processes = int(ray.available_resources()["CPU"])
+            else:
+                processes = mp.cpu_count()
+        else:
+            processes = max_processes
+
         converged = False
         while not converged:
             if use_ray:
@@ -452,6 +464,10 @@ def merge_and_extend_orbits(
                 orbits_in = orbits_iter
                 observations_in = observations_iter
 
+            orbits_chunk_size_iter = np.minimum(
+                orbits_chunk_size, np.ceil(len(orbits_iter) / processes).astype(int)
+            )
+
             # Run attribution
             attributions = attribute_observations(
                 orbits_in,
@@ -459,7 +475,7 @@ def merge_and_extend_orbits(
                 radius=radius,
                 propagator=propagator,
                 propagator_kwargs=propagator_kwargs,
-                orbits_chunk_size=orbits_chunk_size,
+                orbits_chunk_size=orbits_chunk_size_iter,
                 observations_chunk_size=observations_chunk_size,
                 max_processes=max_processes,
                 orbit_ids=orbits_iter.orbit_id,
@@ -496,7 +512,7 @@ def merge_and_extend_orbits(
                 fit_epoch=fit_epoch,
                 propagator=propagator,
                 propagator_kwargs=propagator_kwargs,
-                chunk_size=orbits_chunk_size,
+                chunk_size=orbits_chunk_size_iter,
                 max_processes=max_processes,
                 orbit_ids=orbits_iter.orbit_id,
                 obs_ids=pc.unique(orbit_members_iter.obs_id),
