@@ -588,6 +588,11 @@ def merge_and_extend_orbits(
                 pc.is_in(orbits_iter.orbit_id, orbit_members_iter.orbit_id.unique())
             )
 
+            if orbits_iter.fragmented():
+                orbits_iter = qv.defragment(orbits_iter)
+            if orbit_members_iter.fragmented():
+                orbit_members_iter = qv.defragment(orbit_members_iter)
+
             # Remove orbits from the object store (the underlying state vectors may
             # change with differential correction so we need to add them again at
             # the start of the next iteration)
@@ -603,6 +608,12 @@ def merge_and_extend_orbits(
         odp_orbit_members = qv.concatenate(odp_orbit_members_list)
 
         if len(odp_orbits) > 0:
+            # Assign any remaining duplicate observations to the orbit with
+            # the most observations, longest arc length, and lowest reduced chi2
+            odp_orbits, odp_orbit_members = odp_orbits.assign_duplicate_observations(
+                odp_orbit_members
+            )
+
             # Do one final iteration of OD on the output orbits. This
             # will update any fits of orbits that might have had observations
             # removed during the assign_duplicate_observations step
