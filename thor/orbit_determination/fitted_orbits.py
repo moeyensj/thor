@@ -153,6 +153,11 @@ class FittedOrbits(qv.Table):
             pc.is_in(self.orbit_id, filtered_orbit_members.orbit_id)
         )
 
+        if filtered.fragmented():
+            filtered = qv.defragment(filtered)
+        if filtered_orbit_members.fragmented():
+            filtered_orbit_members = qv.defragment(filtered_orbit_members)
+
         return filtered, filtered_orbit_members
 
 
@@ -173,4 +178,7 @@ class FittedOrbitMembers(qv.Table):
         fitted_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
             Fitted orbit members without outliers.
         """
-        return self.apply_mask(pc.equal(self.outlier, False))
+        filtered = self.apply_mask(pc.equal(self.outlier, False))
+        if filtered.fragmented():
+            filtered = qv.defragment(filtered)
+        return filtered
