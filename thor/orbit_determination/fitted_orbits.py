@@ -93,7 +93,20 @@ class FittedOrbits(qv.Table):
         self, orbit_members: "FittedOrbitMembers"
     ) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
         """
-        [Same docstring as before]
+        Assigns observations that have been assigned to multiple orbits to the orbit with t
+        he most observations, longest arc length, and lowest reduced chi2.
+
+        Parameters
+        ----------
+        orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+            Fitted orbit members.
+
+        Returns
+        -------
+        filtered : `~thor.orbit_determination.FittedOrbits`
+            Fitted orbits with duplicate assignments removed.
+        filtered_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+            Fitted orbit members with duplicate assignments removed.
         """
         # Sorting by priority criteria
         sorted_orbits = self.sort_by(
@@ -128,12 +141,10 @@ class FittedOrbits(qv.Table):
         # Iteratively update orbit_members to drop rows where obs_id is the same, 
         # but orbit_id is not the best orbit_id for that observation
         for obs_id, best_orbit_id in best_orbit_for_obs.items():
-            print(obs_id, best_orbit_id)
             mask_to_remove = pc.and_(
                 pc.equal(orbit_members.column("obs_id"), pa.scalar(obs_id)),
                 pc.not_equal(orbit_members.column("orbit_id"), pa.scalar(best_orbit_id))
             )
-            print(mask_to_remove)
             orbit_members = orbit_members.apply_mask(pc.invert(mask_to_remove))
 
         # Filtering self based on the filtered orbit_members
