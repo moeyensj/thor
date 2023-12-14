@@ -2,6 +2,7 @@ import uuid
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 from adam_core.coordinates import CartesianCoordinates
 
@@ -11,10 +12,10 @@ from thor.orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrb
 @pytest.fixture
 def simple_orbits():
     # Creating a simple FittedOrbits instance with non-nullable fields
-    num_entries = 3
+    num_entries = 5
     return FittedOrbits.from_kwargs(
-        orbit_id=["1", "2", "3"],
-        object_id=[uuid.uuid4().hex for _ in range(num_entries)],  # assuming object_id can be any string
+        orbit_id=["1", "2", "3", "4", "5"],
+        object_id=[uuid.uuid4().hex for _ in range(5)],
         coordinates=CartesianCoordinates.from_kwargs(
             x=np.random.rand(num_entries),
             y=np.random.rand(num_entries),
@@ -27,51 +28,85 @@ def simple_orbits():
             origin=[None] * num_entries,  # Assuming 'origin' can be nullable
             frame="unspecified"
         ),
-        arc_length=np.random.rand(num_entries) * 100,
-        num_obs=np.random.randint(1, 50, num_entries),
-        chi2=np.random.rand(num_entries),
-        reduced_chi2=np.random.rand(num_entries),
-        improved=pa.repeat(False, num_entries)
+        arc_length=[100, 150, 200, 250, 300],  # Specific values
+        num_obs=[10, 20, 15, 25, 5],  # Specific values
+        chi2=np.random.rand(5),
+        reduced_chi2=[0.5, 0.4, 0.3, 0.2, 0.1],  # Specific values
+        improved=pa.repeat(False, 5)
     )
 
 @pytest.fixture
-def simple_orbit_members():
+def no_duplicate_orbit_members():
     # Creating a simple FittedOrbitMembers instance
     num_entries = 5
     return FittedOrbitMembers.from_kwargs(
-        orbit_id=["1", "2", "3", "1", "2"],
+        orbit_id=["1", "2", "3", "4", "5"],
         obs_id=["1", "2", "3", "4", "5"],
-        residuals=[None] * num_entries,  # Assuming 'residuals' can be nullable
-        solution=[None] * num_entries,  # Assuming 'solution' can be nullable
-        outlier=[None] * num_entries  # Assuming 'outlier' can be nullable
+        residuals=[None] * num_entries,
+        solution=[None] * num_entries,
+        outlier=[None] * num_entries
+    )
+
+
+@pytest.fixture
+def all_duplicates_orbit_members():
+    # Every observation is a duplicate
+    return FittedOrbitMembers.from_kwargs(
+        orbit_id=["1", "2", "1", "2", "1", "2"],
+        obs_id=["1", "1", "2", "2", "3", "3"],
+        residuals=[None] * 6,
+        solution=[None] * 6,
+        outlier=[None] * 6
     )
 
 @pytest.fixture
-def duplicate_orbit_members():
-    # Creating FittedOrbitMembers instance with duplicate observations
+def mixed_duplicates_orbit_members():
+    # Mix of unique and duplicate observations
     return FittedOrbitMembers.from_kwargs(
-        orbit_id=["1", "2", "1", "2", "1", "3"],
-        obs_id=["1", "1", "2", "2", "3", "3"],  # Duplicates in 'obs_id'
-        residuals=[None] * 6,  # Assuming 'residuals' can be nullable
-        solution=[None] * 6,  # Assuming 'solution' can be nullable
-        outlier=[None] * 6  # Assuming 'outlier' can be nullable
+        orbit_id=["1", "2", "2", "3", "4", "5", "1"],
+        obs_id=["1", "2", "3", "3", "4", "4", "5"],
+        residuals=[None] * 7,
+        solution=[None] * 7,
+        outlier=[None] * 7
     )
 
-def test_with_duplicate_observations(simple_orbits, duplicate_orbit_members):
-    # Test handling of duplicate observations
-    filtered_orbits, filtered_members = simple_orbits.assign_duplicate_observations(duplicate_orbit_members)
-
-    # Check if the duplicates have been handled correctly
-    # Assuming that duplicates are removed based on the sorting criteria of 'num_obs', 'arc_length', 'reduced_chi2'
+def test_all_duplicates(simple_orbits, all_duplicates_orbit_members):
+    # Test when all observations are duplicates
+    filtered_orbits, filtered_members = simple_orbits.assign_duplicate_observations(all_duplicates_orbit_members)
     unique_obs_ids = set(filtered_members.obs_id)
     assert len(unique_obs_ids) == len(filtered_members)  # Ensure no duplicates in 'obs_id'
 
+def test_mixed_duplicates(simple_orbits, mixed_duplicates_orbit_members):
+    # Test a mix of unique and duplicate observations
+    filtered_orbits, filtered_members = simple_orbits.assign_duplicate_observations(mixed_duplicates_orbit_members)
+    unique_obs_ids = set(filtered_members.obs_id)
+    assert len(unique_obs_ids) == len(filtered_members)  # Ensure no duplicates in 'obs_id'
+   
+    # 1 -> 1
+    # 2 -> 2
+    # 3 -> 2
+    # 4 -> 4
+    # 5 -> 1
+    # Three unique orbits: 1, 2, 4
+    assert len(filtered_orbits) == 3
 
-def test_with_no_duplicates(simple_orbits, simple_orbit_members):
+    # Now we assert that the correct orbits were selected based on sort order
+    # Assert that filtered_members where obs_id is 2 that the orbit_id is 2
+    mask = pc.equal(filtered_members.obs_id, pa.scalar("2"))
+    assert pc.all(pc.equal(filtered_members.apply_mask(mask).orbit_id, pa.scalar("2"))).as_py()
+    # Assert that members where obs_id is 3 that the orbit_id is also 2
+    mask = pc.equal(filtered_members.obs_id, pa.scalar("3"))
+    assert pc.all(pc.equal(filtered_members.apply_mask(mask).orbit_id, pa.scalar("2"))).as_py()
+    # Assert that members where obs_id is 4 that the orbit_id is 4
+    mask = pc.equal(filtered_members.obs_id, pa.scalar("4"))
+    assert pc.all(pc.equal(filtered_members.apply_mask(mask).orbit_id, pa.scalar("4"))).as_py()
+
+
+def test_with_no_duplicates(simple_orbits, no_duplicate_orbit_members):
     # Test with no duplicates in the data
-    filtered_orbits, filtered_members = simple_orbits.assign_duplicate_observations(simple_orbit_members)
+    filtered_orbits, filtered_members = simple_orbits.assign_duplicate_observations(no_duplicate_orbit_members)
     assert len(filtered_orbits) == len(simple_orbits)
-    assert len(filtered_members) == len(simple_orbit_members)
+    assert len(filtered_members) == len(no_duplicate_orbit_members)
 
 def test_empty_data():
     # Test with empty FittedOrbits and FittedOrbitMembers

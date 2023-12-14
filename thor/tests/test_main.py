@@ -277,7 +277,7 @@ def test_benchmark_link_test_orbit(
 # @pytest.mark.parametrize("parallelized", [True, False])
 @pytest.mark.memory_profile
 def test_memory_profile_link_test_orbit(
-    orbits, observations, integration_config, ray_cluster, benchmark
+    orbits, observations, integration_config
 ):
     object_id = "202930 Ivezic (1998 SG172)"
     # if parallelized:
