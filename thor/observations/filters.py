@@ -13,6 +13,7 @@ from thor.config import Config
 from thor.observations.observations import Observations
 
 from ..orbit import TestOrbitEphemeris, TestOrbits
+from ..utils.memory import profile_ray_task
 
 if TYPE_CHECKING:
     from .observations import Observations
@@ -64,9 +65,24 @@ def TestOrbitRadiusObservationFilter_worker(
     )
 
 
-TestOrbitRadiusObservationFilter_remote = ray.remote(
-    TestOrbitRadiusObservationFilter_worker
-)
+@ray.remote
+@profile_ray_task
+def TestOrbitRadiusObservationFilter_remote(
+    observations: "Observations",
+    ephemeris: TestOrbitEphemeris,
+    state_id: int,
+    radius: float,
+) -> "Observations":
+    return TestOrbitRadiusObservationFilter_worker(
+        observations,
+        ephemeris,
+        state_id,
+        radius,
+    )
+
+# TestOrbitRadiusObservationFilter_remote = ray.remote(
+#     TestOrbitRadiusObservationFilter_worker
+# )
 
 
 class ObservationFilter(abc.ABC):

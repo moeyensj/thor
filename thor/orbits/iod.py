@@ -18,6 +18,7 @@ from ..clusters import ClusterMembers
 from ..observations.observations import Observations
 from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from ..utils.linkages import sort_by_id_and_time
+from ..utils.memory import profile_ray_task
 from .gauss import gaussIOD
 
 logger = logging.getLogger(__name__)
@@ -173,7 +174,13 @@ def iod_worker(
     return iod_orbits, iod_orbit_members
 
 
-iod_worker_remote = ray.remote(iod_worker)
+# iod_worker_remote = ray.remote(iod_worker)
+
+@ray.remote
+@profile_ray_task
+def iod_worker_remote(*args, **kwargs):
+    return iod_worker(*args, **kwargs)
+
 iod_worker_remote.options(num_returns=1, num_cpus=1)
 
 

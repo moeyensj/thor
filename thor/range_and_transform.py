@@ -15,6 +15,7 @@ from adam_core.propagator import PYOORB, Propagator
 from .observations.observations import Observations
 from .orbit import TestOrbitEphemeris, TestOrbits
 from .projections import GnomonicCoordinates
+from .utils.memory import profile_ray_task
 
 __all__ = [
     "TransformedDetections",
@@ -77,7 +78,13 @@ def range_and_transform_worker(
     )
 
 
-range_and_transform_remote = ray.remote(range_and_transform_worker)
+@ray.remote
+@profile_ray_task
+def range_and_transform_remote(*args, **kwargs):
+    return range_and_transform_worker(*args, **kwargs)
+
+
+# range_and_transform_remote = ray.remote(range_and_transform_worker)
 range_and_transform_remote = range_and_transform_remote.options(
     num_cpus=1,
     num_returns=1,

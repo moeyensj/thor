@@ -17,6 +17,7 @@ from scipy.linalg import solve
 from ..observations.observations import Observations
 from ..orbit_determination import FittedOrbitMembers, FittedOrbits
 from ..utils.linkages import sort_by_id_and_time
+from ..utils.memory import profile_ray_task
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,11 @@ def od_worker(
     return od_orbits, od_orbit_members
 
 
-od_worker_remote = ray.remote(od_worker)
+# od_worker_remote = ray.remote(od_worker)
+@ray.remote
+@profile_ray_task
+def od_worker_remote(*args, **kwargs):
+    return od_worker(*args, **kwargs)
 od_worker_remote.options(num_returns=1, num_cpus=1)
 
 

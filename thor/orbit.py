@@ -22,6 +22,8 @@ from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import PYOORB, Propagator
 from adam_core.time import Timestamp
 
+from .utils.memory import profile_ray_task
+
 CoordinateType = TypeVar(
     "CoordinateType",
     bound=Union[
@@ -91,7 +93,14 @@ def range_observations_worker(
     )
 
 
-range_observations_remote = ray.remote(range_observations_worker)
+# range_observations_remote = ray.remote(range_observations_worker)
+@ray.remote
+@profile_ray_task
+def range_observations_remote(
+    observations: Observations, ephemeris: TestOrbitEphemeris, state_id: int
+) -> RangedPointSourceDetections:
+    return range_observations_worker(observations, ephemeris, state_id)
+
 
 
 class TestOrbits(qv.Table):

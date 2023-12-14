@@ -93,25 +93,10 @@ class FittedOrbits(qv.Table):
         self, orbit_members: "FittedOrbitMembers"
     ) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
         """
-        Assigns observations that have been assigned to multiple orbits to the orbit with t
-        he most observations, longest arc length, and lowest reduced chi2.
-
-        Parameters
-        ----------
-        orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
-            Fitted orbit members.
-
-        Returns
-        -------
-        filtered : `~thor.orbit_determination.FittedOrbits`
-            Fitted orbits with duplicate assignments removed.
-        filtered_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
-            Fitted orbit members with duplicate assignments removed.
+        [Same docstring as before]
         """
-        # Sort by number of observations, arc length, and reduced chi2
-        # Here we assume that orbits that generally have more observations, longer arc lengths, and lower reduced chi2 are better
-        # as candidates for assigning detections that have been assigned to multiple orbits
-        sorted = self.sort_by(
+        # Sorting by priority criteria
+        sorted_orbits = self.sort_by(
             [
                 ("num_obs", "descending"),
                 ("arc_length", "descending"),
@@ -119,46 +104,43 @@ class FittedOrbits(qv.Table):
             ]
         )
 
-        # Extract the orbit IDs from the sorted table
-        orbit_ids = sorted.orbit_id.unique()
+        # Extracting unique observation IDs
+        unique_obs_ids = pc.unique(orbit_members.column("obs_id"))
 
-        # Calculate the order in which these orbit IDs appear in the orbit_members table
-        order_in_orbits = pc.index_in(orbit_members.orbit_id, orbit_ids)
+        # Dictionary to store the best orbit for each observation
+        best_orbit_for_obs = {}
 
-        # Create an index into the orbit_members table and append the order_in_orbits column
-        orbit_members_table = (
-            orbit_members.flattened_table()
-            .append_column("index", pa.array(np.arange(len(orbit_members))))
-            .append_column("order_in_orbits", order_in_orbits)
-        )
+        # Iterate over each unique observation ID
+        for obs_id in unique_obs_ids:
+            # Filter orbit_members for the current observation ID
+            mask = pc.equal(orbit_members.column("obs_id"), obs_id)
+            current_obs_members = orbit_members.where(mask)
 
-        # Drop the residual values (a list column) due to: https://github.com/apache/arrow/issues/32504
-        orbit_members_table = orbit_members_table.drop_columns(["residuals.values"])
+            # Extract orbit IDs that this observation belongs to
+            obs_orbit_ids = current_obs_members.column("orbit_id")
 
-        # Sort orbit members by the orbit IDs (in the same order as the orbits table)
-        orbit_members_table = orbit_members_table.sort_by(
-            [("order_in_orbits", "ascending")]
-        )
+            # Find the best orbit for this observation based on the criteria
+            for sorted_orbit_id in sorted_orbits.column("orbit_id"):
+                if pc.any(pc.is_in(sorted_orbit_id, value_set=obs_orbit_ids)).as_py():
+                    best_orbit_for_obs[obs_id.as_py()] = sorted_orbit_id.as_py()
+                    break
 
-        # Now group by the orbit ID and aggregate the index column to get the first index for each orbit ID
-        indices = (
-            orbit_members_table.group_by("obs_id", use_threads=False)
-            .aggregate([("index", "first")])
-            .column("index_first")
-        )
+        # Iteratively update orbit_members to drop rows where obs_id is the same, 
+        # but orbit_id is not the best orbit_id for that observation
+        for obs_id, best_orbit_id in best_orbit_for_obs.items():
+            print(obs_id, best_orbit_id)
+            mask_to_remove = pc.and_(
+                pc.equal(orbit_members.column("obs_id"), pa.scalar(obs_id)),
+                pc.not_equal(orbit_members.column("orbit_id"), pa.scalar(best_orbit_id))
+            )
+            print(mask_to_remove)
+            orbit_members = orbit_members.apply_mask(pc.invert(mask_to_remove))
 
-        # Use the indices to filter the orbit_members table and then use the resulting orbit IDs to filter the orbits table
-        filtered_orbit_members = orbit_members.take(indices)
-        filtered = self.apply_mask(
-            pc.is_in(self.orbit_id, filtered_orbit_members.orbit_id)
-        )
+        # Filtering self based on the filtered orbit_members
+        self_mask = pc.is_in(self.column("orbit_id"), value_set=orbit_members.column("orbit_id"))
+        filtered_self = self.apply_mask(self_mask)
 
-        if filtered.fragmented():
-            filtered = qv.defragment(filtered)
-        if filtered_orbit_members.fragmented():
-            filtered_orbit_members = qv.defragment(filtered_orbit_members)
-
-        return filtered, filtered_orbit_members
+        return filtered_self, orbit_members
 
 
 class FittedOrbitMembers(qv.Table):

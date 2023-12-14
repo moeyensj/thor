@@ -15,6 +15,7 @@ from adam_core.ray_cluster import initialize_use_ray
 
 from .range_and_transform import TransformedDetections
 from .utils.linkages import sort_by_id_and_time
+from .utils.memory import profile_ray_task
 
 # Disable GPU until the GPU-accelerated clustering codes
 # are better tested and implemented
@@ -107,7 +108,6 @@ class Clusters(qv.Table):
 class ClusterMembers(qv.Table):
     cluster_id = qv.StringColumn()
     obs_id = qv.StringColumn()
-
 
 def find_clusters(points, eps, min_samples, alg="hotspot_2d"):
     """
@@ -592,7 +592,12 @@ def cluster_velocity_worker(
     return qv.concatenate(clusters_list), qv.concatenate(cluster_members_list)
 
 
-cluster_velocity_remote = ray.remote(cluster_velocity_worker)
+@ray.remote
+@profile_ray_task
+def cluster_velocity_remote(*args, **kwargs):
+    return cluster_velocity_worker(*args, **kwargs)
+
+# cluster_velocity_remote = ray.remote(cluster_velocity_worker)
 cluster_velocity_remote.options(
     num_returns=1,
     num_cpus=1,

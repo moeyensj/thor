@@ -225,7 +225,7 @@ def run_link_test_orbit(test_orbit, observations, config):
 @pytest.mark.parametrize("parallelized", [True, False])
 @pytest.mark.integration
 def test_link_test_orbit(
-    object_id, orbits, observations, parallelized, integration_config, ray_cluster
+    object_id, orbits, observations, parallelized, integration_config
 ):
     if parallelized:
         integration_config.max_processes = 4
@@ -272,6 +272,25 @@ def test_benchmark_link_test_orbit(
     # Ensure we get all the object IDs back that we expect
     obs_ids_actual = recovered_orbit_members.obs_id
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
+
+
+# @pytest.mark.parametrize("parallelized", [True, False])
+@pytest.mark.memory_profile
+def test_memory_profile_link_test_orbit(
+    orbits, observations, integration_config, ray_cluster, benchmark
+):
+    object_id = "202930 Ivezic (1998 SG172)"
+    # if parallelized:
+    #     integration_config.max_processes = 4
+    # else:
+    #     integration_config.max_processes = 1
+    integration_config.max_processes = 1
+
+    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+        object_id, orbits, observations, integration_config, max_arc_length=14
+    )
+
+    run_link_test_orbit(test_orbit, observations, integration_config)
 
 
 @pytest.fixture

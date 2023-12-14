@@ -18,6 +18,7 @@ from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
 from ..orbit_determination import FittedOrbitMembers, FittedOrbits
+from ..utils.memory import profile_ray_task
 from .od import differential_correction
 
 logger = logging.getLogger(__name__)
@@ -234,7 +235,16 @@ def attribution_worker(
         return Attributions.empty()
 
 
-attribution_worker_remote = ray.remote(attribution_worker)
+# attribution_worker_remote = ray.remote(attribution_worker)
+@ray.remote
+@profile_ray_task
+def attribution_worker_remote(
+    *args, **kwargs
+) -> Attributions:
+    return attribution_worker(
+        *args, **kwargs
+    )
+
 attribution_worker_remote.options(
     num_returns=1,
     num_cpus=1,
