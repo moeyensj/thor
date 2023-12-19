@@ -668,7 +668,7 @@ def cluster_and_link(
     may miss some clusters, particularly when points are spaced a distance of 'radius'
     apart.
     """
-    time_start_cluster = time.time()
+    time_start_cluster = time.perf_counter()
     logger.info("Running velocity space clustering...")
 
     vx = np.linspace(*vx_range, num=vx_bins)
@@ -689,107 +689,137 @@ def cluster_and_link(
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
 
+    exit_early = False
+    if len(observations) > 0:
+        # Calculate the unique times
+        unique_times = observations.coordinates.time.unique()
+
+        # Check that there are enough unique times to cluster
+        num_unique_times = len(unique_times)
+        if num_unique_times < min_obs:
+            logger.info(
+                "Number of unique times is less than the minimum number of observations required."
+            )
+            exit_early = True
+
+        # Calculate the time range and make sure it is greater than the minimum arc length
+        time_range = (
+            unique_times.max().mjd()[0].as_py() - unique_times.min().mjd()[0].as_py()
+        )
+        if time_range < min_arc_length:
+            logger.info(
+                "Time range of transformed detections is less than the minimum arc length."
+            )
+            exit_early = True
+
+    else:
+        # If there are no transformed detections, exit early
+        logger.info("No transformed detections to cluster.")
+        exit_early = True
+
+    # If any of the above conditions are met then we exit early
+    if exit_early:
+        time_end_cluster = time.perf_counter()
+        logger.info(f"Found 0 clusters. Minimum requirements for clustering not met.")
+        logger.info(
+            f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds."
+        )
+        return Clusters.empty(), ClusterMembers.empty()
+
     clusters_list = []
     cluster_members_list = []
-    if len(observations) > 0:
-        # Extract useful quantities
-        obs_ids = observations.id.to_numpy(zero_copy_only=False)
-        theta_x = observations.coordinates.theta_x.to_numpy(zero_copy_only=False)
-        theta_y = observations.coordinates.theta_y.to_numpy(zero_copy_only=False)
-        mjd = observations.coordinates.time.mjd().to_numpy(zero_copy_only=False)
+    # Extract useful quantities
+    obs_ids = observations.id.to_numpy(zero_copy_only=False)
+    theta_x = observations.coordinates.theta_x.to_numpy(zero_copy_only=False)
+    theta_y = observations.coordinates.theta_y.to_numpy(zero_copy_only=False)
+    mjd = observations.coordinates.time.mjd().to_numpy(zero_copy_only=False)
 
-        # Select detections in first exposure
-        first = np.where(mjd == mjd.min())[0]
-        mjd0 = mjd[first][0]
-        dt = mjd - mjd0
+    # Select detections in first exposure
+    first = np.where(mjd == mjd.min())[0]
+    mjd0 = mjd[first][0]
+    dt = mjd - mjd0
 
-        use_ray = initialize_use_ray(num_cpus=max_processes)
-        if use_ray:
-            # Put all arrays (which can be large) in ray's
-            # local object store ahead of time
-            obs_ids_ref = ray.put(obs_ids)
-            theta_x_ref = ray.put(theta_x)
-            theta_y_ref = ray.put(theta_y)
-            dt_ref = ray.put(dt)
-            refs_to_free = [obs_ids_ref, theta_x_ref, theta_y_ref, dt_ref]
-            logger.info("Placed gnomonic coordinate arrays in the object store.")
-            # TODO: transformed detections are already in the object store so we might
-            # want to instead pass references to those rather than extract arrays
-            # from them and put them in the object store again.
+    use_ray = initialize_use_ray(num_cpus=max_processes)
+    if use_ray:
+        # Put all arrays (which can be large) in ray's
+        # local object store ahead of time
+        obs_ids_ref = ray.put(obs_ids)
+        theta_x_ref = ray.put(theta_x)
+        theta_y_ref = ray.put(theta_y)
+        dt_ref = ray.put(dt)
+        refs_to_free = [obs_ids_ref, theta_x_ref, theta_y_ref, dt_ref]
+        logger.info("Placed gnomonic coordinate arrays in the object store.")
+        # TODO: transformed detections are already in the object store so we might
+        # want to instead pass references to those rather than extract arrays
+        # from them and put them in the object store again.
 
-            futures = []
-            for vxi_chunk, vyi_chunk in zip(
-                _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
-            ):
-                futures.append(
-                    cluster_velocity_remote.remote(
-                        vxi_chunk,
-                        vyi_chunk,
-                        obs_ids_ref,
-                        theta_x_ref,
-                        theta_y_ref,
-                        dt_ref,
-                        radius=radius,
-                        min_obs=min_obs,
-                        min_arc_length=min_arc_length,
-                        alg=alg,
-                    )
-                )
-
-            while futures:
-                finished, futures = ray.wait(futures, num_returns=1)
-                result = ray.get(finished[0])
-                clusters_list.append(result[0])
-                cluster_members_list.append(result[1])
-
-            ray.internal.free(refs_to_free)
-            logger.info(
-                f"Removed {len(refs_to_free)} references from the object store."
-            )
-
-        else:
-            for vxi_chunk, vyi_chunk in zip(
-                _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
-            ):
-                clusters_i, cluster_members_i = cluster_velocity_worker(
+        futures = []
+        for vxi_chunk, vyi_chunk in zip(
+            _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
+        ):
+            futures.append(
+                cluster_velocity_remote.remote(
                     vxi_chunk,
                     vyi_chunk,
-                    obs_ids,
-                    theta_x,
-                    theta_y,
-                    dt,
+                    obs_ids_ref,
+                    theta_x_ref,
+                    theta_y_ref,
+                    dt_ref,
                     radius=radius,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     alg=alg,
                 )
-                clusters_list.append(clusters_i)
-                cluster_members_list.append(cluster_members_i)
+            )
 
-        clusters = qv.concatenate(clusters_list)
-        cluster_members = qv.concatenate(cluster_members_list)
+        while futures:
+            finished, futures = ray.wait(futures, num_returns=1)
+            result = ray.get(finished[0])
+            clusters_list.append(result[0])
+            cluster_members_list.append(result[1])
 
-        # Drop duplicate clusters
-        time_start_drop = time.time()
-        logger.info("Removing duplicate clusters...")
-        num_clusters = len(clusters)
-        clusters, cluster_members = clusters.drop_duplicates(cluster_members)
-        logger.info(f"Removed {num_clusters - len(clusters)} duplicate clusters.")
-        time_end_drop = time.time()
-        logger.info(
-            f"Cluster deduplication completed in {time_end_drop - time_start_drop:.3f} seconds."
-        )
-
-        # Sort clusters by cluster ID and observation time
-        clusters, cluster_members = sort_by_id_and_time(
-            clusters, cluster_members, observations, "cluster_id"
-        )
+        ray.internal.free(refs_to_free)
+        logger.info(f"Removed {len(refs_to_free)} references from the object store.")
 
     else:
-        clusters = Clusters.empty()
-        cluster_members = ClusterMembers.empty()
+        for vxi_chunk, vyi_chunk in zip(
+            _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
+        ):
+            clusters_i, cluster_members_i = cluster_velocity_worker(
+                vxi_chunk,
+                vyi_chunk,
+                obs_ids,
+                theta_x,
+                theta_y,
+                dt,
+                radius=radius,
+                min_obs=min_obs,
+                min_arc_length=min_arc_length,
+                alg=alg,
+            )
+            clusters_list.append(clusters_i)
+            cluster_members_list.append(cluster_members_i)
 
-    time_end_cluster = time.time()
+    clusters = qv.concatenate(clusters_list)
+    cluster_members = qv.concatenate(cluster_members_list)
+
+    # Drop duplicate clusters
+    time_start_drop = time.perf_counter()
+    logger.info("Removing duplicate clusters...")
+    num_clusters = len(clusters)
+    clusters, cluster_members = clusters.drop_duplicates(cluster_members)
+    logger.info(f"Removed {num_clusters - len(clusters)} duplicate clusters.")
+    time_end_drop = time.perf_counter()
+    logger.info(
+        f"Cluster deduplication completed in {time_end_drop - time_start_drop:.3f} seconds."
+    )
+
+    # Sort clusters by cluster ID and observation time
+    clusters, cluster_members = sort_by_id_and_time(
+        clusters, cluster_members, observations, "cluster_id"
+    )
+
+    time_end_cluster = time.perf_counter()
     logger.info(f"Found {len(clusters)} clusters.")
     logger.info(
         f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds."
