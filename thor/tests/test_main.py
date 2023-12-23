@@ -68,7 +68,8 @@ def orbits():
 
 
 @pytest.fixture
-def integration_config():
+def integration_config(request):
+    max_processes = getattr(request, "param", 1)
     config = Config(
         vx_bins=10,
         vy_bins=10,
@@ -76,17 +77,28 @@ def integration_config():
         vx_max=0.01,
         vy_min=-0.01,
         vy_max=0.01,
+        max_processes=max_processes,
     )
     return config
 
 
 @pytest.fixture
-def ray_cluster():
+def ray_cluster(integration_config):
+    import time
+
     import ray
 
-    ray_initialized = initialize_use_ray()
+    if integration_config.max_processes > 1:
+        initialize_use_ray(
+            num_cpus=integration_config.max_processes,
+            object_store_bytes=integration_config.ray_memory_bytes or None
+        )
+        # Wait until ray cluster is ready
+        while not ray.is_initialized():
+            
+            time.sleep(0.1)
     yield
-    if ray_initialized:
+    if integration_config.max_processes > 1:
         ray.shutdown()
 
 
@@ -222,17 +234,17 @@ def run_link_test_orbit(test_orbit, observations, config):
     ]
     + OBJECT_IDS[9:],
 )
-@pytest.mark.parametrize("parallelized", [True, False])
+@pytest.mark.parametrize("integration_config", [1, 4], indirect=True)
 @pytest.mark.integration
 def test_link_test_orbit(
-    object_id, orbits, observations, parallelized, integration_config, ray_cluster
+    object_id, orbits, observations, integration_config
 ):
-    if parallelized:
-        integration_config.max_processes = 4
-    else:
-        integration_config.max_processes = 1
-
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -248,18 +260,19 @@ def test_link_test_orbit(
     assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
 
 
-@pytest.mark.parametrize("parallelized", [True, False])
+@pytest.mark.parametrize("integration_config", [1, 4], indirect=True)
 @pytest.mark.benchmark(group="link_test_orbit", min_rounds=5, warmup=True)
 def test_benchmark_link_test_orbit(
-    orbits, observations, integration_config, parallelized, ray_cluster, benchmark
+    orbits, observations, integration_config, benchmark, ray_cluster
 ):
     object_id = "202930 Ivezic (1998 SG172)"
-    if parallelized:
-        integration_config.max_processes = 4
-    else:
-        integration_config.max_processes = 1
 
-    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
+    (
+        test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 

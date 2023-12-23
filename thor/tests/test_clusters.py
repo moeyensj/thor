@@ -10,6 +10,7 @@ from ..clusters import (
     _find_runs,
     _label_clusters,
     _sort_order_2d,
+    drop_duplicate_clusters,
 )
 
 
@@ -383,8 +384,8 @@ def test_Clusters_drop_duplicates():
         ],
     )
 
-    clusters_filtered, cluster_members_filtered = clusters.drop_duplicates(
-        cluster_members
+    clusters_filtered, cluster_members_filtered = drop_duplicate_clusters(
+        clusters, cluster_members
     )
     assert len(clusters_filtered) == 5
     assert clusters_filtered.cluster_id.to_pylist() == [

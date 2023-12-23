@@ -16,7 +16,11 @@ from adam_core.ray_cluster import initialize_use_ray
 
 from ..clusters import ClusterMembers
 from ..observations.observations import Observations
-from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
+from ..orbit_determination.fitted_orbits import (
+    FittedOrbitMembers,
+    FittedOrbits,
+    drop_duplicate_orbits,
+)
 from ..utils.linkages import sort_by_id_and_time
 from .gauss import gaussIOD
 
@@ -130,8 +134,8 @@ def iod_worker(
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     prop = propagator(**propagator_kwargs)
 
-    iod_orbits_list = []
-    iod_orbit_members_list = []
+    iod_orbits = FittedOrbits.empty()
+    iod_orbit_members = FittedOrbitMembers.empty()
     for linkage_id in linkage_ids:
         time_start = time.time()
         logger.debug(f"Finding initial orbit for linkage {linkage_id}...")
@@ -143,7 +147,7 @@ def iod_worker(
             pc.is_in(observations.id, obs_ids)
         )
 
-        iod_orbit, iod_orbit_members = iod(
+        iod_orbit, iod_orbit_orbit_members = iod(
             observations_linkage,
             min_obs=min_obs,
             min_arc_length=min_arc_length,
@@ -156,24 +160,26 @@ def iod_worker(
         )
         if len(iod_orbit) > 0:
             iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id]))
-            iod_orbit_members = iod_orbit_members.set_column(
+            iod_orbit_orbit_members = iod_orbit_orbit_members.set_column(
                 "orbit_id",
-                pa.array([linkage_id for i in range(len(iod_orbit_members))]),
+                pa.array([linkage_id for i in range(len(iod_orbit_orbit_members))]),
             )
 
         time_end = time.time()
         duration = time_end - time_start
         logger.debug(f"IOD for linkage {linkage_id} completed in {duration:.3f}s.")
 
-        iod_orbits_list.append(iod_orbit)
-        iod_orbit_members_list.append(iod_orbit_members)
+        iod_orbits = qv.concatenate([iod_orbits, iod_orbit])
+        iod_orbits = qv.defragment(iod_orbits)
 
-    iod_orbits = qv.concatenate(iod_orbits_list)
-    iod_orbit_members = qv.concatenate(iod_orbit_members_list)
+        iod_orbit_members = qv.concatenate([iod_orbit_members, iod_orbit_orbit_members])
+        iod_orbit_members = qv.defragment(iod_orbit_members)
+
     return iod_orbits, iod_orbit_members
 
 
 iod_worker_remote = ray.remote(iod_worker)
+
 iod_worker_remote.options(num_returns=1, num_cpus=1)
 
 
@@ -568,8 +574,8 @@ def initial_orbit_determination(
     else:
         observations_ref = None
 
-    iod_orbits_list = []
-    iod_orbit_members_list = []
+    iod_orbits = FittedOrbits.empty()
+    iod_orbit_members = FittedOrbitMembers.empty()
     if len(observations) > 0 and len(linkage_members) > 0:
         # Extract linkage IDs
         linkage_ids = linkage_members.column(linkage_id_col).unique()
@@ -610,8 +616,13 @@ def initial_orbit_determination(
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 result = ray.get(finished[0])
-                iod_orbits_list.append(result[0])
-                iod_orbit_members_list.append(result[1])
+                iod_orbits_chunk, iod_orbit_members_chunk = result
+                iod_orbits = qv.concatenate([iod_orbits, iod_orbits_chunk])
+                iod_orbit_members = qv.concatenate(
+                    [iod_orbit_members, iod_orbit_members_chunk]
+                )
+                iod_orbits = qv.defragment(iod_orbits)
+                iod_orbit_members = qv.defragment(iod_orbit_members)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -636,16 +647,18 @@ def initial_orbit_determination(
                     propagator=propagator,
                     propagator_kwargs=propagator_kwargs,
                 )
-                iod_orbits_list.append(iod_orbits_chunk)
-                iod_orbit_members_list.append(iod_orbit_members_chunk)
-
-        iod_orbits = qv.concatenate(iod_orbits_list)
-        iod_orbit_members = qv.concatenate(iod_orbit_members_list)
+                iod_orbits = qv.concatenate([iod_orbits, iod_orbits_chunk])
+                iod_orbit_members = qv.concatenate(
+                    [iod_orbit_members, iod_orbit_members_chunk]
+                )
+                iod_orbits = qv.defragment(iod_orbits)
+                iod_orbit_members = qv.defragment(iod_orbit_members)
 
         time_start_drop = time.time()
         logger.info("Removing duplicate initial orbits...")
         num_orbits = len(iod_orbits)
-        iod_orbits, iod_orbit_members = iod_orbits.drop_duplicates(
+        iod_orbits, iod_orbit_members = drop_duplicate_orbits(
+            iod_orbits,
             iod_orbit_members,
             subset=[
                 "coordinates.time.days",

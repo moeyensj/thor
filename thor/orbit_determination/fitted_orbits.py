@@ -14,7 +14,124 @@ from ..utils.quivr import drop_duplicates
 __all__ = [
     "FittedOrbits",
     "FittedOrbitMembers",
+    "assign_duplicate_observations",
+    "drop_duplicate_orbits",
 ]
+
+
+def assign_duplicate_observations(
+    orbits: "FittedOrbits", orbit_members: "FittedOrbitMembers"
+) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
+    """
+    Assigns observations that have been assigned to multiple orbits to the orbit with the
+    most observations, longest arc length, and lowest reduced chi2.
+
+    Parameters
+    ----------
+    orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+        Fitted orbit members.
+
+    Returns
+    -------
+    filtered : `~thor.orbit_determination.FittedOrbits`
+        Fitted orbits with duplicate assignments removed.
+    filtered_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+        Fitted orbit members with duplicate assignments removed.
+    """
+    # Sorting by priority criteria
+    orbits = orbits.sort_by(
+        [
+            ("num_obs", "descending"),
+            ("arc_length", "descending"),
+            ("reduced_chi2", "ascending"),
+        ]
+    )
+
+    # Extracting unique observation IDs
+    unique_obs_ids = pc.unique(orbit_members.column("obs_id"))
+
+    # Dictionary to store the best orbit for each observation
+    best_orbit_for_obs = {}
+
+    # Iterate over each unique observation ID
+    for obs_id in unique_obs_ids:
+        # Filter orbit_members for the current observation ID
+        mask = pc.equal(orbit_members.column("obs_id"), obs_id)
+        current_obs_members = orbit_members.where(mask)
+
+        # Extract orbit IDs that this observation belongs to
+        obs_orbit_ids = current_obs_members.column("orbit_id")
+
+        # Find the best orbit for this observation based on the criteria
+        for sorted_orbit_id in orbits.column("orbit_id"):
+            if pc.any(pc.is_in(sorted_orbit_id, value_set=obs_orbit_ids)).as_py():
+                best_orbit_for_obs[obs_id.as_py()] = sorted_orbit_id.as_py()
+                break
+
+    # Iteratively update orbit_members to drop rows where obs_id is the same,
+    # but orbit_id is not the best orbit_id for that observation
+    for obs_id, best_orbit_id in best_orbit_for_obs.items():
+        mask_to_remove = pc.and_(
+            pc.equal(orbit_members.column("obs_id"), pa.scalar(obs_id)),
+            pc.not_equal(orbit_members.column("orbit_id"), pa.scalar(best_orbit_id)),
+        )
+        orbit_members = orbit_members.apply_mask(pc.invert(mask_to_remove))
+
+    # Filtering self based on the filtered orbit_members
+    orbits_mask = pc.is_in(
+        orbits.column("orbit_id"), value_set=orbit_members.column("orbit_id")
+    )
+    filtered_orbits = orbits.apply_mask(orbits_mask)
+
+    return filtered_orbits, orbit_members
+
+
+def drop_duplicate_orbits(
+    orbits: "FittedOrbits",
+    orbit_members: "FittedOrbitMembers",
+    subset: Optional[List[str]] = None,
+    keep: Literal["first", "last"] = "first",
+) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
+    """
+    Drop duplicate orbits from the fitted orbits and remove
+    the corresponding orbit members.
+
+    Parameters
+    ----------
+    orbits : `~thor.orbit_determination.FittedOrbits`
+        Fitted orbits.
+    orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+        Fitted orbit members.
+    subset : list of str, optional
+        Subset of columns to consider when dropping duplicates. If not specified all the columns
+        specifying unique state are used: time, x, y, z, vx, vy, vz.
+    keep : {'first', 'last'}, default 'first'
+        If there are duplicate rows then keep the first or last row.
+
+    Returns
+    -------
+    filtered : `~thor.orbit_determination.FittedOrbits`
+        Fitted orbits without duplicates.
+    filtered_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+        Fitted orbit members without duplicates.
+    """
+    if subset is None:
+        subset = [
+            "coordinates.time.days",
+            "coordinates.time.nanos",
+            "coordinates.x",
+            "coordinates.y",
+            "coordinates.z",
+            "coordinates.vx",
+            "coordinates.vy",
+            "coordinates.vz",
+        ]
+
+    filtered = drop_duplicates(orbits, subset=subset, keep=keep)
+    filtered_orbit_members = orbit_members.apply_mask(
+        pc.is_in(orbit_members.orbit_id, filtered.orbit_id)
+    )
+    return filtered, filtered_orbit_members
 
 
 class FittedOrbits(qv.Table):
@@ -44,117 +161,6 @@ class FittedOrbits(qv.Table):
             coordinates=self.coordinates,
         )
 
-    def drop_duplicates(
-        self,
-        orbit_members: "FittedOrbitMembers",
-        subset: Optional[List[str]] = None,
-        keep: Literal["first", "last"] = "first",
-    ) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
-        """
-        Drop duplicate orbits from the fitted orbits and remove
-        the corresponding orbit members.
-
-        Parameters
-        ----------
-        orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
-            Fitted orbit members.
-        subset : list of str, optional
-            Subset of columns to consider when dropping duplicates. If not specified all the columns
-            specifying unique state are used: time, x, y, z, vx, vy, vz.
-        keep : {'first', 'last'}, default 'first'
-            If there are duplicate rows then keep the first or last row.
-
-        Returns
-        -------
-        filtered : `~thor.orbit_determination.FittedOrbits`
-            Fitted orbits without duplicates.
-        filtered_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
-            Fitted orbit members without duplicates.
-        """
-        if subset is None:
-            subset = [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-                "coordinates.x",
-                "coordinates.y",
-                "coordinates.z",
-                "coordinates.vx",
-                "coordinates.vy",
-                "coordinates.vz",
-            ]
-
-        filtered = drop_duplicates(self, subset=subset, keep=keep)
-        filtered_orbit_members = orbit_members.apply_mask(
-            pc.is_in(orbit_members.orbit_id, filtered.orbit_id)
-        )
-        return filtered, filtered_orbit_members
-
-    def assign_duplicate_observations(
-        self, orbit_members: "FittedOrbitMembers"
-    ) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
-        """
-        Assigns observations that have been assigned to multiple orbits to the orbit with t
-        he most observations, longest arc length, and lowest reduced chi2.
-
-        Parameters
-        ----------
-        orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
-            Fitted orbit members.
-
-        Returns
-        -------
-        filtered : `~thor.orbit_determination.FittedOrbits`
-            Fitted orbits with duplicate assignments removed.
-        filtered_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
-            Fitted orbit members with duplicate assignments removed.
-        """
-        # Sort by number of observations, arc length, and reduced chi2
-        # Here we assume that orbits that generally have more observations, longer arc lengths, and lower reduced chi2 are better
-        # as candidates for assigning detections that have been assigned to multiple orbits
-        sorted = self.sort_by(
-            [
-                ("num_obs", "descending"),
-                ("arc_length", "descending"),
-                ("reduced_chi2", "ascending"),
-            ]
-        )
-
-        # Extract the orbit IDs from the sorted table
-        orbit_ids = sorted.orbit_id.unique()
-
-        # Calculate the order in which these orbit IDs appear in the orbit_members table
-        order_in_orbits = pc.index_in(orbit_members.orbit_id, orbit_ids)
-
-        # Create an index into the orbit_members table and append the order_in_orbits column
-        orbit_members_table = (
-            orbit_members.flattened_table()
-            .append_column("index", pa.array(np.arange(len(orbit_members))))
-            .append_column("order_in_orbits", order_in_orbits)
-        )
-
-        # Drop the residual values (a list column) due to: https://github.com/apache/arrow/issues/32504
-        orbit_members_table = orbit_members_table.drop_columns(["residuals.values"])
-
-        # Sort orbit members by the orbit IDs (in the same order as the orbits table)
-        orbit_members_table = orbit_members_table.sort_by(
-            [("order_in_orbits", "ascending")]
-        )
-
-        # Now group by the orbit ID and aggregate the index column to get the first index for each orbit ID
-        indices = (
-            orbit_members_table.group_by("obs_id", use_threads=False)
-            .aggregate([("index", "first")])
-            .column("index_first")
-        )
-
-        # Use the indices to filter the orbit_members table and then use the resulting orbit IDs to filter the orbits table
-        filtered_orbit_members = orbit_members.take(indices)
-        filtered = self.apply_mask(
-            pc.is_in(self.orbit_id, filtered_orbit_members.orbit_id)
-        )
-
-        return filtered, filtered_orbit_members
-
 
 class FittedOrbitMembers(qv.Table):
 
@@ -173,4 +179,7 @@ class FittedOrbitMembers(qv.Table):
         fitted_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
             Fitted orbit members without outliers.
         """
-        return self.apply_mask(pc.equal(self.outlier, False))
+        filtered = self.apply_mask(pc.equal(self.outlier, False))
+        if filtered.fragmented():
+            filtered = qv.defragment(filtered)
+        return filtered

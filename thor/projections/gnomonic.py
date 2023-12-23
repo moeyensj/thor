@@ -149,7 +149,7 @@ class GnomonicCoordinates(qv.Table):
         rounded_cartesian_times = cartesian.time.rounded(precision="ms")  # type: ignore
         rounded_center_cartesian_times = center_cartesian.time.rounded(precision="ms")  # type: ignore
 
-        gnomonic_coords = []
+        gnomonic_coords = GnomonicCoordinates.empty()
         for key, time_i, center_time_i in link.iterate():
 
             cartesian_i = cartesian.apply_mask(
@@ -185,17 +185,18 @@ class GnomonicCoordinates(qv.Table):
                 )
                 covariances_gnomonic.fill(np.nan)
 
-            gnomonic_coords.append(
-                cls.from_kwargs(
-                    theta_x=coords_gnomonic[:, 0],
-                    theta_y=coords_gnomonic[:, 1],
-                    vtheta_x=coords_gnomonic[:, 2],
-                    vtheta_y=coords_gnomonic[:, 3],
-                    time=cartesian_i.time,
-                    covariance=ProjectionCovariances.from_matrix(covariances_gnomonic),
-                    origin=cartesian_i.origin,
-                    frame=cartesian_i.frame,
-                )
+            gnomonic_coords_chunk = cls.from_kwargs(
+                theta_x=coords_gnomonic[:, 0],
+                theta_y=coords_gnomonic[:, 1],
+                vtheta_x=coords_gnomonic[:, 2],
+                vtheta_y=coords_gnomonic[:, 3],
+                time=time_i,
+                covariance=ProjectionCovariances.from_matrix(covariances_gnomonic),
+                origin=cartesian_i.origin,
+                frame=cartesian_i.frame,
             )
 
-        return qv.concatenate(gnomonic_coords)
+            gnomonic_coords = qv.concatenate([gnomonic_coords, gnomonic_coords_chunk])
+            gnomonic_coords = qv.defragment(gnomonic_coords)
+
+        return gnomonic_coords

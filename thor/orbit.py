@@ -20,6 +20,7 @@ from adam_core.coordinates import (
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import PYOORB, Propagator
+from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
 CoordinateType = TypeVar(
@@ -337,10 +338,9 @@ class TestOrbits(qv.Table):
             observations, propagator=propagator, max_processes=max_processes
         )
 
-        ranged_detections_list = []
-        if max_processes is None or max_processes > 1:
-            if not ray.is_initialized():
-                ray.init(num_cpus=max_processes)
+        ranged_detections = RangedPointSourceDetections.empty()
+        use_ray = initialize_use_ray(num_cpus=max_processes)
+        if use_ray:
 
             if isinstance(observations, ray.ObjectRef):
                 observations_ref = observations
@@ -365,23 +365,29 @@ class TestOrbits(qv.Table):
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
-                ranged_detections_list.append(ray.get(finished[0]))
+                ranged_detections_chunk = ray.get(finished[0])
+                ranged_detections = qv.concatenate(
+                    [ranged_detections, ranged_detections_chunk]
+                )
+                ranged_detections = qv.defragment(ranged_detections)
 
         else:
             # Get state IDs
             state_ids = observations.state_id.unique().sort()
 
             for state_id in state_ids:
-                ranged_detections_list.append(
-                    range_observations_worker(
-                        observations.select("state_id", state_id),
-                        ephemeris.select("id", state_id),
-                        state_id,
-                    )
+                ranged_detections_chunk = range_observations_worker(
+                    observations.select("state_id", state_id),
+                    ephemeris.select("id", state_id),
+                    state_id,
                 )
 
-        ranged_point_source_detections = qv.concatenate(ranged_detections_list)
-        return ranged_point_source_detections.sort_by(by=["state_id"])
+                ranged_detections = qv.concatenate(
+                    [ranged_detections, ranged_detections_chunk]
+                )
+                ranged_detections = qv.defragment(ranged_detections)
+
+        return ranged_detections.sort_by(by=["state_id"])
 
 
 def assume_heliocentric_distance(

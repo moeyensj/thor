@@ -120,7 +120,7 @@ def link_test_orbit(
         raise ValueError(f"Unknown propagator: {config.propagator}")
 
     use_ray = initialize_use_ray(
-        num_cpus=config.max_processes, object_store_bytes=config.ray_memory_bytes
+        num_cpus=config.max_processes, object_store_bytes=config.ray_memory_bytes or None
     )
 
     refs_to_free = []
