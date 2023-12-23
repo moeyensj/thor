@@ -198,7 +198,8 @@ def range_and_transform(
                 transformed_detections = qv.concatenate(
                     [transformed_detections, ray.get(finished[0])]
                 )
-                transformed_detections = qv.defragment(transformed_detections)
+                if transformed_detections.fragmented():
+                    transformed_detections = qv.defragment(transformed_detections)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -218,7 +219,8 @@ def range_and_transform(
                     state_id,
                 )
                 transformed_detections = qv.concatenate([transformed_detections, chunk])
-                transformed_detections = qv.defragment(transformed_detections)
+                if transformed_detections.fragmented():
+                    transformed_detections = qv.defragment(transformed_detections)
 
         transformed_detections = transformed_detections.sort_by(by=["state_id"])
 

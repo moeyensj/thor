@@ -369,7 +369,8 @@ class TestOrbits(qv.Table):
                 ranged_detections = qv.concatenate(
                     [ranged_detections, ranged_detections_chunk]
                 )
-                ranged_detections = qv.defragment(ranged_detections)
+                if ranged_detections.fragmented():
+                    ranged_detections = qv.defragment(ranged_detections)
 
         else:
             # Get state IDs
@@ -385,7 +386,8 @@ class TestOrbits(qv.Table):
                 ranged_detections = qv.concatenate(
                     [ranged_detections, ranged_detections_chunk]
                 )
-                ranged_detections = qv.defragment(ranged_detections)
+                if ranged_detections.fragmented():
+                    ranged_detections = qv.defragment(ranged_detections)
 
         return ranged_detections.sort_by(by=["state_id"])
 

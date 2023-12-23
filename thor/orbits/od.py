@@ -70,10 +70,12 @@ def od_worker(
         duration = time_end - time_start
         logger.debug(f"OD for orbit {orbit_id} completed in {duration:.3f}s.")
         od_orbits = qv.concatenate([od_orbits, od_orbit])
-        od_orbits = qv.defragment(od_orbits)
+        if od_orbits.fragmented():
+            od_orbits = qv.defragment(od_orbits)
 
         od_orbit_members = qv.concatenate([od_orbit_members, od_orbit_orbit_members])
-        od_orbit_members = qv.defragment(od_orbit_members)
+        if od_orbit_members.fragmented():
+            od_orbit_members = qv.defragment(od_orbit_members)
 
     return od_orbits, od_orbit_members
 
@@ -655,11 +657,13 @@ def differential_correction(
                 finished, futures = ray.wait(futures, num_returns=1)
                 od_orbits_chunk, od_orbit_members_chunk = ray.get(finished[0])
                 od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
-                od_orbits = qv.defragment(od_orbits)
+                if od_orbits.fragmented():
+                    od_orbits = qv.defragment(od_orbits)
                 od_orbit_members = qv.concatenate(
                     [od_orbit_members, od_orbit_members_chunk]
                 )
-                od_orbit_members = qv.defragment(od_orbit_members)
+                if od_orbit_members.fragmented():
+                    od_orbit_members = qv.defragment(od_orbit_members)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -686,11 +690,13 @@ def differential_correction(
                     propagator_kwargs=propagator_kwargs,
                 )
                 od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
-                od_orbits = qv.defragment(od_orbits)
+                if od_orbits.fragmented():
+                    od_orbits = qv.defragment(od_orbits)
                 od_orbit_members = qv.concatenate(
                     [od_orbit_members, od_orbit_members_chunk]
                 )
-                od_orbit_members = qv.defragment(od_orbit_members)
+                if od_orbit_members.fragmented():
+                    od_orbit_members = qv.defragment(od_orbit_members)
 
         # Sort orbits by orbit ID and observation time
         od_orbits, od_orbit_members = sort_by_id_and_time(

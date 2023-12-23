@@ -170,10 +170,12 @@ def iod_worker(
         logger.debug(f"IOD for linkage {linkage_id} completed in {duration:.3f}s.")
 
         iod_orbits = qv.concatenate([iod_orbits, iod_orbit])
-        iod_orbits = qv.defragment(iod_orbits)
+        if iod_orbits.fragmented():
+            iod_orbits = qv.defragment(iod_orbits)
 
         iod_orbit_members = qv.concatenate([iod_orbit_members, iod_orbit_orbit_members])
-        iod_orbit_members = qv.defragment(iod_orbit_members)
+        if iod_orbit_members.fragmented():
+            iod_orbit_members = qv.defragment(iod_orbit_members)
 
     return iod_orbits, iod_orbit_members
 
@@ -621,8 +623,10 @@ def initial_orbit_determination(
                 iod_orbit_members = qv.concatenate(
                     [iod_orbit_members, iod_orbit_members_chunk]
                 )
-                iod_orbits = qv.defragment(iod_orbits)
-                iod_orbit_members = qv.defragment(iod_orbit_members)
+                if iod_orbits.fragmented():
+                    iod_orbits = qv.defragment(iod_orbits)
+                if iod_orbit_members.fragmented():
+                    iod_orbit_members = qv.defragment(iod_orbit_members)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -651,8 +655,10 @@ def initial_orbit_determination(
                 iod_orbit_members = qv.concatenate(
                     [iod_orbit_members, iod_orbit_members_chunk]
                 )
-                iod_orbits = qv.defragment(iod_orbits)
-                iod_orbit_members = qv.defragment(iod_orbit_members)
+                if iod_orbits.fragmented():
+                    iod_orbits = qv.defragment(iod_orbits)
+                if iod_orbit_members.fragmented():
+                    iod_orbit_members = qv.defragment(iod_orbit_members)
 
         time_start_drop = time.time()
         logger.info("Removing duplicate initial orbits...")

@@ -197,7 +197,8 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
                 filtered_observations = qv.concatenate(
                     [filtered_observations, filtered_observations_chunk]
                 )
-                filtered_observations = qv.defragment(filtered_observations)
+                if filtered_observations.fragmented():
+                    filtered_observations = qv.defragment(filtered_observations)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -217,7 +218,8 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
                 filtered_observations = qv.concatenate(
                     [filtered_observations, filtered_observations_chunk]
                 )
-                filtered_observations = qv.defragment(filtered_observations)
+                if filtered_observations.fragmented():
+                    filtered_observations = qv.defragment(filtered_observations)
 
         filtered_observations = filtered_observations.sort_by(
             [

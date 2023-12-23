@@ -588,10 +588,12 @@ def cluster_velocity_worker(
             alg=alg,
         )
         clusters = qv.concatenate([clusters, clusters_i])
-        clusters = qv.defragment(clusters)
+        if clusters.fragmented():
+            clusters = qv.defragment(clusters)
 
         cluster_members = qv.concatenate([cluster_members, cluster_members_i])
-        cluster_members = qv.defragment(cluster_members)
+        if cluster_members.fragmented():
+            cluster_members = qv.defragment(cluster_members)
 
     return clusters, cluster_members
 
@@ -780,10 +782,12 @@ def cluster_and_link(
             finished, futures = ray.wait(futures, num_returns=1)
             clusters_chunk, cluster_members_chunk = ray.get(finished[0])
             clusters = qv.concatenate([clusters, clusters_chunk])
-            clusters = qv.defragment(clusters)
+            if clusters.fragmented():
+                clusters = qv.defragment(clusters)
 
             cluster_members = qv.concatenate([cluster_members, cluster_members_chunk])
-            cluster_members = qv.defragment(cluster_members)
+            if cluster_members.fragmented():
+                cluster_members = qv.defragment(cluster_members)
 
         ray.internal.free(refs_to_free)
         logger.info(f"Removed {len(refs_to_free)} references from the object store.")
@@ -806,10 +810,12 @@ def cluster_and_link(
             )
 
             clusters = qv.concatenate([clusters, clusters_i])
-            clusters = qv.defragment(clusters)
+            if clusters.fragmented():
+                clusters = qv.defragment(clusters)
 
             cluster_members = qv.concatenate([cluster_members, cluster_members_i])
-            cluster_members = qv.defragment(cluster_members)
+            if cluster_members.fragmented():
+                cluster_members = qv.defragment(cluster_members)
 
     # Drop duplicate clusters
     time_start_drop = time.perf_counter()

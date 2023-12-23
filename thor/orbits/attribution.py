@@ -175,7 +175,7 @@ def attribution_worker(
     obs_ids_associated = []
     obs_times_associated = []
     radius_rad = np.radians(radius)
-    residuals = []
+    residuals = Residuals.empty()
     for _, ephemeris_i, observations_i in linkage.iterate():
         # Extract the observation IDs and times
         obs_ids = observations_i.id.to_numpy(zero_copy_only=False)
@@ -219,14 +219,16 @@ def attribution_worker(
             residuals_i = Residuals.calculate(
                 coords.take(mask[0]), coords_predicted.take(i[mask])
             )
-            residuals.append(residuals_i)
+            residuals = qv.concatenate([residuals, residuals_i])
 
     if len(distances) > 0:
         distances = np.degrees(np.concatenate(distances))
         orbit_ids_associated = np.concatenate(orbit_ids_associated)
         obs_ids_associated = np.concatenate(obs_ids_associated)
         obs_times_associated = np.concatenate(obs_times_associated)
-        residuals = qv.concatenate(residuals)
+
+        if residuals.fragmented():
+            residuals = qv.defragment(residuals)
 
         return Attributions.from_kwargs(
             orbit_id=orbit_ids_associated,
@@ -351,7 +353,8 @@ def attribute_observations(
                     propagator_kwargs=propagator_kwargs,
                 )
                 attributions = qv.concatenate([attributions, attribution_df_i])
-                attributions = qv.defragment(attributions)
+                if attributions.fragmented():
+                    attributions = qv.defragment(attributions)
 
     attributions = attributions.sort_by(["orbit_id", "obs_id", "distance"])
     if attributions.fragmented():
@@ -564,10 +567,12 @@ def merge_and_extend_orbits(
             )
 
             odp_orbits = qv.concatenate([odp_orbits, orbits_out])
-            odp_orbits = qv.defragment(odp_orbits)
+            if odp_orbits.fragmented():
+                odp_orbits = qv.defragment(odp_orbits)
 
             odp_orbit_members = qv.concatenate([odp_orbit_members, orbit_members_out])
-            odp_orbit_members = qv.defragment(odp_orbit_members)
+            if odp_orbit_members.fragmented():
+                odp_orbit_members = qv.defragment(odp_orbit_members)
 
             # Remove observations that have been added to the output list of orbits
             observations_iter = observations_iter.apply_mask(

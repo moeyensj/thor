@@ -197,6 +197,7 @@ class GnomonicCoordinates(qv.Table):
             )
 
             gnomonic_coords = qv.concatenate([gnomonic_coords, gnomonic_coords_chunk])
-            gnomonic_coords = qv.defragment(gnomonic_coords)
+            if gnomonic_coords.fragmented():
+                gnomonic_coords = qv.defragment(gnomonic_coords)
 
         return gnomonic_coords

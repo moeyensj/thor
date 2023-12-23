@@ -223,7 +223,8 @@ class Observations(qv.Table):
             observers_with_states = qv.concatenate(
                 [observers_with_states, observers_with_states_i]
             )
-            observers_with_states = qv.defragment(observers_with_states)
+            if observers_with_states.fragmented():
+                observers_with_states = qv.defragment(observers_with_states)
 
         return observers_with_states.sort_by("state_id")
 
