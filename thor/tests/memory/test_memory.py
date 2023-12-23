@@ -27,7 +27,7 @@ import pytest
 
 TEST_ORBIT_ID = "896831"
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-CONFIG_PROCESSES = [6]
+CONFIG_PROCESSES = [1, 4]
 
 
 def get_git_branch_or_revision():
@@ -195,9 +195,7 @@ def ray_cluster(memory_config):
         initialize_use_ray(
             num_cpus=memory_config.max_processes, object_store_bytes=4000000000
         )
-        # Wait until ray cluster is ready
-        while not ray.is_initialized():
-            time.sleep(0.1)
+
     yield
     if memory_config.max_processes > 1:
         ray.shutdown()
