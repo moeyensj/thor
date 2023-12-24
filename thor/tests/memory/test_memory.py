@@ -26,7 +26,8 @@ import psutil
 import pytest
 
 TEST_ORBIT_ID = "896831"
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+# FIXTURES_DIR = Path(__file__).parent / "fixtures"
+FIXTURES_DIR = Path("/opt/volumes/")
 CONFIG_PROCESSES = [1, 4]
 
 
