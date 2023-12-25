@@ -91,11 +91,11 @@ def ray_cluster(integration_config):
     if integration_config.max_processes > 1:
         initialize_use_ray(
             num_cpus=integration_config.max_processes,
-            object_store_bytes=integration_config.ray_memory_bytes or None
+            object_store_bytes=integration_config.ray_memory_bytes or None,
         )
         # Wait until ray cluster is ready
         while not ray.is_initialized():
-            
+
             time.sleep(0.1)
     yield
     if integration_config.max_processes > 1:
@@ -236,15 +236,8 @@ def run_link_test_orbit(test_orbit, observations, config):
 )
 @pytest.mark.parametrize("integration_config", [1, 4], indirect=True)
 @pytest.mark.integration
-def test_link_test_orbit(
-    object_id, orbits, observations, integration_config
-):
-    (
-        test_orbit,
-        observations,
-        obs_ids_expected,
-        integration_config,
-    ) = setup_test_data(
+def test_link_test_orbit(object_id, orbits, observations, integration_config):
+    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
@@ -267,12 +260,7 @@ def test_benchmark_link_test_orbit(
 ):
     object_id = "202930 Ivezic (1998 SG172)"
 
-    (
-        test_orbit,
-        observations,
-        obs_ids_expected,
-        integration_config,
-    ) = setup_test_data(
+    (test_orbit, observations, obs_ids_expected, integration_config,) = setup_test_data(
         object_id, orbits, observations, integration_config, max_arc_length=14
     )
 
