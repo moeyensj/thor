@@ -10,7 +10,7 @@ RUN apt-get update \
 
 # Upgrade pip to the latest version and install pre-commit
 RUN pip install --upgrade pip pre-commit
-RUN pip install --upgrade cython==0.29.36 setuptools setuptools_scm hatch
+RUN pip install --upgrade cython==0.29.36 setuptools setuptools_scm
 RUN chmod 777 /opt
 
 # Install numpy

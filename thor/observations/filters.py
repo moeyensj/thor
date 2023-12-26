@@ -1,5 +1,4 @@
 import abc
-import gc
 import logging
 import time
 from typing import TYPE_CHECKING, List, Optional, Union
@@ -176,8 +175,6 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
                 logger.info("Placed ephemeris in the object store.")
             else:
                 ephemeris_ref = ephemeris
-
-            gc.collect()
 
             state_ids = observations.state_id.unique().sort()
             futures = []

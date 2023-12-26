@@ -26,8 +26,7 @@ import psutil
 import pytest
 
 TEST_ORBIT_ID = "896831"
-# FIXTURES_DIR = Path(__file__).parent / "fixtures"
-FIXTURES_DIR = Path("/opt/volumes/")
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 CONFIG_PROCESSES = [1, 4]
 
 
@@ -86,7 +85,7 @@ def memory_snapshot(request, git_branch_or_revision):
         timestamps, mem_usage, color="magenta", linestyle="-", linewidth=2
     )  # Removed marker
     plt.title(
-        f"Memory Usaage [{git_branch_or_revision},{TEST_ORBIT_ID} {request.node.name}",
+        f"Memory Usage [{git_branch_or_revision},{TEST_ORBIT_ID} {request.node.name}",
         fontsize=12,
     )
     plt.xlabel("Time (seconds)", fontsize=12)
