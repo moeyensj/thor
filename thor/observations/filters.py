@@ -160,7 +160,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         # Generate an ephemeris for every observer time/location in the dataset
         ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
 
-        filtered_observations_list = []
+        filtered_observations = Observations.empty()
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
             refs_to_free = []
@@ -190,7 +190,12 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
-                filtered_observations_list.append(ray.get(finished[0]))
+                filtered_observations_chunk = ray.get(finished[0])
+                filtered_observations = qv.concatenate(
+                    [filtered_observations, filtered_observations_chunk]
+                )
+                if filtered_observations.fragmented():
+                    filtered_observations = qv.defragment(filtered_observations)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -201,16 +206,19 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         else:
             state_ids = observations.state_id.unique().sort()
             for state_id in state_ids:
-                filtered_observations = TestOrbitRadiusObservationFilter_worker(
+                filtered_observations_chunk = TestOrbitRadiusObservationFilter_worker(
                     observations,
                     ephemeris,
                     state_id,
                     self.radius,
                 )
-                filtered_observations_list.append(filtered_observations)
+                filtered_observations = qv.concatenate(
+                    [filtered_observations, filtered_observations_chunk]
+                )
+                if filtered_observations.fragmented():
+                    filtered_observations = qv.defragment(filtered_observations)
 
-        observations_filtered = qv.concatenate(filtered_observations_list)
-        observations_filtered = observations_filtered.sort_by(
+        filtered_observations = filtered_observations.sort_by(
             [
                 "coordinates.time.days",
                 "coordinates.time.nanos",
@@ -220,12 +228,12 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
 
         time_end = time.perf_counter()
         logger.info(
-            f"Filtered {len(observations)} observations to {len(observations_filtered)} observations."
+            f"Filtered {len(observations)} observations to {len(filtered_observations)} observations."
         )
         logger.info(
             f"TestOrbitRadiusObservationFilter completed in {time_end - time_start:.3f} seconds."
         )
-        return observations_filtered
+        return filtered_observations
 
 
 def _within_radius(

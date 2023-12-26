@@ -39,8 +39,8 @@ def od_worker(
     propagator: Literal["PYOORB"] = "PYOORB",
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-    od_orbits_list = []
-    od_orbit_members_list = []
+    od_orbits = FittedOrbits.empty()
+    od_orbit_members = FittedOrbitMembers.empty()
 
     for orbit_id in orbit_ids:
         time_start = time.time()
@@ -52,7 +52,7 @@ def od_worker(
         ).obs_id
         orbit_observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
 
-        od_orbit, od_orbit_members = od(
+        od_orbit, od_orbit_orbit_members = od(
             orbit,
             orbit_observations,
             rchi2_threshold=rchi2_threshold,
@@ -69,12 +69,14 @@ def od_worker(
         time_end = time.time()
         duration = time_end - time_start
         logger.debug(f"OD for orbit {orbit_id} completed in {duration:.3f}s.")
+        od_orbits = qv.concatenate([od_orbits, od_orbit])
+        if od_orbits.fragmented():
+            od_orbits = qv.defragment(od_orbits)
 
-        od_orbits_list.append(od_orbit)
-        od_orbit_members_list.append(od_orbit_members)
+        od_orbit_members = qv.concatenate([od_orbit_members, od_orbit_orbit_members])
+        if od_orbit_members.fragmented():
+            od_orbit_members = qv.defragment(od_orbit_members)
 
-    od_orbits = qv.concatenate(od_orbits_list)
-    od_orbit_members = qv.concatenate(od_orbit_members_list)
     return od_orbits, od_orbit_members
 
 
@@ -566,7 +568,6 @@ def differential_correction(
     """
     time_start = time.perf_counter()
     logger.info("Running differential correction...")
-
     if isinstance(orbits, ray.ObjectRef):
         orbits_ref = orbits
         orbits = ray.get(orbits)
@@ -610,8 +611,8 @@ def differential_correction(
     if len(orbits) > 0 and len(orbit_members) > 0:
         orbit_ids = orbits.orbit_id.to_numpy(zero_copy_only=False)
 
-        od_orbits_list = []
-        od_orbit_members_list = []
+        od_orbits = FittedOrbits.empty()
+        od_orbit_members = FittedOrbitMembers.empty()
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
@@ -654,9 +655,15 @@ def differential_correction(
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
-                results = ray.get(finished[0])
-                od_orbits_list.append(results[0])
-                od_orbit_members_list.append(results[1])
+                od_orbits_chunk, od_orbit_members_chunk = ray.get(finished[0])
+                od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
+                if od_orbits.fragmented():
+                    od_orbits = qv.defragment(od_orbits)
+                od_orbit_members = qv.concatenate(
+                    [od_orbit_members, od_orbit_members_chunk]
+                )
+                if od_orbit_members.fragmented():
+                    od_orbit_members = qv.defragment(od_orbit_members)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -682,11 +689,14 @@ def differential_correction(
                     propagator=propagator,
                     propagator_kwargs=propagator_kwargs,
                 )
-                od_orbits_list.append(od_orbits_chunk)
-                od_orbit_members_list.append(od_orbit_members_chunk)
-
-        od_orbits = qv.concatenate(od_orbits_list)
-        od_orbit_members = qv.concatenate(od_orbit_members_list)
+                od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
+                if od_orbits.fragmented():
+                    od_orbits = qv.defragment(od_orbits)
+                od_orbit_members = qv.concatenate(
+                    [od_orbit_members, od_orbit_members_chunk]
+                )
+                if od_orbit_members.fragmented():
+                    od_orbit_members = qv.defragment(od_orbit_members)
 
         # Sort orbits by orbit ID and observation time
         od_orbits, od_orbit_members = sort_by_id_and_time(
@@ -694,6 +704,7 @@ def differential_correction(
         )
 
     else:
+        logger.info("Received no orbits or orbit members.")
         od_orbits = FittedOrbits.empty()
         od_orbit_members = FittedOrbitMembers.empty()
 

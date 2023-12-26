@@ -11,6 +11,7 @@ from adam_core.coordinates import (
     transform_coordinates,
 )
 from adam_core.propagator import PYOORB, Propagator
+from adam_core.ray_cluster import initialize_use_ray
 
 from .observations.observations import Observations
 from .orbit import TestOrbitEphemeris, TestOrbits
@@ -160,15 +161,10 @@ def range_and_transform(
             origin_out=OriginCodes.SUN,
         )
 
-        transformed_detection_list = []
-        if max_processes is None or max_processes > 1:
+        transformed_detections = TransformedDetections.empty()
 
-            if not ray.is_initialized():
-                logger.info(
-                    f"Ray is not initialized. Initializing with {max_processes}..."
-                )
-                ray.init(address="auto", num_cpus=max_processes)
-
+        use_ray = initialize_use_ray(num_cpus=max_processes)
+        if use_ray:
             refs_to_free = []
             if observations_ref is None:
                 observations_ref = ray.put(observations)
@@ -199,7 +195,11 @@ def range_and_transform(
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
-                transformed_detection_list.append(ray.get(finished[0]))
+                transformed_detections = qv.concatenate(
+                    [transformed_detections, ray.get(finished[0])]
+                )
+                if transformed_detections.fragmented():
+                    transformed_detections = qv.defragment(transformed_detections)
 
             if len(refs_to_free) > 0:
                 ray.internal.free(refs_to_free)
@@ -212,16 +212,16 @@ def range_and_transform(
             state_ids = observations.state_id.unique().sort()
             for state_id in state_ids:
                 mask = pc.equal(state_id, observations.state_id)
-                transformed_detection_list.append(
-                    range_and_transform_worker(
-                        ranged_detections_cartesian.apply_mask(mask),
-                        observations.select("state_id", state_id),
-                        ephemeris.select("id", state_id),
-                        state_id,
-                    )
+                chunk = range_and_transform_worker(
+                    ranged_detections_cartesian.apply_mask(mask),
+                    observations.select("state_id", state_id),
+                    ephemeris.select("id", state_id),
+                    state_id,
                 )
+                transformed_detections = qv.concatenate([transformed_detections, chunk])
+                if transformed_detections.fragmented():
+                    transformed_detections = qv.defragment(transformed_detections)
 
-        transformed_detections = qv.concatenate(transformed_detection_list)
         transformed_detections = transformed_detections.sort_by(by=["state_id"])
 
     else:

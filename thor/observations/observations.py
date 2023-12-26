@@ -200,7 +200,7 @@ class Observations(qv.Table):
             The observers table for these observations with an added
             column representing the state ID.
         """
-        observers_with_states = []
+        observers_with_states = ObserversWithStates.empty()
         for code, observations_i in self.group_by_observatory_code():
             # Extract unique times and make sure they are sorted
             # by time in ascending order
@@ -219,10 +219,14 @@ class Observations(qv.Table):
                 state_id=state_ids,
                 observers=observers_i,
             )
-            observers_with_states.append(observers_with_states_i)
 
-        observers = qv.concatenate(observers_with_states)
-        return observers.sort_by("state_id")
+            observers_with_states = qv.concatenate(
+                [observers_with_states, observers_with_states_i]
+            )
+            if observers_with_states.fragmented():
+                observers_with_states = qv.defragment(observers_with_states)
+
+        return observers_with_states.sort_by("state_id")
 
     def select_exposure(self, exposure_id: int) -> "Observations":
         """

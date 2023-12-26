@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 import time
 from typing import Literal, Optional, Tuple, Union
 
@@ -16,7 +17,12 @@ from adam_core.ray_cluster import initialize_use_ray
 from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
-from ..orbit_determination import FittedOrbitMembers, FittedOrbits
+from ..orbit_determination import (
+    FittedOrbitMembers,
+    FittedOrbits,
+    assign_duplicate_observations,
+    drop_duplicate_orbits,
+)
 from .od import differential_correction
 
 logger = logging.getLogger(__name__)
@@ -169,7 +175,7 @@ def attribution_worker(
     obs_ids_associated = []
     obs_times_associated = []
     radius_rad = np.radians(radius)
-    residuals = []
+    residuals = Residuals.empty()
     for _, ephemeris_i, observations_i in linkage.iterate():
         # Extract the observation IDs and times
         obs_ids = observations_i.id.to_numpy(zero_copy_only=False)
@@ -213,14 +219,16 @@ def attribution_worker(
             residuals_i = Residuals.calculate(
                 coords.take(mask[0]), coords_predicted.take(i[mask])
             )
-            residuals.append(residuals_i)
+            residuals = qv.concatenate([residuals, residuals_i])
 
     if len(distances) > 0:
         distances = np.degrees(np.concatenate(distances))
         orbit_ids_associated = np.concatenate(orbit_ids_associated)
         obs_ids_associated = np.concatenate(obs_ids_associated)
         obs_times_associated = np.concatenate(obs_times_associated)
-        residuals = qv.concatenate(residuals)
+
+        if residuals.fragmented():
+            residuals = qv.defragment(residuals)
 
         return Attributions.from_kwargs(
             orbit_id=orbit_ids_associated,
@@ -234,6 +242,7 @@ def attribution_worker(
 
 
 attribution_worker_remote = ray.remote(attribution_worker)
+
 attribution_worker_remote.options(
     num_returns=1,
     num_cpus=1,
@@ -283,7 +292,7 @@ def attribute_observations(
         orbit_ids = orbits.orbit_id
     observation_indices = np.arange(0, len(observations))
 
-    attributions_list = []
+    attributions = Attributions.empty()
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
         refs_to_free = []
@@ -319,7 +328,9 @@ def attribute_observations(
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
-                attributions_list.append(ray.get(finished[0]))
+                attributions_chunk = ray.get(finished[0])
+                attributions = qv.concatenate([attributions, attributions_chunk])
+                attributions = qv.defragment(attributions)
 
         if len(refs_to_free) > 0:
             ray.internal.free(refs_to_free)
@@ -341,9 +352,10 @@ def attribute_observations(
                     propagator=propagator,
                     propagator_kwargs=propagator_kwargs,
                 )
-                attributions_list.append(attribution_df_i)
+                attributions = qv.concatenate([attributions, attribution_df_i])
+                if attributions.fragmented():
+                    attributions = qv.defragment(attributions)
 
-    attributions = qv.concatenate(attributions_list)
     attributions = attributions.sort_by(["orbit_id", "obs_id", "distance"])
     if attributions.fragmented():
         attributions = qv.defragment(attributions)
@@ -425,8 +437,8 @@ def merge_and_extend_orbits(
     observations_iter = observations
 
     iterations = 0
-    odp_orbits_list = []
-    odp_orbit_members_list = []
+    odp_orbits = FittedOrbits.empty()
+    odp_orbit_members = FittedOrbitMembers.empty()
     if len(orbits_iter) > 0 and len(observations_iter) > 0:
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
@@ -435,6 +447,17 @@ def merge_and_extend_orbits(
                 observations_ref = ray.put(observations)
                 refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
+
+        # If max_processes is None, lets determine the actual number of
+        # processes we will use so that we can dynamically set the orbit
+        # chunk size
+        if max_processes is None:
+            if use_ray:
+                processes = int(ray.available_resources()["CPU"])
+            else:
+                processes = mp.cpu_count()
+        else:
+            processes = max_processes
 
         converged = False
         while not converged:
@@ -452,6 +475,10 @@ def merge_and_extend_orbits(
                 orbits_in = orbits_iter
                 observations_in = observations_iter
 
+            orbits_chunk_size_iter = np.minimum(
+                orbits_chunk_size, np.ceil(len(orbits_iter) / processes).astype(int)
+            )
+
             # Run attribution
             attributions = attribute_observations(
                 orbits_in,
@@ -459,7 +486,7 @@ def merge_and_extend_orbits(
                 radius=radius,
                 propagator=propagator,
                 propagator_kwargs=propagator_kwargs,
-                orbits_chunk_size=orbits_chunk_size,
+                orbits_chunk_size=orbits_chunk_size_iter,
                 observations_chunk_size=observations_chunk_size,
                 max_processes=max_processes,
                 orbit_ids=orbits_iter.orbit_id,
@@ -496,7 +523,7 @@ def merge_and_extend_orbits(
                 fit_epoch=fit_epoch,
                 propagator=propagator,
                 propagator_kwargs=propagator_kwargs,
-                chunk_size=orbits_chunk_size,
+                chunk_size=orbits_chunk_size_iter,
                 max_processes=max_processes,
                 orbit_ids=orbits_iter.orbit_id,
                 obs_ids=pc.unique(orbit_members_iter.obs_id),
@@ -505,7 +532,8 @@ def merge_and_extend_orbits(
 
             # Remove any duplicate orbits
             orbits_iter = orbits_iter.sort_by([("reduced_chi2", "ascending")])
-            orbits_iter, orbit_members_iter = orbits_iter.drop_duplicates(
+            orbits_iter, orbit_members_iter = drop_duplicate_orbits(
+                orbits_iter,
                 orbit_members_iter,
                 subset=[
                     "coordinates.time.days",
@@ -533,13 +561,18 @@ def merge_and_extend_orbits(
             # then assign those observations to the orbit with the most observations, longest arc length,
             # and lowest reduced chi2 (and remove the other instances of that observation)
             # We will one final iteration of OD on the output orbits later
-            orbits_out, orbit_members_out = orbits_out.assign_duplicate_observations(
-                orbit_members_out
+
+            orbits_out, orbit_members_out = assign_duplicate_observations(
+                orbits_out, orbit_members_out
             )
 
-            # Add these orbits to the output list
-            odp_orbits_list.append(orbits_out)
-            odp_orbit_members_list.append(orbit_members_out)
+            odp_orbits = qv.concatenate([odp_orbits, orbits_out])
+            if odp_orbits.fragmented():
+                odp_orbits = qv.defragment(odp_orbits)
+
+            odp_orbit_members = qv.concatenate([odp_orbit_members, orbit_members_out])
+            if odp_orbit_members.fragmented():
+                odp_orbit_members = qv.defragment(odp_orbit_members)
 
             # Remove observations that have been added to the output list of orbits
             observations_iter = observations_iter.apply_mask(
@@ -572,6 +605,11 @@ def merge_and_extend_orbits(
                 pc.is_in(orbits_iter.orbit_id, orbit_members_iter.orbit_id.unique())
             )
 
+            if orbits_iter.fragmented():
+                orbits_iter = qv.defragment(orbits_iter)
+            if orbit_members_iter.fragmented():
+                orbit_members_iter = qv.defragment(orbit_members_iter)
+
             # Remove orbits from the object store (the underlying state vectors may
             # change with differential correction so we need to add them again at
             # the start of the next iteration)
@@ -583,10 +621,13 @@ def merge_and_extend_orbits(
             if len(orbits_iter) == 0:
                 converged = True
 
-        odp_orbits = qv.concatenate(odp_orbits_list)
-        odp_orbit_members = qv.concatenate(odp_orbit_members_list)
-
         if len(odp_orbits) > 0:
+            # Assign any remaining duplicate observations to the orbit with
+            # the most observations, longest arc length, and lowest reduced chi2
+            odp_orbits, odp_orbit_members = assign_duplicate_observations(
+                odp_orbits, odp_orbit_members
+            )
+
             # Do one final iteration of OD on the output orbits. This
             # will update any fits of orbits that might have had observations
             # removed during the assign_duplicate_observations step

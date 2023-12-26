@@ -7,4 +7,9 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ".:/code"
+      - ".ipython:/root/.ipython/"
+      - '.:/code'
+      - ".docker_bash_history.txt:/root/.bash_history"
+      - ".volumes:/opt/volumes/"
+    tmpfs:
+      - /dev/shm:size=8g

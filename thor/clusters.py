@@ -36,72 +36,73 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+def drop_duplicate_clusters(
+    clusters: "Clusters",
+    cluster_members: "ClusterMembers",
+) -> Tuple["Clusters", "ClusterMembers"]:
+    """
+    Drop clusters that have identical sets of observation IDs.
+
+    Parameters
+    ----------
+    cluster_members: `~thor.clusters.ClusterMembers`
+        A table of cluster members.
+
+    Returns
+    -------
+    `~thor.clusters.Clusters`
+        A table of clusters with duplicate clusters removed.
+    """
+    # Sort by cluster_id and obs_id
+    clusters = clusters.sort_by([("cluster_id", "ascending")])
+    cluster_members = cluster_members.sort_by(
+        [("cluster_id", "ascending"), ("obs_id", "ascending")]
+    )
+
+    # Group by cluster_id and aggregate a list of distinct obs_ids
+    grouped_by_cluster_id = cluster_members.table.group_by(
+        ["cluster_id"], use_threads=False
+    ).aggregate([("obs_id", "distinct")])
+    obs_ids_per_cluster = grouped_by_cluster_id["obs_id_distinct"].to_pylist()
+
+    # Group by with a distinct aggregation is not guaranteed to preserve the order of the elements within each list
+    # but does preserve the order of the lists themselves. So we sort each list of obs_ids and while we are
+    # sorting we also convert the lists to a single string on which we can group later.
+    # Pyarrow currently does not support groupby on lists of strings, this is likely a missing feature.
+    # As an example, the following code doesn't work:
+    # grouped_by_obs_lists = grouped_by_cluster_id.group_by(
+    #   ["obs_id_distinct"],
+    #   use_threads=False
+    # ).aggregate([("index", "first")])
+    for i, obs_ids_i in enumerate(obs_ids_per_cluster):
+        obs_ids_i.sort()
+        obs_ids_per_cluster[i] = "".join(obs_ids_i)
+
+    squashed_obs_ids = pa.table(
+        {
+            "index": pa.array(np.arange(0, len(obs_ids_per_cluster))),
+            "obs_ids": obs_ids_per_cluster,
+        }
+    )
+    indices = (
+        squashed_obs_ids.group_by(["obs_ids"], use_threads=False)
+        .aggregate([("index", "first")])["index_first"]
+        .combine_chunks()
+    )
+
+    clusters = clusters.take(indices)
+    cluster_members = cluster_members.apply_mask(
+        pc.is_in(cluster_members.cluster_id, clusters.cluster_id)
+    )
+    return clusters, cluster_members
+
+
 class Clusters(qv.Table):
     cluster_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
     vtheta_x = qv.Float64Column()
     vtheta_y = qv.Float64Column()
     arc_length = qv.Float64Column()
     num_obs = qv.Int64Column()
-
-    def drop_duplicates(
-        self,
-        cluster_members: "ClusterMembers",
-    ) -> Tuple["Clusters", "ClusterMembers"]:
-        """
-        Drop clusters that have identical sets of observation IDs.
-
-        Parameters
-        ----------
-        cluster_members: `~thor.clusters.ClusterMembers`
-            A table of cluster members.
-
-        Returns
-        -------
-        `~thor.clusters.Clusters`
-            A table of clusters with duplicate clusters removed.
-        """
-        # Sort by cluster_id and obs_id
-        clusters_sorted = self.sort_by([("cluster_id", "ascending")])
-        cluster_members_sorted = cluster_members.sort_by(
-            [("cluster_id", "ascending"), ("obs_id", "ascending")]
-        )
-
-        # Group by cluster_id and aggregate a list of distinct obs_ids
-        grouped_by_cluster_id = cluster_members_sorted.table.group_by(
-            ["cluster_id"], use_threads=False
-        ).aggregate([("obs_id", "distinct")])
-        obs_ids_per_cluster = grouped_by_cluster_id["obs_id_distinct"].to_pylist()
-
-        # Group by with a distinct aggregation is not guaranteed to preserve the order of the elements within each list
-        # but does preserve the order of the lists themselves. So we sort each list of obs_ids and while we are
-        # sorting we also convert the lists to a single string on which we can group later.
-        # Pyarrow currently does not support groupby on lists of strings, this is likely a missing feature.
-        # As an example, the following code doesn't work:
-        # grouped_by_obs_lists = grouped_by_cluster_id.group_by(
-        #   ["obs_id_distinct"],
-        #   use_threads=False
-        # ).aggregate([("index", "first")])
-        for i, obs_ids_i in enumerate(obs_ids_per_cluster):
-            obs_ids_i.sort()
-            obs_ids_per_cluster[i] = "".join(obs_ids_i)
-
-        squashed_obs_ids = pa.table(
-            {
-                "index": pa.array(np.arange(0, len(obs_ids_per_cluster))),
-                "obs_ids": obs_ids_per_cluster,
-            }
-        )
-        indices = (
-            squashed_obs_ids.group_by(["obs_ids"], use_threads=False)
-            .aggregate([("index", "first")])["index_first"]
-            .combine_chunks()
-        )
-
-        filtered = clusters_sorted.take(indices)
-        filtered_cluster_members = cluster_members_sorted.apply_mask(
-            pc.is_in(cluster_members_sorted.cluster_id, filtered.cluster_id)
-        )
-        return filtered, filtered_cluster_members
 
 
 class ClusterMembers(qv.Table):
@@ -571,8 +572,8 @@ def cluster_velocity_worker(
     for that batch.
 
     """
-    clusters_list = []
-    cluster_members_list = []
+    clusters = Clusters.empty()
+    cluster_members = ClusterMembers.empty()
     for vx_i, vy_i in zip(vx, vy):
         clusters_i, cluster_members_i = cluster_velocity(
             obs_ids,
@@ -586,10 +587,15 @@ def cluster_velocity_worker(
             min_arc_length=min_arc_length,
             alg=alg,
         )
-        clusters_list.append(clusters_i)
-        cluster_members_list.append(cluster_members_i)
+        clusters = qv.concatenate([clusters, clusters_i])
+        if clusters.fragmented():
+            clusters = qv.defragment(clusters)
 
-    return qv.concatenate(clusters_list), qv.concatenate(cluster_members_list)
+        cluster_members = qv.concatenate([cluster_members, cluster_members_i])
+        if cluster_members.fragmented():
+            cluster_members = qv.defragment(cluster_members)
+
+    return clusters, cluster_members
 
 
 cluster_velocity_remote = ray.remote(cluster_velocity_worker)
@@ -726,8 +732,9 @@ def cluster_and_link(
         )
         return Clusters.empty(), ClusterMembers.empty()
 
-    clusters_list = []
-    cluster_members_list = []
+    clusters = Clusters.empty()
+    cluster_members = ClusterMembers.empty()
+
     # Extract useful quantities
     obs_ids = observations.id.to_numpy(zero_copy_only=False)
     theta_x = observations.coordinates.theta_x.to_numpy(zero_copy_only=False)
@@ -752,7 +759,6 @@ def cluster_and_link(
         # TODO: transformed detections are already in the object store so we might
         # want to instead pass references to those rather than extract arrays
         # from them and put them in the object store again.
-
         futures = []
         for vxi_chunk, vyi_chunk in zip(
             _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
@@ -774,9 +780,14 @@ def cluster_and_link(
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
-            result = ray.get(finished[0])
-            clusters_list.append(result[0])
-            cluster_members_list.append(result[1])
+            clusters_chunk, cluster_members_chunk = ray.get(finished[0])
+            clusters = qv.concatenate([clusters, clusters_chunk])
+            if clusters.fragmented():
+                clusters = qv.defragment(clusters)
+
+            cluster_members = qv.concatenate([cluster_members, cluster_members_chunk])
+            if cluster_members.fragmented():
+                cluster_members = qv.defragment(cluster_members)
 
         ray.internal.free(refs_to_free)
         logger.info(f"Removed {len(refs_to_free)} references from the object store.")
@@ -797,17 +808,20 @@ def cluster_and_link(
                 min_arc_length=min_arc_length,
                 alg=alg,
             )
-            clusters_list.append(clusters_i)
-            cluster_members_list.append(cluster_members_i)
 
-    clusters = qv.concatenate(clusters_list)
-    cluster_members = qv.concatenate(cluster_members_list)
+            clusters = qv.concatenate([clusters, clusters_i])
+            if clusters.fragmented():
+                clusters = qv.defragment(clusters)
+
+            cluster_members = qv.concatenate([cluster_members, cluster_members_i])
+            if cluster_members.fragmented():
+                cluster_members = qv.defragment(cluster_members)
 
     # Drop duplicate clusters
     time_start_drop = time.perf_counter()
     logger.info("Removing duplicate clusters...")
     num_clusters = len(clusters)
-    clusters, cluster_members = clusters.drop_duplicates(cluster_members)
+    clusters, cluster_members = drop_duplicate_clusters(clusters, cluster_members)
     logger.info(f"Removed {num_clusters - len(clusters)} duplicate clusters.")
     time_end_drop = time.perf_counter()
     logger.info(

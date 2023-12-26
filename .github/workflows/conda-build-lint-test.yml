@@ -42,7 +42,7 @@ jobs:
       - name: Install adam_core and quivr
         run: |
           pip install adam-core@git+https://github.com/B612-Asteroid-Institute/adam_core@main
-          pip install quivr>=0.7.1
+          pip install quivr@git+https://github.com/moeyensj/quivr@concatenate-empty-attributes
       - name: Build and install
         run: pip install . --no-deps
       - name: Lint
