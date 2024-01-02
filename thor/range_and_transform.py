@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class TransformedDetections(qv.Table):
-    id = qv.StringColumn()
+    id = qv.LargeStringColumn()
     coordinates = GnomonicCoordinates.as_column()
     state_id = qv.Int64Column()
 

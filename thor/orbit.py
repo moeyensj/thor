@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 class RangedPointSourceDetections(qv.Table):
-    id = qv.StringColumn()
-    exposure_id = qv.StringColumn()
+    id = qv.LargeStringColumn()
+    exposure_id = qv.LargeStringColumn()
     coordinates = SphericalCoordinates.as_column()
     state_id = qv.Int64Column()
 
@@ -96,8 +96,8 @@ range_observations_remote = ray.remote(range_observations_worker)
 
 
 class TestOrbits(qv.Table):
-    orbit_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
-    object_id = qv.StringColumn(nullable=True)
+    orbit_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
+    object_id = qv.LargeStringColumn(nullable=True)
     bundle_id = qv.Int64Column(nullable=True)
     coordinates = CartesianCoordinates.as_column()
 

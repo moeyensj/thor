@@ -34,8 +34,8 @@ LATLON_INDEX = np.array([2, 1])
 
 
 class Attributions(qv.Table):
-    orbit_id = qv.StringColumn()
-    obs_id = qv.StringColumn()
+    orbit_id = qv.LargeStringColumn()
+    obs_id = qv.LargeStringColumn()
     residuals = Residuals.as_column(nullable=True)
     distance = qv.Float64Column(nullable=True)
 
