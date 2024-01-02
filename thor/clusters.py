@@ -98,7 +98,7 @@ def drop_duplicate_clusters(
 
 
 class Clusters(qv.Table):
-    cluster_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
+    cluster_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
     vtheta_x = qv.Float64Column()
     vtheta_y = qv.Float64Column()
     arc_length = qv.Float64Column()
@@ -106,8 +106,8 @@ class Clusters(qv.Table):
 
 
 class ClusterMembers(qv.Table):
-    cluster_id = qv.StringColumn()
-    obs_id = qv.StringColumn()
+    cluster_id = qv.LargeStringColumn()
+    obs_id = qv.LargeStringColumn()
 
 
 def find_clusters(points, eps, min_samples, alg="hotspot_2d"):
@@ -547,8 +547,8 @@ def cluster_velocity(
         )
 
         cluster_members = ClusterMembers.from_kwargs(
-            cluster_id=np.concatenate(cluster_members_cluster_ids),
-            obs_id=np.concatenate(cluster_members_obs_ids),
+            cluster_id=np.concatenate(cluster_members_cluster_ids).tolist(),
+            obs_id=np.concatenate(cluster_members_obs_ids).tolist(),
         )
 
     return clusters, cluster_members
