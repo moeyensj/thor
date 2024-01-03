@@ -20,7 +20,7 @@ def test_select_average_within_region():
         ap=np.random.rand(5) * 360.0,
         M=np.random.rand(5) * 360.0,
         time=Timestamp.from_mjd([59000.0 for _ in range(5)], scale="tdb"),
-        origin=Origin.from_kwargs(code=np.full(5, "SUN")),
+        origin=Origin.from_kwargs(code=np.full(5, "SUN", dtype="object")),
         frame="ecliptic",
     )
 

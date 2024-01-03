@@ -203,7 +203,7 @@ def gaussIOD(
         SphericalCoordinates.from_kwargs(
             lon=coords[:, 0],
             lat=coords[:, 1],
-            origin=Origin.from_kwargs(code=np.full(len(coords), "Unknown")),
+            origin=Origin.from_kwargs(code=np.full(len(coords), "Unknown", dtype="object")),
             frame="equatorial",
         ).to_unit_sphere(),
         representation_out=CartesianCoordinates,
@@ -344,7 +344,7 @@ def gaussIOD(
                 vy=orbits[:, 4],
                 vz=orbits[:, 5],
                 time=Timestamp.from_mjd(epochs, scale="utc"),
-                origin=Origin.from_kwargs(code=np.full(len(orbits), "SUN")),
+                origin=Origin.from_kwargs(code=np.full(len(orbits), "SUN", dtype="object")),
                 frame="ecliptic",
             )
         )
