@@ -20,6 +20,7 @@ from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve
 
 from ..observations.observations import Observations
+from ..orbit_determination.outliers import calculate_max_outliers
 from ..utils.linkages import sort_by_id_and_time
 
 logger = logging.getLogger(__name__)
@@ -141,9 +142,10 @@ def od(
         logger.debug("This orbit has fewer than {} observations.".format(min_obs))
         processable = False
     else:
-        num_outliers = int(num_obs * contamination_percentage / 100.0)
-        num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
-        logger.debug("Maximum number of outliers allowed: {}".format(num_outliers))
+        num_outliers = calculate_max_outliers(
+            num_obs, min_obs, contamination_percentage
+        )
+        logger.debug(f"Maximum number of outliers allowed: {num_outliers}")
         outliers_tried = 0
 
         # Calculate chi2 for residuals on the given observations

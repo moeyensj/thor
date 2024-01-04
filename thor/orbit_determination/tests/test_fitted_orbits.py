@@ -7,7 +7,7 @@ import pytest
 from adam_core.coordinates import CartesianCoordinates
 from adam_core.orbit_determination import FittedOrbitMembers, FittedOrbits
 
-from thor.orbit_determination.fitted_orbits import assign_duplicate_observations
+from ..fitted_orbits import assign_duplicate_observations
 
 
 @pytest.fixture
