@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import time
-from typing import Literal, Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -12,7 +12,7 @@ import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import FittedOrbitMembers, FittedOrbits
 from adam_core.orbits import Orbits
-from adam_core.propagator import PYOORB
+from adam_core.propagator import PYOORB, Propagator
 from adam_core.propagator.utils import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 from sklearn.neighbors import BallTree
@@ -120,13 +120,11 @@ def attribution_worker(
     orbits: Union[Orbits, FittedOrbits],
     observations: Observations,
     radius: float = 1 / 3600,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Attributions:
-    if propagator == "PYOORB":
-        prop = PYOORB(**propagator_kwargs)
-    else:
-        raise ValueError(f"Invalid propagator '{propagator}'.")
+    # Initialize propagator with the given kwargs for this worker
+    prop = propagator(**propagator_kwargs)
 
     if isinstance(orbits, FittedOrbits):
         orbits = orbits.to_orbits()
@@ -242,7 +240,6 @@ def attribution_worker(
 
 
 attribution_worker_remote = ray.remote(attribution_worker)
-
 attribution_worker_remote.options(
     num_returns=1,
     num_cpus=1,
@@ -253,7 +250,7 @@ def attribute_observations(
     orbits: Union[Orbits, FittedOrbits, ray.ObjectRef],
     observations: Union[Observations, ray.ObjectRef],
     radius: float = 5 / 3600,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
     orbits_chunk_size: int = 10,
     observations_chunk_size: int = 100000,
@@ -383,7 +380,7 @@ def merge_and_extend_orbits(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
     orbits_chunk_size: int = 10,
     observations_chunk_size: int = 100000,

@@ -116,6 +116,7 @@ def link_test_orbit(
 
     if config.propagator == "PYOORB":
         propagator = PYOORB
+        propagator_kwargs: dict = {}
     else:
         raise ValueError(f"Unknown propagator: {config.propagator}")
 
@@ -311,7 +312,7 @@ def link_test_orbit(
             rchi2_threshold=config.iod_rchi2_threshold,
             observation_selection_method=config.iod_observation_selection_method,
             propagator=propagator,
-            propagator_kwargs={},
+            propagator_kwargs=propagator_kwargs,
             chunk_size=config.iod_chunk_size,
             max_processes=config.max_processes,
             # TODO: investigate whether these should be configurable
@@ -374,8 +375,8 @@ def link_test_orbit(
             rchi2_threshold=config.od_rchi2_threshold,
             delta=config.od_delta,
             max_iter=config.od_max_iter,
-            propagator=config.propagator,
-            propagator_kwargs={},
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
             chunk_size=config.od_chunk_size,
             max_processes=config.max_processes,
             # TODO: investigate whether these should be configurable
@@ -442,8 +443,8 @@ def link_test_orbit(
             radius=config.arc_extension_radius,
             delta=config.od_delta,
             max_iter=config.od_max_iter,
-            propagator=config.propagator,
-            propagator_kwargs={},
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
             orbits_chunk_size=config.arc_extension_chunk_size,
             max_processes=config.max_processes,
             # TODO: investigate whether these should be configurable

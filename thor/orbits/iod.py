@@ -134,6 +134,7 @@ def iod_worker(
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+    # Initialize propagator with the given kwargs for this worker
     prop = propagator(**propagator_kwargs)
 
     iod_orbits = FittedOrbits.empty()
@@ -189,7 +190,6 @@ def iod_worker(
 
 
 iod_worker_remote = ray.remote(iod_worker)
-
 iod_worker_remote.options(num_returns=1, num_cpus=1)
 
 
