@@ -5,12 +5,9 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 from adam_core.coordinates import CartesianCoordinates
+from adam_core.orbit_determination import FittedOrbitMembers, FittedOrbits
 
-from thor.orbit_determination.fitted_orbits import (
-    FittedOrbitMembers,
-    FittedOrbits,
-    assign_duplicate_observations,
-)
+from thor.orbit_determination.fitted_orbits import assign_duplicate_observations
 
 
 @pytest.fixture
@@ -36,7 +33,9 @@ def simple_orbits():
         num_obs=[10, 20, 15, 25, 5],  # Specific values
         chi2=np.random.rand(5),
         reduced_chi2=[0.5, 0.4, 0.3, 0.2, 0.1],  # Specific values
-        improved=pa.repeat(False, 5),
+        iterations=pa.repeat(1, 5),
+        success=pa.repeat(False, 5),
+        status_code=pa.repeat(1, 5),
     )
 
 

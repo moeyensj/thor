@@ -10,17 +10,18 @@ import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
+from adam_core.orbit_determination import (
+    FittedOrbitMembers,
+    FittedOrbits,
+    OrbitDeterminationObservations,
+)
 from adam_core.propagator import PYOORB, Propagator
 from adam_core.propagator.utils import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
 from ..clusters import ClusterMembers
 from ..observations.observations import Observations
-from ..orbit_determination.fitted_orbits import (
-    FittedOrbitMembers,
-    FittedOrbits,
-    drop_duplicate_orbits,
-)
+from ..orbit_determination.fitted_orbits import drop_duplicate_orbits
 from ..utils.linkages import sort_by_id_and_time
 from .gauss import gaussIOD
 
@@ -147,6 +148,12 @@ def iod_worker(
             pc.is_in(observations.id, obs_ids)
         )
 
+        observations_linkage = OrbitDeterminationObservations.from_kwargs(
+            id=observations_linkage.id,
+            coordinates=observations_linkage.coordinates,
+            observers=observations_linkage.get_observers().observers,
+        )
+
         iod_orbit, iod_orbit_orbit_members = iod(
             observations_linkage,
             min_obs=min_obs,
@@ -186,7 +193,7 @@ iod_worker_remote.options(num_returns=1, num_cpus=1)
 
 
 def iod(
-    observations: Observations,
+    observations: OrbitDeterminationObservations,
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 0.0,
@@ -280,9 +287,8 @@ def iod(
 
     obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
     coords_all = observations.coordinates
-    observers_with_states = observations.get_observers()
-    observers = observers_with_states.observers
-    coords_obs_all = observers_with_states.observers.coordinates.r
+    observers = observations.observers
+    coords_obs_all = observers.coordinates.r
     times_all = coords_all.time.mjd().to_numpy(zero_copy_only=False)
 
     chi2_sol = 1e10
@@ -442,6 +448,9 @@ def iod(
             num_obs=[num_obs],
             chi2=[chi2_total_sol],
             reduced_chi2=[rchi2_sol],
+            iterations=[j],
+            success=[True],
+            status_code=[1],
         )
 
         orbit_members = FittedOrbitMembers.from_kwargs(

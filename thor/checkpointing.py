@@ -5,11 +5,11 @@ from typing import Annotated, Dict, Literal, Optional, Type, Union
 import pydantic
 import quivr as qv
 import ray
+from adam_core.orbit_determination import FittedOrbitMembers, FittedOrbits
 
-from thor.clusters import ClusterMembers, Clusters
-from thor.observations.observations import Observations
-from thor.orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
-from thor.range_and_transform import TransformedDetections
+from .clusters import ClusterMembers, Clusters
+from .observations.observations import Observations
+from .range_and_transform import TransformedDetections
 
 logger = logging.getLogger("thor")
 

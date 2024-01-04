@@ -1,27 +1,22 @@
-import uuid
 from typing import List, Literal, Optional, Tuple
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
-from adam_core.coordinates import CartesianCoordinates
-from adam_core.coordinates.residuals import Residuals
-from adam_core.orbits import Orbits
+from adam_core.orbit_determination import FittedOrbitMembers, FittedOrbits
 
 from ..utils.quivr import drop_duplicates
 
 __all__ = [
-    "FittedOrbits",
-    "FittedOrbitMembers",
     "assign_duplicate_observations",
     "drop_duplicate_orbits",
+    "drop_outliers",
 ]
 
 
 def assign_duplicate_observations(
-    orbits: "FittedOrbits", orbit_members: "FittedOrbitMembers"
-) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
+    orbits: FittedOrbits, orbit_members: FittedOrbitMembers
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Assigns observations that have been assigned to multiple orbits to the orbit with the
     most observations, longest arc length, and lowest reduced chi2.
@@ -87,11 +82,11 @@ def assign_duplicate_observations(
 
 
 def drop_duplicate_orbits(
-    orbits: "FittedOrbits",
-    orbit_members: "FittedOrbitMembers",
+    orbits: FittedOrbits,
+    orbit_members: FittedOrbitMembers,
     subset: Optional[List[str]] = None,
     keep: Literal["first", "last"] = "first",
-) -> Tuple["FittedOrbits", "FittedOrbitMembers"]:
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Drop duplicate orbits from the fitted orbits and remove
     the corresponding orbit members.
@@ -134,52 +129,21 @@ def drop_duplicate_orbits(
     return filtered, filtered_orbit_members
 
 
-class FittedOrbits(qv.Table):
+def drop_outliers(orbit_members: FittedOrbitMembers) -> FittedOrbitMembers:
+    """
+    Drop outliers from the fitted orbit members.
 
-    orbit_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
-    object_id = qv.LargeStringColumn(nullable=True)
-    coordinates = CartesianCoordinates.as_column()
-    arc_length = qv.Float64Column()
-    num_obs = qv.Int64Column()
-    chi2 = qv.Float64Column()
-    reduced_chi2 = qv.Float64Column()
-    improved = qv.BooleanColumn(nullable=True)
+    Parameters
+    ----------
+    orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+        Fitted orbit members.
 
-    def to_orbits(self) -> Orbits:
-        """
-        Convert fitted orbits to orbits that can be used by
-        a Propagator.
-
-        Returns
-        -------
-        orbits : `~adam_core.orbits.Orbits`
-            Orbits.
-        """
-        return Orbits.from_kwargs(
-            orbit_id=self.orbit_id,
-            object_id=self.object_id,
-            coordinates=self.coordinates,
-        )
-
-
-class FittedOrbitMembers(qv.Table):
-
-    orbit_id = qv.LargeStringColumn()
-    obs_id = qv.LargeStringColumn()
-    residuals = Residuals.as_column(nullable=True)
-    solution = qv.BooleanColumn(nullable=True)
-    outlier = qv.BooleanColumn(nullable=True)
-
-    def drop_outliers(self) -> "FittedOrbitMembers":
-        """
-        Drop outliers from the fitted orbit members.
-
-        Returns
-        -------
-        fitted_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
-            Fitted orbit members without outliers.
-        """
-        filtered = self.apply_mask(pc.equal(self.outlier, False))
-        if filtered.fragmented():
-            filtered = qv.defragment(filtered)
-        return filtered
+    Returns
+    -------
+    fitted_orbit_members : `~thor.orbit_determination.FittedOrbitMembers`
+        Fitted orbit members without outliers.
+    """
+    filtered = orbit_members.apply_mask(pc.equal(orbit_members.outlier, False))
+    if filtered.fragmented():
+        filtered = qv.defragment(filtered)
+    return filtered

@@ -9,13 +9,17 @@ import quivr as qv
 import ray
 from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
+from adam_core.orbit_determination import (
+    FittedOrbitMembers,
+    FittedOrbits,
+    OrbitDeterminationObservations,
+)
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve
 
 from ..observations.observations import Observations
-from ..orbit_determination import FittedOrbitMembers, FittedOrbits
 from ..utils.linkages import sort_by_id_and_time
 
 logger = logging.getLogger(__name__)
@@ -52,6 +56,12 @@ def od_worker(
         ).obs_id
         orbit_observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
 
+        orbit_observations = OrbitDeterminationObservations.from_kwargs(
+            id=orbit_observations.id,
+            coordinates=orbit_observations.coordinates,
+            observers=orbit_observations.get_observers().observers,
+        )
+
         od_orbit, od_orbit_orbit_members = od(
             orbit,
             orbit_observations,
@@ -86,7 +96,7 @@ od_worker_remote.options(num_returns=1, num_cpus=1)
 
 def od(
     orbit: FittedOrbits,
-    observations: Observations,
+    observations: OrbitDeterminationObservations,
     rchi2_threshold: float = 100,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -110,8 +120,7 @@ def od(
     obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
     coords = observations.coordinates
     coords_sigma = coords.covariance.sigmas[:, 1:3]
-    observers_with_states = observations.get_observers()
-    observers = observers_with_states.observers
+    observers = observations.observers
     times_all = coords.time.mjd().to_numpy(zero_copy_only=False)
 
     # FLAG: can we stop iterating to find a solution?
@@ -508,6 +517,10 @@ def od(
         arc_length_ = obs_times.max() - obs_times.min()
         assert arc_length == arc_length_
 
+        status_code = 0
+        if improved and not first_solution:
+            status_code = 1
+
         od_orbit = FittedOrbits.from_kwargs(
             orbit_id=orbit_prev.orbit_id,
             object_id=orbit_prev.object_id,
@@ -516,7 +529,9 @@ def od(
             num_obs=[num_obs],
             chi2=[chi2_total_prev],
             reduced_chi2=[rchi2_prev],
-            improved=[improved],
+            iterations=[iterations],
+            success=[improved],
+            status_code=[status_code],
         )
 
         # od_orbit["num_params"] = num_params

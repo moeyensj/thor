@@ -10,6 +10,7 @@ import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
+from adam_core.orbit_determination import FittedOrbitMembers, FittedOrbits
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB
 from adam_core.propagator.utils import _iterate_chunks
@@ -18,10 +19,9 @@ from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
 from ..orbit_determination import (
-    FittedOrbitMembers,
-    FittedOrbits,
     assign_duplicate_observations,
     drop_duplicate_orbits,
+    drop_outliers,
 )
 from .od import differential_correction
 
@@ -528,7 +528,7 @@ def merge_and_extend_orbits(
                 orbit_ids=orbits_iter.orbit_id,
                 obs_ids=pc.unique(orbit_members_iter.obs_id),
             )
-            orbit_members_iter = orbit_members_iter.drop_outliers()
+            orbit_members_iter = drop_outliers(orbit_members_iter)
 
             # Remove any duplicate orbits
             orbits_iter = orbits_iter.sort_by([("reduced_chi2", "ascending")])
@@ -551,7 +551,7 @@ def merge_and_extend_orbits(
             # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
             # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
             # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
-            not_improved_mask = pc.equal(orbits_iter.improved, False)
+            not_improved_mask = pc.equal(orbits_iter.success, False)
             orbits_out = orbits_iter.apply_mask(not_improved_mask)
             orbit_members_out = orbit_members_iter.apply_mask(
                 pc.is_in(orbit_members_iter.orbit_id, orbits_out.orbit_id)
@@ -628,6 +628,9 @@ def merge_and_extend_orbits(
                 odp_orbits, odp_orbit_members
             )
 
+            orbits_chunk_size = np.minimum(
+                orbits_chunk_size, np.ceil(len(odp_orbits) / processes).astype(int)
+            )
             # Do one final iteration of OD on the output orbits. This
             # will update any fits of orbits that might have had observations
             # removed during the assign_duplicate_observations step
@@ -648,7 +651,7 @@ def merge_and_extend_orbits(
                 chunk_size=orbits_chunk_size,
                 max_processes=max_processes,
             )
-            odp_orbit_members = odp_orbit_members.drop_outliers()
+            odp_orbit_members = drop_outliers(odp_orbit_members)
 
         if use_ray:
             if len(refs_to_free) > 0:
