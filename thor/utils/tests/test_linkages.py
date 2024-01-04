@@ -12,12 +12,12 @@ from ..linkages import sort_by_id_and_time
 
 
 class Linkages(qv.Table):
-    linkage_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
+    linkage_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
 
 
 class LinkageMembers(qv.Table):
-    linkage_id = qv.StringColumn(nullable=True)
-    obs_id = qv.StringColumn(nullable=True)
+    linkage_id = qv.LargeStringColumn(nullable=True)
+    obs_id = qv.LargeStringColumn(nullable=True)
 
 
 def test_sort_by_id_and_time():

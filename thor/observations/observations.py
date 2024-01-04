@@ -24,8 +24,8 @@ class ObserversWithStates(qv.Table):
 
 
 class InputObservations(qv.Table):
-    id = qv.StringColumn()
-    exposure_id = qv.StringColumn()
+    id = qv.LargeStringColumn()
+    exposure_id = qv.LargeStringColumn()
     time = Timestamp.as_column()
     ra = qv.Float64Column()
     dec = qv.Float64Column()
@@ -34,13 +34,13 @@ class InputObservations(qv.Table):
     ra_dec_cov = qv.Float64Column(nullable=True)
     mag = qv.Float64Column()
     mag_sigma = qv.Float64Column(nullable=True)
-    filter = qv.StringColumn()
-    observatory_code = qv.StringColumn()
+    filter = qv.LargeStringColumn()
+    observatory_code = qv.LargeStringColumn()
 
 
 class Observations(qv.Table):
-    id = qv.StringColumn()
-    exposure_id = qv.StringColumn()
+    id = qv.LargeStringColumn()
+    exposure_id = qv.LargeStringColumn()
     coordinates = SphericalCoordinates.as_column()
     photometry = Photometry.as_column()
     state_id = qv.Int64Column()

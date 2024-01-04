@@ -445,7 +445,9 @@ def iod(
         )
 
         orbit_members = FittedOrbitMembers.from_kwargs(
-            orbit_id=np.full(len(obs_ids_all), orbit_sol.orbit_id[0].as_py()),
+            orbit_id=np.full(
+                len(obs_ids_all), orbit_sol.orbit_id[0].as_py(), dtype="object"
+            ),
             obs_id=obs_ids_all,
             residuals=residuals_sol,
             solution=np.isin(obs_ids_all, obs_ids_sol),

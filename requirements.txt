@@ -1,4 +1,4 @@
-adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core@main
+adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core@ef8ee48976dbf9c70580c166de4cc4fd6195fa36
 quivr >= 0.7.1
 astropy >= 5.3.1
 astroquery

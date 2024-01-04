@@ -378,7 +378,7 @@ def test_Clusters_drop_duplicates():
         num_obs=np.full(len(cluster_ids), 5),
     )
     cluster_members = ClusterMembers.from_kwargs(
-        cluster_id=np.repeat(cluster_ids, 5),
+        cluster_id=list(np.repeat(cluster_ids, 5)),
         obs_id=[
             obs for cluster_members_i in obs_ids_duplicated for obs in cluster_members_i
         ],

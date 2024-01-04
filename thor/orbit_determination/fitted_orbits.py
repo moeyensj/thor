@@ -136,8 +136,8 @@ def drop_duplicate_orbits(
 
 class FittedOrbits(qv.Table):
 
-    orbit_id = qv.StringColumn(default=lambda: uuid.uuid4().hex)
-    object_id = qv.StringColumn(nullable=True)
+    orbit_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
+    object_id = qv.LargeStringColumn(nullable=True)
     coordinates = CartesianCoordinates.as_column()
     arc_length = qv.Float64Column()
     num_obs = qv.Int64Column()
@@ -164,8 +164,8 @@ class FittedOrbits(qv.Table):
 
 class FittedOrbitMembers(qv.Table):
 
-    orbit_id = qv.StringColumn()
-    obs_id = qv.StringColumn()
+    orbit_id = qv.LargeStringColumn()
+    obs_id = qv.LargeStringColumn()
     residuals = Residuals.as_column(nullable=True)
     solution = qv.BooleanColumn(nullable=True)
     outlier = qv.BooleanColumn(nullable=True)
