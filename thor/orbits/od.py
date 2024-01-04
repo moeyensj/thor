@@ -524,7 +524,9 @@ def od(
         # od_orbit["improved"] = improved
 
         od_orbit_members = FittedOrbitMembers.from_kwargs(
-            orbit_id=np.full(len(obs_ids_all), orbit_prev.orbit_id[0].as_py(), dtype="object"),
+            orbit_id=np.full(
+                len(obs_ids_all), orbit_prev.orbit_id[0].as_py(), dtype="object"
+            ),
             obs_id=obs_ids_all,
             residuals=residuals_prev,
             solution=np.isin(obs_ids_all, obs_id_outlier, invert=True),
