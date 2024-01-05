@@ -53,7 +53,6 @@ def hash_obs_ids(obs_ids: List[str]) -> str:
 def drop_duplicate_clusters(
     clusters: "Clusters",
     cluster_members: "ClusterMembers",
-    num_cpus: int = 1,
 ) -> Tuple["Clusters", "ClusterMembers"]:
     """
     Drop clusters that have identical sets of observation IDs.
