@@ -105,6 +105,13 @@ def memory_snapshot(request, git_branch_or_revision):
     )
 
 
+@pytest.fixture
+def memory_input_observations():
+    from thor.observations import InputObservations
+
+    return InputObservations.from_parquet(FIXTURES_DIR / "input_observations.parquet")
+
+
 # We are going to test all the major stages used in link_test_orbit
 @pytest.fixture
 def memory_observations():
@@ -199,6 +206,23 @@ def ray_cluster(memory_config):
     yield
     if memory_config.max_processes > 1:
         ray.shutdown()
+
+
+@pytest.mark.memory
+@pytest.mark.parametrize("memory_config", CONFIG_PROCESSES, indirect=True)
+def test_load_input_observations(
+    memory_snapshot, memory_config, ray_cluster, memory_input_observations
+):
+    from thor.observations import Observations
+
+    # It's always necessary to sort ahead of time, so we include it in our test
+    memory_input_observations = memory_input_observations.sort_by(
+        ["time.days", "time.nanos", "observatory_code"]
+    )
+    memory_input_observations = memory_input_observations.set_column(
+        "time", memory_input_observations.time.rescale("utc")
+    )
+    observations = Observations.from_input_observations(memory_input_observations)
 
 
 @pytest.mark.memory
