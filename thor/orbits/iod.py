@@ -199,10 +199,11 @@ def iod_worker_remote(
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-    
 
     # Select linkage ids from linkage_members_indices
-    linkage_id_chunk = linkage_ids[linkage_members_indices[0] : linkage_members_indices[1]]
+    linkage_id_chunk = linkage_ids[
+        linkage_members_indices[0] : linkage_members_indices[1]
+    ]
     return iod_worker(
         linkage_id_chunk,
         observations,
@@ -641,7 +642,9 @@ def initial_orbit_determination(
                 logger.info("Placed observations in the object store.")
 
             futures = []
-            for linkage_id_chunk_indices in _iterate_chunk_indices(linkage_ids, chunk_size):
+            for linkage_id_chunk_indices in _iterate_chunk_indices(
+                linkage_ids, chunk_size
+            ):
                 futures.append(
                     iod_worker_remote.remote(
                         linkage_ids_ref,
