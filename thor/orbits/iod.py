@@ -1,7 +1,7 @@
 import logging
 import time
 from itertools import combinations
-from typing import Literal, Optional, Tuple, Type, Union
+from typing import Iterable, Literal, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -11,7 +11,7 @@ import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.propagator import PYOORB, Propagator
-from adam_core.propagator.utils import _iterate_chunks
+from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
 from ..clusters import ClusterMembers
@@ -180,7 +180,46 @@ def iod_worker(
     return iod_orbits, iod_orbit_members
 
 
-iod_worker_remote = ray.remote(iod_worker)
+@ray.remote
+def iod_worker_remote(
+    linkage_ids: Union[npt.NDArray[np.str_], ray.ObjectRef],
+    linkage_members_indices: Tuple[int, int],
+    observations: Union[Observations, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    min_obs: int = 6,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 0.0,
+    rchi2_threshold: float = 200,
+    observation_selection_method: Literal[
+        "combinations", "first+middle+last", "thirds"
+    ] = "combinations",
+    linkage_id_col: str = "cluster_id",
+    iterate: bool = False,
+    light_time: bool = True,
+    propagator: Type[Propagator] = PYOORB,
+    propagator_kwargs: dict = {},
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+
+    # Select linkage ids from linkage_members_indices
+    linkage_id_chunk = linkage_ids[
+        linkage_members_indices[0] : linkage_members_indices[1]
+    ]
+    return iod_worker(
+        linkage_id_chunk,
+        observations,
+        linkage_members,
+        min_obs=min_obs,
+        min_arc_length=min_arc_length,
+        contamination_percentage=contamination_percentage,
+        rchi2_threshold=rchi2_threshold,
+        observation_selection_method=observation_selection_method,
+        linkage_id_col=linkage_id_col,
+        iterate=iterate,
+        light_time=light_time,
+        propagator=propagator,
+        propagator_kwargs=propagator_kwargs,
+    )
+
 
 iod_worker_remote.options(num_returns=1, num_cpus=1)
 
@@ -587,6 +626,11 @@ def initial_orbit_determination(
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
             refs_to_free = []
+
+            linkage_ids_ref = ray.put(linkage_ids)
+            refs_to_free.append(linkage_ids_ref)
+            logger.info("Placed linkage IDs in the object store.")
+
             if linkage_members_ref is None:
                 linkage_members_ref = ray.put(linkage_members)
                 refs_to_free.append(linkage_members_ref)
@@ -598,10 +642,13 @@ def initial_orbit_determination(
                 logger.info("Placed observations in the object store.")
 
             futures = []
-            for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):
+            for linkage_id_chunk_indices in _iterate_chunk_indices(
+                linkage_ids, chunk_size
+            ):
                 futures.append(
                     iod_worker_remote.remote(
-                        linkage_id_chunk,
+                        linkage_ids_ref,
+                        linkage_id_chunk_indices,
                         observations_ref,
                         linkage_members_ref,
                         min_obs=min_obs,

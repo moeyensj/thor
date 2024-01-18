@@ -11,6 +11,7 @@ from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB, _iterate_chunks
+from adam_core.propagator.utils import _iterate_chunk_indices
 from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve
 
@@ -80,7 +81,43 @@ def od_worker(
     return od_orbits, od_orbit_members
 
 
-od_worker_remote = ray.remote(od_worker)
+@ray.remote
+def od_worker_remote(
+    orbit_ids: npt.NDArray[np.str_],
+    orbit_ids_indices: Tuple[int, int],
+    orbits: FittedOrbits,
+    orbit_members: FittedOrbitMembers,
+    observations: Observations,
+    rchi2_threshold: float = 100,
+    min_obs: int = 5,
+    min_arc_length: float = 1.0,
+    contamination_percentage: float = 0.0,
+    delta: float = 1e-6,
+    max_iter: int = 20,
+    method: Literal["central", "finite"] = "central",
+    fit_epoch: bool = False,
+    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator_kwargs: dict = {},
+) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+    orbit_ids_chunk = orbit_ids[orbit_ids_indices[0] : orbit_ids_indices[1]]
+    return od_worker(
+        orbit_ids_chunk,
+        orbits,
+        orbit_members,
+        observations,
+        rchi2_threshold=rchi2_threshold,
+        min_obs=min_obs,
+        min_arc_length=min_arc_length,
+        contamination_percentage=contamination_percentage,
+        delta=delta,
+        max_iter=max_iter,
+        method=method,
+        fit_epoch=fit_epoch,
+        propagator=propagator,
+        propagator_kwargs=propagator_kwargs,
+    )
+
+
 od_worker_remote.options(num_returns=1, num_cpus=1)
 
 
@@ -619,6 +656,11 @@ def differential_correction(
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
             refs_to_free = []
+
+            orbit_ids_ref = ray.put(orbit_ids)
+            refs_to_free.append(orbit_ids_ref)
+            logger.info("Placed orbit IDs in the object store.")
+
             if orbits_ref is None:
                 orbits_ref = ray.put(orbits)
                 refs_to_free.append(orbits_ref)
@@ -635,10 +677,11 @@ def differential_correction(
                 logger.info("Placed observations in the object store.")
 
             futures = []
-            for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):
+            for orbit_ids_indices in _iterate_chunk_indices(orbit_ids, chunk_size):
                 futures.append(
                     od_worker_remote.remote(
-                        orbit_ids_chunk,
+                        orbit_ids_ref,
+                        orbit_ids_indices,
                         orbits_ref,
                         orbit_members_ref,
                         observations_ref,
