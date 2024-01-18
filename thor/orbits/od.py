@@ -647,82 +647,58 @@ def differential_correction(
     else:
         observations_ref = None
 
-    if len(orbits) > 0 and len(orbit_members) > 0:
-        orbit_ids = orbits.orbit_id.to_numpy(zero_copy_only=False)
-
+    if len(orbits) == 0 or len(orbit_members) == 0:
+        logger.info("Received no orbits or orbit members.")
         od_orbits = FittedOrbits.empty()
         od_orbit_members = FittedOrbitMembers.empty()
+        time_end = time.perf_counter()
+        logger.info(f"Differentially corrected {len(od_orbits)} orbits.")
+        logger.info(
+            f"Differential correction completed in {time_end - time_start:.3f} seconds."
+        )
+        return od_orbits, od_orbit_members
 
-        use_ray = initialize_use_ray(num_cpus=max_processes)
-        if use_ray:
-            refs_to_free = []
+    orbit_ids = orbits.orbit_id.to_numpy(zero_copy_only=False)
 
-            orbit_ids_ref = ray.put(orbit_ids)
-            refs_to_free.append(orbit_ids_ref)
-            logger.info("Placed orbit IDs in the object store.")
+    od_orbits = FittedOrbits.empty()
+    od_orbit_members = FittedOrbitMembers.empty()
 
-            if orbits_ref is None:
-                orbits_ref = ray.put(orbits)
-                refs_to_free.append(orbits_ref)
-                logger.info("Placed orbits in the object store.")
+    use_ray = initialize_use_ray(num_cpus=max_processes)
+    if use_ray:
+        refs_to_free = []
 
-            if orbit_members_ref is None:
-                orbit_members_ref = ray.put(orbit_members)
-                refs_to_free.append(orbit_members_ref)
-                logger.info("Placed orbit members in the object store.")
+        orbit_ids_ref = ray.put(orbit_ids)
+        orbit_ids = ray.get(orbit_ids_ref)
+        refs_to_free.append(orbit_ids_ref)
+        logger.info("Placed orbit IDs in the object store.")
 
-            if observations_ref is None:
-                observations_ref = ray.put(observations)
-                refs_to_free.append(observations_ref)
-                logger.info("Placed observations in the object store.")
+        if orbits_ref is None:
+            orbits_ref = ray.put(orbits)
+            orbits = ray.get(orbits_ref)
+            refs_to_free.append(orbits_ref)
+            logger.info("Placed orbits in the object store.")
 
-            futures = []
-            for orbit_ids_indices in _iterate_chunk_indices(orbit_ids, chunk_size):
-                futures.append(
-                    od_worker_remote.remote(
-                        orbit_ids_ref,
-                        orbit_ids_indices,
-                        orbits_ref,
-                        orbit_members_ref,
-                        observations_ref,
-                        rchi2_threshold=rchi2_threshold,
-                        min_obs=min_obs,
-                        min_arc_length=min_arc_length,
-                        contamination_percentage=contamination_percentage,
-                        delta=delta,
-                        max_iter=max_iter,
-                        method=method,
-                        fit_epoch=fit_epoch,
-                        propagator=propagator,
-                        propagator_kwargs=propagator_kwargs,
-                    )
-                )
+        if orbit_members_ref is None:
+            orbit_members_ref = ray.put(orbit_members)
+            orbit_members = ray.get(orbit_members_ref)
+            refs_to_free.append(orbit_members_ref)
+            logger.info("Placed orbit members in the object store.")
 
-            while futures:
-                finished, futures = ray.wait(futures, num_returns=1)
-                od_orbits_chunk, od_orbit_members_chunk = ray.get(finished[0])
-                od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
-                if od_orbits.fragmented():
-                    od_orbits = qv.defragment(od_orbits)
-                od_orbit_members = qv.concatenate(
-                    [od_orbit_members, od_orbit_members_chunk]
-                )
-                if od_orbit_members.fragmented():
-                    od_orbit_members = qv.defragment(od_orbit_members)
+        if observations_ref is None:
+            observations_ref = ray.put(observations)
+            refs_to_free.append(observations_ref)
+            observations = ray.get(observations_ref)
+            logger.info("Placed observations in the object store.")
 
-            if len(refs_to_free) > 0:
-                ray.internal.free(refs_to_free)
-                logger.info(
-                    f"Removed {len(refs_to_free)} references from the object store."
-                )
-
-        else:
-            for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):
-                od_orbits_chunk, od_orbit_members_chunk = od_worker(
-                    orbit_ids_chunk,
-                    orbits,
-                    orbit_members,
-                    observations,
+        futures = []
+        for orbit_ids_indices in _iterate_chunk_indices(orbit_ids, chunk_size):
+            futures.append(
+                od_worker_remote.remote(
+                    orbit_ids_ref,
+                    orbit_ids_indices,
+                    orbits_ref,
+                    orbit_members_ref,
+                    observations_ref,
                     rchi2_threshold=rchi2_threshold,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
@@ -734,24 +710,52 @@ def differential_correction(
                     propagator=propagator,
                     propagator_kwargs=propagator_kwargs,
                 )
-                od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
-                if od_orbits.fragmented():
-                    od_orbits = qv.defragment(od_orbits)
-                od_orbit_members = qv.concatenate(
-                    [od_orbit_members, od_orbit_members_chunk]
-                )
-                if od_orbit_members.fragmented():
-                    od_orbit_members = qv.defragment(od_orbit_members)
+            )
 
-        # Sort orbits by orbit ID and observation time
-        od_orbits, od_orbit_members = sort_by_id_and_time(
-            od_orbits, od_orbit_members, observations, "orbit_id"
-        )
+        while futures:
+            finished, futures = ray.wait(futures, num_returns=1)
+            od_orbits_chunk, od_orbit_members_chunk = ray.get(finished[0])
+            od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
+            if od_orbits.fragmented():
+                od_orbits = qv.defragment(od_orbits)
+            od_orbit_members = qv.concatenate(
+                [od_orbit_members, od_orbit_members_chunk]
+            )
+            if od_orbit_members.fragmented():
+                od_orbit_members = qv.defragment(od_orbit_members)
+
+        if len(refs_to_free) > 0:
+            ray.internal.free(refs_to_free)
+            logger.info(
+                f"Removed {len(refs_to_free)} references from the object store."
+            )
 
     else:
-        logger.info("Received no orbits or orbit members.")
-        od_orbits = FittedOrbits.empty()
-        od_orbit_members = FittedOrbitMembers.empty()
+        for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):
+            od_orbits_chunk, od_orbit_members_chunk = od_worker(
+                orbit_ids_chunk,
+                orbits,
+                orbit_members,
+                observations,
+                rchi2_threshold=rchi2_threshold,
+                min_obs=min_obs,
+                min_arc_length=min_arc_length,
+                contamination_percentage=contamination_percentage,
+                delta=delta,
+                max_iter=max_iter,
+                method=method,
+                fit_epoch=fit_epoch,
+                propagator=propagator,
+                propagator_kwargs=propagator_kwargs,
+            )
+            od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
+            if od_orbits.fragmented():
+                od_orbits = qv.defragment(od_orbits)
+            od_orbit_members = qv.concatenate(
+                [od_orbit_members, od_orbit_members_chunk]
+            )
+            if od_orbit_members.fragmented():
+                od_orbit_members = qv.defragment(od_orbit_members)
 
     time_end = time.perf_counter()
     logger.info(f"Differentially corrected {len(od_orbits)} orbits.")
