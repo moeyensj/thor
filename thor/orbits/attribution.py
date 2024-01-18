@@ -2,7 +2,7 @@ import gc
 import logging
 import multiprocessing as mp
 import time
-from typing import Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -250,6 +250,7 @@ attribution_worker_remote.options(
     num_cpus=1,
 )
 
+
 def attribute_observations(
     orbits: Union[Orbits, FittedOrbits, ray.ObjectRef],
     observations: Union[Observations, ray.ObjectRef],
@@ -413,7 +414,7 @@ def merge_and_extend_orbits(
 
     use_ray = initialize_use_ray(num_cpus=max_processes)
     orbits_ref, orbit_members_ref, observations_ref = None, None, None
-    
+
     if use_ray:
         if isinstance(orbits, ray.ObjectRef):
             orbits_ref = orbits
@@ -448,7 +449,7 @@ def merge_and_extend_orbits(
 
     iterations = 0
     converged = False
-    refs_to_free = []
+    refs_to_free: List[ray.ObjectRef] = []
     while not converged:
         # Update the orbits chunk size
         orbits_chunk_size_iter = np.minimum(
@@ -605,7 +606,6 @@ def merge_and_extend_orbits(
     if use_ray:
         ray.internal.free(refs_to_free)
         logger.info("Removed orbits from the object store.")
-
 
     if len(odp_orbits) > 0:
         # Assign any remaining duplicate observations to the orbit with
