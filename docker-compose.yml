@@ -12,4 +12,4 @@ services:
       - ".docker_bash_history.txt:/root/.bash_history"
       - ".volumes:/opt/volumes/"
     tmpfs:
-      - /dev/shm:size=8g
+      - /dev/shm:size=12g

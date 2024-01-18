@@ -26,6 +26,11 @@ if USE_GPU:
 else:
     from sklearn.cluster import DBSCAN
 
+import hashlib
+from typing import List, Literal, Tuple
+
+import pyarrow as pa
+import pyarrow.compute as pc
 
 __all__ = [
     "cluster_and_link",
@@ -34,6 +39,15 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def hash_obs_ids(obs_ids: List[str]) -> str:
+    """
+    Create unique strings for each set unique set of observation IDs
+
+    We use hashes rather than original string in order to save memory.
+    """
+    return hashlib.md5("".join(sorted(set(obs_ids))).encode()).hexdigest()
 
 
 def drop_duplicate_clusters(
@@ -45,52 +59,72 @@ def drop_duplicate_clusters(
 
     Parameters
     ----------
+    clusters: `~thor.clusters.Clusters`
+        A table of clusters. Must be sorted by cluster_id.
     cluster_members: `~thor.clusters.ClusterMembers`
-        A table of cluster members.
+        A table of cluster members. Must be sorted by cluster_id.
 
     Returns
     -------
-    `~thor.clusters.Clusters`
+    `~thor.clusters.Clusters`, `~thor.clusters.ClusterMembers`
         A table of clusters with duplicate clusters removed.
+        The cluster members belonging to those clusters.
     """
-    # Sort by cluster_id and obs_id
-    clusters = clusters.sort_by([("cluster_id", "ascending")])
-    cluster_members = cluster_members.sort_by(
-        [("cluster_id", "ascending"), ("obs_id", "ascending")]
-    )
+    # Ensure clusters and cluster members are sorted by cluster id
+    # by spot checking the first few and last few rows are
+    # in sorted order
+    assert clusters.cluster_id[:3].to_pylist() == sorted(
+        clusters.cluster_id[:3].to_pylist()
+    ), "clusters must be sorted by cluster_id"  # noqa: E501
+    assert clusters.cluster_id[-3:].to_pylist() == sorted(
+        clusters.cluster_id[-3:].to_pylist()
+    ), "clusters must be sorted by cluster_id"  # noqa: E501
+    assert cluster_members.cluster_id[:3].to_pylist() == sorted(
+        cluster_members.cluster_id[:3].to_pylist()
+    ), "cluster_members must be sorted by cluster_id"  # noqa: E501
+    assert cluster_members.cluster_id[-3:].to_pylist() == sorted(
+        cluster_members.cluster_id[-3:].to_pylist()
+    ), "cluster_members must be sorted by cluster_id"  # noqa: E501
 
-    # Group by cluster_id and aggregate a list of distinct obs_ids
-    grouped_by_cluster_id = cluster_members.table.group_by(
-        ["cluster_id"], use_threads=False
-    ).aggregate([("obs_id", "distinct")])
-    obs_ids_per_cluster = grouped_by_cluster_id["obs_id_distinct"].to_pylist()
+    # We used to use a group by in pyarrow here,
+    # but found the memory accumulationw as too high.
+    # A simple loop that accumulates the distinct obs ids
+    # for each cluster is more memory efficient.
+    logger.info(f"Accumulating cluster observation IDs into single strings.")
+    obs_ids_per_cluster: Union[List[str], pa.Array] = []
+    current_obs_ids: List[str] = []
+    current_cluster_id = None
+    for member in cluster_members:
+        cluster_id = member.cluster_id.to_pylist()[0]
+        obs_id = member.obs_id.to_pylist()[0]
+        if cluster_id != current_cluster_id:
+            if current_cluster_id is not None:
+                obs_ids_per_cluster.append(hash_obs_ids(current_obs_ids))
+            current_cluster_id = cluster_id
+            current_obs_ids = []
+        current_obs_ids.append(obs_id)
+    obs_ids_per_cluster.append(hash_obs_ids(current_obs_ids))
 
-    # Group by with a distinct aggregation is not guaranteed to preserve the order of the elements within each list
-    # but does preserve the order of the lists themselves. So we sort each list of obs_ids and while we are
-    # sorting we also convert the lists to a single string on which we can group later.
-    # Pyarrow currently does not support groupby on lists of strings, this is likely a missing feature.
-    # As an example, the following code doesn't work:
-    # grouped_by_obs_lists = grouped_by_cluster_id.group_by(
-    #   ["obs_id_distinct"],
-    #   use_threads=False
-    # ).aggregate([("index", "first")])
-    for i, obs_ids_i in enumerate(obs_ids_per_cluster):
-        obs_ids_i.sort()
-        obs_ids_per_cluster[i] = "".join(obs_ids_i)
-
-    squashed_obs_ids = pa.table(
+    logger.info(f"Grouping by unique observation sets.")
+    obs_ids_per_cluster = pa.table(
         {
             "index": pa.array(np.arange(0, len(obs_ids_per_cluster))),
             "obs_ids": obs_ids_per_cluster,
         }
     )
-    indices = (
-        squashed_obs_ids.group_by(["obs_ids"], use_threads=False)
-        .aggregate([("index", "first")])["index_first"]
-        .combine_chunks()
-    )
 
+    obs_ids_per_cluster = obs_ids_per_cluster.combine_chunks()
+    obs_ids_per_cluster = obs_ids_per_cluster.group_by(["obs_ids"], use_threads=False)
+
+    logger.info(f"Taking first index of each unique observation set.")
+    indices = obs_ids_per_cluster.aggregate([("index", "first")])["index_first"]
+    del obs_ids_per_cluster
+    indices = indices.combine_chunks()
+
+    logger.info(f"Taking clusters that belong to unique observation sets.")
     clusters = clusters.take(indices)
+
+    logger.info(f"Taking cluster members that belong to unique clusters.")
     cluster_members = cluster_members.apply_mask(
         pc.is_in(cluster_members.cluster_id, clusters.cluster_id)
     )
@@ -821,6 +855,16 @@ def cluster_and_link(
     time_start_drop = time.perf_counter()
     logger.info("Removing duplicate clusters...")
     num_clusters = len(clusters)
+
+    # Ensure clusters, cluster_members are defragmented and sorted
+    # prior to dropping duplicates. We do this here so that
+    # we don't sort inside the function and make a whole new copy
+    # while the old one stays referenced in memory
+    clusters = qv.defragment(clusters)
+    cluster_members = qv.defragment(cluster_members)
+    clusters = clusters.sort_by([("cluster_id", "ascending")])
+    cluster_members = cluster_members.sort_by([("cluster_id", "ascending")])
+
     clusters, cluster_members = drop_duplicate_clusters(clusters, cluster_members)
     logger.info(f"Removed {num_clusters - len(clusters)} duplicate clusters.")
     time_end_drop = time.perf_counter()

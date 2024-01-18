@@ -1,5 +1,8 @@
 import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
+import quivr as qv
 
 from ..clusters import (
     ClusterMembers,
@@ -405,3 +408,36 @@ def test_Clusters_drop_duplicates():
         cluster_members_filtered.obs_id.to_numpy(zero_copy_only=False),
         np.hstack(np.array(obs_ids)),
     )
+
+
+def test_drop_duplicate_clusters_sorted():
+    """
+    Test that drop duplicate clusters throws an assertion error if not sorted
+    """
+    clusters = Clusters.from_kwargs(
+        cluster_id=["c00005", "c00000", "c00001", "c00002", "c00003", "c00004"],
+        vtheta_x=np.full(6, 0.0),
+        vtheta_y=np.full(6, 0.0),
+        arc_length=np.full(6, 0.0),
+        num_obs=np.full(6, 5),
+    )
+
+    cluster_members = ClusterMembers.from_kwargs(
+        cluster_id=["c00005", "c00000", "c00001", "c00002", "c00003", "c00004"],
+        obs_id=[
+            "obs_01",
+            "obs_02",
+            "obs_03",
+            "obs_04",
+            "obs_05",
+            "obs_06",
+        ],
+    )
+
+    with pytest.raises(AssertionError):
+        drop_duplicate_clusters(clusters, cluster_members)
+
+    clusters = clusters.sort_by([("cluster_id", "ascending")])
+    cluster_members = cluster_members.sort_by([("cluster_id", "ascending")])
+
+    drop_duplicate_clusters(clusters, cluster_members)

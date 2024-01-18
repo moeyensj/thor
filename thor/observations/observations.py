@@ -61,24 +61,39 @@ class Observations(qv.Table):
         observations : `~Observations`
             A table of THOR observations.
         """
-        # Sort the observations by time and observatory code
-        observations_sorted = observations.sort_by(
-            ["time.days", "time.nanos", "observatory_code"]
-        )
 
-        # If the times are not in UTC, convert them to UTC
-        if observations_sorted.time.scale != "utc":
-            observations_sorted = observations_sorted.set_column(
-                "time", observations_sorted.time.rescale("utc")
+        # Do a spot check that observations are pre-sorted by time
+        # and observatory code. We pre-sort to avoid large duplicate
+        # memory usage
+        assert (
+            observations[:3]
+            .to_dataframe()
+            .equals(
+                observations[:3]
+                .to_dataframe()
+                .sort_values(["time.days", "time.nanos", "observatory_code"])
             )
+        ), "Input observations must be sorted by day, time, observatory code"
+
+        assert (
+            observations[-3:]
+            .to_dataframe()
+            .equals(
+                observations[-3:]
+                .to_dataframe()
+                .sort_values(["time.days", "time.nanos", "observatory_code"])
+            )
+        ), "Input observations must be sorted by day, time, observatory code"
+
+        assert observations.time.scale == "utc", "Input observations must be in UTC"
 
         # Extract the sigma and covariance values for RA and Dec
-        ra_sigma = observations_sorted.ra_sigma.to_numpy(zero_copy_only=False)
-        dec_sigma = observations_sorted.dec_sigma.to_numpy(zero_copy_only=False)
-        ra_dec_cov = observations_sorted.ra_dec_cov.to_numpy(zero_copy_only=False)
+        ra_sigma = observations.ra_sigma.to_numpy(zero_copy_only=False)
+        dec_sigma = observations.dec_sigma.to_numpy(zero_copy_only=False)
+        ra_dec_cov = observations.ra_dec_cov.to_numpy(zero_copy_only=False)
 
         # Create the covariance matrices
-        covariance_matrices = np.full((len(observations_sorted), 6, 6), np.nan)
+        covariance_matrices = np.full((len(observations), 6, 6), np.nan)
         covariance_matrices[:, 1, 1] = ra_sigma**2
         covariance_matrices[:, 2, 2] = dec_sigma**2
         covariance_matrices[:, 1, 2] = ra_dec_cov
@@ -87,24 +102,24 @@ class Observations(qv.Table):
 
         # Create the coordinates table
         coords = SphericalCoordinates.from_kwargs(
-            lon=observations_sorted.ra,
-            lat=observations_sorted.dec,
-            time=observations_sorted.time,
+            lon=observations.ra,
+            lat=observations.dec,
+            time=observations.time,
             covariance=covariances,
-            origin=Origin.from_kwargs(code=observations_sorted.observatory_code),
+            origin=Origin.from_kwargs(code=observations.observatory_code),
             frame="equatorial",
         )
 
         # Create the photometry table
         photometry = Photometry.from_kwargs(
-            filter=observations_sorted.filter,
-            mag=observations_sorted.mag,
-            mag_sigma=observations_sorted.mag_sigma,
+            filter=observations.filter,
+            mag=observations.mag,
+            mag_sigma=observations.mag_sigma,
         )
 
         return cls.from_kwargs(
-            id=observations_sorted.id,
-            exposure_id=observations_sorted.exposure_id,
+            id=observations.id,
+            exposure_id=observations.exposure_id,
             coordinates=coords,
             photometry=photometry,
             state_id=calculate_state_ids(coords),
