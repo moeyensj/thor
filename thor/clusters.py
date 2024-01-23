@@ -852,15 +852,23 @@ def cluster_and_link(
             if cluster_members.fragmented():
                 cluster_members = qv.defragment(cluster_members)
 
-    # Drop duplicate clusters
-    time_start_drop = time.perf_counter()
-    logger.info("Removing duplicate clusters...")
     num_clusters = len(clusters)
+    if num_clusters == 0:
+        time_end_cluster = time.perf_counter()
+        logger.info(f"Found {len(clusters)} clusters, exiting early.")
+        logger.info(
+            f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds."
+        )
+        return clusters, cluster_members
 
     # Ensure clusters, cluster_members are defragmented and sorted
     # prior to dropping duplicates. We do this here so that
     # we don't sort inside the function and make a whole new copy
     # while the old one stays referenced in memory
+
+    # Drop duplicate clusters
+    time_start_drop = time.perf_counter()
+    logger.info("Removing duplicate clusters...")
     clusters = qv.defragment(clusters)
     cluster_members = qv.defragment(cluster_members)
     clusters = clusters.sort_by([("cluster_id", "ascending")])
