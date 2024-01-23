@@ -637,12 +637,6 @@ def merge_and_extend_orbits(
         )
         odp_orbit_members = odp_orbit_members.drop_outliers()
 
-    # if use_ray:
-    #     if len(refs_to_free) > 0:
-    #         ray.internal.free(refs_to_free)
-    #         logger.info(
-    #             f"Removed {len(refs_to_free)} references from the object store."
-    #         )
 
     time_end = time.perf_counter()
     logger.info(
