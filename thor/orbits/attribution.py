@@ -1,7 +1,8 @@
+import gc
 import logging
 import multiprocessing as mp
 import time
-from typing import Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -12,7 +13,7 @@ import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB
-from adam_core.propagator.utils import _iterate_chunks
+from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 from sklearn.neighbors import BallTree
 
@@ -116,7 +117,7 @@ class Attributions(qv.Table):
 
 def attribution_worker(
     orbit_ids: npt.NDArray[np.str_],
-    observation_indices: npt.NDArray[np.int64],
+    observation_indices: Tuple[int, int],
     orbits: Union[Orbits, FittedOrbits],
     observations: Observations,
     radius: float = 1 / 3600,
@@ -132,7 +133,7 @@ def attribution_worker(
         orbits = orbits.to_orbits()
 
     # Select the orbits and observations for this batch
-    observations = observations.take(observation_indices)
+    observations = observations[observation_indices[0] : observation_indices[1]]
     orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_ids))
 
     # Get the unique observers for this batch of observations
@@ -148,6 +149,7 @@ def attribution_worker(
     ephemeris = ephemeris.set_column(
         "coordinates.time", ephemeris.coordinates.time.rounded(precision="ms")
     )
+
     observations_rounded = observations.set_column(
         "coordinates.time", observations.coordinates.time.rounded(precision="ms")
     )
@@ -263,15 +265,12 @@ def attribute_observations(
 ) -> Attributions:
     logger.info("Running observation attribution...")
     time_start = time.time()
+    use_ray = initialize_use_ray(num_cpus=max_processes)
 
     if isinstance(orbits, ray.ObjectRef):
         orbits_ref = orbits
         orbits = ray.get(orbits)
         logger.info("Retrieved orbits from the object store.")
-
-        if orbit_ids is not None:
-            orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_ids))
-            logger.info("Applied orbit ID mask to orbits.")
     else:
         orbits_ref = None
 
@@ -279,9 +278,6 @@ def attribute_observations(
         observations_ref = observations
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
-        if obs_ids is not None:
-            observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
-            logger.info("Applied observation ID mask to observations.")
     else:
         observations_ref = None
 
@@ -290,10 +286,9 @@ def attribute_observations(
 
     if orbit_ids is None:
         orbit_ids = orbits.orbit_id
-    observation_indices = np.arange(0, len(observations))
 
     attributions = Attributions.empty()
-    use_ray = initialize_use_ray(num_cpus=max_processes)
+
     if use_ray:
         refs_to_free = []
         if orbits_ref is None:
@@ -309,8 +304,8 @@ def attribute_observations(
         # We wait for each chunk of orbits to finish before starting the next
         # chunk of observations to reduce the memory pressure. If not, the number
         # of expected futures will be large (num_orbits / orbit_chunk_size * num_observation_chunks)
-        for observations_indices_chunk in _iterate_chunks(
-            observation_indices, observations_chunk_size
+        for observations_indices_chunk in _iterate_chunk_indices(
+            observations, observations_chunk_size
         ):
             futures = []
             for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
@@ -340,8 +335,8 @@ def attribute_observations(
 
     else:
         for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
-            for observations_indices_chunk in _iterate_chunks(
-                observation_indices, observations_chunk_size
+            for observations_indices_chunk in _iterate_chunk_indices(
+                observations, observations_chunk_size
             ):
                 attribution_df_i = attribution_worker(
                     orbit_id_chunk,
@@ -411,254 +406,236 @@ def merge_and_extend_orbits(
     time_start = time.perf_counter()
     logger.info("Running orbit extension and merging...")
 
-    if isinstance(orbits, ray.ObjectRef):
-        orbits_ref = orbits
-        orbits = ray.get(orbits)
-        logger.info("Retrieved orbits from the object store.")
-    else:
-        orbits_ref = None
+    # If max_processes is None, lets determine the actual number of
+    # processes we will use so that we can dynamically set the orbit
+    # chunk size
+    if max_processes is None:
+        max_processes = mp.cpu_count()
 
-    if isinstance(orbit_members, ray.ObjectRef):
-        orbit_members = ray.get(orbit_members)
-        logger.info("Retrieved orbit members from the object store.")
+    use_ray = initialize_use_ray(num_cpus=max_processes)
+    orbits_ref, orbit_members_ref, observations_ref = None, None, None
 
-    if isinstance(observations, ray.ObjectRef):
-        observations_ref = observations
-        observations = ray.get(observations)
-        logger.info("Retrieved observations from the object store.")
-    else:
-        observations_ref = None
+    if use_ray:
+        if isinstance(orbits, ray.ObjectRef):
+            orbits_ref = orbits
+            orbits = ray.get(orbits)
+            logger.info("Retrieved orbits from the object store.")
+        else:
+            orbits_ref = ray.put(orbits)
+            orbits = ray.get(orbits_ref)
 
-    use_ray = max_processes is None or max_processes > 1
+        if isinstance(orbit_members, ray.ObjectRef):
+            orbit_members_ref = orbit_members
+            orbit_members = ray.get(orbit_members_ref)
+            logger.info("Retrieved orbit members from the object store.")
+        else:
+            orbit_members_ref = ray.put(orbit_members)
+            orbit_members = ray.get(orbit_members_ref)
 
-    # Set the running variables
-    orbits_iter = orbits
-    orbit_members_iter = orbit_members
-    observations_iter = observations
+        if isinstance(observations, ray.ObjectRef):
+            observations_ref = observations
+            observations = ray.get(observations)
+            logger.info("Retrieved observations from the object store.")
+        else:
+            observations_ref = ray.put(observations)
+            observations = ray.get(observations_ref)
 
-    iterations = 0
     odp_orbits = FittedOrbits.empty()
     odp_orbit_members = FittedOrbitMembers.empty()
-    if len(orbits_iter) > 0 and len(observations_iter) > 0:
-        use_ray = initialize_use_ray(num_cpus=max_processes)
-        if use_ray:
-            refs_to_free = []
-            if observations_ref is None:
-                observations_ref = ray.put(observations)
-                refs_to_free.append(observations_ref)
-                logger.info("Placed observations in the object store.")
 
-        # If max_processes is None, lets determine the actual number of
-        # processes we will use so that we can dynamically set the orbit
-        # chunk size
-        if max_processes is None:
-            if use_ray:
-                processes = int(ray.available_resources()["CPU"])
-            else:
-                processes = mp.cpu_count()
+    # If there are no orbits or observations then return the empty tables
+    if len(orbits) == 0 or len(observations) == 0:
+        return odp_orbits, odp_orbit_members
+
+    iterations = 0
+    converged = False
+    refs_to_free: List[ray.ObjectRef] = []
+    while not converged:
+        # Update the orbits chunk size
+        orbits_chunk_size_iter = np.minimum(
+            orbits_chunk_size, np.ceil(len(orbits) / max_processes).astype(int)
+        )
+
+        # Run attribution
+        attributions = attribute_observations(
+            orbits_ref if use_ray else orbits,
+            observations_ref if use_ray else observations,
+            radius=radius,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
+            orbits_chunk_size=orbits_chunk_size_iter,
+            observations_chunk_size=observations_chunk_size,
+            max_processes=max_processes,
+        )
+        # For orbits with coincident observations: multiple observations attributed at
+        # the same time, keep only observation with smallest distance
+        attributions = attributions.drop_coincident_attributions(observations)
+        # Create a new orbit members table with the newly attributed observations and
+        # filter the orbits to only include those that still have observations
+        orbit_members = FittedOrbitMembers.from_kwargs(
+            orbit_id=attributions.orbit_id,
+            obs_id=attributions.obs_id,
+            residuals=attributions.residuals,
+        )
+        orbits = orbits.apply_mask(
+            pc.is_in(orbits.orbit_id, orbit_members.orbit_id.unique())
+        )
+
+        if use_ray:
+            ray.internal.free(refs_to_free)
+            orbits_ref = ray.put(orbits)
+            orbits = ray.get(orbits_ref)
+            orbit_members_ref = ray.put(orbit_members)
+            orbit_members = ray.get(orbit_members_ref)
+            refs_to_free = [orbits_ref, orbit_members_ref]
+
+        # Run differential orbit correction
+        orbits, orbit_members = differential_correction(
+            orbits_ref if use_ray else orbits,
+            orbit_members_ref if use_ray else orbit_members,
+            observations_ref if use_ray else observations,
+            rchi2_threshold=rchi2_threshold,
+            min_obs=min_obs,
+            min_arc_length=min_arc_length,
+            contamination_percentage=contamination_percentage,
+            delta=delta,
+            method=method,
+            max_iter=max_iter,
+            fit_epoch=fit_epoch,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
+            chunk_size=orbits_chunk_size_iter,
+            max_processes=max_processes,
+        )
+
+        orbit_members = orbit_members.drop_outliers()
+
+        # Remove any duplicate orbits
+        orbits = orbits.sort_by([("reduced_chi2", "ascending")])
+        orbits, orbit_members = drop_duplicate_orbits(
+            orbits,
+            orbit_members,
+            subset=[
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.x",
+                "coordinates.y",
+                "coordinates.z",
+                "coordinates.vx",
+                "coordinates.vy",
+                "coordinates.vz",
+            ],
+            keep="first",
+        )
+
+        # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
+        # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
+        # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
+        not_improved_mask = pc.equal(orbits.improved, False)
+        orbits_out = orbits.apply_mask(not_improved_mask)
+        orbit_members_out = orbit_members.apply_mask(
+            pc.is_in(orbit_members.orbit_id, orbits_out.orbit_id)
+        )
+
+        # If some of the orbits that haven't improved in their orbit fit still share observations
+        # then assign those observations to the orbit with the most observations, longest arc length,
+        # and lowest reduced chi2 (and remove the other instances of that observation)
+        # We will one final iteration of OD on the output orbits later
+
+        orbits_out, orbit_members_out = assign_duplicate_observations(
+            orbits_out, orbit_members_out
+        )
+
+        odp_orbits = qv.concatenate([odp_orbits, orbits_out])
+        if odp_orbits.fragmented():
+            odp_orbits = qv.defragment(odp_orbits)
+
+        odp_orbit_members = qv.concatenate([odp_orbit_members, orbit_members_out])
+        if odp_orbit_members.fragmented():
+            odp_orbit_members = qv.defragment(odp_orbit_members)
+
+        # Identify the orbit that could still be improved more
+        improved_mask = pc.invert(not_improved_mask)
+        orbits = orbits.apply_mask(improved_mask)
+        orbit_members = orbit_members.apply_mask(
+            pc.is_in(orbit_members.orbit_id, orbits.orbit_id)
+        )
+
+        # Remove observations that have been added to the output list of orbits
+        # from the orbits that we will continue iterating over
+        orbit_members = orbit_members.apply_mask(
+            pc.invert(
+                pc.is_in(
+                    orbit_members.obs_id,
+                    odp_orbit_members.obs_id,
+                )
+            )
+        )
+        orbits = orbits.apply_mask(
+            pc.is_in(orbits.orbit_id, orbit_members.orbit_id.unique())
+        )
+
+        if orbits.fragmented():
+            orbits = qv.defragment(orbits)
+        if orbit_members.fragmented():
+            orbit_members = qv.defragment(orbit_members)
+
+        if use_ray:
+            # Orbits will change with differential correction so we need to add them
+            # to the object store at the start of each iteration (we cannot simply
+            # pass references to the same immutable object)
+            ray.internal.free(refs_to_free)
+            orbits_ref = ray.put(orbits)
+            orbits = ray.get(orbits_ref)
+            orbit_members_ref = ray.put(orbit_members)
+            orbit_members = ray.get(orbit_members_ref)
+            refs_to_free = [orbits_ref, orbit_members_ref]
+
         else:
-            processes = max_processes
+            orbits_ref = orbits
+            orbit_members_ref = orbit_members
+            observations_ref = observations
 
-        converged = False
-        while not converged:
-            if use_ray:
-                # Orbits will change with differential correction so we need to add them
-                # to the object store at the start of each iteration (we cannot simply
-                # pass references to the same immutable object)
-                orbits_ref = ray.put(orbits_iter)
-                logger.info("Placed orbits in the object store.")
+        iterations += 1
+        if len(orbits) == 0:
+            converged = True
 
-                orbits_in = orbits_ref
-                observations_in = observations_ref
+    # Remove orbits from the object store (the underlying state vectors may
+    # change with differential correction so we need to add them again at
+    # the start of the next iteration)
+    if use_ray:
+        ray.internal.free(refs_to_free)
+        logger.info("Removed orbits from the object store.")
 
-            else:
-                orbits_in = orbits_iter
-                observations_in = observations_iter
+    if len(odp_orbits) > 0:
+        # Assign any remaining duplicate observations to the orbit with
+        # the most observations, longest arc length, and lowest reduced chi2
+        odp_orbits, odp_orbit_members = assign_duplicate_observations(
+            odp_orbits, odp_orbit_members
+        )
 
-            orbits_chunk_size_iter = np.minimum(
-                orbits_chunk_size, np.ceil(len(orbits_iter) / processes).astype(int)
-            )
+        # Do one final iteration of OD on the output orbits. This
+        # will update any fits of orbits that might have had observations
+        # removed during the assign_duplicate_observations step
 
-            # Run attribution
-            attributions = attribute_observations(
-                orbits_in,
-                observations_in,
-                radius=radius,
-                propagator=propagator,
-                propagator_kwargs=propagator_kwargs,
-                orbits_chunk_size=orbits_chunk_size_iter,
-                observations_chunk_size=observations_chunk_size,
-                max_processes=max_processes,
-                orbit_ids=orbits_iter.orbit_id,
-                obs_ids=observations_iter.id,
-            )
-
-            # For orbits with coincident observations: multiple observations attributed at
-            # the same time, keep only observation with smallest distance
-            attributions = attributions.drop_coincident_attributions(observations)
-
-            # Create a new orbit members table with the newly attributed observations and
-            # filter the orbits to only include those that still have observations
-            orbit_members_iter = FittedOrbitMembers.from_kwargs(
-                orbit_id=attributions.orbit_id,
-                obs_id=attributions.obs_id,
-                residuals=attributions.residuals,
-            )
-            orbits_iter = orbits_iter.apply_mask(
-                pc.is_in(orbits_iter.orbit_id, orbit_members_iter.orbit_id.unique())
-            )
-
-            # Run differential orbit correction
-            orbits_iter, orbit_members_iter = differential_correction(
-                orbits_in,
-                orbit_members_iter,
-                observations_in,
-                rchi2_threshold=rchi2_threshold,
-                min_obs=min_obs,
-                min_arc_length=min_arc_length,
-                contamination_percentage=contamination_percentage,
-                delta=delta,
-                method=method,
-                max_iter=max_iter,
-                fit_epoch=fit_epoch,
-                propagator=propagator,
-                propagator_kwargs=propagator_kwargs,
-                chunk_size=orbits_chunk_size_iter,
-                max_processes=max_processes,
-                orbit_ids=orbits_iter.orbit_id,
-                obs_ids=pc.unique(orbit_members_iter.obs_id),
-            )
-            orbit_members_iter = orbit_members_iter.drop_outliers()
-
-            # Remove any duplicate orbits
-            orbits_iter = orbits_iter.sort_by([("reduced_chi2", "ascending")])
-            orbits_iter, orbit_members_iter = drop_duplicate_orbits(
-                orbits_iter,
-                orbit_members_iter,
-                subset=[
-                    "coordinates.time.days",
-                    "coordinates.time.nanos",
-                    "coordinates.x",
-                    "coordinates.y",
-                    "coordinates.z",
-                    "coordinates.vx",
-                    "coordinates.vy",
-                    "coordinates.vz",
-                ],
-                keep="first",
-            )
-
-            # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
-            # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
-            # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
-            not_improved_mask = pc.equal(orbits_iter.improved, False)
-            orbits_out = orbits_iter.apply_mask(not_improved_mask)
-            orbit_members_out = orbit_members_iter.apply_mask(
-                pc.is_in(orbit_members_iter.orbit_id, orbits_out.orbit_id)
-            )
-
-            # If some of the orbits that haven't improved in their orbit fit still share observations
-            # then assign those observations to the orbit with the most observations, longest arc length,
-            # and lowest reduced chi2 (and remove the other instances of that observation)
-            # We will one final iteration of OD on the output orbits later
-
-            orbits_out, orbit_members_out = assign_duplicate_observations(
-                orbits_out, orbit_members_out
-            )
-
-            odp_orbits = qv.concatenate([odp_orbits, orbits_out])
-            if odp_orbits.fragmented():
-                odp_orbits = qv.defragment(odp_orbits)
-
-            odp_orbit_members = qv.concatenate([odp_orbit_members, orbit_members_out])
-            if odp_orbit_members.fragmented():
-                odp_orbit_members = qv.defragment(odp_orbit_members)
-
-            # Remove observations that have been added to the output list of orbits
-            observations_iter = observations_iter.apply_mask(
-                pc.invert(
-                    pc.is_in(
-                        observations_iter.id,
-                        orbit_members_out.obs_id.unique(),
-                    )
-                )
-            )
-
-            # Identify the orbit that could still be improved more
-            improved_mask = pc.invert(not_improved_mask)
-            orbits_iter = orbits_iter.apply_mask(improved_mask)
-            orbit_members_iter = orbit_members_iter.apply_mask(
-                pc.is_in(orbit_members_iter.orbit_id, orbits_iter.orbit_id)
-            )
-
-            # Remove observations that have been added to the output list of orbits
-            # from the orbits that we will continue iterating over
-            orbit_members_iter = orbit_members_iter.apply_mask(
-                pc.invert(
-                    pc.is_in(
-                        orbit_members_iter.obs_id,
-                        orbit_members_out.obs_id.unique(),
-                    )
-                )
-            )
-            orbits_iter = orbits_iter.apply_mask(
-                pc.is_in(orbits_iter.orbit_id, orbit_members_iter.orbit_id.unique())
-            )
-
-            if orbits_iter.fragmented():
-                orbits_iter = qv.defragment(orbits_iter)
-            if orbit_members_iter.fragmented():
-                orbit_members_iter = qv.defragment(orbit_members_iter)
-
-            # Remove orbits from the object store (the underlying state vectors may
-            # change with differential correction so we need to add them again at
-            # the start of the next iteration)
-            if use_ray:
-                ray.internal.free([orbits_ref])
-                logger.info("Removed orbits from the object store.")
-
-            iterations += 1
-            if len(orbits_iter) == 0:
-                converged = True
-
-        if len(odp_orbits) > 0:
-            # Assign any remaining duplicate observations to the orbit with
-            # the most observations, longest arc length, and lowest reduced chi2
-            odp_orbits, odp_orbit_members = assign_duplicate_observations(
-                odp_orbits, odp_orbit_members
-            )
-
-            # Do one final iteration of OD on the output orbits. This
-            # will update any fits of orbits that might have had observations
-            # removed during the assign_duplicate_observations step
-            odp_orbits, odp_orbit_members = differential_correction(
-                odp_orbits,
-                odp_orbit_members,
-                observations,
-                rchi2_threshold=rchi2_threshold,
-                min_obs=min_obs,
-                min_arc_length=min_arc_length,
-                contamination_percentage=contamination_percentage,
-                delta=delta,
-                method=method,
-                max_iter=max_iter,
-                fit_epoch=fit_epoch,
-                propagator=propagator,
-                propagator_kwargs=propagator_kwargs,
-                chunk_size=orbits_chunk_size,
-                max_processes=max_processes,
-            )
-            odp_orbit_members = odp_orbit_members.drop_outliers()
-
-        if use_ray:
-            if len(refs_to_free) > 0:
-                ray.internal.free(refs_to_free)
-                logger.info(
-                    f"Removed {len(refs_to_free)} references from the object store."
-                )
-    else:
-        odp_orbits = FittedOrbits.empty()
-        odp_orbit_members = FittedOrbitMembers.empty()
+        odp_orbits, odp_orbit_members = differential_correction(
+            odp_orbits,
+            odp_orbit_members,
+            observations_ref if use_ray else observations,
+            rchi2_threshold=rchi2_threshold,
+            min_obs=min_obs,
+            min_arc_length=min_arc_length,
+            contamination_percentage=contamination_percentage,
+            delta=delta,
+            method=method,
+            max_iter=max_iter,
+            fit_epoch=fit_epoch,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
+            chunk_size=orbits_chunk_size,
+            max_processes=max_processes,
+        )
+        odp_orbit_members = odp_orbit_members.drop_outliers()
 
     time_end = time.perf_counter()
     logger.info(

@@ -1,3 +1,4 @@
+import gc
 from typing import Tuple
 
 import numpy as np
@@ -70,11 +71,11 @@ def sort_by_id_and_time(
         ]
     )
 
-    sorted = linkages.take(linkage_table["index"])
-    sorted_members = members.take(member_times["index"])
+    linkages = linkages.take(linkage_table["index"])
+    members = members.take(member_times["index"])
 
-    if sorted.fragmented():
-        sorted = qv.defragment(sorted)
-    if sorted_members.fragmented():
-        sorted_members = qv.defragment(sorted_members)
-    return sorted, sorted_members
+    if linkages.fragmented():
+        linkages = qv.defragment(linkages)
+    if members.fragmented():
+        members = qv.defragment(members)
+    return linkages, members
