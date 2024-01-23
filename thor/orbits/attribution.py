@@ -637,7 +637,6 @@ def merge_and_extend_orbits(
         )
         odp_orbit_members = odp_orbit_members.drop_outliers()
 
-
     time_end = time.perf_counter()
     logger.info(
         f"Number of attribution / differential correction iterations: {iterations}"
