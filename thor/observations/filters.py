@@ -324,6 +324,11 @@ def filter_observations(
 
     use_ray = initialize_use_ray(num_cpus=config.max_processes)
     if use_ray:
+
+        if isinstance(observations, Observations):
+            observations = ray.put(observations)
+            logger.info("Placed observations in the object store.")
+
         futures = []
         for state_id_chunk in _iterate_chunks(state_ids, chunk_size):
 
@@ -343,6 +348,10 @@ def filter_observations(
             )
             if filtered_observations.fragmented():
                 filtered_observations = qv.defragment(filtered_observations)
+
+        if isinstance(observations, ray.ObjectRef):
+            ray.internal.free([observations])
+            logger.info("Removed observations from the object store.")
 
     else:
 
