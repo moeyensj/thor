@@ -3,7 +3,7 @@ import os
 import pathlib
 import time
 from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Literal, Optional, Tuple
+from typing import Iterable, Iterator, List, Literal, Optional, Tuple, Union
 
 import quivr as qv
 import ray
@@ -62,7 +62,7 @@ class LinkTestOrbitStageResult:
 
 def link_test_orbit(
     test_orbit: TestOrbits,
-    observations: Observations,
+    observations: Union[str, Observations],
     working_dir: Optional[str] = None,
     filters: Optional[List[ObservationFilter]] = None,
     config: Optional[Config] = None,
@@ -128,7 +128,7 @@ def link_test_orbit(
     if (
         use_ray
         and observations is not None
-        and not isinstance(observations, ray.ObjectRef)
+        and not isinstance(observations, (ray.ObjectRef, str))
     ):
         observations = ray.put(observations)
         refs_to_free.append(observations)
@@ -153,7 +153,7 @@ def link_test_orbit(
 
     if checkpoint.stage == "filter_observations":
         if use_ray:
-            if not isinstance(observations, ray.ObjectRef):
+            if not isinstance(observations, (ray.ObjectRef, str)):
                 observations = ray.put(observations)
                 refs_to_free.append(observations)
                 logger.info("Placed observations in the object store.")

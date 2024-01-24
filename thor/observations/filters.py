@@ -4,69 +4,25 @@ import time
 from typing import TYPE_CHECKING, List, Optional, Union
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
 import quivr as qv
 import ray
 from adam_core.coordinates import SphericalCoordinates
+from adam_core.propagator.utils import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
 from thor.config import Config
 from thor.observations.observations import Observations
 
-from ..orbit import TestOrbitEphemeris, TestOrbits
+from ..orbit import TestOrbits
 
 if TYPE_CHECKING:
     from .observations import Observations
 
 
 logger = logging.getLogger(__name__)
-
-
-def TestOrbitRadiusObservationFilter_worker(
-    observations: "Observations",
-    ephemeris: TestOrbitEphemeris,
-    state_id: int,
-    radius: float,
-) -> "Observations":
-    """
-    Apply the filter to a collection of observations for a particular state.
-
-    Parameters
-    ----------
-    observations : `~thor.observations.Observations`
-        The observations to filter.
-    ephemeris : `~thor.orbit.TestOrbitEphemeris`
-        The ephemeris to use for filtering.
-    state_id : int
-        The state ID.
-    radius : float
-        The radius in degrees.
-
-    Returns
-    -------
-    filtered_observations : `~thor.observations.Observations`
-        The filtered observations.
-    """
-    # Select the ephemeris and observations for this state
-    ephemeris_state = ephemeris.select("id", state_id)
-    observations_state = observations.select("state_id", state_id)
-    coordinates_state = observations_state.coordinates
-
-    assert (
-        len(ephemeris_state) == 1
-    ), "there should be exactly one ephemeris per exposure"
-
-    ephem_ra = ephemeris_state.ephemeris.coordinates.lon[0].as_py()
-    ephem_dec = ephemeris_state.ephemeris.coordinates.lat[0].as_py()
-
-    # Return the observations within the radius for this particular state
-    return observations_state.apply_mask(
-        _within_radius(coordinates_state, ephem_ra, ephem_dec, radius)
-    )
-
-
-TestOrbitRadiusObservationFilter_remote = ray.remote(
-    TestOrbitRadiusObservationFilter_worker
-)
 
 
 class ObservationFilter(abc.ABC):
@@ -78,9 +34,8 @@ class ObservationFilter(abc.ABC):
     @abc.abstractmethod
     def apply(
         self,
-        observations: Union["Observations", ray.ObjectRef],
+        observations: Observations,
         test_orbit: TestOrbits,
-        max_processes: Optional[int] = 1,
     ) -> "Observations":
         """
         Apply the filter to a collection of observations.
@@ -124,7 +79,6 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         self,
         observations: Union["Observations", ray.ObjectRef],
         test_orbit: TestOrbits,
-        max_processes: Optional[int] = 1,
     ) -> "Observations":
         """
         Apply the filter to a collection of observations.
@@ -150,73 +104,36 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         logger.info("Applying TestOrbitRadiusObservationFilter...")
         logger.info(f"Using radius = {self.radius:.5f} deg")
 
-        if isinstance(observations, ray.ObjectRef):
-            observations_ref = observations
-            observations = ray.get(observations)
-            logger.info("Retrieved observations from the object store.")
-        else:
-            observations_ref = None
-
         # Generate an ephemeris for every observer time/location in the dataset
         ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
 
         filtered_observations = Observations.empty()
-        use_ray = initialize_use_ray(num_cpus=max_processes)
-        if use_ray:
-            refs_to_free = []
-            if observations_ref is None:
-                observations_ref = ray.put(observations)
-                refs_to_free.append(observations_ref)
-                logger.info("Placed observations in the object store.")
+        state_ids = observations.state_id.unique().sort()
 
-            if not isinstance(ephemeris, ray.ObjectRef):
-                ephemeris_ref = ray.put(ephemeris)
-                refs_to_free.append(ephemeris_ref)
-                logger.info("Placed ephemeris in the object store.")
-            else:
-                ephemeris_ref = ephemeris
+        for state_id in state_ids:
 
-            state_ids = observations.state_id.unique().sort()
-            futures = []
-            for state_id in state_ids:
-                futures.append(
-                    TestOrbitRadiusObservationFilter_remote.remote(
-                        observations_ref,
-                        ephemeris_ref,
-                        state_id,
-                        self.radius,
-                    )
-                )
+            # Select the ephemeris and observations for this state
+            ephemeris_state = ephemeris.select("id", state_id)
+            observations_state = observations.select("state_id", state_id)
+            coordinates_state = observations_state.coordinates
 
-            while futures:
-                finished, futures = ray.wait(futures, num_returns=1)
-                filtered_observations_chunk = ray.get(finished[0])
-                filtered_observations = qv.concatenate(
-                    [filtered_observations, filtered_observations_chunk]
-                )
-                if filtered_observations.fragmented():
-                    filtered_observations = qv.defragment(filtered_observations)
+            assert (
+                len(ephemeris_state) == 1
+            ), "there should be exactly one ephemeris per exposure"
 
-            if len(refs_to_free) > 0:
-                ray.internal.free(refs_to_free)
-                logger.info(
-                    f"Removed {len(refs_to_free)} references from the object store."
-                )
+            ephem_ra = ephemeris_state.ephemeris.coordinates.lon[0].as_py()
+            ephem_dec = ephemeris_state.ephemeris.coordinates.lat[0].as_py()
 
-        else:
-            state_ids = observations.state_id.unique().sort()
-            for state_id in state_ids:
-                filtered_observations_chunk = TestOrbitRadiusObservationFilter_worker(
-                    observations,
-                    ephemeris,
-                    state_id,
-                    self.radius,
-                )
-                filtered_observations = qv.concatenate(
-                    [filtered_observations, filtered_observations_chunk]
-                )
-                if filtered_observations.fragmented():
-                    filtered_observations = qv.defragment(filtered_observations)
+            # Filter the observations by radius from the predicted position of the test orbit
+            filtered_observations_chunk = observations_state.apply_mask(
+                _within_radius(coordinates_state, ephem_ra, ephem_dec, self.radius)
+            )
+
+            filtered_observations = qv.concatenate(
+                [filtered_observations, filtered_observations_chunk]
+            )
+            if filtered_observations.fragmented():
+                filtered_observations = qv.defragment(filtered_observations)
 
         filtered_observations = filtered_observations.sort_by(
             [
@@ -288,17 +205,19 @@ def _within_radius(
     return distances <= np.deg2rad(radius)
 
 
-def filter_observations(
-    observations: Union[Observations, ray.ObjectRef],
+def filter_observations_worker(
+    state_id_chunk: List[int],
+    observations: Union[str, Observations],
     test_orbit: TestOrbits,
-    config: Config,
-    filters: Optional[List[ObservationFilter]] = None,
+    filters: List[ObservationFilter],
 ) -> Observations:
     """
     Apply a list of filters to the observations.
 
     Parameters
     ----------
+    state_id_chunk : list of int
+        List of state IDs to filter.
     observations : `~thor.observations.observations.Observations`
         Observations to filter.
     test_orbit : `~thor.orbit.TestOrbits`
@@ -311,55 +230,146 @@ def filter_observations(
     filtered_observations : `~thor.observations.observations.Observations`
         Filtered observations.
     """
+    if isinstance(observations, str):
+        observations_chunk = pq.read_table(
+            observations, filters=pc.field("state_id").isin(pa.array(state_id_chunk))
+        )
+        observations_chunk = Observations.from_pyarrow(observations_chunk)
+    else:
+        observations_chunk = observations.apply_mask(
+            pc.is_in(observations.state_id, pa.array(state_id_chunk))
+        )
+
+    filtered_observations = observations_chunk
+    for filter_i in filters:
+        filtered_observations = filter_i.apply(
+            filtered_observations,
+            test_orbit,
+        )
+
+    # Defragment the observations
+    if len(filtered_observations) > 0:
+        filtered_observations = qv.defragment(filtered_observations)
+
+    return filtered_observations
+
+
+filter_observations_worker_remote = ray.remote(filter_observations_worker)
+filter_observations_worker_remote.options(num_cpus=1, num_returns=1)
+
+
+def filter_observations(
+    observations: Union[str, Observations],
+    test_orbit: TestOrbits,
+    config: Config,
+    filters: Optional[List[ObservationFilter]] = None,
+    chunk_size: int = 100,
+) -> Observations:
+    """
+    Filter observations by applying a list of filters. The input observations
+    can be either be a path to a parquet file or an Observations object already loaded
+    into memory.
+
+    Parameters
+    ----------
+    observations : str or `~thor.observations.observations.Observations`
+        Observations to filter.
+    test_orbit : `~thor.orbit.TestOrbits`
+        Test orbit to use for filtering.
+    config : `~thor.config.Config`
+        Configuration parameters.
+    filters : list of `~thor.observations.filters.ObservationFilter`, optional
+        List of filters to apply to the observations. If None, the default
+        TestOrbitRadiusObservationFilter will be used.
+    chunk_size : int, optional
+        Chunk size of state IDs to use when filtering the observations. Each worker
+        will process a chunk of state IDs in parallel. If not using ray, then each
+        chunk is processed serially.
+
+    Returns
+    -------
+    filtered_observations : `~thor.observations.observations.Observations`
+        Filtered observations.
+    """
     time_start = time.perf_counter()
     logger.info("Running observation filters...")
 
     if len(test_orbit) != 1:
         raise ValueError(
-            f"link_test_orbit received {len(test_orbit)} orbits but expected 1."
+            f"filter_observations received {len(test_orbit)} orbits but expected 1."
+        )
+
+    if isinstance(observations, str):
+        if not observations.endswith(".parquet"):
+            raise ValueError("observations file should be a parquet file.")
+
+        state_ids = pq.read_table(observations, columns=["state_id"])["state_id"]
+        num_obs = len(state_ids)
+        state_ids = pc.unique(state_ids).sort()
+
+    elif isinstance(observations, Observations):
+        num_obs = len(observations)
+        state_ids = pc.unique(observations.state_id).sort()
+
+    else:
+        raise ValueError(
+            "observations should be a parquet file or an Observations object."
         )
 
     if filters is None:
         # By default we always filter by radius from the predicted position of the test orbit
         filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
 
-    use_ray = config.max_processes is None or config.max_processes > 1
-    refs_to_free = []
+    filtered_observations = Observations.empty()
+
+    use_ray = initialize_use_ray(num_cpus=config.max_processes)
     if use_ray:
-        if not isinstance(observations, ray.ObjectRef):
-            observations = ray.put(observations)
-            refs_to_free.append(observations)
-            logger.info("Placed observations in the object store.")
+        futures = []
+        for state_id_chunk in _iterate_chunks(state_ids, chunk_size):
 
-    filtered_observations = observations
-    for filter_i in filters:
-        if use_ray and not isinstance(filtered_observations, ray.ObjectRef):
-            filtered_observations = ray.put(filtered_observations)
-            refs_to_free.append(filtered_observations)
-            logger.info("Placed filtered observations in the object store.")
+            futures.append(
+                filter_observations_worker_remote.remote(
+                    state_id_chunk,
+                    observations,
+                    test_orbit,
+                    filters,
+                )
+            )
 
-        filtered_observations = filter_i.apply(
-            filtered_observations, test_orbit, config.max_processes
-        )
+        while futures:
+            finished, futures = ray.wait(futures, num_returns=1)
+            filtered_observations = qv.concatenate(
+                [filtered_observations, ray.get(finished[0])]
+            )
+            if filtered_observations.fragmented():
+                filtered_observations = qv.defragment(filtered_observations)
 
-    # We are done filtering so lets free up the references that were added within
-    # the scope of this function
-    if len(refs_to_free) > 0:
-        ray.internal.free(refs_to_free)
-        logger.info(f"Removed {len(refs_to_free)} references from the object store.")
+    else:
 
-    # Defragment the observations
-    if len(filtered_observations) > 0:
-        filtered_observations = qv.defragment(filtered_observations)
-        filtered_observations = filtered_observations.sort_by(
-            [
-                "coordinates.time.days",
-                "coordinates.time.nanos",
-                "coordinates.origin.code",
-            ]
-        )
+        for state_id_chunk in _iterate_chunks(state_ids, chunk_size):
+
+            filtered_observations_chunk = filter_observations_worker(
+                state_id_chunk, observations, test_orbit, filters
+            )
+
+            filtered_observations = qv.concatenate(
+                [filtered_observations, filtered_observations_chunk]
+            )
+            if filtered_observations.fragmented():
+                filtered_observations = qv.defragment(filtered_observations)
+
+    filtered_observations = filtered_observations.sort_by(
+        [
+            "coordinates.time.days",
+            "coordinates.time.nanos",
+            "coordinates.origin.code",
+        ]
+    )
 
     time_end = time.perf_counter()
+    logger.info(
+        f"Filtered {num_obs} observations to {len(filtered_observations)} observations."
+    )
     logger.info(
         f"Observations filters completed in {time_end - time_start:.3f} seconds."
     )
