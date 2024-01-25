@@ -199,7 +199,6 @@ def iod_worker_remote(
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-
     # Select linkage ids from linkage_members_indices
     linkage_id_chunk = linkage_ids[
         linkage_members_indices[0] : linkage_members_indices[1]
@@ -320,8 +319,17 @@ def iod(
     obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
     coords_all = observations.coordinates
     observers_with_states = observations.get_observers()
-    observers = observers_with_states.observers
-    coords_obs_all = observers_with_states.observers.coordinates.r
+
+    observations = observations.sort_by([
+        "coordinates.time.days",
+        "coordinates.time.nanos",
+        "coordinates.origin.code",
+    ])
+    observers = observers_with_states.observers.sort_by(
+        ["coordinates.time.days", "coordinates.time.nanos", "coordinates.origin.code"]
+    )
+
+    coords_obs_all = observers.coordinates.r
     times_all = coords_all.time.mjd().to_numpy(zero_copy_only=False)
 
     chi2_sol = 1e10
@@ -516,89 +524,6 @@ def initial_orbit_determination(
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Run initial orbit determination on linkages found in observations.
-
-    Parameters
-    ----------
-    observations : `~pandas.DataFrame`
-        Dataframe of observations with at least the following columns:
-            "obs_id" : Observation IDs [str],
-            "mjd_utc" : Observation time in MJD UTC [float],
-            "RA_deg" : equatorial J2000 Right Ascension in degrees [float],
-            "Dec_deg" : equatorial J2000 Declination in degrees [float],
-            "RA_sigma_deg" : 1-sigma uncertainty in equatorial J2000 RA [float],
-            "Dec_sigma_deg" : 1 sigma uncertainty in equatorial J2000 Dec [float],
-            "observatory_code" : MPC recognized observatory code [str],
-            "obs_x" : Observatory's heliocentric ecliptic J2000 x-position in au [float],
-            "obs_y" : Observatory's heliocentric ecliptic J2000 y-position in au [float],
-            "obs_z" : Observatory's heliocentric ecliptic J2000 z-position in au [float],
-            "obs_vx" [Optional] : Observatory's heliocentric ecliptic J2000 x-velocity in au per day [float],
-            "obs_vy" [Optional] : Observatory's heliocentric ecliptic J2000 y-velocity in au per day [float],
-            "obs_vz" [Optional] : Observatory's heliocentric ecliptic J2000 z-velocity in au per day [float]
-    linkage_members : `~pandas.DataFrame`
-        Dataframe of linkages with at least two columns:
-            "linkage_id" : Linkage ID [str],
-            "obs_id" : Observation IDs [str], one ID per row.
-    observation_selection_method : {'first+middle+last', 'thirds', 'combinations'}, optional
-        Selects which three observations to use for IOD depending on the method. The avaliable methods are:
-            'first+middle+last' : Grab the first, middle and last observations in time.
-            'thirds' : Grab the middle observation in the first third, second third, and final third.
-            'combinations' : Return the observation IDs corresponding to every possible combination of three observations with
-                non-coinciding observation times.
-    min_obs : int, optional
-        Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
-        a linkage has 8 observations, at most the two worst observations will be flagged as outliers. Only up t o
-        the contamination percentage of observations of will be flagged as outliers, provided that at least min_obs
-        observations remain in the linkage.
-    rchi2_threshold : float, optional
-        Minimum reduced chi2 for an initial orbit to be accepted. If an orbit
-    contamination_percentage : float, optional
-        Maximum percent of observations that can flagged as outliers.
-    iterate : bool, optional
-        Iterate the preliminary orbit solution using the state transition iterator.
-    light_time : bool, optional
-        Correct preliminary orbit for light travel time.
-    linkage_id_col : str, optional
-        Name of linkage_id column in the linkage_members dataframe.
-    backend : {'MJOLNIR', 'PYOORB'}, optional
-        Which backend to use for ephemeris generation.
-    backend_kwargs : dict, optional
-        Settings and additional parameters to pass to selected
-        backend.
-    chunk_size : int, optional
-        Number of linkages to send to each job.
-    num_jobs : int, optional
-        Number of jobs to launch.
-    parallel_backend : str, optional
-        Which parallelization backend to use {'ray', 'mp', 'cf'}. Defaults to using Python's concurrent.futures module ('cf').
-
-    Returns
-    -------
-    iod_orbits : `~pandas.DataFrame`
-        Dataframe with orbits found in linkages.
-            "orbit_id" : Orbit ID, a uuid [str],
-            "epoch" : Epoch at which orbit is defined in MJD TDB [float],
-            "x" : Orbit's ecliptic J2000 x-position in au [float],
-            "y" : Orbit's ecliptic J2000 y-position in au [float],
-            "z" : Orbit's ecliptic J2000 z-position in au [float],
-            "vx" : Orbit's ecliptic J2000 x-velocity in au per day [float],
-            "vy" : Orbit's ecliptic J2000 y-velocity in au per day [float],
-            "vz" : Orbit's ecliptic J2000 z-velocity in au per day [float],
-            "arc_length" : Arc length in days [float],
-            "num_obs" : Number of observations that were within the chi2 threshold
-                of the orbit.
-            "chi2" : Total chi2 of the orbit calculated using the predicted location of the orbit
-                on the sky compared to the consituent observations.
-
-    iod_orbit_members : `~pandas.DataFrame`
-        Dataframe of orbit members with the following columns:
-            "orbit_id" : Orbit ID, a uuid [str],
-            "obs_id" : Observation IDs [str], one ID per row.
-            "residual_ra_arcsec" : Residual (observed - expected) equatorial J2000 Right Ascension in arcseconds [float]
-            "residual_dec_arcsec" : Residual (observed - expected) equatorial J2000 Declination in arcseconds [float]
-            "chi2" : Observation's chi2 [float]
-            "gauss_sol" : Flag to indicate which observations were used to calculate the Gauss soluton [int]
-            "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
-                the chi2 threshold) [float]
     """
     time_start = time.perf_counter()
     logger.info("Running initial orbit determination...")
