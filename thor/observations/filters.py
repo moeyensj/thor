@@ -1,4 +1,5 @@
 import abc
+import gc
 import logging
 import time
 from typing import TYPE_CHECKING, List, Optional, Union
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+# pa.jemalloc_set_decay_ms(0)
 
 
 class ObservationFilter(abc.ABC):
@@ -205,7 +208,7 @@ def _within_radius(
 
 
 def filter_observations_worker(
-    state_id_chunk: List[int],
+    state_id_chunk: List[str],
     observations: Union[str, Observations],
     test_orbit: TestOrbits,
     filters: List[ObservationFilter],
@@ -230,8 +233,13 @@ def filter_observations_worker(
         Filtered observations.
     """
     if isinstance(observations, str):
+        logger.info(f"Reading observations from parquet file...")
         observations_chunk = pq.read_table(
-            observations, filters=pc.field("state_id").isin(pa.array(state_id_chunk))
+            observations,
+            filters=pc.field("state_id").isin(pa.array(state_id_chunk)),
+            # filters=[("state_id", "in", state_id_chunk)],
+            # use_legacy_dataset=True,
+            memory_map=True,
         )
         observations_chunk = Observations.from_pyarrow(observations_chunk)
     else:
@@ -262,7 +270,7 @@ def filter_observations(
     test_orbit: TestOrbits,
     config: Config,
     filters: Optional[List[ObservationFilter]] = None,
-    chunk_size: int = 100,
+    chunk_size: int = 200,
 ) -> Observations:
     """
     Filter observations by applying a list of filters. The input observations
@@ -302,10 +310,15 @@ def filter_observations(
         logger.info("Filtering observations from parquet file...")
         if not observations.endswith(".parquet"):
             raise ValueError("observations file should be a parquet file.")
-
-        state_ids = pq.read_table(observations, columns=["state_id"])["state_id"]
-        num_obs = len(state_ids)
-        state_ids = pc.unique(state_ids)
+        all_state_ids = pq.read_table(
+            observations, columns=["state_id"],
+            memory_map=True,
+            #   use_legacy_dataset=True
+        )["state_id"]
+        num_obs = len(all_state_ids)
+        state_ids = pc.unique(all_state_ids)
+        del all_state_ids
+        logger.info(f"Found {num_obs} non-unique state ids in the parquet file.")
 
     elif isinstance(observations, Observations):
         num_obs = len(observations)
@@ -324,13 +337,19 @@ def filter_observations(
     logger.info(f"{config.json()}")
     use_ray = initialize_use_ray(num_cpus=config.max_processes)
     if use_ray:
-
         if isinstance(observations, Observations):
             observations = ray.put(observations)
             logger.info("Placed observations in the object store.")
 
         futures = []
         for state_id_chunk in _iterate_chunks(state_ids, chunk_size):
+            if len(futures) > config.max_processes * 2:
+                finished, futures = ray.wait(futures, num_returns=1)
+                filtered_observations = qv.concatenate(
+                    [filtered_observations, ray.get(finished[0])]
+                )
+                if filtered_observations.fragmented():
+                    filtered_observations = qv.defragment(filtered_observations)
 
             futures.append(
                 filter_observations_worker_remote.remote(
@@ -354,9 +373,7 @@ def filter_observations(
             logger.info("Removed observations from the object store.")
 
     else:
-
         for state_id_chunk in _iterate_chunks(state_ids, chunk_size):
-
             filtered_observations_chunk = filter_observations_worker(
                 state_id_chunk, observations, test_orbit, filters
             )
