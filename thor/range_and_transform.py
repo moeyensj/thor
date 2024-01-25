@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class TransformedDetections(qv.Table):
     id = qv.LargeStringColumn()
     coordinates = GnomonicCoordinates.as_column()
-    state_id = qv.Int64Column()
+    state_id = qv.LargeStringColumn()
 
 
 def range_and_transform_worker(
@@ -181,7 +181,8 @@ def range_and_transform(
             ranged_detections_cartesian_ref = ray.put(ranged_detections_cartesian)
 
             # Get state IDs
-            state_ids = observations.state_id.unique().sort()
+            # state_ids = observations.state_id.unique().sort()
+            state_ids = observations.state_id.unique()
             futures = []
             for state_id in state_ids:
                 futures.append(
@@ -209,7 +210,8 @@ def range_and_transform(
 
         else:
             # Get state IDs
-            state_ids = observations.state_id.unique().sort()
+            # state_ids = observations.state_id.unique().sort()
+            state_ids = observations.state_id.unique()
             for state_id in state_ids:
                 mask = pc.equal(state_id, observations.state_id)
                 chunk = range_and_transform_worker(

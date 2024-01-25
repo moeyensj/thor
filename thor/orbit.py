@@ -42,17 +42,17 @@ class RangedPointSourceDetections(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
     coordinates = SphericalCoordinates.as_column()
-    state_id = qv.Int64Column()
+    state_id = qv.LargeStringColumn()
 
 
 class TestOrbitEphemeris(qv.Table):
-    id = qv.Int64Column()
+    id = qv.LargeStringColumn()
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
 
 
 def range_observations_worker(
-    observations: Observations, ephemeris: TestOrbitEphemeris, state_id: int
+    observations: Observations, ephemeris: TestOrbitEphemeris, state_id: str
 ) -> RangedPointSourceDetections:
     """
     Range observations for a single state given the orbit's ephemeris for that state.
@@ -354,7 +354,8 @@ class TestOrbits(qv.Table):
                 ephemeris_ref = ray.put(ephemeris)
 
             # Get state IDs
-            state_ids = observations.state_id.unique().sort()
+            # state_ids = observations.state_id.unique().sort()
+            state_ids = observations.state_id.unique()
             futures = []
             for state_id in state_ids:
                 futures.append(
@@ -374,7 +375,8 @@ class TestOrbits(qv.Table):
 
         else:
             # Get state IDs
-            state_ids = observations.state_id.unique().sort()
+            # state_ids = observations.state_id.unique().sort()
+            state_ids = observations.state_id.unique()
 
             for state_id in state_ids:
                 ranged_detections_chunk = range_observations_worker(

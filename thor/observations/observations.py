@@ -15,7 +15,7 @@ from adam_core.time import Timestamp
 from thor.config import Config
 
 from .photometry import Photometry
-from .states import calculate_state_ids
+from .states import calculate_state_id_hashes, calculate_state_ids
 
 __all__ = [
     "InputObservations",
@@ -160,7 +160,7 @@ def convert_input_observations_to_observations(
 
 
 class ObserversWithStates(qv.Table):
-    state_id = qv.Int64Column()
+    state_id = qv.LargeStringColumn()
     observers = Observers.as_column()
 
 
@@ -184,11 +184,7 @@ class Observations(qv.Table):
     exposure_id = qv.LargeStringColumn()
     coordinates = SphericalCoordinates.as_column()
     photometry = Photometry.as_column()
-
-    # For large datasets, we need to generate these before
-    # we can assign the state ID to them.
-    # Assignment happens after filtering and then they are a requirement.
-    state_id = qv.Int64Column(nullable=True)
+    state_id = qv.LargeStringColumn()
 
     @classmethod
     def from_input_observations(cls, observations: InputObservations) -> "Observations":
@@ -243,7 +239,7 @@ class Observations(qv.Table):
             exposure_id=observations.exposure_id,
             coordinates=coords,
             photometry=photometry,
-            # state_id=calculate_state_ids(coords),
+            state_id=calculate_state_id_hashes(coords),
         )
 
     @classmethod
@@ -316,7 +312,7 @@ class Observations(qv.Table):
             exposure_id=detections_exposures["exposure_id"],
             coordinates=coordinates,
             photometry=photometry,
-            state_id=calculate_state_ids(coordinates),
+            state_id=calculate_state_id_hashes(coordinates),
         ).sort_by(
             [
                 "coordinates.time.days",
@@ -345,7 +341,8 @@ class Observations(qv.Table):
 
             # States are defined by unique times and observatory codes and
             # are sorted by time in ascending order
-            state_ids = observations_i.state_id.unique().sort()
+            # state_ids = observations_i.state_id.unique().sort()
+            state_ids = observations_i.state_id.unique()
 
             # Get observers table for this observatory
             observers_i = Observers.from_code(code, unique_times)

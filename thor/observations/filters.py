@@ -108,7 +108,8 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
 
         filtered_observations = Observations.empty()
-        state_ids = observations.state_id.unique().sort()
+        # state_ids = observations.state_id.unique().sort()
+        state_ids = observations.state_id.unique()
 
         for state_id in state_ids:
 
@@ -305,11 +306,13 @@ def filter_observations(
 
         state_ids = pq.read_table(observations, columns=["state_id"])["state_id"]
         num_obs = len(state_ids)
-        state_ids = pc.unique(state_ids).sort()
+        # state_ids = pc.unique(state_ids).sort()
+        state_ids = pc.unique(state_ids)
 
     elif isinstance(observations, Observations):
         num_obs = len(observations)
-        state_ids = pc.unique(observations.state_id).sort()
+        # state_ids = pc.unique(observations.state_id).sort()
+        state_ids = pc.unique(observations.state_id)
 
     else:
         raise ValueError(
