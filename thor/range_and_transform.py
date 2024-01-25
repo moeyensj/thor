@@ -14,7 +14,7 @@ from adam_core.propagator import PYOORB, Propagator
 from adam_core.ray_cluster import initialize_use_ray
 
 from .observations.observations import Observations
-from .orbit import TestOrbitEphemeris, TestOrbits
+from .orbit import RangedPointSourceDetections, TestOrbitEphemeris, TestOrbits
 from .projections import GnomonicCoordinates
 
 __all__ = [
@@ -33,10 +33,10 @@ class TransformedDetections(qv.Table):
 
 
 def range_and_transform_worker(
-    ranged_detections: CartesianCoordinates,
+    ranged_detections: RangedPointSourceDetections,
     observations: Observations,
     ephemeris: TestOrbitEphemeris,
-    state_id: int,
+    state_id: str,
 ) -> TransformedDetections:
     """
     Given ranged detections and their original observations, transform these to the gnomonic tangent
@@ -45,8 +45,7 @@ def range_and_transform_worker(
     Parameters
     ----------
     ranged_detections
-        Cartesian detections ranged so that their heliocentric distance is the same as the test orbit
-        for each state
+        Spherical coordinates that have been ranged mapped by state id
     observations
         The observations from which the ranged detections originate. These should be sorted one-to-one
         with the ranged detections
@@ -62,16 +61,22 @@ def range_and_transform_worker(
         test orbit.
     """
     # Select the detections and ephemeris for this state id
-    mask = pc.equal(state_id, observations.state_id)
-    ranged_detections_state = ranged_detections.apply_mask(mask)
+    ranged_detections_spherical_state = ranged_detections.select("state_id", state_id)
     ephemeris_state = ephemeris.select("id", state_id)
     observations_state = observations.select("state_id", state_id)
+
+    ranged_detections_cartesian_state = transform_coordinates(
+        ranged_detections_spherical_state.coordinates,
+        representation_out=CartesianCoordinates,
+        frame_out="ecliptic",
+        origin_out=OriginCodes.SUN,
+    )
 
     # Transform the detections into the co-rotating frame
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
         coordinates=GnomonicCoordinates.from_cartesian(
-            ranged_detections_state,
+            ranged_detections_cartesian_state,
             center_cartesian=ephemeris_state.ephemeris.aberrated_coordinates,
         ),
         state_id=observations_state.state_id,
@@ -153,14 +158,6 @@ def range_and_transform(
             max_processes=max_processes,
         )
 
-        # Transform from spherical topocentric to cartesian heliocentric coordinates
-        ranged_detections_cartesian = transform_coordinates(
-            ranged_detections_spherical.coordinates,
-            representation_out=CartesianCoordinates,
-            frame_out="ecliptic",
-            origin_out=OriginCodes.SUN,
-        )
-
         transformed_detections = TransformedDetections.empty()
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
@@ -178,7 +175,7 @@ def range_and_transform(
             else:
                 ephemeris_ref = ephemeris
 
-            ranged_detections_cartesian_ref = ray.put(ranged_detections_cartesian)
+            ranged_detections_spherical_ref = ray.put(ranged_detections_spherical)
 
             # Get state IDs
             # state_ids = observations.state_id.unique().sort()
@@ -187,7 +184,7 @@ def range_and_transform(
             for state_id in state_ids:
                 futures.append(
                     range_and_transform_remote.remote(
-                        ranged_detections_cartesian_ref,
+                        ranged_detections_spherical_ref,
                         observations_ref,
                         ephemeris_ref,
                         state_id,
@@ -213,9 +210,10 @@ def range_and_transform(
             # state_ids = observations.state_id.unique().sort()
             state_ids = observations.state_id.unique()
             for state_id in state_ids:
-                mask = pc.equal(state_id, observations.state_id)
+                # mask = pc.equal(state_id, observations.state_id)
+
                 chunk = range_and_transform_worker(
-                    ranged_detections_cartesian.apply_mask(mask),
+                    ranged_detections_spherical.select("state_id", state_id),
                     observations.select("state_id", state_id),
                     ephemeris.select("id", state_id),
                     state_id,

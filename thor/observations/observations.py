@@ -21,6 +21,7 @@ __all__ = [
     "InputObservations",
     "Observations",
     "convert_input_observations_to_observations",
+    "input_observations_to_observations_worker"
 ]
 
 

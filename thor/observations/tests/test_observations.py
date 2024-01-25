@@ -8,6 +8,7 @@ from ..observations import (
     Observations,
     _input_observations_iterator,
     convert_input_observations_to_observations,
+    input_observations_to_observations_worker,
 )
 from ..states import calculate_state_id_hashes
 from .test_filters import (
@@ -88,5 +89,4 @@ def test_convert_observations_file(tmp_path, observations_config, input_observat
 
 def test_calculate_state_id_hashes(fixed_observations):
     hashes = calculate_state_id_hashes(fixed_observations.coordinates)
-    print(hashes)
     assert isinstance(hashes, pa.LargeStringArray)

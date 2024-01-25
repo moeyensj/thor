@@ -82,6 +82,22 @@ def range_observations_worker(
     # Get the observer's heliocentric coordinates
     observer_i = ephemeris_state.observer
 
+
+    unique_times = set(
+        [
+            observations_state.coordinates.time.mjd().to_pylist()[0],
+            ephemeris_state.ephemeris.aberrated_coordinates.time.mjd().to_pylist()[0],
+            observer_i.coordinates.time.mjd().to_pylist()[0],
+        ]
+    )
+    if len(unique_times) > 1:
+        raise ValueError(
+            "The observations, ephemeris, and observer must all be at the same time."
+        )
+    # print(observations_state.coordinates.time.mjd())
+    # print(ephemeris_state.ephemeris.aberrated_coordinates.time.mjd())
+    # print(observer_i.coordinates.time.mjd())
+
     return RangedPointSourceDetections.from_kwargs(
         id=observations_state.id,
         exposure_id=observations_state.exposure_id,
@@ -300,6 +316,14 @@ class TestOrbits(qv.Table):
             ]
         )
 
+        observers_with_states = observers_with_states.sort_by(
+            by=[
+                "observers.coordinates.time.days",
+                "observers.coordinates.time.nanos",
+                "observers.coordinates.origin.code",
+            ]
+        )
+
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
             ephemeris=ephemeris,
@@ -341,7 +365,6 @@ class TestOrbits(qv.Table):
         ranged_detections = RangedPointSourceDetections.empty()
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
-
             if isinstance(observations, ray.ObjectRef):
                 observations_ref = observations
                 observations = ray.get(observations_ref)

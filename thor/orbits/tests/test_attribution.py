@@ -23,7 +23,7 @@ def test_Attributions_drop_coincident_attributions():
             filter=["g", "g", "g", "g", "g"],
             mag=[10, 11, 12, 13, 14],
         ),
-        state_id=[0, 0, 1, 1, 1],
+        state_id=["a", "a", "b", "b", "b"],
     )
 
     attributions = Attributions.from_kwargs(
