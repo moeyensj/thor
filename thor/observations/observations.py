@@ -342,7 +342,6 @@ class Observations(qv.Table):
 
             # States are defined by unique times and observatory codes and
             # are sorted by time in ascending order
-            # state_ids = observations_i.state_id.unique().sort()
             state_ids = observations_i.state_id.unique()
 
             # Get observers table for this observatory

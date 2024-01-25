@@ -108,7 +108,6 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
 
         filtered_observations = Observations.empty()
-        # state_ids = observations.state_id.unique().sort()
         state_ids = observations.state_id.unique()
 
         for state_id in state_ids:
@@ -300,17 +299,16 @@ def filter_observations(
         )
 
     if isinstance(observations, str):
+        logger.info("Filtering observations from parquet file...")
         if not observations.endswith(".parquet"):
             raise ValueError("observations file should be a parquet file.")
 
         state_ids = pq.read_table(observations, columns=["state_id"])["state_id"]
         num_obs = len(state_ids)
-        # state_ids = pc.unique(state_ids).sort()
         state_ids = pc.unique(state_ids)
 
     elif isinstance(observations, Observations):
         num_obs = len(observations)
-        # state_ids = pc.unique(observations.state_id).sort()
         state_ids = pc.unique(observations.state_id)
 
     else:
@@ -323,7 +321,7 @@ def filter_observations(
         filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
 
     filtered_observations = Observations.empty()
-
+    logger.info(f"{config.json()}")
     use_ray = initialize_use_ray(num_cpus=config.max_processes)
     if use_ray:
 
