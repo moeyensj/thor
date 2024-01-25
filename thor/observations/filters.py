@@ -112,7 +112,6 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         state_ids = observations.state_id.unique()
 
         for state_id in state_ids:
-
             # Select the ephemeris and observations for this state
             ephemeris_state = ephemeris.select("id", state_id)
             observations_state = observations.select("state_id", state_id)
