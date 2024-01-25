@@ -1,13 +1,18 @@
-from typing import Iterator, Tuple
+from typing import Iterator, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
+import pyarrow.dataset as ds
 import quivr as qv
+import ray
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
 from adam_core.observations import Exposures, PointSourceDetections
 from adam_core.observers import Observers
+from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
+
+from thor.config import Config
 
 from .photometry import Photometry
 from .states import calculate_state_ids
@@ -15,7 +20,143 @@ from .states import calculate_state_ids
 __all__ = [
     "InputObservations",
     "Observations",
+    "convert_input_observations_to_observations",
 ]
+
+
+def _input_observations_iterator(
+    input_observations: Union["InputObservations", str]
+) -> "InputObservations":
+    """
+    Create an iterator that yields chunks of InputObservations from a table or parquet folder/file
+
+    Parameters
+    ----------
+    input_observations : `~InputObservations` or str
+        Either a table or a path to a file containing a table of input observations.
+
+    Yields
+    ------
+    input_observations_chunk : `InputObservatio`
+        A chunk of input observations.
+    """
+    chunk_size = 1_000_000
+    if isinstance(input_observations, str):
+        # Create a file handler
+        input_observations = ds.dataset(input_observations, format="parquet")
+        batches = input_observations.to_batches(batch_size=chunk_size)
+        for batch in batches:
+            table = InputObservations.from_pyarrow(pa.Table.from_batches([batch]))
+            ## TODO: This should be happening some other way
+            time = Timestamp.from_kwargs(
+                days=table.time.days, nanos=table.time.nanos, scale="utc"
+            )
+            table = table.set_column("time", time)
+            yield table
+    
+    else:
+        offset = 0
+        while offset < len(input_observations):
+            yield input_observations[offset : offset + chunk_size]
+            offset += chunk_size
+
+
+def input_observations_to_observations_worker(
+    input_observations_chunk: "InputObservations",
+) -> "Observations":
+    """
+    Convert a chunk of input observations to observations.
+
+    Parameters
+    ----------
+    input_observations_chunk : `~InputObservations`
+        A chunk of input observations.
+
+    Returns
+    -------
+    observations_chunk : `~Observations`
+        A chunk of observations.
+    """
+    return Observations.from_input_observations(input_observations_chunk)
+
+
+input_observations_to_observations_worker_remote = ray.remote(
+    input_observations_to_observations_worker
+)
+
+
+def _process_next_future_result(
+    futures: list, output_observations: "Observations", output_writer: pa.parquet.ParquetWriter
+):
+    finished, futures = ray.wait(futures, num_returns=1)
+    observations_chunk = ray.get(finished[0])
+    if output_writer is not None:
+        output_writer.write_table(observations_chunk.table)
+    else:
+        output_observations = qv.concatenate(
+            [output_observations, observations_chunk]
+        )
+        if output_observations.fragmented():
+            output_observations = qv.defragment(output_observations)
+    return futures, output_observations
+
+
+def convert_input_observations_to_observations(
+    input_observations: Union["InputObservations", str],
+    config: Config,
+    output_path: Optional[str] = None,
+) -> Union["Observations", str]:
+    """
+    Converts input observations to observations, optionally reading and writing from files.
+
+    Use files as input / output when they are exceedingly large.
+    """
+    input_iterator = _input_observations_iterator(input_observations)
+
+    output_observations = Observations.empty()
+
+    output_writer = None
+    if output_path is not None:
+        output_writer = pa.parquet.ParquetWriter(output_path, Observations.schema)
+
+    use_ray = initialize_use_ray(num_cpus=config.max_processes)
+    if use_ray:
+        futures = []
+        for input_observation_chunk in input_iterator:
+            if len(futures) > config.max_processes * 2:
+                futures, output_observations = _process_next_future_result(
+                    futures, output_observations, output_writer
+                )
+
+            futures.append(
+                input_observations_to_observations_worker_remote.remote(
+                    input_observation_chunk
+                )
+            )
+
+        while futures:
+            futures, output_observations = _process_next_future_result(
+                futures, output_observations, output_writer
+            )
+    else:
+        for input_observation_chunk in input_iterator:
+            observations_chunk = input_observations_to_observations_worker(
+                input_observation_chunk
+            )
+            if output_writer is not None:
+                output_writer.write_table(observations_chunk.table)
+            else:
+                output_observations = qv.concatenate(
+                    [output_observations, observations_chunk]
+                )
+                if output_observations.fragmented():
+                    output_observations = qv.defragment(output_observations)
+
+    if output_writer is not None:
+        output_writer.close()
+        return output_path
+
+    return output_observations
 
 
 class ObserversWithStates(qv.Table):
@@ -43,7 +184,11 @@ class Observations(qv.Table):
     exposure_id = qv.LargeStringColumn()
     coordinates = SphericalCoordinates.as_column()
     photometry = Photometry.as_column()
-    state_id = qv.Int64Column()
+
+    # For large datasets, we need to generate these before
+    # we can assign the state ID to them.
+    # Assignment happens after filtering and then they are a requirement.
+    state_id = qv.Int64Column(nullable=True)
 
     @classmethod
     def from_input_observations(cls, observations: InputObservations) -> "Observations":
@@ -61,30 +206,6 @@ class Observations(qv.Table):
         observations : `~Observations`
             A table of THOR observations.
         """
-
-        # Do a spot check that observations are pre-sorted by time
-        # and observatory code. We pre-sort to avoid large duplicate
-        # memory usage
-        assert (
-            observations[:3]
-            .to_dataframe()
-            .equals(
-                observations[:3]
-                .to_dataframe()
-                .sort_values(["time.days", "time.nanos", "observatory_code"])
-            )
-        ), "Input observations must be sorted by day, time, observatory code"
-
-        assert (
-            observations[-3:]
-            .to_dataframe()
-            .equals(
-                observations[-3:]
-                .to_dataframe()
-                .sort_values(["time.days", "time.nanos", "observatory_code"])
-            )
-        ), "Input observations must be sorted by day, time, observatory code"
-
         assert observations.time.scale == "utc", "Input observations must be in UTC"
 
         # Extract the sigma and covariance values for RA and Dec
@@ -122,7 +243,7 @@ class Observations(qv.Table):
             exposure_id=observations.exposure_id,
             coordinates=coords,
             photometry=photometry,
-            state_id=calculate_state_ids(coords),
+            # state_id=calculate_state_ids(coords),
         )
 
     @classmethod
