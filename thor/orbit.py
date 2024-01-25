@@ -361,7 +361,6 @@ class TestOrbits(qv.Table):
                 ephemeris_ref = ray.put(ephemeris)
 
             # Get state IDs
-            # state_ids = observations.state_id.unique().sort()
             state_ids = observations.state_id.unique()
             futures = []
             for state_id in state_ids:
@@ -382,7 +381,6 @@ class TestOrbits(qv.Table):
 
         else:
             # Get state IDs
-            # state_ids = observations.state_id.unique().sort()
             state_ids = observations.state_id.unique()
 
             for state_id in state_ids:
