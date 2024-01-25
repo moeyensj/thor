@@ -8,12 +8,13 @@ from ..observations import (
     Observations,
     _input_observations_iterator,
     convert_input_observations_to_observations,
-    input_observations_to_observations_worker,
 )
+from ..states import calculate_state_id_hashes
 from .test_filters import (
     fixed_detections,
     fixed_ephems,
     fixed_exposures,
+    fixed_observations,
     fixed_observers,
     fixed_test_orbit,
 )
@@ -83,3 +84,9 @@ def test_convert_observations_file(tmp_path, observations_config, input_observat
     observations_from_file = Observations.from_parquet(output)
     inputs_from_file = InputObservations.from_parquet(input_observations_file)
     assert len(observations_from_file) == len(inputs_from_file)
+
+
+def test_calculate_state_id_hashes(fixed_observations):
+    hashes = calculate_state_id_hashes(fixed_observations.coordinates)
+    print(hashes)
+    assert isinstance(hashes, pa.LargeStringArray)
