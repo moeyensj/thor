@@ -54,7 +54,9 @@ def observations_iterator(
         parquet_paths = []
         path = pathlib.Path(observations)
         if path.is_dir():
-            for file in path.glob('*.parquet'):
+            # grab all parquet files from the folder
+            # and its subdirectories
+            for file in path.glob('**/*.parquet'):
                 parquet_paths.append(str(file))
         else:
             parquet_paths.append(observations)
@@ -96,7 +98,7 @@ def _input_observations_iterator(
         parquet_paths = []
         path = pathlib.Path(input_observations)
         if path.is_dir():
-            for file in path.glob('*.parquet'):
+            for file in path.glob('**/*.parquet'):
                 parquet_paths.append(str(file))
         else:
             parquet_paths.append(input_observations)
