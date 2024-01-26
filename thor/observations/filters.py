@@ -316,9 +316,6 @@ def filter_observations(
     logger.info(f"{config.json()}")
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
-        if isinstance(observations, Observations):
-            observations = ray.put(observations)
-            logger.info("Placed observations in the object store.")
 
         futures: List[ray.ObjectRef] = []
         for observations_chunk in observations_iterator(
