@@ -320,11 +320,13 @@ def iod(
     coords_all = observations.coordinates
     observers_with_states = observations.get_observers()
 
-    observations = observations.sort_by([
-        "coordinates.time.days",
-        "coordinates.time.nanos",
-        "coordinates.origin.code",
-    ])
+    observations = observations.sort_by(
+        [
+            "coordinates.time.days",
+            "coordinates.time.nanos",
+            "coordinates.origin.code",
+        ]
+    )
     observers = observers_with_states.observers.sort_by(
         ["coordinates.time.days", "coordinates.time.nanos", "coordinates.origin.code"]
     )

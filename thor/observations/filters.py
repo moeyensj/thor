@@ -1,6 +1,7 @@
 import abc
 import gc
 import logging
+import multiprocessing as mp
 import time
 from typing import TYPE_CHECKING, List, Optional, Union
 
@@ -306,15 +307,20 @@ def filter_observations(
         # By default we always filter by radius from the predicted position of the test orbit
         filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
 
+    if config.max_processes is None:
+        max_processes = mp.cpu_count()
+    else:
+        max_processes = config.max_processes
+
     filtered_observations = Observations.empty()
     logger.info(f"{config.json()}")
-    use_ray = initialize_use_ray(num_cpus=config.max_processes)
+    use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
         if isinstance(observations, Observations):
             observations = ray.put(observations)
             logger.info("Placed observations in the object store.")
 
-        futures = []
+        futures: List[ray.ObjectRef] = []
         for observations_chunk in observations_iterator(
             observations, chunk_size=chunk_size
         ):
@@ -326,7 +332,7 @@ def filter_observations(
                     filters,
                 )
             )
-            if len(futures) > config.max_processes + 1:
+            if len(futures) > max_processes + 1:
                 print("retrieving chunk")
                 finished, futures = ray.wait(futures, num_returns=1)
                 filtered_observations = qv.concatenate(

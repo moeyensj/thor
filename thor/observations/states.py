@@ -76,7 +76,6 @@ def calculate_state_id_hash(day: int, nanos: int, observatory_code: str):
     return hashlib.md5(f"{day}{nanos}{observatory_code}".encode("utf-8")).hexdigest()
 
 
-
 def calculate_state_id_hashes(
     coordinates: Union[SphericalCoordinates, CartesianCoordinates]
 ) -> pa.StringArray:
@@ -99,7 +98,11 @@ def calculate_state_id_hashes(
     hash_inputs = coordinates.flattened_table().select(
         ["time.days", "time.nanos", "origin.code"]
     )
-    hash_inputs = [hash_inputs["time.days"].to_pylist(), hash_inputs["time.nanos"].to_pylist(), hash_inputs["origin.code"].to_pylist()]
+    hash_inputs = [
+        hash_inputs["time.days"].to_pylist(),
+        hash_inputs["time.nanos"].to_pylist(),
+        hash_inputs["origin.code"].to_pylist(),
+    ]
 
     state_id_hashes = []
     for day, nanos, observatory_code in zip(*hash_inputs):

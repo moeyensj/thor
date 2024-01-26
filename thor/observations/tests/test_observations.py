@@ -41,6 +41,7 @@ def input_observations_file(tmp_path, input_observations_fixture):
     input_observations_fixture.to_parquet(path)
     return str(path)
 
+
 @pytest.fixture
 def observations_config():
     return Config(max_processes=1)
@@ -59,9 +60,7 @@ def test_input_observations_iterator_file(input_observations_file):
 
 
 def test_input_observations_to_observations(input_observations_fixture):
-    observations = input_observations_to_observations_worker(
-        input_observations_fixture
-    )
+    observations = input_observations_to_observations_worker(input_observations_fixture)
     assert isinstance(observations, Observations)
     assert len(observations) == len(input_observations_fixture)
 
@@ -74,7 +73,9 @@ def test_convert_observations_table(input_observations_fixture, observations_con
     assert len(observations) == len(input_observations_fixture)
 
 
-def test_convert_observations_file(tmp_path, observations_config, input_observations_file):
+def test_convert_observations_file(
+    tmp_path, observations_config, input_observations_file
+):
     output = str(tmp_path / "output.parquet")
     observations = convert_input_observations_to_observations(
         input_observations_file, observations_config, output_path=output

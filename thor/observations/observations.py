@@ -1,10 +1,10 @@
+import multiprocessing as mp
 import pathlib
-from typing import Iterator, Optional, Tuple, Union
+from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
-import pyarrow.dataset as ds
 import quivr as qv
 import ray
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
@@ -16,13 +16,13 @@ from adam_core.time import Timestamp
 from thor.config import Config
 
 from .photometry import Photometry
-from .states import calculate_state_id_hashes, calculate_state_ids
+from .states import calculate_state_id_hashes
 
 __all__ = [
     "InputObservations",
     "Observations",
     "convert_input_observations_to_observations",
-    "input_observations_to_observations_worker"
+    "input_observations_to_observations_worker",
 ]
 
 
@@ -56,7 +56,7 @@ def observations_iterator(
         if path.is_dir():
             # grab all parquet files from the folder
             # and its subdirectories
-            for file in path.glob('**/*.parquet'):
+            for file in path.glob("**/*.parquet"):
                 parquet_paths.append(str(file))
         else:
             parquet_paths.append(observations)
@@ -110,7 +110,7 @@ def _input_observations_iterator(
         parquet_paths = []
         path = pathlib.Path(input_observations)
         if path.is_dir():
-            for file in path.glob('**/*.parquet'):
+            for file in path.glob("**/*.parquet"):
                 parquet_paths.append(str(file))
         else:
             parquet_paths.append(input_observations)
@@ -126,7 +126,7 @@ def _input_observations_iterator(
             )
             table = table.set_column("time", time)
             yield table
-    
+
     else:
         offset = 0
         while offset < len(input_observations):
@@ -159,16 +159,16 @@ input_observations_to_observations_worker_remote = ray.remote(
 
 
 def _process_next_future_result(
-    futures: list, output_observations: "Observations", output_writer: pa.parquet.ParquetWriter
+    futures: list,
+    output_observations: "Observations",
+    output_writer: pa.parquet.ParquetWriter,
 ):
     finished, futures = ray.wait(futures, num_returns=1)
     observations_chunk = ray.get(finished[0])
     if output_writer is not None:
         output_writer.write_table(observations_chunk.table)
     else:
-        output_observations = qv.concatenate(
-            [output_observations, observations_chunk]
-        )
+        output_observations = qv.concatenate([output_observations, observations_chunk])
         if output_observations.fragmented():
             output_observations = qv.defragment(output_observations)
     return futures, output_observations
@@ -192,11 +192,16 @@ def convert_input_observations_to_observations(
     if output_path is not None:
         output_writer = pa.parquet.ParquetWriter(output_path, Observations.schema)
 
-    use_ray = initialize_use_ray(num_cpus=config.max_processes)
+    if config.max_processes is None:
+        max_processes = mp.cpu_count()
+    else:
+        max_processes = config.max_processes
+
+    use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
-        futures = []
+        futures: List[ray.ObjectRef] = []
         for input_observation_chunk in input_iterator:
-            if len(futures) > config.max_processes * 2:
+            if len(futures) > max_processes * 2:
                 futures, output_observations = _process_next_future_result(
                     futures, output_observations, output_writer
                 )
@@ -225,7 +230,7 @@ def convert_input_observations_to_observations(
                 if output_observations.fragmented():
                     output_observations = qv.defragment(output_observations)
 
-    if output_writer is not None:
+    if output_writer is not None and output_path is not None:
         output_writer.close()
         return output_path
 
