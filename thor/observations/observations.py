@@ -1,3 +1,4 @@
+import pathlib
 from typing import Iterator, Optional, Tuple, Union
 
 import numpy as np
@@ -25,10 +26,57 @@ __all__ = [
 ]
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def observations_iterator(
+    observations: Union["Observations", str],
+    chunk_size: int = 1_000_000,
+) -> Iterator["Observations"]:
+    """
+    Create an iterator that yields chunks of observations from a table or parquet folder/file
+
+    Parameters
+    ----------
+    observations : `~Observations` or str
+        Either a table or a path to a file containing a table of observations.
+
+    Yields
+    ------
+    observations_chunk : `Observations`
+        A chunk of observations.
+    """
+    if isinstance(observations, str):
+
+        # Discover if it's a single file or a folder using pathlib
+        parquet_paths = []
+        path = pathlib.Path(observations)
+        if path.is_dir():
+            for file in path.glob('*.parquet'):
+                parquet_paths.append(str(file))
+        else:
+            parquet_paths.append(observations)
+
+        for parquet_path in parquet_paths:
+            parquet_file = pa.parquet.ParquetFile(parquet_path, memory_map=True)
+            logger.debug(f"Starting to read {parquet_file}")
+            for batch in parquet_file.iter_batches(batch_size=chunk_size):
+                table = Observations.from_pyarrow(pa.Table.from_batches([batch]))
+                yield table
+
+    else:
+        offset = 0
+        while offset < len(observations):
+            yield observations[offset : offset + chunk_size]
+            offset += chunk_size
+
+
 def _input_observations_iterator(
     input_observations: Union["InputObservations", str],
     chunk_size: int = 1_000_000,
-) -> "InputObservations":
+) -> Iterator["InputObservations"]:
     """
     Create an iterator that yields chunks of InputObservations from a table or parquet folder/file
 
@@ -43,11 +91,21 @@ def _input_observations_iterator(
         A chunk of input observations.
     """
     if isinstance(input_observations, str):
-        # Create a file handler
-        input_observations = ds.dataset(input_observations, format="parquet")
-        batches = input_observations.to_batches(batch_size=chunk_size)
-        for batch in batches:
-            table = InputObservations.from_pyarrow(pa.Table.from_batches([batch]))
+
+        # Discover if it's a single file or a folder using pathlib
+        parquet_paths = []
+        path = pathlib.Path(input_observations)
+        if path.is_dir():
+            for file in path.glob('*.parquet'):
+                parquet_paths.append(str(file))
+        else:
+            parquet_paths.append(input_observations)
+
+        for parquet_path in parquet_paths:
+            parquet_file = pa.parquet.ParquetFile(parquet_path, memory_map=True)
+            logger.debug(f"Starting to read {parquet_file}")
+            for batch in parquet_file.iter_batches(batch_size=chunk_size):
+                table = InputObservations.from_pyarrow(pa.Table.from_batches([batch]))
             ## TODO: This should be happening some other way
             time = Timestamp.from_kwargs(
                 days=table.time.days, nanos=table.time.nanos, scale="utc"

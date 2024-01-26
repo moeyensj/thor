@@ -15,7 +15,7 @@ from adam_core.propagator.utils import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
 from thor.config import Config
-from thor.observations.observations import Observations
+from thor.observations.observations import Observations, observations_iterator
 
 from ..orbit import TestOrbits
 
@@ -208,8 +208,7 @@ def _within_radius(
 
 
 def filter_observations_worker(
-    state_id_chunk: List[str],
-    observations: Union[str, Observations],
+    observations: Observations,
     test_orbit: TestOrbits,
     filters: List[ObservationFilter],
 ) -> Observations:
@@ -232,33 +231,17 @@ def filter_observations_worker(
     filtered_observations : `~thor.observations.observations.Observations`
         Filtered observations.
     """
-    if isinstance(observations, str):
-        logger.info(f"Reading observations from parquet file...")
-        observations_chunk = pq.read_table(
-            observations,
-            filters=pc.field("state_id").isin(pa.array(state_id_chunk)),
-            # filters=[("state_id", "in", state_id_chunk)],
-            # use_legacy_dataset=True,
-            memory_map=True,
-        )
-        observations_chunk = Observations.from_pyarrow(observations_chunk)
-    else:
-        observations_chunk = observations.apply_mask(
-            pc.is_in(observations.state_id, pa.array(state_id_chunk))
-        )
-
-    filtered_observations = observations_chunk
     for filter_i in filters:
-        filtered_observations = filter_i.apply(
-            filtered_observations,
+        observations = filter_i.apply(
+            observations,
             test_orbit,
         )
 
     # Defragment the observations
-    if len(filtered_observations) > 0:
-        filtered_observations = qv.defragment(filtered_observations)
+    if len(observations) > 0:
+        observations = qv.defragment(observations)
 
-    return filtered_observations
+    return observations
 
 
 filter_observations_worker_remote = ray.remote(filter_observations_worker)
@@ -270,7 +253,7 @@ def filter_observations(
     test_orbit: TestOrbits,
     config: Config,
     filters: Optional[List[ObservationFilter]] = None,
-    chunk_size: int = 200,
+    chunk_size: int = 1_000_000,
 ) -> Observations:
     """
     Filter observations by applying a list of filters. The input observations
@@ -307,22 +290,12 @@ def filter_observations(
         )
 
     if isinstance(observations, str):
-        logger.info("Filtering observations from parquet file...")
-        if not observations.endswith(".parquet"):
-            raise ValueError("observations file should be a parquet file.")
-        all_state_ids = pq.read_table(
-            observations, columns=["state_id"],
-            memory_map=True,
-            #   use_legacy_dataset=True
-        )["state_id"]
-        num_obs = len(all_state_ids)
-        state_ids = pc.unique(all_state_ids)
-        del all_state_ids
-        logger.info(f"Found {num_obs} non-unique state ids in the parquet file.")
+        num_obs = pq.read_metadata(observations).num_rows
+        logger.info("Filtering {num_obs} observations in parquet file.")
 
     elif isinstance(observations, Observations):
         num_obs = len(observations)
-        state_ids = pc.unique(observations.state_id)
+        logger.info(f"Reading {num_obs} observations in memory.")
 
     else:
         raise ValueError(
@@ -342,23 +315,25 @@ def filter_observations(
             logger.info("Placed observations in the object store.")
 
         futures = []
-        for state_id_chunk in _iterate_chunks(state_ids, chunk_size):
-            if len(futures) > config.max_processes * 2:
+        for observations_chunk in observations_iterator(
+            observations, chunk_size=chunk_size
+        ):
+            print("sending in chunk")
+            futures.append(
+                filter_observations_worker_remote.remote(
+                    observations_chunk,
+                    test_orbit,
+                    filters,
+                )
+            )
+            if len(futures) > config.max_processes + 1:
+                print("retrieving chunk")
                 finished, futures = ray.wait(futures, num_returns=1)
                 filtered_observations = qv.concatenate(
                     [filtered_observations, ray.get(finished[0])]
                 )
                 if filtered_observations.fragmented():
                     filtered_observations = qv.defragment(filtered_observations)
-
-            futures.append(
-                filter_observations_worker_remote.remote(
-                    state_id_chunk,
-                    observations,
-                    test_orbit,
-                    filters,
-                )
-            )
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
@@ -373,11 +348,14 @@ def filter_observations(
             logger.info("Removed observations from the object store.")
 
     else:
-        for state_id_chunk in _iterate_chunks(state_ids, chunk_size):
+        for observations_chunk in observations_iterator(
+            observations, chunk_size=chunk_size
+        ):
             filtered_observations_chunk = filter_observations_worker(
-                state_id_chunk, observations, test_orbit, filters
+                observations_chunk,
+                test_orbit,
+                filters,
             )
-
             filtered_observations = qv.concatenate(
                 [filtered_observations, filtered_observations_chunk]
             )
