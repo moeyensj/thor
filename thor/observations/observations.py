@@ -26,7 +26,8 @@ __all__ = [
 
 
 def _input_observations_iterator(
-    input_observations: Union["InputObservations", str]
+    input_observations: Union["InputObservations", str],
+    chunk_size: int = 1_000_000,
 ) -> "InputObservations":
     """
     Create an iterator that yields chunks of InputObservations from a table or parquet folder/file
@@ -41,7 +42,6 @@ def _input_observations_iterator(
     input_observations_chunk : `InputObservatio`
         A chunk of input observations.
     """
-    chunk_size = 1_000_000
     if isinstance(input_observations, str):
         # Create a file handler
         input_observations = ds.dataset(input_observations, format="parquet")
