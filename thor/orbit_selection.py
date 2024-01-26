@@ -324,7 +324,7 @@ def generate_test_orbits(
         min_day = pc.min(table["days"]).as_py()
         # Set the start time to the midnight of the first night of observations
         start_time = Timestamp.from_kwargs(days=[min_day], nanos=[0], scale="utc")
-
+        del table 
     elif isinstance(observations, Observations):
         # Extract the minimum time from the observations
         earliest_time = observations.coordinates.time.min()
