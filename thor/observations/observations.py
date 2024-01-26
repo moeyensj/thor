@@ -66,6 +66,18 @@ def observations_iterator(
             logger.debug(f"Starting to read {parquet_file}")
             for batch in parquet_file.iter_batches(batch_size=chunk_size):
                 table = Observations.from_pyarrow(pa.Table.from_batches([batch]))
+
+                # Reading the table as above will cause the time scale attribute to
+                # be read in as the default 'tai' rather than 'utc'
+                if table.coordinates.time.scale != "utc":
+                    table = table.set_column(
+                        "coordinates.time",
+                        Timestamp.from_kwargs(
+                            days=table.coordinates.time.days,
+                            nanos=table.coordinates.time.nanos,
+                            scale="utc",
+                        ),
+                    )
                 yield table
 
     else:
