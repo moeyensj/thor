@@ -78,6 +78,26 @@ def observations_iterator(
                             scale="utc",
                         ),
                     )
+
+                # Similarly, the coordinates frame attribute will be read in as the
+                # default 'unspecified' rather than 'equatorial'
+                if table.coordinates.frame != "equatorial":
+                    table = table.set_column(
+                        "coordinates",
+                        SphericalCoordinates.from_kwargs(
+                            rho=table.coordinates.rho,
+                            lon=table.coordinates.lon,
+                            lat=table.coordinates.lat,
+                            vrho=table.coordinates.vrho,
+                            vlon=table.coordinates.vlon,
+                            vlat=table.coordinates.vlat,
+                            time=table.coordinates.time,
+                            covariance=table.coordinates.covariance,
+                            origin=table.coordinates.origin,
+                            frame="equatorial",
+                        ),
+                    )
+
                 yield table
 
     else:
