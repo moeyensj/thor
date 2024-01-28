@@ -221,7 +221,7 @@ def convert_input_observations_to_observations(
     if use_ray:
         futures: List[ray.ObjectRef] = []
         for input_observation_chunk in input_iterator:
-            if len(futures) > max_processes * 2:
+            if len(futures) > max_processes * 1.5:
                 futures, output_observations = _process_next_future_result(
                     futures, output_observations, output_writer
                 )

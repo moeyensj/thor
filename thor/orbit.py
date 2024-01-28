@@ -370,6 +370,15 @@ class TestOrbits(qv.Table):
                     )
                 )
 
+                if len(futures) >= max_processes * 1.5:
+                    finished, futures = ray.wait(futures, num_returns=1)
+                    ranged_detections_chunk = ray.get(finished[0])
+                    ranged_detections = qv.concatenate(
+                        [ranged_detections, ranged_detections_chunk]
+                    )
+                    if ranged_detections.fragmented():
+                        ranged_detections = qv.defragment(ranged_detections)
+
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 ranged_detections_chunk = ray.get(finished[0])

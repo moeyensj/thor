@@ -591,6 +591,19 @@ def initial_orbit_determination(
                     )
                 )
 
+                if len(futures) >= max_processes * 1.5:
+                    finished, futures = ray.wait(futures, num_returns=1)
+                    result = ray.get(finished[0])
+                    iod_orbits_chunk, iod_orbit_members_chunk = result
+                    iod_orbits = qv.concatenate([iod_orbits, iod_orbits_chunk])
+                    iod_orbit_members = qv.concatenate(
+                        [iod_orbit_members, iod_orbit_members_chunk]
+                    )
+                    if iod_orbits.fragmented():
+                        iod_orbits = qv.defragment(iod_orbits)
+                    if iod_orbit_members.fragmented():
+                        iod_orbit_members = qv.defragment(iod_orbit_members)
+
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 result = ray.get(finished[0])

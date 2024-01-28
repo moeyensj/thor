@@ -321,7 +321,6 @@ def filter_observations(
         for observations_chunk in observations_iterator(
             observations, chunk_size=chunk_size
         ):
-            print("sending in chunk")
             futures.append(
                 filter_observations_worker_remote.remote(
                     observations_chunk,
@@ -329,8 +328,7 @@ def filter_observations(
                     filters,
                 )
             )
-            if len(futures) > max_processes + 1:
-                print("retrieving chunk")
+            if len(futures) > max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
                 filtered_observations = qv.concatenate(
                     [filtered_observations, ray.get(finished[0])]

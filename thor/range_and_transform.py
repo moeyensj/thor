@@ -178,7 +178,6 @@ def range_and_transform(
             ranged_detections_spherical_ref = ray.put(ranged_detections_spherical)
 
             # Get state IDs
-            # state_ids = observations.state_id.unique().sort()
             state_ids = observations.state_id.unique()
             futures = []
             for state_id in state_ids:
@@ -190,6 +189,14 @@ def range_and_transform(
                         state_id,
                     )
                 )
+
+                if len(futures) >= max_processes * 1.5:
+                    finished, futures = ray.wait(futures, num_returns=1)
+                    transformed_detections = qv.concatenate(
+                        [transformed_detections, ray.get(finished[0])]
+                    )
+                    if transformed_detections.fragmented():
+                        transformed_detections = qv.defragment(transformed_detections)
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
@@ -207,7 +214,6 @@ def range_and_transform(
 
         else:
             # Get state IDs
-            # state_ids = observations.state_id.unique().sort()
             state_ids = observations.state_id.unique()
             for state_id in state_ids:
                 # mask = pc.equal(state_id, observations.state_id)

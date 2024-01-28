@@ -321,6 +321,12 @@ def attribute_observations(
                     )
                 )
 
+                if len(futures) >= max_processes * 1.5:
+                    finished, futures = ray.wait(futures, num_returns=1)
+                    attributions_chunk = ray.get(finished[0])
+                    attributions = qv.concatenate([attributions, attributions_chunk])
+                    attributions = qv.defragment(attributions)
+
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 attributions_chunk = ray.get(finished[0])
