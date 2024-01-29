@@ -22,6 +22,7 @@ from ..orbit_determination.fitted_orbits import (
     FittedOrbits,
     drop_duplicate_orbits,
 )
+from ..orbit_determination.outliers import calculate_max_outliers
 from ..utils.linkages import sort_by_id_and_time
 from .gauss import gaussIOD
 
@@ -344,15 +345,15 @@ def iod(
     num_obs = len(observations)
     if num_obs < min_obs:
         processable = False
-    num_outliers = int(num_obs * contamination_percentage / 100.0)
-    num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
+
+    max_outliers = calculate_max_outliers(num_obs, min_obs, contamination_percentage)
 
     # Select observation IDs to use for IOD
     obs_ids = select_observations(
         observations,
         method=observation_selection_method,
     )
-    obs_ids = obs_ids[: (3 * (num_outliers + 1))]
+    obs_ids = obs_ids[: (3 * (max_outliers + 1))]
 
     if len(obs_ids) == 0:
         processable = False
@@ -408,7 +409,7 @@ def iod(
             # The reduced chi2 is above the threshold and no outliers are
             # allowed, this cannot be improved by outlier rejection
             # so continue to the next IOD orbit
-            if rchi2 > rchi2_threshold and num_outliers == 0:
+            if rchi2 > rchi2_threshold and max_outliers == 0:
                 # If we have iterated through all iod orbits and no outliers
                 # are allowed for this linkage then no other combination of
                 # observations will make it acceptable, so exit here.
@@ -436,9 +437,9 @@ def iod(
             # anticipate that we get to this stage if the three selected observations
             # belonging to one object yield a good initial orbit but the presence of outlier
             # observations is skewing the sum total of the residuals and chi2
-            elif num_outliers > 0:
+            elif max_outliers > 0:
                 logger.debug("Attempting to identify possible outliers.")
-                for o in range(num_outliers):
+                for o in range(max_outliers):
                     # Select i highest observations that contribute to
                     # chi2 (and thereby the residuals)
                     remove = chi2[~mask].argsort()[-(o + 1) :]

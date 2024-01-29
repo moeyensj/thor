@@ -1,4 +1,3 @@
-import gc
 import logging
 import multiprocessing as mp
 import time
@@ -18,7 +17,7 @@ from adam_core.ray_cluster import initialize_use_ray
 from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
-from ..orbit_determination import (
+from ..orbit_determination.fitted_orbits import (
     FittedOrbitMembers,
     FittedOrbits,
     assign_duplicate_observations,
