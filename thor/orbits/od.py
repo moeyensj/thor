@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 import time
 from typing import Literal, Optional, Tuple, Union
 
@@ -663,6 +664,9 @@ def differential_correction(
     od_orbits = FittedOrbits.empty()
     od_orbit_members = FittedOrbitMembers.empty()
 
+    if max_processes is None:
+        max_processes = mp.cpu_count()
+
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
         refs_to_free = []
@@ -711,6 +715,18 @@ def differential_correction(
                     propagator_kwargs=propagator_kwargs,
                 )
             )
+
+            if len(futures) >= max_processes * 1.5:
+                finished, futures = ray.wait(futures, num_returns=1)
+                od_orbits_chunk, od_orbit_members_chunk = ray.get(finished[0])
+                od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
+                if od_orbits.fragmented():
+                    od_orbits = qv.defragment(od_orbits)
+                od_orbit_members = qv.concatenate(
+                    [od_orbit_members, od_orbit_members_chunk]
+                )
+                if od_orbit_members.fragmented():
+                    od_orbit_members = qv.defragment(od_orbit_members)
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)

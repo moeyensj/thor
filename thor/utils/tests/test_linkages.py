@@ -88,7 +88,7 @@ def test_sort_by_id_and_time():
             mag=np.random.random(5),
             filter=pa.repeat("V", 5),
         ),
-        state_id=np.arange(0, 5),
+        state_id=["a", "b", "c", "d", "e"],
     )
 
     sorted_linkages, sorted_linkage_members = sort_by_id_and_time(

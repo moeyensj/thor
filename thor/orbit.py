@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 import uuid
 from typing import Optional, TypeVar, Union
 
@@ -10,9 +11,7 @@ import ray
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
-    CoordinateCovariances,
     KeplerianCoordinates,
-    Origin,
     OriginCodes,
     SphericalCoordinates,
     transform_coordinates,
@@ -42,17 +41,17 @@ class RangedPointSourceDetections(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
     coordinates = SphericalCoordinates.as_column()
-    state_id = qv.Int64Column()
+    state_id = qv.LargeStringColumn()
 
 
 class TestOrbitEphemeris(qv.Table):
-    id = qv.Int64Column()
+    id = qv.LargeStringColumn()
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
 
 
 def range_observations_worker(
-    observations: Observations, ephemeris: TestOrbitEphemeris, state_id: int
+    observations: Observations, ephemeris: TestOrbitEphemeris, state_id: str
 ) -> RangedPointSourceDetections:
     """
     Range observations for a single state given the orbit's ephemeris for that state.
@@ -300,6 +299,14 @@ class TestOrbits(qv.Table):
             ]
         )
 
+        observers_with_states = observers_with_states.sort_by(
+            by=[
+                "observers.coordinates.time.days",
+                "observers.coordinates.time.nanos",
+                "observers.coordinates.origin.code",
+            ]
+        )
+
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
             ephemeris=ephemeris,
@@ -338,10 +345,12 @@ class TestOrbits(qv.Table):
             observations, propagator=propagator, max_processes=max_processes
         )
 
+        if max_processes is None:
+            max_processes = mp.cpu_count()
+
         ranged_detections = RangedPointSourceDetections.empty()
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
-
             if isinstance(observations, ray.ObjectRef):
                 observations_ref = observations
                 observations = ray.get(observations_ref)
@@ -354,7 +363,7 @@ class TestOrbits(qv.Table):
                 ephemeris_ref = ray.put(ephemeris)
 
             # Get state IDs
-            state_ids = observations.state_id.unique().sort()
+            state_ids = observations.state_id.unique()
             futures = []
             for state_id in state_ids:
                 futures.append(
@@ -362,6 +371,15 @@ class TestOrbits(qv.Table):
                         observations_ref, ephemeris_ref, state_id
                     )
                 )
+
+                if len(futures) >= max_processes * 1.5:
+                    finished, futures = ray.wait(futures, num_returns=1)
+                    ranged_detections_chunk = ray.get(finished[0])
+                    ranged_detections = qv.concatenate(
+                        [ranged_detections, ranged_detections_chunk]
+                    )
+                    if ranged_detections.fragmented():
+                        ranged_detections = qv.defragment(ranged_detections)
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
@@ -374,7 +392,7 @@ class TestOrbits(qv.Table):
 
         else:
             # Get state IDs
-            state_ids = observations.state_id.unique().sort()
+            state_ids = observations.state_id.unique()
 
             for state_id in state_ids:
                 ranged_detections_chunk = range_observations_worker(

@@ -1,7 +1,9 @@
+import hashlib
 from typing import Union
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
 from adam_core.coordinates import CartesianCoordinates, SphericalCoordinates
 
 
@@ -64,3 +66,48 @@ def calculate_state_ids(
 
     # Now return the state IDs
     return coordinates_with_states.column("state_id").combine_chunks()
+
+
+def calculate_state_id_hash(day: int, nanos: int, observatory_code: str):
+    """
+    Create a hash by deterministicly combining the day, nanos, observatory code
+    """
+    # Use hashlib md5
+    return hashlib.md5(f"{day}{nanos}{observatory_code}".encode("utf-8")).hexdigest()
+
+
+def calculate_state_id_hashes(
+    coordinates: Union[SphericalCoordinates, CartesianCoordinates]
+) -> pa.StringArray:
+    """
+    Calculate the state ID hashes for a set of coordinates. State ID hashes are defined as unique
+    time and origin combinations. This function will return a state ID hash for each coordinate in
+    the input coordinates array. State ID hashes are computed in asencding order of time and origin
+    code.
+
+    Parameters
+    ----------
+    coordinates
+        The coordinates for which to calculate the state ID hashes.
+
+    Returns
+    -------
+    state_id_hashes
+        The state ID hashes for each coordinate in the input coordinates array.
+    """
+    hash_inputs = coordinates.flattened_table().select(
+        ["time.days", "time.nanos", "origin.code"]
+    )
+    hash_inputs = [
+        hash_inputs["time.days"].to_pylist(),
+        hash_inputs["time.nanos"].to_pylist(),
+        hash_inputs["origin.code"].to_pylist(),
+    ]
+
+    state_id_hashes = []
+    for day, nanos, observatory_code in zip(*hash_inputs):
+        state_id_hashes.append(calculate_state_id_hash(day, nanos, observatory_code))
+
+    state_id_hashes = pa.array(state_id_hashes, pa.large_string())
+
+    return state_id_hashes

@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 import time
 import uuid
 from typing import List, Literal, Optional, Tuple, Union
@@ -781,6 +782,9 @@ def cluster_and_link(
     mjd0 = mjd[first][0]
     dt = mjd - mjd0
 
+    if max_processes is None:
+        max_processes = mp.cpu_count()
+
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
         # Put all arrays (which can be large) in ray's
@@ -798,6 +802,7 @@ def cluster_and_link(
         for vxi_chunk, vyi_chunk in zip(
             _iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)
         ):
+
             futures.append(
                 cluster_velocity_remote.remote(
                     vxi_chunk,
@@ -812,6 +817,19 @@ def cluster_and_link(
                     alg=alg,
                 )
             )
+
+            if len(futures) >= max_processes * 1.5:
+                finished, futures = ray.wait(futures, num_returns=1)
+                clusters_chunk, cluster_members_chunk = ray.get(finished[0])
+                clusters = qv.concatenate([clusters, clusters_chunk])
+                if clusters.fragmented():
+                    clusters = qv.defragment(clusters)
+
+                cluster_members = qv.concatenate(
+                    [cluster_members, cluster_members_chunk]
+                )
+                if cluster_members.fragmented():
+                    cluster_members = qv.defragment(cluster_members)
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)

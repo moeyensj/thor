@@ -265,6 +265,10 @@ def attribute_observations(
 ) -> Attributions:
     logger.info("Running observation attribution...")
     time_start = time.time()
+
+    if max_processes is None:
+        max_processes = mp.cpu_count()
+
     use_ray = initialize_use_ray(num_cpus=max_processes)
 
     if isinstance(orbits, ray.ObjectRef):
@@ -320,6 +324,12 @@ def attribute_observations(
                         propagator_kwargs=propagator_kwargs,
                     )
                 )
+
+                if len(futures) >= max_processes * 1.5:
+                    finished, futures = ray.wait(futures, num_returns=1)
+                    attributions_chunk = ray.get(finished[0])
+                    attributions = qv.concatenate([attributions, attributions_chunk])
+                    attributions = qv.defragment(attributions)
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
