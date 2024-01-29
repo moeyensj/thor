@@ -292,7 +292,7 @@ def filter_observations(
 
     if isinstance(observations, str):
         num_obs = pq.read_metadata(observations).num_rows
-        logger.info("Filtering {num_obs} observations in parquet file.")
+        logger.info(f"Filtering {num_obs} observations in parquet file.")
 
     elif isinstance(observations, Observations):
         num_obs = len(observations)
