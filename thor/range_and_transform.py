@@ -1,8 +1,8 @@
 import logging
+import multiprocessing as mp
 import time
 from typing import Optional, Type, Union
 
-import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.coordinates import (
@@ -159,6 +159,9 @@ def range_and_transform(
         )
 
         transformed_detections = TransformedDetections.empty()
+
+        if max_processes is None:
+            max_processes = mp.cpu_count()
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:

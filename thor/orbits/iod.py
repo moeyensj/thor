@@ -1,7 +1,8 @@
 import logging
+import multiprocessing as mp
 import time
 from itertools import combinations
-from typing import Iterable, Literal, Optional, Sequence, Tuple, Type, Union
+from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -549,6 +550,9 @@ def initial_orbit_determination(
     if len(observations) > 0 and len(linkage_members) > 0:
         # Extract linkage IDs
         linkage_ids = linkage_members.column(linkage_id_col).unique()
+
+        if max_processes is None:
+            max_processes = mp.cpu_count()
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:

@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 import time
 from typing import Literal, Optional, Tuple, Union
 
@@ -662,6 +663,9 @@ def differential_correction(
 
     od_orbits = FittedOrbits.empty()
     od_orbit_members = FittedOrbitMembers.empty()
+
+    if max_processes is None:
+        max_processes = mp.cpu_count()
 
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:

@@ -265,6 +265,10 @@ def attribute_observations(
 ) -> Attributions:
     logger.info("Running observation attribution...")
     time_start = time.time()
+
+    if max_processes is None:
+        max_processes = mp.cpu_count()
+
     use_ray = initialize_use_ray(num_cpus=max_processes)
 
     if isinstance(orbits, ray.ObjectRef):

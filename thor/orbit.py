@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 import uuid
 from typing import Optional, TypeVar, Union
 
@@ -10,9 +11,7 @@ import ray
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
-    CoordinateCovariances,
     KeplerianCoordinates,
-    Origin,
     OriginCodes,
     SphericalCoordinates,
     transform_coordinates,
@@ -345,6 +344,9 @@ class TestOrbits(qv.Table):
         ephemeris = self.generate_ephemeris_from_observations(
             observations, propagator=propagator, max_processes=max_processes
         )
+
+        if max_processes is None:
+            max_processes = mp.cpu_count()
 
         ranged_detections = RangedPointSourceDetections.empty()
         use_ray = initialize_use_ray(num_cpus=max_processes)

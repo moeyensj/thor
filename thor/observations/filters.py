@@ -1,13 +1,10 @@
 import abc
-import gc
 import logging
 import multiprocessing as mp
 import time
 from typing import TYPE_CHECKING, List, Optional, Union
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import quivr as qv
 import ray
@@ -25,8 +22,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-# pa.jemalloc_set_decay_ms(0)
 
 
 class ObservationFilter(abc.ABC):
