@@ -11,6 +11,7 @@ import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
+from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.propagator import PYOORB, Propagator
 from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
@@ -149,6 +150,12 @@ def iod_worker(
             pc.is_in(observations.id, obs_ids)
         )
 
+        observations_linkage = OrbitDeterminationObservations.from_kwargs(
+            id=observations_linkage.id,
+            coordinates=observations_linkage.coordinates,
+            observers=observations_linkage.get_observers().observers,
+        )
+
         iod_orbit, iod_orbit_orbit_members = iod(
             observations_linkage,
             min_obs=min_obs,
@@ -226,7 +233,7 @@ iod_worker_remote.options(num_returns=1, num_cpus=1)
 
 
 def iod(
-    observations: Observations,
+    observations: OrbitDeterminationObservations,
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 0.0,
@@ -320,7 +327,7 @@ def iod(
 
     obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
     coords_all = observations.coordinates
-    observers_with_states = observations.get_observers()
+    observers = observations.observers
 
     observations = observations.sort_by(
         [
@@ -329,7 +336,7 @@ def iod(
             "coordinates.origin.code",
         ]
     )
-    observers = observers_with_states.observers.sort_by(
+    observers = observers.sort_by(
         ["coordinates.time.days", "coordinates.time.nanos", "coordinates.origin.code"]
     )
 

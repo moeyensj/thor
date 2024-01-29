@@ -10,6 +10,7 @@ import quivr as qv
 import ray
 from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
+from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Orbits
 from adam_core.propagator import PYOORB, _iterate_chunks
 from adam_core.propagator.utils import _iterate_chunk_indices
@@ -53,6 +54,12 @@ def od_worker(
             pc.equal(orbit_members.orbit_id, orbit_id)
         ).obs_id
         orbit_observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
+
+        orbit_observations = OrbitDeterminationObservations.from_kwargs(
+            id=orbit_observations.id,
+            coordinates=orbit_observations.coordinates,
+            observers=orbit_observations.get_observers().observers,
+        )
 
         od_orbit, od_orbit_orbit_members = od(
             orbit,
@@ -124,7 +131,7 @@ od_worker_remote.options(num_returns=1, num_cpus=1)
 
 def od(
     orbit: FittedOrbits,
-    observations: Observations,
+    observations: OrbitDeterminationObservations,
     rchi2_threshold: float = 100,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -148,8 +155,7 @@ def od(
     obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
     coords = observations.coordinates
     coords_sigma = coords.covariance.sigmas[:, 1:3]
-    observers_with_states = observations.get_observers()
-    observers = observers_with_states.observers
+    observers = observations.observers
     times_all = coords.time.mjd().to_numpy(zero_copy_only=False)
 
     # FLAG: can we stop iterating to find a solution?
