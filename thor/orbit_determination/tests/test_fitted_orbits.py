@@ -36,7 +36,9 @@ def simple_orbits():
         num_obs=[10, 20, 15, 25, 5],  # Specific values
         chi2=np.random.rand(5),
         reduced_chi2=[0.5, 0.4, 0.3, 0.2, 0.1],  # Specific values
-        improved=pa.repeat(False, 5),
+        iterations=[100, 200, 300, 400, 500],  # Specific values
+        success=[True, True, True, True, True],  # Specific values
+        status_code=[1, 1, 1, 1, 1],  # Specific values
     )
 
 

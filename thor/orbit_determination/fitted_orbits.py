@@ -134,6 +134,8 @@ def drop_duplicate_orbits(
     return filtered, filtered_orbit_members
 
 
+# FittedOrbits and FittedOrbit members currently match
+# the schema of adam_core.orbit_determination's FittedOrbits and FittedOrbitMembers
 class FittedOrbits(qv.Table):
 
     orbit_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
@@ -143,7 +145,9 @@ class FittedOrbits(qv.Table):
     num_obs = qv.Int64Column()
     chi2 = qv.Float64Column()
     reduced_chi2 = qv.Float64Column()
-    improved = qv.BooleanColumn(nullable=True)
+    iterations = qv.Int64Column(nullable=True)
+    success = qv.BooleanColumn(nullable=True)
+    status_code = qv.Int64Column(nullable=True)
 
     def to_orbits(self) -> Orbits:
         """

@@ -22,6 +22,7 @@ from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from ..orbit_determination.outliers import calculate_max_outliers
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 __all__ = ["differential_correction"]
 
@@ -558,12 +559,10 @@ def od(
             num_obs=[num_obs],
             chi2=[chi2_total_prev],
             reduced_chi2=[rchi2_prev],
-            improved=[improved],
+            iterations=[iterations],
+            success=[improved],
+            status_code=[0],
         )
-
-        # od_orbit["num_params"] = num_params
-        # od_orbit["num_iterations"] = iterations
-        # od_orbit["improved"] = improved
 
         od_orbit_members = FittedOrbitMembers.from_kwargs(
             orbit_id=np.full(

@@ -538,7 +538,7 @@ def merge_and_extend_orbits(
         # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
         # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
         # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
-        not_improved_mask = pc.equal(orbits.improved, False)
+        not_improved_mask = pc.equal(orbits.success, False)
         orbits_out = orbits.apply_mask(not_improved_mask)
         orbit_members_out = orbit_members.apply_mask(
             pc.is_in(orbit_members.orbit_id, orbits_out.orbit_id)
