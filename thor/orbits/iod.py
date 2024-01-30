@@ -135,7 +135,6 @@ def iod_worker(
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-    prop = propagator(**propagator_kwargs)
 
     iod_orbits = FittedOrbits.empty()
     iod_orbit_members = FittedOrbitMembers.empty()
@@ -165,7 +164,8 @@ def iod_worker(
             observation_selection_method=observation_selection_method,
             iterate=iterate,
             light_time=light_time,
-            propagator=prop,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
         )
         if len(iod_orbit) > 0:
             iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id]))
@@ -243,7 +243,8 @@ def iod(
     ] = "combinations",
     iterate: bool = False,
     light_time: bool = True,
-    propagator: Propagator = PYOORB(),
+    propagator: Type[Propagator] = PYOORB,
+    propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Run initial orbit determination on a set of observations believed to belong to a single
@@ -321,6 +322,9 @@ def iod(
             "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
                 the chi2 threshold) [float]
     """
+    # Initialize the propagator
+    prop = propagator(**propagator_kwargs)
+
     processable = True
     if len(observations) == 0:
         processable = False
@@ -394,7 +398,7 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = propagator.generate_ephemeris(
+        ephemeris = prop.generate_ephemeris(
             iod_orbits, observers, chunk_size=1, max_processes=1
         )
 

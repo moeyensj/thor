@@ -44,12 +44,8 @@ def od_worker(
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
 
-    # Initialize the propagator
-    prop = propagator(**propagator_kwargs)
-
     od_orbits = FittedOrbits.empty()
     od_orbit_members = FittedOrbitMembers.empty()
-
     for orbit_id in orbit_ids:
         time_start = time.time()
         logger.debug(f"Differentially correcting orbit {orbit_id}...")
@@ -77,7 +73,8 @@ def od_worker(
             max_iter=max_iter,
             method=method,
             fit_epoch=fit_epoch,
-            propagator=prop,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
         )
         time_end = time.time()
         duration = time_end - time_start
@@ -144,8 +141,12 @@ def od(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Propagator = PYOORB(),
+    propagator: Type[Propagator] = PYOORB,
+    propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+    # Intialize the propagator
+    prop = propagator(**propagator_kwargs)
+
     if method not in ["central", "finite"]:
         err = "method should be one of 'central' or 'finite'."
         raise ValueError(err)
@@ -185,7 +186,7 @@ def od(
         # such that the chi2 improves
         orbit_prev_ = orbit.to_orbits()
 
-        ephemeris_prev_ = propagator.generate_ephemeris(
+        ephemeris_prev_ = prop.generate_ephemeris(
             orbit_prev_, observers, chunk_size=1, max_processes=1
         )
 
@@ -266,7 +267,7 @@ def od(
         ATWb = np.zeros((num_params, 1, num_obs))
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_nom = propagator.generate_ephemeris(
+        ephemeris_nom = prop.generate_ephemeris(
             orbit_prev, observers, chunk_size=1, max_processes=1
         )
 
@@ -309,7 +310,7 @@ def od(
             )
 
             # Calculate the modified ephemerides
-            ephemeris_mod_p = propagator.generate_ephemeris(
+            ephemeris_mod_p = prop.generate_ephemeris(
                 orbit_iter_p, observers, chunk_size=1, max_processes=1
             )
 
@@ -332,7 +333,7 @@ def od(
                 )
 
                 # Calculate the modified ephemerides
-                ephemeris_mod_n = propagator.generate_ephemeris(
+                ephemeris_mod_n = prop.generate_ephemeris(
                     orbit_iter_n, observers, chunk_size=1, max_processes=1
                 )
 
@@ -451,7 +452,7 @@ def od(
             continue
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_iter = propagator.generate_ephemeris(
+        ephemeris_iter = prop.generate_ephemeris(
             orbit_iter, observers, chunk_size=1, max_processes=1
         )
 
