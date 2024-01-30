@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import time
-from typing import Literal, Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -10,17 +10,19 @@ import quivr as qv
 import ray
 from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
+from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Orbits
-from adam_core.propagator import PYOORB, _iterate_chunks
+from adam_core.propagator import PYOORB, Propagator, _iterate_chunks
 from adam_core.propagator.utils import _iterate_chunk_indices
 from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve
 
 from ..observations.observations import Observations
-from ..orbit_determination import FittedOrbitMembers, FittedOrbits
-from ..utils.linkages import sort_by_id_and_time
+from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
+from ..orbit_determination.outliers import calculate_max_outliers
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 __all__ = ["differential_correction"]
 
@@ -38,12 +40,12 @@ def od_worker(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+
     od_orbits = FittedOrbits.empty()
     od_orbit_members = FittedOrbitMembers.empty()
-
     for orbit_id in orbit_ids:
         time_start = time.time()
         logger.debug(f"Differentially correcting orbit {orbit_id}...")
@@ -53,6 +55,12 @@ def od_worker(
             pc.equal(orbit_members.orbit_id, orbit_id)
         ).obs_id
         orbit_observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
+
+        orbit_observations = OrbitDeterminationObservations.from_kwargs(
+            id=orbit_observations.id,
+            coordinates=orbit_observations.coordinates,
+            observers=orbit_observations.get_observers().observers,
+        )
 
         od_orbit, od_orbit_orbit_members = od(
             orbit,
@@ -97,7 +105,7 @@ def od_worker_remote(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     orbit_ids_chunk = orbit_ids[orbit_ids_indices[0] : orbit_ids_indices[1]]
@@ -124,7 +132,7 @@ od_worker_remote.options(num_returns=1, num_cpus=1)
 
 def od(
     orbit: FittedOrbits,
-    observations: Observations,
+    observations: OrbitDeterminationObservations,
     rchi2_threshold: float = 100,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -133,13 +141,11 @@ def od(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-    if propagator == "PYOORB":
-        prop = PYOORB(**propagator_kwargs)
-    else:
-        raise ValueError(f"Invalid propagator '{propagator}'.")
+    # Intialize the propagator
+    prop = propagator(**propagator_kwargs)
 
     if method not in ["central", "finite"]:
         err = "method should be one of 'central' or 'finite'."
@@ -148,8 +154,7 @@ def od(
     obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
     coords = observations.coordinates
     coords_sigma = coords.covariance.sigmas[:, 1:3]
-    observers_with_states = observations.get_observers()
-    observers = observers_with_states.observers
+    observers = observations.observers
     times_all = coords.time.mjd().to_numpy(zero_copy_only=False)
 
     # FLAG: can we stop iterating to find a solution?
@@ -170,9 +175,10 @@ def od(
         logger.debug("This orbit has fewer than {} observations.".format(min_obs))
         processable = False
     else:
-        num_outliers = int(num_obs * contamination_percentage / 100.0)
-        num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
-        logger.debug("Maximum number of outliers allowed: {}".format(num_outliers))
+        max_outliers = calculate_max_outliers(
+            num_obs, min_obs, contamination_percentage
+        )
+        logger.debug(f"Maximum number of outliers allowed: {max_outliers}")
         outliers_tried = 0
 
         # Calculate chi2 for residuals on the given observations
@@ -218,7 +224,7 @@ def od(
         DELTA_DECREASE_FACTOR = 100
 
         max_iter_i = max_iter
-        max_iter_outliers = max_iter * (num_outliers + 1)
+        max_iter_outliers = max_iter * (max_outliers + 1)
 
     while not converged and processable:
         iterations += 1
@@ -231,7 +237,7 @@ def od(
             logger.debug(f"Maximum number of iterations completed.")
             break
         if iterations == max_iter_i + 1 and (
-            solution_found or (num_outliers == outliers_tried)
+            solution_found or (max_outliers == outliers_tried)
         ):
             logger.debug(f"Maximum number of iterations completed.")
             break
@@ -485,8 +491,8 @@ def od(
                 converged = True
 
         elif (
-            num_outliers > 0
-            and outliers_tried <= num_outliers
+            max_outliers > 0
+            and outliers_tried <= max_outliers
             and iterations > max_iter_i
             and not solution_found
         ):
@@ -554,12 +560,10 @@ def od(
             num_obs=[num_obs],
             chi2=[chi2_total_prev],
             reduced_chi2=[rchi2_prev],
-            improved=[improved],
+            iterations=[iterations],
+            success=[improved],
+            status_code=[0],
         )
-
-        # od_orbit["num_params"] = num_params
-        # od_orbit["num_iterations"] = iterations
-        # od_orbit["improved"] = improved
 
         od_orbit_members = FittedOrbitMembers.from_kwargs(
             orbit_id=np.full(
@@ -586,7 +590,7 @@ def differential_correction(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
     chunk_size: int = 10,
     max_processes: Optional[int] = 1,

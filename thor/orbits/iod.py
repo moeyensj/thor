@@ -11,6 +11,7 @@ import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
+from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.propagator import PYOORB, Propagator
 from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
@@ -22,6 +23,7 @@ from ..orbit_determination.fitted_orbits import (
     FittedOrbits,
     drop_duplicate_orbits,
 )
+from ..orbit_determination.outliers import calculate_max_outliers
 from ..utils.linkages import sort_by_id_and_time
 from .gauss import gaussIOD
 
@@ -133,7 +135,6 @@ def iod_worker(
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-    prop = propagator(**propagator_kwargs)
 
     iod_orbits = FittedOrbits.empty()
     iod_orbit_members = FittedOrbitMembers.empty()
@@ -148,6 +149,12 @@ def iod_worker(
             pc.is_in(observations.id, obs_ids)
         )
 
+        observations_linkage = OrbitDeterminationObservations.from_kwargs(
+            id=observations_linkage.id,
+            coordinates=observations_linkage.coordinates,
+            observers=observations_linkage.get_observers().observers,
+        )
+
         iod_orbit, iod_orbit_orbit_members = iod(
             observations_linkage,
             min_obs=min_obs,
@@ -157,7 +164,8 @@ def iod_worker(
             observation_selection_method=observation_selection_method,
             iterate=iterate,
             light_time=light_time,
-            propagator=prop,
+            propagator=propagator,
+            propagator_kwargs=propagator_kwargs,
         )
         if len(iod_orbit) > 0:
             iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id]))
@@ -225,7 +233,7 @@ iod_worker_remote.options(num_returns=1, num_cpus=1)
 
 
 def iod(
-    observations: Observations,
+    observations: OrbitDeterminationObservations,
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 0.0,
@@ -235,7 +243,8 @@ def iod(
     ] = "combinations",
     iterate: bool = False,
     light_time: bool = True,
-    propagator: Propagator = PYOORB(),
+    propagator: Type[Propagator] = PYOORB,
+    propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
     Run initial orbit determination on a set of observations believed to belong to a single
@@ -313,13 +322,16 @@ def iod(
             "outlier" : Flag to indicate which observations are potential outliers (their chi2 is higher than
                 the chi2 threshold) [float]
     """
+    # Initialize the propagator
+    prop = propagator(**propagator_kwargs)
+
     processable = True
     if len(observations) == 0:
         processable = False
 
     obs_ids_all = observations.id.to_numpy(zero_copy_only=False)
     coords_all = observations.coordinates
-    observers_with_states = observations.get_observers()
+    observers = observations.observers
 
     observations = observations.sort_by(
         [
@@ -328,7 +340,7 @@ def iod(
             "coordinates.origin.code",
         ]
     )
-    observers = observers_with_states.observers.sort_by(
+    observers = observers.sort_by(
         ["coordinates.time.days", "coordinates.time.nanos", "coordinates.origin.code"]
     )
 
@@ -344,15 +356,15 @@ def iod(
     num_obs = len(observations)
     if num_obs < min_obs:
         processable = False
-    num_outliers = int(num_obs * contamination_percentage / 100.0)
-    num_outliers = np.maximum(np.minimum(num_obs - min_obs, num_outliers), 0)
+
+    max_outliers = calculate_max_outliers(num_obs, min_obs, contamination_percentage)
 
     # Select observation IDs to use for IOD
     obs_ids = select_observations(
         observations,
         method=observation_selection_method,
     )
-    obs_ids = obs_ids[: (3 * (num_outliers + 1))]
+    obs_ids = obs_ids[: (3 * (max_outliers + 1))]
 
     if len(obs_ids) == 0:
         processable = False
@@ -386,7 +398,7 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = propagator.generate_ephemeris(
+        ephemeris = prop.generate_ephemeris(
             iod_orbits, observers, chunk_size=1, max_processes=1
         )
 
@@ -408,7 +420,7 @@ def iod(
             # The reduced chi2 is above the threshold and no outliers are
             # allowed, this cannot be improved by outlier rejection
             # so continue to the next IOD orbit
-            if rchi2 > rchi2_threshold and num_outliers == 0:
+            if rchi2 > rchi2_threshold and max_outliers == 0:
                 # If we have iterated through all iod orbits and no outliers
                 # are allowed for this linkage then no other combination of
                 # observations will make it acceptable, so exit here.
@@ -436,9 +448,9 @@ def iod(
             # anticipate that we get to this stage if the three selected observations
             # belonging to one object yield a good initial orbit but the presence of outlier
             # observations is skewing the sum total of the residuals and chi2
-            elif num_outliers > 0:
+            elif max_outliers > 0:
                 logger.debug("Attempting to identify possible outliers.")
-                for o in range(num_outliers):
+                for o in range(max_outliers):
                     # Select i highest observations that contribute to
                     # chi2 (and thereby the residuals)
                     remove = chi2[~mask].argsort()[-(o + 1) :]

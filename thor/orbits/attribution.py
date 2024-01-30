@@ -1,8 +1,7 @@
-import gc
 import logging
 import multiprocessing as mp
 import time
-from typing import List, Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -12,13 +11,13 @@ import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
-from adam_core.propagator import PYOORB
+from adam_core.propagator import PYOORB, Propagator
 from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
-from ..orbit_determination import (
+from ..orbit_determination.fitted_orbits import (
     FittedOrbitMembers,
     FittedOrbits,
     assign_duplicate_observations,
@@ -121,13 +120,11 @@ def attribution_worker(
     orbits: Union[Orbits, FittedOrbits],
     observations: Observations,
     radius: float = 1 / 3600,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Attributions:
-    if propagator == "PYOORB":
-        prop = PYOORB(**propagator_kwargs)
-    else:
-        raise ValueError(f"Invalid propagator '{propagator}'.")
+    # Initialize the propagator
+    prop = propagator(**propagator_kwargs)
 
     if isinstance(orbits, FittedOrbits):
         orbits = orbits.to_orbits()
@@ -255,7 +252,7 @@ def attribute_observations(
     orbits: Union[Orbits, FittedOrbits, ray.ObjectRef],
     observations: Union[Observations, ray.ObjectRef],
     radius: float = 5 / 3600,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
     orbits_chunk_size: int = 10,
     observations_chunk_size: int = 100000,
@@ -388,7 +385,7 @@ def merge_and_extend_orbits(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
     orbits_chunk_size: int = 10,
     observations_chunk_size: int = 100000,
@@ -541,7 +538,7 @@ def merge_and_extend_orbits(
         # Remove the orbits that were not improved from the pool of available orbits. Orbits that were not improved
         # are orbits that have already iterated to their best-fit solution given the observations available. These orbits
         # are unlikely to recover more observations in subsequent iterations and so can be saved for output.
-        not_improved_mask = pc.equal(orbits.improved, False)
+        not_improved_mask = pc.equal(orbits.success, False)
         orbits_out = orbits.apply_mask(not_improved_mask)
         orbit_members_out = orbit_members.apply_mask(
             pc.is_in(orbit_members.orbit_id, orbits_out.orbit_id)
