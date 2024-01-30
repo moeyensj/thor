@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import time
-from typing import Literal, Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -12,7 +12,7 @@ from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Orbits
-from adam_core.propagator import PYOORB, _iterate_chunks
+from adam_core.propagator import PYOORB, Propagator, _iterate_chunks
 from adam_core.propagator.utils import _iterate_chunk_indices
 from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve
@@ -39,9 +39,13 @@ def od_worker(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
+
+    # Initialize the propagator
+    prop = propagator(**propagator_kwargs)
+
     od_orbits = FittedOrbits.empty()
     od_orbit_members = FittedOrbitMembers.empty()
 
@@ -72,8 +76,7 @@ def od_worker(
             max_iter=max_iter,
             method=method,
             fit_epoch=fit_epoch,
-            propagator=propagator,
-            propagator_kwargs=propagator_kwargs,
+            propagator=prop,
         )
         time_end = time.time()
         duration = time_end - time_start
@@ -104,7 +107,7 @@ def od_worker_remote(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     orbit_ids_chunk = orbit_ids[orbit_ids_indices[0] : orbit_ids_indices[1]]
@@ -140,14 +143,8 @@ def od(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
-    propagator_kwargs: dict = {},
+    propagator: Propagator = PYOORB(),
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
-    if propagator == "PYOORB":
-        prop = PYOORB(**propagator_kwargs)
-    else:
-        raise ValueError(f"Invalid propagator '{propagator}'.")
-
     if method not in ["central", "finite"]:
         err = "method should be one of 'central' or 'finite'."
         raise ValueError(err)
@@ -187,7 +184,7 @@ def od(
         # such that the chi2 improves
         orbit_prev_ = orbit.to_orbits()
 
-        ephemeris_prev_ = prop.generate_ephemeris(
+        ephemeris_prev_ = propagator.generate_ephemeris(
             orbit_prev_, observers, chunk_size=1, max_processes=1
         )
 
@@ -268,7 +265,7 @@ def od(
         ATWb = np.zeros((num_params, 1, num_obs))
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_nom = prop.generate_ephemeris(
+        ephemeris_nom = propagator.generate_ephemeris(
             orbit_prev, observers, chunk_size=1, max_processes=1
         )
 
@@ -311,7 +308,7 @@ def od(
             )
 
             # Calculate the modified ephemerides
-            ephemeris_mod_p = prop.generate_ephemeris(
+            ephemeris_mod_p = propagator.generate_ephemeris(
                 orbit_iter_p, observers, chunk_size=1, max_processes=1
             )
 
@@ -334,7 +331,7 @@ def od(
                 )
 
                 # Calculate the modified ephemerides
-                ephemeris_mod_n = prop.generate_ephemeris(
+                ephemeris_mod_n = propagator.generate_ephemeris(
                     orbit_iter_n, observers, chunk_size=1, max_processes=1
                 )
 
@@ -453,7 +450,7 @@ def od(
             continue
 
         # Generate ephemeris with current nominal orbit
-        ephemeris_iter = prop.generate_ephemeris(
+        ephemeris_iter = propagator.generate_ephemeris(
             orbit_iter, observers, chunk_size=1, max_processes=1
         )
 
@@ -593,7 +590,7 @@ def differential_correction(
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
     fit_epoch: bool = False,
-    propagator: Literal["PYOORB"] = "PYOORB",
+    propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
     chunk_size: int = 10,
     max_processes: Optional[int] = 1,
