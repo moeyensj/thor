@@ -132,7 +132,9 @@ def detect_checkpoint_stage(test_orbit_directory: pathlib.Path) -> VALID_STAGES:
         return "filter_observations"
 
     if not (test_orbit_directory / "filtered_observations.parquet").exists():
-        logger.info("No filtered observations found, starting stage filter_observations")
+        logger.info(
+            "No filtered observations found, starting stage filter_observations"
+        )
         return "filter_observations"
 
     if (test_orbit_directory / "recovered_orbits.parquet").exists() and (
@@ -266,10 +268,12 @@ def load_initial_checkpoint_values(
                 iod_orbits=iod_orbits,
                 iod_orbit_members=iod_orbit_members,
             )
-    
+
     if stage == "initial_orbit_determination":
         clusters_path = pathlib.Path(test_orbit_directory, "clusters.parquet")
-        cluster_members_path = pathlib.Path(test_orbit_directory, "cluster_members.parquet")
+        cluster_members_path = pathlib.Path(
+            test_orbit_directory, "cluster_members.parquet"
+        )
         if clusters_path.exists() and cluster_members_path.exists():
             logger.info("Found clusters")
             clusters = Clusters.from_parquet(clusters_path)
@@ -286,7 +290,7 @@ def load_initial_checkpoint_values(
                 clusters=clusters,
                 cluster_members=cluster_members,
             )
-    
+
     if stage == "cluster_and_link":
         transformed_detections_path = pathlib.Path(
             test_orbit_directory, "transformed_detections.parquet"
