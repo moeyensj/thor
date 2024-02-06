@@ -113,6 +113,47 @@ class Attributions(qv.Table):
 
         return filtered
 
+    def drop_multiple_attributions(self) -> "Attributions":
+        """
+        Drop attributions that are attributed to multiple orbits keeping the one with the smallest distance.
+
+        Returns
+        -------
+        attributions : `~thor.orbits.attribution.Attributions`
+            Attributions table with multiple attributions removed.
+        """
+        # Flatten the table so nested columns are dot-delimited at the top level
+        flattened_table = self.flattened_table()
+
+        # Add index to flattened table
+        flattened_table = flattened_table.add_column(
+            0, "index", pa.array(np.arange(len(flattened_table)))
+        )
+
+        # Sort the table by observation ID and then distance
+        flattened_table = flattened_table.sort_by(
+            [
+                ("obs_id", "ascending"),
+                ("distance", "ascending"),
+            ]
+        )
+
+        # Group by observation ID
+        indices = (
+            flattened_table.group_by(
+                ["obs_id"],
+                use_threads=False,
+            )
+            .aggregate([("index", "first")])
+            .column("index_first")
+        )
+
+        filtered = self.take(indices)
+        if filtered.fragmented():
+            filtered = qv.defragment(filtered)
+
+        return filtered
+
 
 def attribution_worker(
     orbit_ids: npt.NDArray[np.str_],
