@@ -365,7 +365,6 @@ def link_test_orbit(
             max_processes=config.max_processes,
             # TODO: investigate whether these should be configurable
             method="central",
-            fit_epoch=False,
         )
 
         od_orbits_path = None
@@ -433,7 +432,6 @@ def link_test_orbit(
             max_processes=config.max_processes,
             # TODO: investigate whether these should be configurable
             method="central",
-            fit_epoch=False,
             observations_chunk_size=100000,
         )
 
