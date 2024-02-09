@@ -149,10 +149,21 @@ def iod_worker(
             pc.is_in(observations.id, obs_ids)
         )
 
+        # Sort observations by time
+        observations_linkage = observations_linkage.sort_by(
+            [
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.origin.code",
+            ]
+        )
+
         observations_linkage = OrbitDeterminationObservations.from_kwargs(
             id=observations_linkage.id,
             coordinates=observations_linkage.coordinates,
-            observers=observations_linkage.get_observers().observers,
+            observers=observations_linkage.get_observers().observers.sort_by(
+                ["coordinates.time.days", "coordinates.time.nanos", "code"]
+            ),
         )
 
         iod_orbit, iod_orbit_orbit_members = iod(
