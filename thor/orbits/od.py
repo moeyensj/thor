@@ -22,7 +22,6 @@ from ..orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from ..orbit_determination.outliers import calculate_max_outliers
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 __all__ = ["differential_correction"]
 
@@ -39,7 +38,6 @@ def od_worker(
     delta: float = 1e-6,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    fit_epoch: bool = False,
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
@@ -72,7 +70,6 @@ def od_worker(
             delta=delta,
             max_iter=max_iter,
             method=method,
-            fit_epoch=fit_epoch,
             propagator=propagator,
             propagator_kwargs=propagator_kwargs,
         )
@@ -104,7 +101,6 @@ def od_worker_remote(
     delta: float = 1e-6,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    fit_epoch: bool = False,
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
@@ -121,7 +117,6 @@ def od_worker_remote(
         delta=delta,
         max_iter=max_iter,
         method=method,
-        fit_epoch=fit_epoch,
         propagator=propagator,
         propagator_kwargs=propagator_kwargs,
     )
@@ -140,7 +135,6 @@ def od(
     delta: float = 1e-6,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    fit_epoch: bool = False,
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
@@ -257,11 +251,7 @@ def od(
         logger.debug(f"Starting iteration {iterations} with delta {delta_iter}.")
 
         # Initialize the partials derivatives matrix
-        if num_obs > 6 and fit_epoch:
-            num_params = 7
-        else:
-            num_params = 6
-
+        num_params = 6
         A = np.zeros((2, num_params, num_obs))
         ATWA = np.zeros((num_params, num_params, num_obs))
         ATWb = np.zeros((num_params, 1, num_obs))
@@ -272,26 +262,19 @@ def od(
         )
 
         # Modify each component of the state by a small delta
-        d = np.zeros((1, 7))
+        d = np.zeros((1, 6))
         for i in range(num_params):
             # zero the delta vector
             d *= 0.0
 
             # x, y, z [au]: 0, 1, 2
             # vx, vy, vz [au per day]: 3, 4, 5
-            # time [days] : 6
             if i < 3:
                 delta_iter = delta_prev
-
                 d[0, i] = orbit_prev.coordinates.values[0, i] * delta_iter
             elif i < 6:
                 delta_iter = delta_prev
-
                 d[0, i] = orbit_prev.coordinates.values[0, i] * delta_iter
-            else:
-                delta_iter = delta_prev / 100000
-
-                d[0, i] = delta_iter
 
             # Modify component i of the orbit by a small delta
             cartesian_elements_p = orbit_prev.coordinates.values + d[0, :6]
@@ -412,23 +395,16 @@ def od(
                 delta_prev *= DELTA_INCREASE_FACTOR
                 continue
 
-        if num_params == 6:
-            d_state = delta_state
-            d_time = 0
-        else:
-            d_state = delta_state[0, :6]
-            d_time = delta_state[0, 6]
-
-        if np.linalg.norm(d_state[:3]) < 1e-16:
+        if np.linalg.norm(delta_state[:3]) < 1e-16:
             logger.debug("Change in state is less than 1e-16 au, discarding solution.")
             delta_prev *= DELTA_DECREASE_FACTOR
             continue
-        if np.linalg.norm(d_state[:3]) > 100:
+        if np.linalg.norm(delta_state[:3]) > 100:
             delta_prev /= DELTA_DECREASE_FACTOR
             logger.debug("Change in state is more than 100 au, discarding solution.")
             continue
 
-        cartesian_elements = orbit_prev.coordinates.values + d_state
+        cartesian_elements = orbit_prev.coordinates.values + delta_state
         orbit_iter = Orbits.from_kwargs(
             orbit_id=orbit_prev.orbit_id,
             coordinates=CartesianCoordinates.from_kwargs(
@@ -589,7 +565,6 @@ def differential_correction(
     delta: float = 1e-8,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    fit_epoch: bool = False,
     propagator: Type[Propagator] = PYOORB,
     propagator_kwargs: dict = {},
     chunk_size: int = 10,
@@ -714,7 +689,6 @@ def differential_correction(
                     delta=delta,
                     max_iter=max_iter,
                     method=method,
-                    fit_epoch=fit_epoch,
                     propagator=propagator,
                     propagator_kwargs=propagator_kwargs,
                 )
@@ -764,7 +738,6 @@ def differential_correction(
                 delta=delta,
                 max_iter=max_iter,
                 method=method,
-                fit_epoch=fit_epoch,
                 propagator=propagator,
                 propagator_kwargs=propagator_kwargs,
             )
