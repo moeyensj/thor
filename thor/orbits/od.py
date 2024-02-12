@@ -54,10 +54,21 @@ def od_worker(
         ).obs_id
         orbit_observations = observations.apply_mask(pc.is_in(observations.id, obs_ids))
 
+        # Sort observations by time
+        orbit_observations = orbit_observations.sort_by(
+            [
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.origin.code",
+            ]
+        )
+
         orbit_observations = OrbitDeterminationObservations.from_kwargs(
             id=orbit_observations.id,
             coordinates=orbit_observations.coordinates,
-            observers=orbit_observations.get_observers().observers,
+            observers=orbit_observations.get_observers().observers.sort_by(
+                ["coordinates.time.days", "coordinates.time.nanos", "code"]
+            ),
         )
 
         od_orbit, od_orbit_orbit_members = od(
