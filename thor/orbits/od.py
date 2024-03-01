@@ -361,8 +361,16 @@ def od(
         ATWA = np.sum(ATWA, axis=2)
         ATWb = np.sum(ATWb, axis=2)
 
-        ATWA_condition = np.linalg.cond(ATWA)
-        ATWb_condition = np.linalg.cond(ATWb)
+        try:
+            # Calculate the condition number of both matrices
+            ATWA_condition = np.linalg.cond(ATWA)
+            ATWb_condition = np.linalg.cond(ATWb)
+        except np.linalg.LinAlgError:
+            ATWA_condition = np.nan
+            ATWb_condition = np.nan
+            logger.debug(
+                f"Matrix condition calculation failed for {orbit.orbit_id[0].as_py()}"
+            )
 
         if (ATWA_condition > 1e15) or (ATWb_condition > 1e15):
             delta_prev /= DELTA_DECREASE_FACTOR
