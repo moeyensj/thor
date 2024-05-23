@@ -1,6 +1,9 @@
 import numpy as np
-from adam_core import dynamics
 from adam_core.constants import Constants as c
+from adam_core.dynamics.lagrange import (
+    apply_lagrange_coefficients,
+    calc_lagrange_coefficients,
+)
 
 __all__ = ["calcMMatrix", "calcStateTransitionMatrix"]
 
@@ -152,11 +155,11 @@ def calcStateTransitionMatrix(
     #   Here alpha is defined as 1 / a where a is the semi-major axis of the orbit
     alpha = -(v0_mag**2) / mu + 2 / r0_mag
 
-    lagrange_coeffs, stumpff_coeffs, chi = dynamics.calc_lagrange_coefficients(
+    lagrange_coeffs, stumpff_coeffs, chi = calc_lagrange_coefficients(
         r0, v0, dt, mu=mu, max_iter=max_iter, tol=tol
     )
     f, g, f_dot, g_dot = lagrange_coeffs
-    r1, v1 = dynamics.apply_lagrange_coefficients(r0, v0, *lagrange_coeffs)
+    r1, v1 = apply_lagrange_coefficients(r0, v0, *lagrange_coeffs)
     M = calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=mu)
 
     # Construct the 3 x 2 state matrices with the position vector

@@ -39,10 +39,6 @@ jobs:
           sed -e '2d' ObsCodes.html | grep -v "<" > OBSCODE.dat
           rm -f ObsCodes.html
           cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
-      - name: Install adam_core and quivr
-        run: |
-          pip install adam-core@git+https://github.com/B612-Asteroid-Institute/adam_core@main
-          pip install quivr@git+https://github.com/moeyensj/quivr@concatenate-empty-attributes
       - name: Build and install
         run: pip install . --no-deps
       - name: Lint
