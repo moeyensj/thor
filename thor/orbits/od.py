@@ -12,7 +12,8 @@ from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Orbits
-from adam_core.propagator import PYOORB, Propagator, _iterate_chunks
+from adam_core.propagator import Propagator, _iterate_chunks
+from adam_core.propagator.adam_pyoorb import PYOORBPropagator as PYOORB
 from adam_core.propagator.utils import _iterate_chunk_indices
 from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve

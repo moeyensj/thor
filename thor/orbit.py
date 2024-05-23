@@ -18,7 +18,8 @@ from adam_core.coordinates import (
 )
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
-from adam_core.propagator import PYOORB, Propagator
+from adam_core.propagator import Propagator
+from adam_core.propagator.adam_pyoorb import PYOORBPropagator as PYOORB
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
@@ -231,7 +232,6 @@ class TestOrbits(qv.Table):
             observers,
             max_processes=max_processes,
             chunk_size=1,
-            parallel_backend="ray",
         )
 
     def generate_ephemeris_from_observations(
