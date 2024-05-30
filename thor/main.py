@@ -7,7 +7,7 @@ from typing import Iterable, Iterator, List, Literal, Optional, Tuple, Union
 
 import quivr as qv
 import ray
-from adam_core.propagator import PYOORB
+from adam_core.propagator.adam_pyoorb import PYOORBPropagator as PYOORB
 from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values

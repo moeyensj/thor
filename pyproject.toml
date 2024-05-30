@@ -5,3 +5,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 write_to = "thor/version.py"
 write_to_template = "__version__ = '{version}'"
+
+[tool.pytest.ini_options]
+python_functions = "test_*"
+addopts = "-m \"not (integration or memory)\""
+
+[tool.pytest.ini_options.markers]
+integration = "Mark a test as an integration test."
+memory = "Mark a test as a memory test."

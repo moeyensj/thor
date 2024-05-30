@@ -13,7 +13,8 @@ import ray
 from adam_core.coordinates import KeplerianCoordinates
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
-from adam_core.propagator import PYOORB, Propagator
+from adam_core.propagator import Propagator
+from adam_core.propagator.adam_pyoorb import PYOORBPropagator as PYOORB
 from adam_core.propagator.utils import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp

@@ -10,7 +10,8 @@ from adam_core.coordinates import (
     OriginCodes,
     transform_coordinates,
 )
-from adam_core.propagator import PYOORB, Propagator
+from adam_core.propagator import Propagator
+from adam_core.propagator.adam_pyoorb import PYOORBPropagator as PYOORB
 from adam_core.ray_cluster import initialize_use_ray
 
 from .observations.observations import Observations

@@ -15,6 +15,7 @@ open .cache/bench/memory/path_to_output.html
 open .cache.bench/memory/[session_name]/[test_name].png
 
 """
+
 import os
 import subprocess
 import threading
