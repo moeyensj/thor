@@ -42,7 +42,7 @@ jobs:
       - name: Install adam_core and adam-pyoorb
         run: |
           pip install adam-core>=0.2.0
-          pip install adam-pyoorb @ git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@main
+          pip install git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@main#egg=adam-pyoorb
       - name: Build and install
         run: pip install . --no-deps
       - name: Lint
