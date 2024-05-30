@@ -27,9 +27,9 @@ class Config(BaseModel):
     iod_min_arc_length: float = 1.0
     iod_contamination_percentage: float = 20.0
     iod_rchi2_threshold: float = 100000
-    iod_observation_selection_method: Literal[
-        "combinations", "first+middle+last"
-    ] = "combinations"
+    iod_observation_selection_method: Literal["combinations", "first+middle+last"] = (
+        "combinations"
+    )
     iod_chunk_size: int = 10
     od_min_obs: int = 6
     od_min_arc_length: float = 1.0
