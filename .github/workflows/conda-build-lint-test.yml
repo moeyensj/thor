@@ -39,6 +39,10 @@ jobs:
           sed -e '2d' ObsCodes.html | grep -v "<" > OBSCODE.dat
           rm -f ObsCodes.html
           cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
+      - name: Install adam_core and adam-pyoorb
+        run: |
+          pip install adam-core>=0.2.0
+          pip install adam-pyoorb @ git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@main
       - name: Build and install
         run: pip install . --no-deps
       - name: Lint
