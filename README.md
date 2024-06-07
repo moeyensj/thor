@@ -21,6 +21,26 @@ Tracklet-less Heliocentric Orbit Recovery
 The latest "stable" version is [v1.2](https://github.com/moeyensj/thor/releases/tag/v1.2). The code on the main branch is currently being used to develop THOR v2.0 and is not guaranteed to be stable. We anticipate that v2.0 will be the one most useful to the community and we aim for it to be released by the end of 2023. THOR v2.0 is a complete re-write of the THOR code primarily designed to enable it for use as a service on the [Asteroid, Discovery, Analysis and Mapping (ADAM) platform](https://b612.ai/). The primary goal of v2.0 is to enable THOR to work at scale on many small cloud-hosted VMs. The secondary goal of v2.0 is to add changes that will work towards enabling the linking of NEOs (THOR is currently configured to work on the Main Belt and outwards).  
 
 
+
+## Table of Contents
+
+1. What THOR Does
+2. Installation
+    a. Anaconda
+    b. Docker
+    c. Source
+3. Running the Project
+4. Motivation Behind Technologies
+
+## What THOR Does
+THOR stands for Tracklet-less Heliocentric Orbit Recovery. Let's break it down.
+ * Tracklet: A short track between frames of consecutive observations in time
+ * Heliocentric: A model of the solar system having the sun as the center
+ * Orbit: the curved trajectory of an object around a celestial object
+ * Recovery: Regaining knowledge of information that was lost
+
+Esentially, this project helps us to learn more about different objects orbiting in a sun-centered solar system, including but not limited to information regarding the object's time, velocity, range, and shifts in space. The project uses trained models and a wide range of datasets to accomplish this tracklet-less recovery, and with more test data to train the models, the better the program can predict the orbit data. 
+
 ## Installation
 
 The corresponding notebook repository can be found at: https://github.com/moeyensj/thor_notebooks
@@ -88,5 +108,14 @@ Type "help", "copyright", "credits" or "license" for more information.
 >>> import thor
 >>>
 ```
+
+## Running the Project
+To run the project, follow the installation steps above. Then, navigate to your favorite python IDE and run runTHOR.py with relevant arguments as listed in the runTHOR.py file. 
+
+## Motivation Behind Technologies
+
+* Python: Rapid application development, high-level data structures built in to the language, simple
+* Anaconda: Helps to create environment for various versions of Python (makes sharing/distributing the code easier)
+* Docker: Allows for fast and efficient project delivery and updates
 
 **If you would like to run Jupyter Notebook or Juptyter Lab with THOR please see the installation instructions in the THOR notebooks repository.**
