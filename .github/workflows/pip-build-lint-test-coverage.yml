@@ -46,6 +46,7 @@ jobs:
       - name: Lint
         run: pre-commit run --all-files
       - name: Test
+        if: always()
         run: pytest . --cov --cov-report xml
       - name: Coverage
         uses: coverallsapp/github-action@v2.0.0
