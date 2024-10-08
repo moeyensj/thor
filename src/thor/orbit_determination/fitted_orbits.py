@@ -8,8 +8,6 @@ from adam_core.coordinates import CartesianCoordinates
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 
-from ..utils.quivr import drop_duplicates
-
 __all__ = [
     "FittedOrbits",
     "FittedOrbitMembers",
@@ -124,7 +122,7 @@ def drop_duplicate_orbits(
             "coordinates.vz",
         ]
 
-    filtered = drop_duplicates(orbits, subset=subset, keep=keep)
+    filtered = orbits.drop_duplicates(subset=subset, keep=keep)
     filtered_orbit_members = orbit_members.apply_mask(pc.is_in(orbit_members.orbit_id, filtered.orbit_id))
     return filtered, filtered_orbit_members
 

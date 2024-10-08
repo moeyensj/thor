@@ -2,4 +2,3 @@
 from .ades import *
 from .linkages import *
 from .logging import *
-from .quivr import *
