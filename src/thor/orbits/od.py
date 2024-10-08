@@ -232,10 +232,10 @@ def od(
         # will exit the current iteration if something fails which makes accounting for
         # iterations at the start of an iteration easier.
         if iterations == max_iter_outliers + 1:
-            logger.debug(f"Maximum number of iterations completed.")
+            logger.debug("Maximum number of iterations completed.")
             break
         if iterations == max_iter_i + 1 and (solution_found or (max_outliers == outliers_tried)):
-            logger.debug(f"Maximum number of iterations completed.")
+            logger.debug("Maximum number of iterations completed.")
             break
         logger.debug(f"Starting iteration number: {iterations}/{max_iter_outliers}")
 

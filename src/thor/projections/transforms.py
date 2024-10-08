@@ -1,7 +1,6 @@
 from typing import Tuple
 
 import jax.numpy as jnp
-import numpy as np
 from jax import config, jit, lax, vmap
 
 config.update("jax_enable_x64", True)

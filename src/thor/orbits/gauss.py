@@ -283,7 +283,7 @@ def gaussIOD(
         epoch = t2
         orbit = np.concatenate([r2, v2])
 
-        if iterate == True:
+        if iterate is True:
             if iterator == "state transition":
                 orbit = iterateStateTransition(
                     orbit,
@@ -301,7 +301,7 @@ def gaussIOD(
                     tol=tol,
                 )
 
-        if light_time == True:
+        if light_time is True:
             rho2_mag = np.linalg.norm(orbit[:3] - q2)
             lt = rho2_mag / C
             epoch -= lt

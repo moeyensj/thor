@@ -1,8 +1,7 @@
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
-import pytest
-from adam_core.coordinates import CartesianCoordinates, Origin, SphericalCoordinates
+from adam_core.coordinates import Origin, SphericalCoordinates
 from adam_core.time import Timestamp
 
 from ..states import calculate_state_ids

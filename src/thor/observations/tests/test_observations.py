@@ -1,4 +1,3 @@
-import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -11,14 +10,6 @@ from ..observations import (
     input_observations_to_observations_worker,
 )
 from ..states import calculate_state_id_hashes
-from .test_filters import (
-    fixed_detections,
-    fixed_ephems,
-    fixed_exposures,
-    fixed_observations,
-    fixed_observers,
-    fixed_test_orbit,
-)
 
 
 @pytest.fixture

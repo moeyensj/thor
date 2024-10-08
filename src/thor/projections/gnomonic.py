@@ -1,9 +1,7 @@
-from typing import Literal, Optional
+from typing import Optional
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
-import pyarrow.compute as pc
 import quivr as qv
 from adam_core.coordinates import CartesianCoordinates, Origin
 from adam_core.coordinates.covariances import transform_covariances_jacobian

@@ -49,14 +49,14 @@ def calcGibbs(r1, r2, r3):
     Z23 = np.cross(r2, r3)
     Z31 = np.cross(r3, r1)
 
-    coplanarity = np.arcsin(np.dot(Z23, r1) / (np.linalg.norm(Z23) * r1_mag))
+    # coplanarity = np.arcsin(np.dot(Z23, r1) / (np.linalg.norm(Z23) * r1_mag))
 
     N = r1_mag * Z23 + r2_mag * Z31 + r3_mag * Z12
     N_mag = np.linalg.norm(N)
     D = Z12 + Z23 + Z31
     D_mag = np.linalg.norm(D)
     S = (r2_mag - r3_mag) * r1 + (r3_mag - r1_mag) * r2 + (r1_mag - r2_mag) * r3
-    S_mag = np.linalg.norm(S)
+    # S_mag = np.linalg.norm(S)
     B = np.cross(D, r2)
     Lg = np.sqrt(MU / N_mag / D_mag)
     v2 = Lg / r2_mag * B + Lg * S

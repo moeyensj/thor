@@ -68,7 +68,7 @@ def calcMMatrix(r0, r1, lagrange_coeffs, stumpff_coeffs, chi, alpha, mu=MU):
     # Everhart & Pitkin 1983 [3].
     # TODO : These conversions were not robustly tested and needed further investigation
     w = chi / sqrt_mu
-    alpha_alt = -mu * alpha
+    # alpha_alt = -mu * alpha
     U0 = (1 - alpha * chi**2) * c2
     U1 = (chi - alpha * chi**3) * c3 / sqrt_mu
     U2 = chi**2 * c2 / mu
@@ -168,12 +168,12 @@ def calcStateTransitionMatrix(orbit, dt, mu=0.0002959122082855911, max_iter=100,
     # Construct the 4 3 x 3 submatrices that can form the
     # the 6 x 6 state transition matrix.
     # See equations A.42 - A.46 in Shepperd 1985 [1]
-    I = np.identity(3)
+    I3 = np.identity(3)
     phi = np.zeros((6, 6))
-    phi11 = f * I + state_1 @ (M[1:3, 0:2] @ state_0.T)
-    phi12 = g * I + state_1 @ (M[1:3, 1:3] @ state_0.T)
-    phi21 = f_dot * I - state_1 @ (M[0:2, 0:2] @ state_0.T)
-    phi22 = g_dot * I - state_1 @ (M[0:2, 1:3] @ state_0.T)
+    phi11 = f * I3 + state_1 @ (M[1:3, 0:2] @ state_0.T)
+    phi12 = g * I3 + state_1 @ (M[1:3, 1:3] @ state_0.T)
+    phi21 = f_dot * I3 - state_1 @ (M[0:2, 0:2] @ state_0.T)
+    phi22 = g_dot * I3 - state_1 @ (M[0:2, 1:3] @ state_0.T)
 
     phi[0:3, 0:3] = phi11
     phi[0:3, 3:6] = phi12

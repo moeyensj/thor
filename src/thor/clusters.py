@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import multiprocessing as mp
 import time
@@ -22,16 +23,10 @@ from .utils.linkages import sort_by_id_and_time
 USE_GPU = False
 
 if USE_GPU:
-    import cudf
     from cuml.cluster import DBSCAN
 else:
     from sklearn.cluster import DBSCAN
 
-import hashlib
-from typing import List, Literal, Tuple
-
-import pyarrow as pa
-import pyarrow.compute as pc
 
 __all__ = [
     "cluster_and_link",
@@ -92,7 +87,7 @@ def drop_duplicate_clusters(
     # but found the memory accumulationw as too high.
     # A simple loop that accumulates the distinct obs ids
     # for each cluster is more memory efficient.
-    logger.info(f"Accumulating cluster observation IDs into single strings.")
+    logger.info("Accumulating cluster observation IDs into single strings.")
     obs_ids_per_cluster: Union[List[str], pa.Array] = []
     current_obs_ids: List[str] = []
     current_cluster_id = None
@@ -107,7 +102,7 @@ def drop_duplicate_clusters(
         current_obs_ids.append(obs_id)
     obs_ids_per_cluster.append(hash_obs_ids(current_obs_ids))
 
-    logger.info(f"Grouping by unique observation sets.")
+    logger.info("Grouping by unique observation sets.")
     obs_ids_per_cluster = pa.table(
         {
             "index": pa.array(np.arange(0, len(obs_ids_per_cluster))),
@@ -118,15 +113,15 @@ def drop_duplicate_clusters(
     obs_ids_per_cluster = obs_ids_per_cluster.combine_chunks()
     obs_ids_per_cluster = obs_ids_per_cluster.group_by(["obs_ids"], use_threads=False)
 
-    logger.info(f"Taking first index of each unique observation set.")
+    logger.info("Taking first index of each unique observation set.")
     indices = obs_ids_per_cluster.aggregate([("index", "first")])["index_first"]
     del obs_ids_per_cluster
     indices = indices.combine_chunks()
 
-    logger.info(f"Taking clusters that belong to unique observation sets.")
+    logger.info("Taking clusters that belong to unique observation sets.")
     clusters = clusters.take(indices)
 
-    logger.info(f"Taking cluster members that belong to unique clusters.")
+    logger.info("Taking cluster members that belong to unique clusters.")
     cluster_members = cluster_members.apply_mask(pc.is_in(cluster_members.cluster_id, clusters.cluster_id))
     return clusters, cluster_members
 
@@ -751,7 +746,7 @@ def cluster_and_link(
     # If any of the above conditions are met then we exit early
     if exit_early:
         time_end_cluster = time.perf_counter()
-        logger.info(f"Found 0 clusters. Minimum requirements for clustering not met.")
+        logger.info("Found 0 clusters. Minimum requirements for clustering not met.")
         logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
         return Clusters.empty(), ClusterMembers.empty()
 

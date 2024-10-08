@@ -41,7 +41,6 @@ def test_assume_heliocentric_distance_missing_rho():
     # Since the origin is the Sun the heliocentric distance is also the
     # topocentric distance
     r = np.array([3.0, 0.0, 0.0])
-    r_mag = np.linalg.norm(r)
     coords_assumed = assume_heliocentric_distance(r, coords, origin_coords)
     np.testing.assert_equal(coords_assumed.rho, np.array([r[0], rho[1]]))
 

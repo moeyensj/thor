@@ -36,7 +36,7 @@ def test_calculate_max_outliers_assertions():
         AssertionError,
         match=r"Number of observations must be greater than or equal to the minimum number of observations.",
     ):
-        outliers = calculate_max_outliers(num_obs, min_obs, contamination_percentage)
+        calculate_max_outliers(num_obs, min_obs, contamination_percentage)
 
     # Test that the function raises an assertion error when the contamination percentage
     # is less than 0.
@@ -44,4 +44,4 @@ def test_calculate_max_outliers_assertions():
     num_obs = 10
     contamination_percentage = -50
     with pytest.raises(AssertionError, match=r"Contamination percentage must be between 0 and 1."):
-        outliers = calculate_max_outliers(num_obs, min_obs, contamination_percentage)
+        calculate_max_outliers(num_obs, min_obs, contamination_percentage)

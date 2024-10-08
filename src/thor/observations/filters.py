@@ -9,7 +9,6 @@ import pyarrow.parquet as pq
 import quivr as qv
 import ray
 from adam_core.coordinates import SphericalCoordinates
-from adam_core.propagator.utils import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
 from thor.config import Config

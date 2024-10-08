@@ -344,7 +344,6 @@ def iod(
     coords_obs_all = observers.coordinates.r
     times_all = coords_all.time.mjd().to_numpy(zero_copy_only=False)
 
-    chi2_sol = 1e10
     orbit_sol: FittedOrbits = FittedOrbits.empty()
     obs_ids_sol = None
     arc_length = None
@@ -431,7 +430,6 @@ def iod(
                 orbit_sol = iod_orbits[i : i + 1]
                 obs_ids_sol = ids
                 chi2_total_sol = chi2_total
-                chi2_sol = chi2
                 rchi2_sol = rchi2
                 residuals_sol = residuals
                 outliers = np.array([])
@@ -476,7 +474,6 @@ def iod(
                         num_obs = num_obs_new
                         ids_mask = np.isin(obs_ids_all, outliers, invert=True)
                         arc_length = times_all[ids_mask].max() - times_all[ids_mask].min()
-                        chi2_sol = chi2
                         converged = True
                         break
 

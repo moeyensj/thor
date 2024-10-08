@@ -1,8 +1,5 @@
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute as pc
 import pytest
-import quivr as qv
 
 from ..clusters import (
     ClusterMembers,

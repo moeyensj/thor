@@ -23,6 +23,8 @@ from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
+from .observations import Observations
+
 CoordinateType = TypeVar(
     "CoordinateType",
     bound=Union[
@@ -33,7 +35,6 @@ CoordinateType = TypeVar(
     ],
 )
 
-from .observations import Observations
 
 logger = logging.getLogger(__name__)
 

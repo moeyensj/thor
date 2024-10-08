@@ -80,7 +80,6 @@ def iterateStateTransition(
     orbit_iter = orbit
     orbit_iter_prev = orbit
     i = 0
-    phi_mag_prev = 1e10
     for i in range(max_iter):
         # Grab orbit position and velocity vectors
         # These should belong to the state of the object at the time of the second
@@ -165,7 +164,6 @@ def iterateStateTransition(
 
         i += 1
         orbit_iter_prev = orbit_iter
-        phi_mag_prev = phi_mag_iter
         if i >= max_iter:
             break
 

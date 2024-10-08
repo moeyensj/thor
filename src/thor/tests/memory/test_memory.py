@@ -199,7 +199,7 @@ def test_load_input_observations(memory_snapshot, memory_config, ray_cluster, me
     memory_input_observations = memory_input_observations.set_column(
         "time", memory_input_observations.time.rescale("utc")
     )
-    observations = Observations.from_input_observations(memory_input_observations)
+    Observations.from_input_observations(memory_input_observations)
 
 
 @pytest.mark.memory
@@ -209,7 +209,7 @@ def test_filter_observations(
 ):
     from thor.main import filter_observations
 
-    observations = filter_observations(memory_observations, memory_test_orbit, memory_config)
+    filter_observations(memory_observations, memory_test_orbit, memory_config)
 
 
 @pytest.mark.memory
@@ -235,7 +235,7 @@ def test_range_and_transform(
 def test_cluster_and_link(memory_transformed_detections, memory_config, ray_cluster, memory_snapshot):
     from thor.main import cluster_and_link
 
-    clusters, cluster_members = cluster_and_link(
+    cluster_and_link(
         memory_transformed_detections,
         vx_range=[memory_config.vx_min, memory_config.vx_max],
         vy_range=[memory_config.vy_min, memory_config.vy_max],
@@ -261,8 +261,8 @@ def test_initial_orbit_determination(
 ):
     from thor.orbits.iod import initial_orbit_determination
 
-    clusters, cluster_members = memory_clusters
-    orbits, orbit_members = initial_orbit_determination(
+    _, cluster_members = memory_clusters
+    initial_orbit_determination(
         memory_filtered_observations,
         cluster_members,
         min_obs=memory_config.iod_min_obs,

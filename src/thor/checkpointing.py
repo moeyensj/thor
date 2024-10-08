@@ -128,7 +128,7 @@ def detect_checkpoint_stage(test_orbit_directory: pathlib.Path) -> VALID_STAGES:
         raise ValueError(f"{test_orbit_directory} is not a directory")
 
     if not test_orbit_directory.exists():
-        logger.info(f"Working directory does not exist, starting at beginning.")
+        logger.info("Working directory does not exist, starting at beginning.")
         return "filter_observations"
 
     if not (test_orbit_directory / "filtered_observations.parquet").exists():

@@ -2,8 +2,6 @@ import logging
 import os
 import sys
 
-__all__ = ["setupLogger"]
-
 logger = logging.getLogger(__name__)
 
 

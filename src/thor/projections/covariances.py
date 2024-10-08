@@ -1,5 +1,3 @@
-from typing import List
-
 import numpy as np
 import pyarrow as pa
 import quivr as qv

@@ -3,11 +3,6 @@ from typing import List, Literal, Optional
 import numpy as np
 import pyarrow as pa
 import quivr as qv
-from typing_extensions import Final
-
-__all__ = [
-    "drop_duplicates",
-]
 
 
 def drop_duplicates(

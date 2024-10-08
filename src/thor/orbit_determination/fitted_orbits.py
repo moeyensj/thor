@@ -1,7 +1,6 @@
 import uuid
 from typing import List, Literal, Optional, Tuple
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv

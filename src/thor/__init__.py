@@ -1,3 +1,4 @@
+# ruff: noqa: F401, F403
 try:
     from ._version import __version__
 except ImportError:
@@ -12,5 +13,6 @@ from .orbits import *
 from .projections import *
 from .range_and_transform import *
 from .utils import *
+from .utils import setupLogger
 
 logger = setupLogger(__name__)
