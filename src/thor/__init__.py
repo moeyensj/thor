@@ -1,4 +1,7 @@
-from ._version import __version__
+try:
+    from ._version import __version__
+except ImportError:
+    __version__ = "unknown"
 from .clusters import *
 from .config import *
 from .main import *
