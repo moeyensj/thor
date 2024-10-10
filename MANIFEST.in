@@ -1,4 +1,4 @@
-include thor/*.py
+include src/*.py
 include *.md
 include *.toml
 include *.yaml

@@ -16,38 +16,36 @@ jobs:
     defaults:
       run:
         shell: bash -l {0}
+    env:
+      OORB_DATA: /tmp/oorb/data
 
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v4
       - name: Get git tags
         run:  git fetch --prune --unshallow --tags
-      - name: Set up miniconda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          activate-environment: "thor"
-          auto-update-conda: true
-          python-version: ${{ matrix.python-version }}
-      - name: Install openorb using conda
-        run: conda install -c defaults -c conda-forge openorb --yes
-      - name: Update OBSCODE.dat
-        run: |
-          cd $CONDA_PREFIX/share/oorb
-          curl https://www.minorplanetcenter.net/iau/lists/ObsCodes.html -o ObsCodes.html
-          sed -e '2d' ObsCodes.html | grep -v "<" > OBSCODE.dat
-          rm -f ObsCodes.html
-          cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip' # caching pip dependencies
-      - name: Build and install
-        run: pip install .[tests]
+      - name: Install openorb dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gfortran liblapack-dev
+          wget  -P /tmp/ https://storage.googleapis.com/oorb-data/oorb_data.tar.gz
+          mkdir -p /tmp/oorb/
+          tar -xvf /tmp/oorb_data.tar.gz -C /tmp/oorb/
+      - name: Install Dependencies
+        run: |
+          pip install pip --upgrade
+          pip install ".[dev]"
       - name: Lint
-        run: pre-commit run --all-files
-      - name: Test
-        run: pytest . --cov --cov-report xml
-      - name: Coverage
+        run: pdm run lint
+      # - name: Type check
+      #   run: pdm run typecheck
+      - name: Test with coverage
+        run: pdm run coverage
+      - name: Coverage Report
         uses: coverallsapp/github-action@v2.0.0
         with:
           github-token: ${{ secrets.COVERALLS_TOKEN }}

@@ -16,6 +16,8 @@ jobs:
     defaults:
       run:
         shell: bash -l {0}
+    env:
+      OORB_DATA: /tmp/oorb/data
 
     steps:
       - name: Checkout git repo
@@ -28,24 +30,16 @@ jobs:
           activate-environment: "thor"
           auto-update-conda: true
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies (excluding adam_core and quivr since they are not available via conda)
+      - name: Install openorb dependencies
         run: |
-          tail +3 requirements.txt > requirements_conda.txt
-          conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements_conda.txt --yes
-      - name: Update OBSCODE.dat
-        run: |
-          cd $CONDA_PREFIX/share/oorb
-          curl https://www.minorplanetcenter.net/iau/lists/ObsCodes.html -o ObsCodes.html
-          sed -e '2d' ObsCodes.html | grep -v "<" > OBSCODE.dat
-          rm -f ObsCodes.html
-          cp OBSCODE.dat $CONDA_PREFIX/share/openorb/OBSCODE.dat
-      - name: Install adam_core and quivr
-        run: |
-          pip install adam-core@git+https://github.com/B612-Asteroid-Institute/adam_core@main
-          pip install quivr@git+https://github.com/moeyensj/quivr@concatenate-empty-attributes
+          sudo apt-get update -y
+          sudo apt-get install -y gfortran liblapack-dev
+          wget  -P /tmp/ https://storage.googleapis.com/oorb-data/oorb_data.tar.gz
+          mkdir -p /tmp/oorb/
+          tar -xvf /tmp/oorb_data.tar.gz -C /tmp/oorb/
       - name: Build and install
-        run: pip install . --no-deps
+        run: pip install .[dev]
       - name: Lint
-        run: pre-commit run --all-files
+        run: pdm lint
       - name: Test
-        run: pytest . --cov
+        run: pdm test

@@ -1,7 +1,5 @@
-# Data files
-thor/data
-thor/data/log.yaml
-thor/version.py
+# Version file: set by pdm-scm
+src/thor/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -108,7 +106,7 @@ ipython_config.py
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
+pdm.lock
 #   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
 #   in version control.
 #   https://pdm.fming.dev/#use-with-ide
