@@ -25,7 +25,7 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core@git+https://github.com/B612-Asteroid-Institute/adam_core.git@main#egg=adam-core",
+    "adam-core>=0.2.5",
     "adam-pyoorb@git+https://github.com/B612-Asteroid-Institute/adam-pyoorb.git@main#egg=adam-pyoorb",
     "astropy>=5.3.1",
     "astroquery",
@@ -37,7 +37,7 @@ dependencies = [
     "pandas",
     "psutil",
     "pyarrow>=14.0.0",
-    "pydantic< 2.0.0",
+    "pydantic<2.0.0",
     "pyyaml>=5.1",
     "quivr",
     "ray[default]",
