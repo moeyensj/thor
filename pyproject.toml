@@ -1,7 +1,119 @@
-[build-system]
-requires = ["setuptools>=66", "wheel", "setuptools_scm[toml]>=6.0"]
-build-backend = "setuptools.build_meta"
+[project]
+name = "thor"
+dynamic = ["version"]
+authors = [
+  { name = "Joachim Moeyens", email = "moeyensj@uw.edu" },
+  { name = "Mario Juric", email = "mjuric@astro.washington.edu" },
+  { name = "Spencer Nelson", email = "spencer@b612foundation.org" },
+  { name = "Alec Koumjian", email = "alec@b612foundation.org" },
+]
+description = "Tracklet-less Heliocentric Orbit Recovery"
+readme = "README.md"
+license = { file = "LICENSE.md" }
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: BSD License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Astronomy",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
-[tool.setuptools_scm]
-write_to = "thor/version.py"
-write_to_template = "__version__ = '{version}'"
+dependencies = [
+    "adam-core>=0.2.5",
+    "adam-pyoorb@git+https://github.com/B612-Asteroid-Institute/adam-pyoorb.git@main#egg=adam-pyoorb",
+    "astropy>=5.3.1",
+    "astroquery",
+    "difi",
+    "healpy",
+    "jax",
+    "numpy",
+    "numba",
+    "pandas",
+    "psutil",
+    "pyarrow>=14.0.0",
+    "pydantic<2.0.0",
+    "pyyaml>=5.1",
+    "quivr",
+    "ray[default]",
+    "scikit-learn",
+    "scipy",
+    "spiceypy",
+]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+[tool.pdm.build]
+includes = ["src/thor/"]
+
+[tool.pdm.version]
+source = "scm"
+write_to = "thor/_version.py"
+write_template = "__version__ = '{}'"
+
+[tool.pdm.scripts]
+check = { composite = ["lint", "typecheck", "test"] }
+format = { composite = ["black ./src/thor", "isort ./src/thor"] }
+lint = { composite = [
+  "ruff check ./src/thor",
+  "black --check ./src/thor",
+  "isort --check-only ./src/thor",
+] }
+fix = "ruff ./src/thor --fix"
+typecheck = "mypy --strict ./src/thor"
+
+test = "pytest --benchmark-disable {args}"
+doctest = "pytest --doctest-plus --doctest-only"
+benchmark = "pytest --benchmark-only"
+coverage = "pytest --cov=thor --cov-report=xml"
+
+[project.urls]
+"Documentation" = "https://github.com/moeyensj/thor#README.md"
+"Issues" = "https://github.com/moeyensj/thor/issues"
+"Source" = "https://github.com/moeyensj/thor"
+
+[project.optional-dependencies]
+dev = [
+  "black",
+  "ipython",
+  "matplotlib",
+  "isort",
+  "mypy",
+  "pdm",
+  "pytest-benchmark",
+  "pytest-cov",
+  "pytest-doctestplus",
+  "pytest-mock",
+  "pytest-memray",
+  "pytest",
+  "ruff",
+]
+
+[tool.black]
+line-length = 110
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+lint.ignore = []
+exclude = ["build"]
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+python_functions = "test_*"
+addopts = "-m 'not (integration or memory)'"
+markers = [
+    "integration: Mark a test as an integration test.",
+    "memory: Mark a test as a memory test."
+]
