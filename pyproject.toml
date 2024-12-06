@@ -27,6 +27,7 @@ keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comet
 dependencies = [
     "adam-core>=0.2.5",
     "adam-pyoorb@git+https://github.com/B612-Asteroid-Institute/adam-pyoorb.git@main#egg=adam-pyoorb",
+    "adam-assist>=0.2.0",
     "astropy>=5.3.1",
     "astroquery",
     "difi",
@@ -112,7 +113,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 python_functions = "test_*"
-addopts = "-m 'not (integration or memory)'"
+addopts = "-m 'not (integration or memory)' --ignore=__pypackages__"
 markers = [
     "integration: Mark a test as an integration test.",
     "memory: Mark a test as a memory test."

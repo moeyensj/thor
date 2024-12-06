@@ -10,7 +10,7 @@ logger = logging.getLogger("thor")
 class Config(BaseModel):
     max_processes: Optional[int] = None
     ray_memory_bytes: int = 0
-    propagator: Literal["PYOORB"] = "PYOORB"
+    propagator_namespace: str = "adam_assist.ASSISTPropagator"
     cell_radius: float = 10
     vx_min: float = -0.1
     vx_max: float = 0.1

@@ -25,6 +25,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import psutil
 import pytest
+from adam_assist import ASSISTPropagator
 
 TEST_ORBIT_ID = "896831"
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -226,6 +227,7 @@ def test_range_and_transform(
     range_and_transform(
         memory_test_orbit,
         memory_filtered_observations,
+        propagator_class=ASSISTPropagator,
         max_processes=memory_config.max_processes,
     )
 

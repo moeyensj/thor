@@ -11,7 +11,6 @@ from adam_core.coordinates import (
     transform_coordinates,
 )
 from adam_core.propagator import Propagator
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.ray_cluster import initialize_use_ray
 
 from .observations.observations import Observations
@@ -94,7 +93,7 @@ range_and_transform_remote = range_and_transform_remote.options(
 def range_and_transform(
     test_orbit: TestOrbits,
     observations: Union[Observations, ray.ObjectRef],
-    propagator: Type[Propagator] = PYOORBPropagator,
+    propagator_class: Type[Propagator],
     propagator_kwargs: dict = {},
     max_processes: Optional[int] = 1,
 ) -> TransformedDetections:
@@ -139,13 +138,13 @@ def range_and_transform(
     else:
         observations_ref = None
 
-    prop = propagator(**propagator_kwargs)
+    prop = propagator_class(**propagator_kwargs)
 
     if len(observations) > 0:
         # Compute the ephemeris of the test orbit (this will be cached)
         ephemeris = test_orbit.generate_ephemeris_from_observations(
             observations,
-            propagator=prop,
+            propagator_class=prop,
             max_processes=max_processes,
         )
 
@@ -153,7 +152,7 @@ def range_and_transform(
         # the observations are the same as that of the test orbit
         ranged_detections_spherical = test_orbit.range_observations(
             observations,
-            propagator=prop,
+            propagator_class=prop,
             max_processes=max_processes,
         )
 

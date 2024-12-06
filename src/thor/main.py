@@ -1,3 +1,4 @@
+import importlib
 import logging
 import os
 import pathlib
@@ -7,7 +8,6 @@ from typing import Iterable, Iterator, List, Literal, Optional, Tuple, Union
 
 import quivr as qv
 import ray
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
@@ -113,10 +113,9 @@ def link_test_orbit(
 
     initialize_config(config, working_dir)
 
-    if config.propagator == "PYOORB":
-        propagator = PYOORBPropagator
-    else:
-        raise ValueError(f"Unknown propagator: {config.propagator}")
+    module_path, class_name = config.propagator_namespace.rsplit(".", 1)
+    propagator_module = importlib.import_module(module_path)
+    propagator_class = getattr(propagator_module, class_name)
 
     use_ray = initialize_use_ray(
         num_cpus=config.max_processes,
@@ -182,7 +181,7 @@ def link_test_orbit(
         transformed_detections = range_and_transform(
             test_orbit,
             filtered_observations,
-            propagator=propagator,
+            propagator_class=propagator_class,
             max_processes=config.max_processes,
         )
 
@@ -278,19 +277,18 @@ def link_test_orbit(
         iod_orbits, iod_orbit_members = initial_orbit_determination(
             filtered_observations,
             cluster_members,
+            propagator=propagator,
             min_obs=config.iod_min_obs,
             min_arc_length=config.iod_min_arc_length,
             contamination_percentage=config.iod_contamination_percentage,
             rchi2_threshold=config.iod_rchi2_threshold,
             observation_selection_method=config.iod_observation_selection_method,
-            propagator=propagator,
-            propagator_kwargs={},
-            chunk_size=config.iod_chunk_size,
-            max_processes=config.max_processes,
-            # TODO: investigate whether these should be configurable
             iterate=False,
             light_time=True,
             linkage_id_col="cluster_id",
+            propagator_kwargs={},
+            chunk_size=config.iod_chunk_size,
+            max_processes=config.max_processes,
         )
 
         iod_orbits_path = None

@@ -12,7 +12,6 @@ import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 from adam_core.propagator import Propagator
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 from sklearn.neighbors import BallTree
@@ -153,12 +152,12 @@ def attribution_worker(
     observation_indices: Tuple[int, int],
     orbits: Union[Orbits, FittedOrbits],
     observations: Observations,
+    propagator_class: Type[Propagator],
     radius: float = 1 / 3600,
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
 ) -> Attributions:
     # Initialize the propagator
-    prop = propagator(**propagator_kwargs)
+    prop = propagator_class(**propagator_kwargs)
 
     if isinstance(orbits, FittedOrbits):
         orbits = orbits.to_orbits()
@@ -279,8 +278,8 @@ attribution_worker_remote.options(
 def attribute_observations(
     orbits: Union[Orbits, FittedOrbits, ray.ObjectRef],
     observations: Union[Observations, ray.ObjectRef],
+    propagator_class: Type[Propagator],
     radius: float = 5 / 3600,
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
     orbits_chunk_size: int = 10,
     observations_chunk_size: int = 100000,
@@ -343,7 +342,7 @@ def attribute_observations(
                         orbits_ref,
                         observations_ref,
                         radius=radius,
-                        propagator=propagator,
+                        propagator_class=propagator_class,
                         propagator_kwargs=propagator_kwargs,
                     )
                 )
@@ -396,6 +395,7 @@ def merge_and_extend_orbits(
     orbits: Union[FittedOrbits, ray.ObjectRef],
     orbit_members: Union[FittedOrbitMembers, ray.ObjectRef],
     observations: Union[Observations, ray.ObjectRef],
+    propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 20.0,
@@ -404,7 +404,6 @@ def merge_and_extend_orbits(
     delta: float = 1e-8,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
     orbits_chunk_size: int = 10,
     observations_chunk_size: int = 100000,
@@ -484,7 +483,7 @@ def merge_and_extend_orbits(
             orbits_ref if use_ray else orbits,
             observations_ref if use_ray else observations,
             radius=radius,
-            propagator=propagator,
+            propagator_class=propagator_class,
             propagator_kwargs=propagator_kwargs,
             orbits_chunk_size=orbits_chunk_size_iter,
             observations_chunk_size=observations_chunk_size,

@@ -1,14 +1,16 @@
 import abc
+import importlib
 import logging
 import multiprocessing as mp
 import time
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Type, Union
 
 import numpy as np
 import pyarrow.parquet as pq
 import quivr as qv
 import ray
 from adam_core.coordinates import SphericalCoordinates
+from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 
 from thor.config import Config
@@ -34,6 +36,7 @@ class ObservationFilter(abc.ABC):
         self,
         observations: Observations,
         test_orbit: TestOrbits,
+        propagator_class: Type[Propagator],
     ) -> "Observations":
         """
         Apply the filter to a collection of observations.
@@ -77,6 +80,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         self,
         observations: Union["Observations", ray.ObjectRef],
         test_orbit: TestOrbits,
+        propagator_class: Type[Propagator],
     ) -> "Observations":
         """
         Apply the filter to a collection of observations.
@@ -103,7 +107,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         logger.info(f"Using radius = {self.radius:.5f} deg")
 
         # Generate an ephemeris for every observer time/location in the dataset
-        ephemeris = test_orbit.generate_ephemeris_from_observations(observations)
+        ephemeris = test_orbit.generate_ephemeris_from_observations(observations, propagator_class)
 
         filtered_observations = Observations.empty()
         state_ids = observations.state_id.unique()
@@ -198,6 +202,7 @@ def filter_observations_worker(
     observations: Observations,
     test_orbit: TestOrbits,
     filters: List[ObservationFilter],
+    propagator_class: Type[Propagator],
 ) -> Observations:
     """
     Apply a list of filters to the observations.
@@ -222,6 +227,7 @@ def filter_observations_worker(
         observations = filter_i.apply(
             observations,
             test_orbit,
+            propagator_class,
         )
 
     # Defragment the observations
@@ -271,6 +277,10 @@ def filter_observations(
     time_start = time.perf_counter()
     logger.info("Running observation filters...")
 
+    module_path, class_name = config.propagator_namespace.rsplit(".", 1)
+    propagator_module = importlib.import_module(module_path)
+    propagator_class = getattr(propagator_module, class_name)
+
     if len(test_orbit) != 1:
         raise ValueError(f"filter_observations received {len(test_orbit)} orbits but expected 1.")
 
@@ -303,9 +313,7 @@ def filter_observations(
         for observations_chunk in observations_iterator(observations, chunk_size=chunk_size):
             futures.append(
                 filter_observations_worker_remote.remote(
-                    observations_chunk,
-                    test_orbit,
-                    filters,
+                    observations_chunk, test_orbit, filters, propagator_class
                 )
             )
             if len(futures) > max_processes * 1.5:
@@ -330,6 +338,7 @@ def filter_observations(
                 observations_chunk,
                 test_orbit,
                 filters,
+                propagator_class,
             )
             filtered_observations = qv.concatenate([filtered_observations, filtered_observations_chunk])
             if filtered_observations.fragmented():

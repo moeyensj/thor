@@ -165,3 +165,7 @@ cython_debug/
 
 .volumes/*
 .docker_bash_history.txt
+
+# pdm stuff
+.pdm-build/
+.pdm-python
