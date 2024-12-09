@@ -280,6 +280,13 @@ class TestOrbits(qv.Table):
 
         observers_with_states = observations.get_observers()
 
+        observers_with_states = observers_with_states.sort_by(
+            by=[
+                "observers.coordinates.time.days",
+                "observers.coordinates.time.nanos",
+                "observers.code",
+            ]
+        )
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
             observers_with_states.observers,
@@ -291,14 +298,6 @@ class TestOrbits(qv.Table):
                 "coordinates.time.days",
                 "coordinates.time.nanos",
                 "coordinates.origin.code",
-            ]
-        )
-
-        observers_with_states = observers_with_states.sort_by(
-            by=[
-                "observers.coordinates.time.days",
-                "observers.coordinates.time.nanos",
-                "observers.coordinates.origin.code",
             ]
         )
 
@@ -324,8 +323,8 @@ class TestOrbits(qv.Table):
         ----------
         observations : `~thor.observations.observations.Observations`
             Observations to range.
-        propagator_class : `~adam_core.propagator.propagator.Propagator`
-            Propagator to use to propagate the orbit.
+        propagator : `~adam_core.propagator.propagator.Propagator`, optional
+            Propagator to use to propagate the orbit. Defaults to PYOORB.
         max_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
 

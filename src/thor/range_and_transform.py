@@ -72,12 +72,18 @@ def range_and_transform_worker(
         origin_out=OriginCodes.SUN,
     )
 
+    # We are using the state vector of the test orbits in space at the time of the observer
+    # we need to link on those times later on
+    test_orbit_at_detection_time = ephemeris_state.ephemeris.aberrated_coordinates.set_column(
+        "time",
+        ephemeris_state.ephemeris.coordinates.time,
+    )
     # Transform the detections into the co-rotating frame
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
         coordinates=GnomonicCoordinates.from_cartesian(
             ranged_detections_cartesian_state,
-            center_cartesian=ephemeris_state.ephemeris.aberrated_coordinates,
+            center_cartesian=test_orbit_at_detection_time,
         ),
         state_id=observations_state.state_id,
     )
@@ -124,7 +130,9 @@ def range_and_transform(
     """
     time_start = time.perf_counter()
     logger.info("Running range and transform...")
+    import pdb
 
+    pdb.set_trace()
     if len(test_orbit) != 1:
         raise ValueError(f"range_and_transform received {len(test_orbit)} orbits but expected 1.")
 
@@ -138,13 +146,13 @@ def range_and_transform(
     else:
         observations_ref = None
 
-    prop = propagator_class(**propagator_kwargs)
+    # prop = propagator_class(**propagator_kwargs)
 
     if len(observations) > 0:
         # Compute the ephemeris of the test orbit (this will be cached)
         ephemeris = test_orbit.generate_ephemeris_from_observations(
             observations,
-            propagator_class=prop,
+            propagator_class=propagator_class,
             max_processes=max_processes,
         )
 
@@ -152,9 +160,10 @@ def range_and_transform(
         # the observations are the same as that of the test orbit
         ranged_detections_spherical = test_orbit.range_observations(
             observations,
-            propagator_class=prop,
+            propagator_class=propagator_class,
             max_processes=max_processes,
         )
+        print(ranged_detections_spherical.to_dataframe())
 
         transformed_detections = TransformedDetections.empty()
 
