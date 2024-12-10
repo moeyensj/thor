@@ -372,7 +372,7 @@ def attribute_observations(
                     orbits,
                     observations,
                     radius=radius,
-                    propagator=propagator,
+                    propagator_class=propagator_class,
                     propagator_kwargs=propagator_kwargs,
                 )
                 attributions = qv.concatenate([attributions, attribution_df_i])
@@ -521,7 +521,7 @@ def merge_and_extend_orbits(
             delta=delta,
             method=method,
             max_iter=max_iter,
-            propagator=propagator,
+            propagator_class=propagator_class,
             propagator_kwargs=propagator_kwargs,
             chunk_size=orbits_chunk_size_iter,
             max_processes=max_processes,
@@ -638,7 +638,7 @@ def merge_and_extend_orbits(
             delta=delta,
             method=method,
             max_iter=max_iter,
-            propagator=propagator,
+            propagator_class=propagator_class,
             propagator_kwargs=propagator_kwargs,
             chunk_size=orbits_chunk_size,
             max_processes=max_processes,

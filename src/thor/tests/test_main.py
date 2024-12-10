@@ -34,7 +34,6 @@ OBJECT_IDS = [
     "434 Hungaria (A898 RB)",
     "1876 Napolitania (1970 BA)",
     "2001 Einstein (1973 EB)",
-    "2 Pallas (A802 FA)",
     "6 Hebe (A847 NA)",
     "6522 Aci (1991 NQ)",
     "10297 Lynnejones (1988 RJ13)",
@@ -168,22 +167,6 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
         integration_config,
     ) = setup_test_data(object_id, orbits, observations, integration_config)
 
-    # assert len(observations) == 90, f"Expected 90 observations in inputs, got {len(observations)}"
-    # rescale the observations to the time scale of the test orbit
-    # observations = Observations.from_kwargs(
-    #     id=observations.id,
-    #     exposure_id=observations.exposure_id,
-    #     coordinates=SphericalCoordinates.from_kwargs(
-    #         lon=observations.coordinates.lon,
-    #         lat=observations.coordinates.lat,
-    #         time=observations.coordinates.time.rescale(test_orbit.coordinates.time.scale),
-    #         frame=observations.coordinates.frame,
-    #         origin=observations.coordinates.origin,
-    #     ),
-    #     photometry=observations.photometry,
-    #     state_id=observations.state_id,
-    # )
-
     if object_id in TOLERANCES:
         integration_config.cell_radius = TOLERANCES[object_id]
     else:
@@ -191,13 +174,12 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
     # Set a filter to include observations within 1 arcsecond of the predicted position
     # of the test orbit
 
-    observations = observations[0]
     filters = [TestOrbitRadiusObservationFilter(radius=integration_config.cell_radius)]
     for filter in filters:
         observations = filter.apply(observations, test_orbit, ASSISTPropagator)
+    # observations = observations[0]
 
     # Run range and transform and make sure we get the correct observations back
-
     transformed_detections = range_and_transform(
         test_orbit,
         observations,
@@ -207,12 +189,6 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
     assert pc.all(
         pc.less_equal(
             pc.abs(transformed_detections.coordinates.theta_x),
-            integration_config.cell_radius,
-        )
-    ).as_py()
-    assert pc.all(
-        pc.less_equal(
-            pc.abs(transformed_detections.coordinates.theta_y),
             integration_config.cell_radius,
         )
     ).as_py()

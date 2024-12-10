@@ -26,8 +26,6 @@ keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comet
 
 dependencies = [
     "adam-core>=0.3.1",
-    "adam-pyoorb@git+https://github.com/B612-Asteroid-Institute/adam-pyoorb.git@main#egg=adam-pyoorb",
-    "adam-assist>=0.2.0",
     "astropy>=5.3.1",
     "astroquery",
     "difi",
@@ -81,19 +79,21 @@ coverage = "pytest --cov=thor --cov-report=xml"
 
 [project.optional-dependencies]
 dev = [
-  "black",
-  "ipython",
-  "matplotlib",
-  "isort",
-  "mypy",
-  "pdm",
-  "pytest-benchmark",
-  "pytest-cov",
-  "pytest-doctestplus",
-  "pytest-mock",
-  "pytest-memray",
-  "pytest",
-  "ruff",
+    "black",
+    "ipython",
+    "matplotlib",
+    "isort",
+    "mypy",
+    "pdm",
+    "pytest-benchmark",
+    "pytest-cov",
+    "pytest-doctestplus",
+    "pytest-mock",
+    "pytest-memray",
+    "pytest",
+    "ruff",
+    "adam-assist>=0.2.0",
+    "adam-pyoorb @ git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@0697eeb871f8d2f8577bf545f5da3966c473662e",
 ]
 
 [tool.black]

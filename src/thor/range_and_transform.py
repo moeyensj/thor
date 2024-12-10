@@ -72,12 +72,22 @@ def range_and_transform_worker(
         origin_out=OriginCodes.SUN,
     )
 
+    # let's test transforming the aberrated coordinates to heliocentric instead of ssb
+    test_orbit_at_detection_time = transform_coordinates(
+        ephemeris_state.ephemeris.aberrated_coordinates,
+        representation_out=CartesianCoordinates,
+        frame_out="ecliptic",
+        origin_out=OriginCodes.SUN,
+    )
+
     # We are using the state vector of the test orbits in space at the time of the observer
     # we need to link on those times later on
-    test_orbit_at_detection_time = ephemeris_state.ephemeris.aberrated_coordinates.set_column(
+    test_orbit_at_detection_time = test_orbit_at_detection_time.set_column(
         "time",
-        ephemeris_state.ephemeris.coordinates.time,
+        observations_state.coordinates.time
     )
+
+
     # Transform the detections into the co-rotating frame
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
@@ -130,9 +140,6 @@ def range_and_transform(
     """
     time_start = time.perf_counter()
     logger.info("Running range and transform...")
-    import pdb
-
-    pdb.set_trace()
     if len(test_orbit) != 1:
         raise ValueError(f"range_and_transform received {len(test_orbit)} orbits but expected 1.")
 
@@ -163,8 +170,6 @@ def range_and_transform(
             propagator_class=propagator_class,
             max_processes=max_processes,
         )
-        print(ranged_detections_spherical.to_dataframe())
-
         transformed_detections = TransformedDetections.empty()
 
         if max_processes is None:

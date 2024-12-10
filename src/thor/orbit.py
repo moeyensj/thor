@@ -75,9 +75,19 @@ def range_observations_worker(
     """
     observations_state = observations.select("state_id", state_id)
     ephemeris_state = ephemeris.select("id", state_id)
+    assert len(ephemeris_state) == 1
 
     # Get the heliocentric position vector of the object at the time of the exposure
-    r = ephemeris_state.ephemeris.aberrated_coordinates.r[0]
+    aberrated_coordinates = ephemeris_state.ephemeris.aberrated_coordinates
+    if aberrated_coordinates.origin.code.to_pylist()[0] != "SUN":
+        aberrated_coordinates = transform_coordinates(
+            aberrated_coordinates,
+            CartesianCoordinates,
+            frame_out="ecliptic",
+            origin_out=OriginCodes.SUN,
+        )
+
+    r = aberrated_coordinates.r[0]
 
     # Get the observer's heliocentric coordinates
     observer_i = ephemeris_state.observer
@@ -272,9 +282,9 @@ class TestOrbits(qv.Table):
         if len(observations) == 0:
             raise ValueError("Observations must not be empty.")
 
-        if self._is_cache_fresh(observations):
-            logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
-            return self._cached_ephemeris
+        # if self._is_cache_fresh(observations):
+        #     logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
+        #     return self._cached_ephemeris
 
         logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
 
@@ -306,7 +316,7 @@ class TestOrbits(qv.Table):
             ephemeris=ephemeris,
             observer=observers_with_states.observers,
         )
-        self._cache_ephemeris(test_orbit_ephemeris, observations)
+        # self._cache_ephemeris(test_orbit_ephemeris, observations)
         return test_orbit_ephemeris
 
     def range_observations(

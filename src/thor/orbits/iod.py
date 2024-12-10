@@ -630,7 +630,7 @@ def initial_orbit_determination(
                     iterate=iterate,
                     light_time=light_time,
                     linkage_id_col=linkage_id_col,
-                    propagator=propagator,
+                    propagator_class=propagator_class,
                     propagator_kwargs=propagator_kwargs,
                 )
                 iod_orbits = qv.concatenate([iod_orbits, iod_orbits_chunk])
