@@ -78,12 +78,20 @@ def range_and_transform_worker(
         "time",
         ephemeris_state.ephemeris.coordinates.time,
     )
+
+    test_orbit_at_detection_time_heliocentric = transform_coordinates(
+        test_orbit_at_detection_time,
+        representation_out=CartesianCoordinates,
+        frame_out="ecliptic",
+        origin_out=OriginCodes.SUN,
+    )
+
     # Transform the detections into the co-rotating frame
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
         coordinates=GnomonicCoordinates.from_cartesian(
             ranged_detections_cartesian_state,
-            center_cartesian=test_orbit_at_detection_time,
+            center_cartesian=test_orbit_at_detection_time_heliocentric,
         ),
         state_id=observations_state.state_id,
     )
@@ -130,9 +138,6 @@ def range_and_transform(
     """
     time_start = time.perf_counter()
     logger.info("Running range and transform...")
-    import pdb
-
-    pdb.set_trace()
     if len(test_orbit) != 1:
         raise ValueError(f"range_and_transform received {len(test_orbit)} orbits but expected 1.")
 
@@ -163,7 +168,6 @@ def range_and_transform(
             propagator_class=propagator_class,
             max_processes=max_processes,
         )
-        print(ranged_detections_spherical.to_dataframe())
 
         transformed_detections = TransformedDetections.empty()
 

@@ -25,7 +25,7 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.3.1",
+    "adam-core[pyoorb]>=0.3.1",
     "adam-pyoorb@git+https://github.com/B612-Asteroid-Institute/adam-pyoorb.git@main#egg=adam-pyoorb",
     "adam-assist>=0.2.0",
     "astropy>=5.3.1",

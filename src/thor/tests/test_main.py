@@ -4,6 +4,7 @@ import shutil
 import pyarrow.compute as pc
 import pytest
 from adam_assist import ASSISTPropagator
+from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.utils.helpers import make_observations, make_real_orbits
 
 from ..checkpointing import (
@@ -79,7 +80,7 @@ def integration_config(request):
         vy_min=-0.01,
         vy_max=0.01,
         max_processes=max_processes,
-        propagator_namespace="adam_assist.ASSISTPropagator",
+        propagator_namespace="adam_core.propagator.adam_pyoorb.PYOORBPropagator",
     )
     return config
 
@@ -155,7 +156,7 @@ def test_Orbit_generate_ephemeris_from_observations_empty(orbits):
     observations = Observations.empty()
     test_orbit = THORbits.from_orbits(orbits[0])
     with pytest.raises(ValueError, match="Observations must not be empty."):
-        test_orbit.generate_ephemeris_from_observations(observations, ASSISTPropagator)
+        test_orbit.generate_ephemeris_from_observations(observations, PYOORBPropagator)
 
 
 @pytest.mark.parametrize("object_id", OBJECT_IDS)
@@ -168,22 +169,6 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
         integration_config,
     ) = setup_test_data(object_id, orbits, observations, integration_config)
 
-    # assert len(observations) == 90, f"Expected 90 observations in inputs, got {len(observations)}"
-    # rescale the observations to the time scale of the test orbit
-    # observations = Observations.from_kwargs(
-    #     id=observations.id,
-    #     exposure_id=observations.exposure_id,
-    #     coordinates=SphericalCoordinates.from_kwargs(
-    #         lon=observations.coordinates.lon,
-    #         lat=observations.coordinates.lat,
-    #         time=observations.coordinates.time.rescale(test_orbit.coordinates.time.scale),
-    #         frame=observations.coordinates.frame,
-    #         origin=observations.coordinates.origin,
-    #     ),
-    #     photometry=observations.photometry,
-    #     state_id=observations.state_id,
-    # )
-
     if object_id in TOLERANCES:
         integration_config.cell_radius = TOLERANCES[object_id]
     else:
@@ -191,19 +176,18 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
     # Set a filter to include observations within 1 arcsecond of the predicted position
     # of the test orbit
 
-    observations = observations[0]
     filters = [TestOrbitRadiusObservationFilter(radius=integration_config.cell_radius)]
     for filter in filters:
-        observations = filter.apply(observations, test_orbit, ASSISTPropagator)
+        observations = filter.apply(observations, test_orbit, PYOORBPropagator)
 
     # Run range and transform and make sure we get the correct observations back
 
     transformed_detections = range_and_transform(
         test_orbit,
         observations,
-        propagator_class=ASSISTPropagator,
+        propagator_class=PYOORBPropagator,
     )
-    # assert len(transformed_detections) == 90
+    assert len(transformed_detections) == 90
     assert pc.all(
         pc.less_equal(
             pc.abs(transformed_detections.coordinates.theta_x),
