@@ -13,7 +13,6 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Orbits
 from adam_core.propagator import Propagator, _iterate_chunks
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.propagator.utils import _iterate_chunk_indices
 from adam_core.ray_cluster import initialize_use_ray
 from scipy.linalg import solve
@@ -32,6 +31,7 @@ def od_worker(
     orbits: FittedOrbits,
     orbit_members: FittedOrbitMembers,
     observations: Observations,
+    propagator_class: Type[Propagator],
     rchi2_threshold: float = 100,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -39,7 +39,6 @@ def od_worker(
     delta: float = 1e-6,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
 
@@ -80,7 +79,7 @@ def od_worker(
             delta=delta,
             max_iter=max_iter,
             method=method,
-            propagator=propagator,
+            propagator_class=propagator_class,
             propagator_kwargs=propagator_kwargs,
         )
         time_end = time.time()
@@ -104,6 +103,7 @@ def od_worker_remote(
     orbits: FittedOrbits,
     orbit_members: FittedOrbitMembers,
     observations: Observations,
+    propagator_class: Type[Propagator],
     rchi2_threshold: float = 100,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -111,7 +111,6 @@ def od_worker_remote(
     delta: float = 1e-6,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     orbit_ids_chunk = orbit_ids[orbit_ids_indices[0] : orbit_ids_indices[1]]
@@ -127,7 +126,7 @@ def od_worker_remote(
         delta=delta,
         max_iter=max_iter,
         method=method,
-        propagator=propagator,
+        propagator_class=propagator_class,
         propagator_kwargs=propagator_kwargs,
     )
 
@@ -138,6 +137,7 @@ od_worker_remote.options(num_returns=1, num_cpus=1)
 def od(
     orbit: FittedOrbits,
     observations: OrbitDeterminationObservations,
+    propagator_class: Type[Propagator],
     rchi2_threshold: float = 100,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -145,11 +145,10 @@ def od(
     delta: float = 1e-6,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     # Intialize the propagator
-    prop = propagator(**propagator_kwargs)
+    prop = propagator_class(**propagator_kwargs)
 
     if method not in ["central", "finite"]:
         err = "method should be one of 'central' or 'finite'."
@@ -542,6 +541,7 @@ def differential_correction(
     orbits: Union[FittedOrbits, ray.ObjectRef],
     orbit_members: Union[FittedOrbitMembers, ray.ObjectRef],
     observations: Union[Observations, ray.ObjectRef],
+    propagator_class: Type[Propagator],
     min_obs: int = 5,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 20,
@@ -549,7 +549,6 @@ def differential_correction(
     delta: float = 1e-8,
     max_iter: int = 20,
     method: Literal["central", "finite"] = "central",
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
     chunk_size: int = 10,
     max_processes: Optional[int] = 1,
@@ -664,7 +663,7 @@ def differential_correction(
                     delta=delta,
                     max_iter=max_iter,
                     method=method,
-                    propagator=propagator,
+                    propagator_class=propagator_class,
                     propagator_kwargs=propagator_kwargs,
                 )
             )
@@ -707,7 +706,7 @@ def differential_correction(
                 delta=delta,
                 max_iter=max_iter,
                 method=method,
-                propagator=propagator,
+                propagator_class=propagator_class,
                 propagator_kwargs=propagator_kwargs,
             )
             od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
