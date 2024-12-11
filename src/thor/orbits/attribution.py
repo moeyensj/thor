@@ -171,6 +171,7 @@ def attribution_worker(
     observers = observers_with_states.observers
 
     # Generate ephemerides for each orbit at the observation times
+    observers = observers.sort_by(["coordinates.time.days", "coordinates.time.nanos", "code"])
     ephemeris = prop.generate_ephemeris(orbits, observers, chunk_size=len(orbits), max_processes=1)
 
     # Round the ephemeris and observations to the nearest millisecond
@@ -236,6 +237,7 @@ def attribution_worker(
 
         # Select all observations with distance smaller or equal
         # to the maximum given distance
+        print(d)
         mask = np.where(d <= radius_rad)
 
         if len(d[mask]) > 0:
@@ -479,6 +481,7 @@ def merge_and_extend_orbits(
         )
 
         # Run attribution
+        print(radius)
         attributions = attribute_observations(
             orbits_ref if use_ray else orbits,
             observations_ref if use_ray else observations,

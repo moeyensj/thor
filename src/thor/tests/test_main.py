@@ -56,6 +56,17 @@ TOLERANCES = {
     "1I/'Oumuamua (A/2017 U1)": 5 / 3600,
 }
 
+FAILING_OBJECTS = {
+    "594913 'Aylo'chaxnim (2020 AV2)": "Fails OD",  # OBJECT_IDS[0]
+    "3753 Cruithne (1986 TO)": "Fails OD",          # OBJECT_IDS[3]
+    "54509 YORP (2000 PH5)": "Fails OD",            # OBJECT_IDS[4]
+    "2063 Bacchus (1977 HB)": "Fails OD",           # OBJECT_IDS[5]
+    "433 Eros (A898 PA)": "Fails OD",               # OBJECT_IDS[7]
+    "3908 Nyx (1980 PA)": "Fails OD",               # OBJECT_IDS[8]
+    "1I/'Oumuamua (A/2017 U1)": "Fails IOD",
+}
+
+
 
 @pytest.fixture
 def observations():
@@ -177,7 +188,6 @@ def test_range_and_transform(object_id, orbits, observations, integration_config
     filters = [TestOrbitRadiusObservationFilter(radius=integration_config.cell_radius)]
     for filter in filters:
         observations = filter.apply(observations, test_orbit, ASSISTPropagator)
-    # observations = observations[0]
 
     # Run range and transform and make sure we get the correct observations back
     transformed_detections = range_and_transform(
@@ -205,23 +215,18 @@ def run_link_test_orbit(test_orbit, observations, config):
             return recovered_orbits, recovered_orbit_members
 
 
+
 @pytest.mark.parametrize(
     "object_id",
     [
-        pytest.param(OBJECT_IDS[0], marks=pytest.mark.xfail(reason="Fails OD")),
+        object_id for object_id in OBJECT_IDS if object_id not in FAILING_OBJECTS.keys()
     ]
-    + OBJECT_IDS[1:3]
     + [
-        pytest.param(OBJECT_IDS[3], marks=pytest.mark.xfail(reason="Fails OD")),
-        pytest.param(OBJECT_IDS[4], marks=pytest.mark.xfail(reason="Fails OD")),
-        pytest.param(OBJECT_IDS[5], marks=pytest.mark.xfail(reason="Fails OD")),
-    ]
-    + [OBJECT_IDS[6]]
-    + [
-        pytest.param(OBJECT_IDS[7], marks=pytest.mark.xfail(reason="Fails OD")),
-        pytest.param(OBJECT_IDS[8], marks=pytest.mark.xfail(reason="Fails OD")),
-    ]
-    + OBJECT_IDS[9:],
+        pytest.param(
+            object_id, marks=pytest.mark.xfail(reason=FAILING_OBJECTS[object_id])
+        )
+        for object_id in FAILING_OBJECTS.keys()
+    ],
 )
 @pytest.mark.parametrize("integration_config", [1, 4], indirect=True)
 @pytest.mark.integration

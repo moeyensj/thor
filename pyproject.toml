@@ -25,7 +25,7 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.3.3",
+    "adam-core>=0.3.4",
     "astropy>=5.3.1",
     "astroquery",
     "difi",
@@ -70,7 +70,7 @@ typecheck = "mypy --strict ./src/thor"
 test = "pytest --benchmark-disable {args}"
 doctest = "pytest --doctest-plus --doctest-only"
 benchmark = "pytest --benchmark-only"
-coverage = "pytest --cov=thor --cov-report=xml"
+coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
 
 [project.urls]
 "Documentation" = "https://github.com/moeyensj/thor#README.md"
@@ -113,7 +113,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 python_functions = "test_*"
-addopts = "-m 'not (integration or memory)' --ignore=__pypackages__"
+addopts = "-m 'not (memory)' --ignore=__pypackages__"
 markers = [
     "integration: Mark a test as an integration test.",
     "memory: Mark a test as a memory test."

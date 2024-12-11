@@ -12,6 +12,7 @@ import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
+from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
 from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
@@ -393,7 +394,19 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = prop.generate_ephemeris(iod_orbits, observers, chunk_size=1, max_processes=1)
+        ephemeris = Ephemeris.empty()
+        survived_iod_orbits = Orbits.empty()
+        for orbit_i in iod_orbits:
+            try:
+                ephemeris_i = prop.generate_ephemeris(orbit_i, observers, chunk_size=1, max_processes=1)
+                ephemeris = qv.concatenate([ephemeris, ephemeris_i])
+                survived_iod_orbits = qv.concatenate([survived_iod_orbits, orbit_i])
+            except ValueError:
+                continue
+        
+        if len(survived_iod_orbits) < len(iod_orbits):
+            logger.warning(f"{len(survived_iod_orbits)} of {len(iod_orbits)} orbits survived ephemeris generation.")
+        iod_orbits = survived_iod_orbits
 
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
