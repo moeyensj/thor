@@ -58,14 +58,13 @@ TOLERANCES = {
 
 FAILING_OBJECTS = {
     "594913 'Aylo'chaxnim (2020 AV2)": "Fails OD",  # OBJECT_IDS[0]
-    "3753 Cruithne (1986 TO)": "Fails OD",          # OBJECT_IDS[3]
-    "54509 YORP (2000 PH5)": "Fails OD",            # OBJECT_IDS[4]
-    "2063 Bacchus (1977 HB)": "Fails OD",           # OBJECT_IDS[5]
-    "433 Eros (A898 PA)": "Fails OD",               # OBJECT_IDS[7]
-    "3908 Nyx (1980 PA)": "Fails OD",               # OBJECT_IDS[8]
+    "3753 Cruithne (1986 TO)": "Fails OD",  # OBJECT_IDS[3]
+    "54509 YORP (2000 PH5)": "Fails OD",  # OBJECT_IDS[4]
+    "2063 Bacchus (1977 HB)": "Fails OD",  # OBJECT_IDS[5]
+    "433 Eros (A898 PA)": "Fails OD",  # OBJECT_IDS[7]
+    "3908 Nyx (1980 PA)": "Fails OD",  # OBJECT_IDS[8]
     "1I/'Oumuamua (A/2017 U1)": "Fails IOD",
 }
-
 
 
 @pytest.fixture
@@ -215,16 +214,11 @@ def run_link_test_orbit(test_orbit, observations, config):
             return recovered_orbits, recovered_orbit_members
 
 
-
 @pytest.mark.parametrize(
     "object_id",
-    [
-        object_id for object_id in OBJECT_IDS if object_id not in FAILING_OBJECTS.keys()
-    ]
+    [object_id for object_id in OBJECT_IDS if object_id not in FAILING_OBJECTS.keys()]
     + [
-        pytest.param(
-            object_id, marks=pytest.mark.xfail(reason=FAILING_OBJECTS[object_id])
-        )
+        pytest.param(object_id, marks=pytest.mark.xfail(reason=FAILING_OBJECTS[object_id]))
         for object_id in FAILING_OBJECTS.keys()
     ],
 )

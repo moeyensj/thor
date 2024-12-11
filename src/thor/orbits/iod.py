@@ -403,9 +403,11 @@ def iod(
                 survived_iod_orbits = qv.concatenate([survived_iod_orbits, orbit_i])
             except ValueError:
                 continue
-        
+
         if len(survived_iod_orbits) < len(iod_orbits):
-            logger.warning(f"{len(survived_iod_orbits)} of {len(iod_orbits)} orbits survived ephemeris generation.")
+            logger.warning(
+                f"{len(survived_iod_orbits)} of {len(iod_orbits)} orbits survived ephemeris generation."
+            )
         iod_orbits = survived_iod_orbits
 
         # For each unique initial orbit calculate residuals and chi-squared
