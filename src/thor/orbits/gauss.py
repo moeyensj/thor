@@ -310,7 +310,6 @@ def gaussIOD(
             continue
 
         if (np.linalg.norm(orbit[:3]) > 300.0) or (np.linalg.norm(orbit[3:]) > 1.0):
-            raise ValueError("craaazy orbit")
             # Orbits that crash PYOORB:
             # 58366.84446725786 : 9.5544354809296721e+01  1.4093228616761269e+01 -6.6700146960148423e+00 -6.2618123281073522e+01 -9.4167879481188717e+00  4.4421501034359023e+0
             continue
