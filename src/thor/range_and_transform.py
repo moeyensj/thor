@@ -83,7 +83,7 @@ def range_and_transform_worker(
     # We are using the state vector of the test orbits in space at the time of the observer
     # we need to link on those times later on
     test_orbit_at_detection_time = test_orbit_at_detection_time.set_column(
-        "time", observations_state.coordinates.time
+        "time", ephemeris_state.ephemeris.coordinates.time
     )
 
     # Transform the detections into the co-rotating frame
