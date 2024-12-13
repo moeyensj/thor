@@ -237,7 +237,6 @@ def attribution_worker(
 
         # Select all observations with distance smaller or equal
         # to the maximum given distance
-        print(d)
         mask = np.where(d <= radius_rad)
 
         if len(d[mask]) > 0:
