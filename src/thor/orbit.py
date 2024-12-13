@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import uuid
-from typing import Optional, TypeVar, Union
+from typing import Optional, Type, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
@@ -19,7 +19,6 @@ from adam_core.coordinates import (
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
@@ -76,9 +75,19 @@ def range_observations_worker(
     """
     observations_state = observations.select("state_id", state_id)
     ephemeris_state = ephemeris.select("id", state_id)
+    assert len(ephemeris_state) == 1
 
     # Get the heliocentric position vector of the object at the time of the exposure
-    r = ephemeris_state.ephemeris.aberrated_coordinates.r[0]
+    aberrated_coordinates = ephemeris_state.ephemeris.aberrated_coordinates
+    if aberrated_coordinates.origin.code.to_pylist()[0] != "SUN":
+        aberrated_coordinates = transform_coordinates(
+            aberrated_coordinates,
+            CartesianCoordinates,
+            frame_out="ecliptic",
+            origin_out=OriginCodes.SUN,
+        )
+
+    r = aberrated_coordinates.r[0]
 
     # Get the observer's heliocentric coordinates
     observer_i = ephemeris_state.observer
@@ -173,7 +182,7 @@ class TestOrbits(qv.Table):
     def propagate(
         self,
         times: Timestamp,
-        propagator: Propagator = PYOORBPropagator(),
+        propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
     ) -> Orbits:
         """
@@ -183,8 +192,8 @@ class TestOrbits(qv.Table):
         ----------
         times : `~adam_core.time.time.Timestamp`
             Times to which to propagate the orbit.
-        propagator : `~adam_core.propagator.propagator.Propagator`, optional
-            Propagator to use to propagate the orbit. Defaults to PYOORB.
+        propagator : `~adam_core.propagator.propagator.Propagator`
+            Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
 
@@ -193,6 +202,7 @@ class TestOrbits(qv.Table):
         propagated_orbit : `~adam_core.orbits.orbits.Orbits`
             The test orbit propagated to the given times.
         """
+        propagator = propagator_class()
         return propagator.propagate_orbits(
             self.to_orbits(),
             times,
@@ -203,7 +213,7 @@ class TestOrbits(qv.Table):
     def generate_ephemeris(
         self,
         observers: Observers,
-        propagator: Propagator = PYOORBPropagator(),
+        propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
     ) -> Ephemeris:
         """
@@ -213,8 +223,8 @@ class TestOrbits(qv.Table):
         ----------
         observers : `~adam_core.observers.Observers`
             Observers from which to generate ephemeris.
-        propagator : `~adam_core.propagator.propagator.Propagator`, optional
-            Propagator to use to propagate the orbit. Defaults to PYOORB.
+        propagator_class : `~adam_core.propagator.propagator.Propagator`
+            Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
 
@@ -223,6 +233,7 @@ class TestOrbits(qv.Table):
         ephemeris : `~adam_core.orbits.ephemeris.Ephemeris`
             The ephemeris of the test orbit at the given observers.
         """
+        propagator = propagator_class()
         return propagator.generate_ephemeris(
             self.to_orbits(),
             observers,
@@ -233,7 +244,7 @@ class TestOrbits(qv.Table):
     def generate_ephemeris_from_observations(
         self,
         observations: Union[Observations, ray.ObjectRef],
-        propagator: Propagator = PYOORBPropagator(),
+        propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
     ):
         """
@@ -248,8 +259,8 @@ class TestOrbits(qv.Table):
         ----------
         observations : `~thor.observations.observations.Observations`
             Observations to compute test orbit ephemerides for.
-        propagator : `~adam_core.propagator.propagator.Propagator`, optional
-            Propagator to use to propagate the orbit. Defaults to PYOORB.
+        propagator_class : `~adam_core.propagator.propagator.Propagator`
+            Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
 
@@ -271,18 +282,25 @@ class TestOrbits(qv.Table):
         if len(observations) == 0:
             raise ValueError("Observations must not be empty.")
 
-        if self._is_cache_fresh(observations):
-            logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
-            return self._cached_ephemeris
+        # if self._is_cache_fresh(observations):
+        #     logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
+        #     return self._cached_ephemeris
 
         logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
 
         observers_with_states = observations.get_observers()
 
+        observers_with_states = observers_with_states.sort_by(
+            by=[
+                "observers.coordinates.time.days",
+                "observers.coordinates.time.nanos",
+                "observers.code",
+            ]
+        )
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
             observers_with_states.observers,
-            propagator=propagator,
+            propagator_class=propagator_class,
             max_processes=max_processes,
         )
         ephemeris = ephemeris.sort_by(
@@ -293,26 +311,18 @@ class TestOrbits(qv.Table):
             ]
         )
 
-        observers_with_states = observers_with_states.sort_by(
-            by=[
-                "observers.coordinates.time.days",
-                "observers.coordinates.time.nanos",
-                "observers.coordinates.origin.code",
-            ]
-        )
-
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
             ephemeris=ephemeris,
             observer=observers_with_states.observers,
         )
-        self._cache_ephemeris(test_orbit_ephemeris, observations)
+        # self._cache_ephemeris(test_orbit_ephemeris, observations)
         return test_orbit_ephemeris
 
     def range_observations(
         self,
         observations: Union[Observations, ray.ObjectRef],
-        propagator: Propagator = PYOORBPropagator(),
+        propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
     ) -> RangedPointSourceDetections:
         """
@@ -336,7 +346,7 @@ class TestOrbits(qv.Table):
         # Generate an ephemeris for each unique observation time and observatory
         # code combination
         ephemeris = self.generate_ephemeris_from_observations(
-            observations, propagator=propagator, max_processes=max_processes
+            observations, propagator_class=propagator_class, max_processes=max_processes
         )
 
         if max_processes is None:

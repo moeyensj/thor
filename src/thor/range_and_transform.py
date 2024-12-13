@@ -11,7 +11,6 @@ from adam_core.coordinates import (
     transform_coordinates,
 )
 from adam_core.propagator import Propagator
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.ray_cluster import initialize_use_ray
 
 from .observations.observations import Observations
@@ -73,12 +72,26 @@ def range_and_transform_worker(
         origin_out=OriginCodes.SUN,
     )
 
+    # let's test transforming the aberrated coordinates to heliocentric instead of ssb
+    test_orbit_at_detection_time = transform_coordinates(
+        ephemeris_state.ephemeris.aberrated_coordinates,
+        representation_out=CartesianCoordinates,
+        frame_out="ecliptic",
+        origin_out=OriginCodes.SUN,
+    )
+
+    # We are using the state vector of the test orbits in space at the time of the observer
+    # we need to link on those times later on
+    test_orbit_at_detection_time = test_orbit_at_detection_time.set_column(
+        "time", ephemeris_state.ephemeris.coordinates.time
+    )
+
     # Transform the detections into the co-rotating frame
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
         coordinates=GnomonicCoordinates.from_cartesian(
             ranged_detections_cartesian_state,
-            center_cartesian=ephemeris_state.ephemeris.aberrated_coordinates,
+            center_cartesian=test_orbit_at_detection_time,
         ),
         state_id=observations_state.state_id,
     )
@@ -94,7 +107,7 @@ range_and_transform_remote = range_and_transform_remote.options(
 def range_and_transform(
     test_orbit: TestOrbits,
     observations: Union[Observations, ray.ObjectRef],
-    propagator: Type[Propagator] = PYOORBPropagator,
+    propagator_class: Type[Propagator],
     propagator_kwargs: dict = {},
     max_processes: Optional[int] = 1,
 ) -> TransformedDetections:
@@ -125,7 +138,6 @@ def range_and_transform(
     """
     time_start = time.perf_counter()
     logger.info("Running range and transform...")
-
     if len(test_orbit) != 1:
         raise ValueError(f"range_and_transform received {len(test_orbit)} orbits but expected 1.")
 
@@ -139,13 +151,13 @@ def range_and_transform(
     else:
         observations_ref = None
 
-    prop = propagator(**propagator_kwargs)
+    # prop = propagator_class(**propagator_kwargs)
 
     if len(observations) > 0:
         # Compute the ephemeris of the test orbit (this will be cached)
         ephemeris = test_orbit.generate_ephemeris_from_observations(
             observations,
-            propagator=prop,
+            propagator_class=propagator_class,
             max_processes=max_processes,
         )
 
@@ -153,10 +165,9 @@ def range_and_transform(
         # the observations are the same as that of the test orbit
         ranged_detections_spherical = test_orbit.range_observations(
             observations,
-            propagator=prop,
+            propagator_class=propagator_class,
             max_processes=max_processes,
         )
-
         transformed_detections = TransformedDetections.empty()
 
         if max_processes is None:

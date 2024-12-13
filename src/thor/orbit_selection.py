@@ -2,7 +2,7 @@ import logging
 import multiprocessing as mp
 import time
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Type, Union
 
 import numpy as np
 import pyarrow as pa
@@ -14,7 +14,6 @@ from adam_core.coordinates import KeplerianCoordinates
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.propagator.utils import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
@@ -269,8 +268,8 @@ generate_test_orbits_worker_remote.options(num_cpus=1, num_returns=1)
 def generate_test_orbits(
     observations: Union[str, Observations],
     catalog: Orbits,
+    propagator_class: Type[Propagator],
     nside: int = 32,
-    propagator: Propagator = PYOORBPropagator(),
     max_processes: Optional[int] = None,
     chunk_size: int = 100,
 ) -> TestOrbits:
@@ -312,6 +311,8 @@ def generate_test_orbits(
     """
     time_start = time.perf_counter()
     logger.info("Generating test orbits...")
+
+    propagator = propagator_class()
 
     # If the input file is a string, read in the days column to
     # extract the minimum time

@@ -1,7 +1,7 @@
 {
     "max_processes": 8,
     "ray_memory_bytes": 11000000000,
-    "propagator": "PYOORB",
+    "propagator_namespace": "adam_assist.ASSISTPropagator",
     "cell_radius": 3.0,
     "vx_min": -0.1,
     "vx_max": 0.1,

@@ -10,7 +10,7 @@ authors = [
 description = "Tracklet-less Heliocentric Orbit Recovery"
 readme = "README.md"
 license = { file = "LICENSE.md" }
-requires-python = ">=3.10"
+requires-python = "<3.13,>=3.10"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
@@ -25,8 +25,7 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.2.5",
-    "adam-pyoorb@git+https://github.com/B612-Asteroid-Institute/adam-pyoorb.git@main#egg=adam-pyoorb",
+    "adam-core>=0.3.4",
     "astropy>=5.3.1",
     "astroquery",
     "difi",
@@ -71,7 +70,7 @@ typecheck = "mypy --strict ./src/thor"
 test = "pytest --benchmark-disable {args}"
 doctest = "pytest --doctest-plus --doctest-only"
 benchmark = "pytest --benchmark-only"
-coverage = "pytest --cov=thor --cov-report=xml"
+coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
 
 [project.urls]
 "Documentation" = "https://github.com/moeyensj/thor#README.md"
@@ -80,19 +79,21 @@ coverage = "pytest --cov=thor --cov-report=xml"
 
 [project.optional-dependencies]
 dev = [
-  "black",
-  "ipython",
-  "matplotlib",
-  "isort",
-  "mypy",
-  "pdm",
-  "pytest-benchmark",
-  "pytest-cov",
-  "pytest-doctestplus",
-  "pytest-mock",
-  "pytest-memray",
-  "pytest",
-  "ruff",
+    "black",
+    "ipython",
+    "matplotlib",
+    "isort",
+    "mypy",
+    "pdm",
+    "pytest-benchmark",
+    "pytest-cov",
+    "pytest-doctestplus",
+    "pytest-mock",
+    "pytest-memray",
+    "pytest",
+    "ruff",
+    "adam-assist>=0.2.0",
+    "adam-pyoorb @ git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@0697eeb871f8d2f8577bf545f5da3966c473662e",
 ]
 
 [tool.black]
@@ -112,7 +113,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 python_functions = "test_*"
-addopts = "-m 'not (integration or memory)'"
+addopts = "-m 'not (memory)' --ignore=__pypackages__"
 markers = [
     "integration: Mark a test as an integration test.",
     "memory: Mark a test as a memory test."

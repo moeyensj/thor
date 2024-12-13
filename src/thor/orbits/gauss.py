@@ -322,7 +322,6 @@ def gaussIOD(
     if len(orbits) > 0:
         epochs = epochs[~np.isnan(orbits).any(axis=1)]
         orbits = orbits[~np.isnan(orbits).any(axis=1)]
-
         return Orbits.from_kwargs(
             coordinates=CartesianCoordinates.from_kwargs(
                 x=orbits[:, 0],
