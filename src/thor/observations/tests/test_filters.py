@@ -1,6 +1,7 @@
 from unittest import mock
 
 import pyarrow.compute as pc
+from adam_assist import ASSISTPropagator
 
 from ...config import Config
 from ..filters import TestOrbitRadiusObservationFilter, filter_observations
@@ -16,7 +17,7 @@ def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
     fos = TestOrbitRadiusObservationFilter(
         radius=0.5,
     )
-    have = fos.apply(fixed_observations, fixed_test_orbit)
+    have = fos.apply(fixed_observations, fixed_test_orbit, ASSISTPropagator)
     assert len(pc.unique(have.exposure_id)) == 5
     assert pc.all(
         pc.equal(

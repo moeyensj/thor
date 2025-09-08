@@ -2,6 +2,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 import quivr as qv
+from adam_assist import ASSISTPropagator
 from adam_core.coordinates import CartesianCoordinates, Origin
 from adam_core.observations import Exposures, PointSourceDetections
 from adam_core.observers import Observers
@@ -49,7 +50,7 @@ def fixed_observers() -> Observers:
 
 @pytest.fixture
 def fixed_ephems(fixed_test_orbit: TestOrbits, fixed_observers: Observers) -> Ephemeris:
-    return fixed_test_orbit.generate_ephemeris(fixed_observers)
+    return fixed_test_orbit.generate_ephemeris(fixed_observers, ASSISTPropagator)
 
 
 @pytest.fixture

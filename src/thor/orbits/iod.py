@@ -12,8 +12,8 @@ import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
+from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
-from adam_core.propagator.adam_pyoorb import PYOORBPropagator
 from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
@@ -118,6 +118,7 @@ def iod_worker(
     linkage_ids: npt.NDArray[np.str_],
     observations: Union[Observations, ray.ObjectRef],
     linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 0.0,
@@ -126,7 +127,6 @@ def iod_worker(
     linkage_id_col: str = "cluster_id",
     iterate: bool = False,
     light_time: bool = True,
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
 
@@ -167,7 +167,7 @@ def iod_worker(
             observation_selection_method=observation_selection_method,
             iterate=iterate,
             light_time=light_time,
-            propagator=propagator,
+            propagator_class=propagator_class,
             propagator_kwargs=propagator_kwargs,
         )
         if len(iod_orbit) > 0:
@@ -198,6 +198,7 @@ def iod_worker_remote(
     linkage_members_indices: Tuple[int, int],
     observations: Union[Observations, ray.ObjectRef],
     linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 0.0,
@@ -206,7 +207,6 @@ def iod_worker_remote(
     linkage_id_col: str = "cluster_id",
     iterate: bool = False,
     light_time: bool = True,
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     # Select linkage ids from linkage_members_indices
@@ -223,7 +223,7 @@ def iod_worker_remote(
         linkage_id_col=linkage_id_col,
         iterate=iterate,
         light_time=light_time,
-        propagator=propagator,
+        propagator_class=propagator_class,
         propagator_kwargs=propagator_kwargs,
     )
 
@@ -233,6 +233,7 @@ iod_worker_remote.options(num_returns=1, num_cpus=1)
 
 def iod(
     observations: OrbitDeterminationObservations,
+    propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 0.0,
@@ -240,7 +241,6 @@ def iod(
     observation_selection_method: Literal["combinations", "first+middle+last", "thirds"] = "combinations",
     iterate: bool = False,
     light_time: bool = True,
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
 ) -> Tuple[FittedOrbits, FittedOrbitMembers]:
     """
@@ -264,6 +264,8 @@ def iod(
             "obs_vx" [Optional] : Observatory's heliocentric ecliptic J2000 x-velocity in au per day [float],
             "obs_vy" [Optional] : Observatory's heliocentric ecliptic J2000 y-velocity in au per day [float],
             "obs_vz" [Optional] : Observatory's heliocentric ecliptic J2000 z-velocity in au per day [float]
+    propagator_class : Type[Propagator]
+        Adam_core propagator class to use for ephemeris generation.
     min_obs : int, optional
         Minimum number of observations that must remain in the linkage. For example, if min_obs is set to 6 and
         a linkage has 8 observations, at most the two worst observations will be flagged as outliers if their individual
@@ -284,11 +286,9 @@ def iod(
         Correct preliminary orbit for light travel time.
     linkage_id_col : str, optional
         Name of linkage_id column in the linkage_members dataframe.
-    backend : {'MJOLNIR', 'PYOORBPropagator'}, optional
-        Which backend to use for ephemeris generation.
-    backend_kwargs : dict, optional
+    propagator_kwargs : dict, optional
         Settings and additional parameters to pass to selected
-        backend.
+        propagator.
 
     Returns
     -------
@@ -320,7 +320,7 @@ def iod(
                 the chi2 threshold) [float]
     """
     # Initialize the propagator
-    prop = propagator(**propagator_kwargs)
+    prop = propagator_class(**propagator_kwargs)
 
     processable = True
     if len(observations) == 0:
@@ -394,7 +394,21 @@ def iod(
             continue
 
         # Propagate initial orbit to all observation times
-        ephemeris = prop.generate_ephemeris(iod_orbits, observers, chunk_size=1, max_processes=1)
+        ephemeris = Ephemeris.empty()
+        survived_iod_orbits = Orbits.empty()
+        for orbit_i in iod_orbits:
+            try:
+                ephemeris_i = prop.generate_ephemeris(orbit_i, observers, chunk_size=1, max_processes=1)
+                ephemeris = qv.concatenate([ephemeris, ephemeris_i])
+                survived_iod_orbits = qv.concatenate([survived_iod_orbits, orbit_i])
+            except ValueError:
+                continue
+
+        if len(survived_iod_orbits) < len(iod_orbits):
+            logger.warning(
+                f"{len(survived_iod_orbits)} of {len(iod_orbits)} orbits survived ephemeris generation."
+            )
+        iod_orbits = survived_iod_orbits
 
         # For each unique initial orbit calculate residuals and chi-squared
         # Find the orbit which yields the lowest chi-squared
@@ -510,6 +524,7 @@ def iod(
 def initial_orbit_determination(
     observations: Union[Observations, ray.ObjectRef],
     linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
     contamination_percentage: float = 20.0,
@@ -518,7 +533,6 @@ def initial_orbit_determination(
     iterate: bool = False,
     light_time: bool = True,
     linkage_id_col: str = "cluster_id",
-    propagator: Type[Propagator] = PYOORBPropagator,
     propagator_kwargs: dict = {},
     chunk_size: int = 1,
     max_processes: Optional[int] = 1,
@@ -586,7 +600,7 @@ def initial_orbit_determination(
                         iterate=iterate,
                         light_time=light_time,
                         linkage_id_col=linkage_id_col,
-                        propagator=propagator,
+                        propagator_class=propagator_class,
                         propagator_kwargs=propagator_kwargs,
                     )
                 )
@@ -631,7 +645,7 @@ def initial_orbit_determination(
                     iterate=iterate,
                     light_time=light_time,
                     linkage_id_col=linkage_id_col,
-                    propagator=propagator,
+                    propagator_class=propagator_class,
                     propagator_kwargs=propagator_kwargs,
                 )
                 iod_orbits = qv.concatenate([iod_orbits, iod_orbits_chunk])
