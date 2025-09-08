@@ -70,7 +70,7 @@ def calculate_state_id_hash(day: int, nanos: int, observatory_code: str):
 
 
 def calculate_state_id_hashes(
-    coordinates: Union[SphericalCoordinates, CartesianCoordinates]
+    coordinates: Union[SphericalCoordinates, CartesianCoordinates],
 ) -> pa.StringArray:
     """
     Calculate the state ID hashes for a set of coordinates. State ID hashes are defined as unique
