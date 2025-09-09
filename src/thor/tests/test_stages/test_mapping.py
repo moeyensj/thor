@@ -6,11 +6,12 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import ray
 import numpy as np
 
-from adam_core.coordinates import CartesianCoordinates, KeplerianCoordinates, Origin, OriginCodes, SphericalCoordinates
+from adam_core.coordinates import CartesianCoordinates, KeplerianCoordinates, Origin, OriginCodes
 from adam_core.time import Timestamp
-from adam_core.rays import ObservationRays
+from adam_core.observations.rays import ObservationRays
 
 from thor.orbit import TestOrbits
 from thor.index import build_from_test_orbits
@@ -32,6 +33,7 @@ def sample_test_orbits():
         ap=[30.0, 60.0],  # degrees
         M=[0.0, 45.0],  # degrees
         origin=origins,
+        frame="ecliptic",
     )
     
     cart_coords = CartesianCoordinates.from_keplerian(kep_coords)
@@ -46,22 +48,37 @@ def sample_test_orbits():
 @pytest.fixture
 def sample_observation_rays():
     """Create sample ObservationRays for testing."""
+    import numpy as np
+
     times = Timestamp.from_mjd([60000.1, 60000.2], scale="utc")
-    origins = Origin.from_kwargs(code=[OriginCodes.EARTH.name] * 2)
-    
-    # Create some spherical coordinates (RA, Dec from Earth)
-    coords = SphericalCoordinates.from_kwargs(
+
+    # Dummy observer at SSB origin in ecliptic frame
+    sun_origin = Origin.from_kwargs(code=[OriginCodes.SUN.name] * 2)
+    observer_coords = CartesianCoordinates.from_kwargs(
+        x=[0.0, 0.0], y=[0.0, 0.0], z=[0.0, 0.0],
+        vx=[0.0, 0.0], vy=[0.0, 0.0], vz=[0.0, 0.0],
         time=times,
-        lon=[45.0, 90.0],  # RA in degrees
-        lat=[10.0, -5.0],  # Dec in degrees
-        rho=[1.0, 1.0],  # Distance (not used for rays)
-        origin=origins,
-        frame="equatorial",
+        origin=sun_origin,
+        frame="ecliptic",
     )
-    
+
+    # Build simple unit vectors from RA/Dec in ecliptic frame
+    ra_deg = np.array([45.0, 90.0])
+    dec_deg = np.array([10.0, -5.0])
+    ra = np.radians(ra_deg)
+    dec = np.radians(dec_deg)
+    u_x = np.cos(dec) * np.cos(ra)
+    u_y = np.cos(dec) * np.sin(ra)
+    u_z = np.sin(dec)
+
     return ObservationRays.from_kwargs(
         det_id=["det_1", "det_2"],
-        coordinates=coords,
+        time=times,
+        observer_code=["X05", "X05"],
+        observer=observer_coords,
+        u_x=u_x,
+        u_y=u_y,
+        u_z=u_z,
     )
 
 
@@ -109,6 +126,7 @@ def test_map_observations_ray_vs_local(sample_test_orbits, sample_observation_ra
         )
         
         # Map observations with Ray
+        ray.init(local_mode=True, ignore_reinit_error=True)
         hits_ray = map_observations_to_test_orbits(
             sample_observation_rays,
             manifest_path=manifest_path,
@@ -116,6 +134,7 @@ def test_map_observations_ray_vs_local(sample_test_orbits, sample_observation_ra
             use_ray=True,
             ray_batch_size=1000,
         )
+        ray.shutdown()
         
         # Results should be consistent
         assert len(hits_local) == len(hits_ray)

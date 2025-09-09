@@ -1,6 +1,6 @@
 [project]
 name = "thor"
-dynamic = ["version"]
+version = "0.0.0.dev0"
 authors = [
   { name = "Joachim Moeyens", email = "moeyensj@uw.edu" },
   { name = "Mario Juric", email = "mjuric@astro.washington.edu" },
@@ -51,10 +51,7 @@ build-backend = "pdm.backend"
 [tool.pdm.build]
 includes = ["src/thor/"]
 
-[tool.pdm.version]
-source = "scm"
-write_to = "src/thor/_version.py"
-write_template = "__version__ = '{}'"
+
 
 [tool.pdm.scripts]
 check = { composite = ["lint", "typecheck", "test"] }

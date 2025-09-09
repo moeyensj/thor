@@ -5,8 +5,14 @@ This module provides a thin wrapper around adam_core's sharded BVH query functio
 enabling efficient mapping of observation rays to overlapping test orbits.
 """
 
-from adam_core.geometry import query_manifest_local, query_manifest_ray
-from adam_core.rays import ObservationRays
+from pathlib import Path
+
+from adam_core.geometry import (
+    query_manifest_local,
+    query_manifest_ray,
+)
+from adam_core.geometry.sharding_types import ShardManifest
+from adam_core.observations.rays import ObservationRays
 from adam_core.geometry.overlap import OverlapHits
 
 
@@ -58,19 +64,26 @@ def map_observations_to_test_orbits(
     This function does not use THOR config - all parameters are explicit.
     Fixed-size padding is used internally to optimize JAX compilation.
     """
+    manifest_file = Path(manifest_path)
+    manifest = ShardManifest.load(manifest_file)
+    manifest_dir = manifest_file.parent
+
     if use_ray:
         return query_manifest_ray(
+            manifest=manifest,
             rays=rays,
-            manifest_path=manifest_path,
             guard_arcmin=guard_arcmin,
             alpha=alpha,
             ray_batch_size=ray_batch_size,
             max_concurrency=max_concurrency,
+            manifest_dir=manifest_dir,
         )
     else:
         return query_manifest_local(
+            manifest=manifest,
             rays=rays,
-            manifest_path=manifest_path,
             guard_arcmin=guard_arcmin,
             alpha=alpha,
+            ray_batch_size=ray_batch_size,
+            manifest_dir=manifest_dir,
         )

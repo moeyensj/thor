@@ -30,6 +30,7 @@ def sample_test_orbits():
         ap=[30.0, 60.0, 120.0],  # degrees
         M=[0.0, 45.0, 90.0],  # degrees
         origin=origins,
+        frame="ecliptic",
     )
     
     cart_coords = CartesianCoordinates.from_keplerian(kep_coords)
@@ -78,21 +79,25 @@ def test_build_from_test_orbits_temp_dir(sample_test_orbits):
 
 def test_build_from_test_orbits_empty():
     """Test build_from_test_orbits with empty input."""
-    with pytest.raises(ValueError, match="No test orbits provided"):
-        build_from_test_orbits([])
+    import quivr as qv
+    empty = TestOrbits.empty()
+    with pytest.raises(ValueError):
+        build_from_test_orbits(empty)
 
 
 def test_build_from_test_orbits_multiple_tables(sample_test_orbits):
-    """Test build_from_test_orbits with multiple TestOrbits tables."""
-    # Split the sample into two tables
+    """Test build_from_test_orbits with multiple TestOrbits tables by concatenating first."""
+    import quivr as qv
+
     table1 = sample_test_orbits.take([0, 1])
     table2 = sample_test_orbits.take([2])
-    
+    combined = qv.concatenate([table1, table2])
+
     with tempfile.TemporaryDirectory() as temp_dir:
         manifest_path = build_from_test_orbits(
-            [table1, table2],
+            combined,
             out_dir=temp_dir,
             target_shard_bytes=1_000_000,
         )
-        
+
         assert Path(manifest_path).exists()
