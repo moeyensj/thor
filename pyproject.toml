@@ -25,7 +25,7 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.5.2",
+    "adam-core @ file:///Users/aleck/Code/adam-core",
     "astropy>=5.3.1",
     "astroquery",
     "difi",
@@ -53,7 +53,7 @@ includes = ["src/thor/"]
 
 [tool.pdm.version]
 source = "scm"
-write_to = "thor/_version.py"
+write_to = "src/thor/_version.py"
 write_template = "__version__ = '{}'"
 
 [tool.pdm.scripts]
