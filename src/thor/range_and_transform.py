@@ -14,7 +14,12 @@ from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 
 from .observations.observations import Observations
-from .orbit import RangedPointSourceDetections, TestOrbitEphemeris, TestOrbits
+from .orbit import (
+    RangedPointSourceDetections,
+    TestOrbitEphemeris,
+    TestOrbits,
+    zero_covariances,
+)
 from .projections import GnomonicCoordinates
 
 __all__ = [
@@ -66,11 +71,12 @@ def range_and_transform_worker(
     observations_state = observations.select("state_id", state_id)
 
     ranged_detections_cartesian_state = transform_coordinates(
-        ranged_detections_spherical_state.coordinates,
+        zero_covariances(ranged_detections_spherical_state.coordinates),
         representation_out=CartesianCoordinates,
         frame_out="ecliptic",
         origin_out=OriginCodes.SUN,
     )
+    ranged_detections_cartesian_state = zero_covariances(ranged_detections_cartesian_state)
 
     # let's test transforming the aberrated coordinates to heliocentric instead of ssb
     test_orbit_at_detection_time = transform_coordinates(
@@ -108,7 +114,6 @@ def range_and_transform(
     test_orbit: TestOrbits,
     observations: Union[Observations, ray.ObjectRef],
     propagator_class: Type[Propagator],
-    propagator_kwargs: dict = {},
     max_processes: Optional[int] = 1,
 ) -> TransformedDetections:
     """
@@ -150,8 +155,6 @@ def range_and_transform(
         logger.info("Retrieved observations from the object store.")
     else:
         observations_ref = None
-
-    # prop = propagator_class(**propagator_kwargs)
 
     if len(observations) > 0:
         # Compute the ephemeris of the test orbit (this will be cached)

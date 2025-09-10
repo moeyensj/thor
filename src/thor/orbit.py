@@ -11,11 +11,13 @@ import ray
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
+    CoordinateCovariances,
     KeplerianCoordinates,
     OriginCodes,
     SphericalCoordinates,
     transform_coordinates,
 )
+from adam_core.coordinates.transform import cartesian_to_frame
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
@@ -49,6 +51,30 @@ class TestOrbitEphemeris(qv.Table):
     id = qv.LargeStringColumn()
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
+
+
+def zero_covariances(coords: CoordinateType) -> CoordinateType:
+    """
+    Zero out covariances that are nan, inf, or less than 1e-20 in magnitude.
+
+    This is function is designed to be used in conjunction with transformations where we
+    want to propagate covariance matrices through but not all the covariance terms are valid or defined.
+
+    The user should careful with the downstream effects of this function.
+
+    Parameters
+    ----------
+    coords : `~adam_core.coordinates.CoordinateType`
+        Coordinates to zero out the covariances for.
+
+    Returns
+    -------
+    coords : `~adam_core.coordinates.CoordinateType`
+        Coordinates with the covariances zeroed out.
+    """
+    cov = coords.covariance.to_matrix()
+    cov = np.where(np.isnan(cov) | np.isinf(cov) | (np.abs(cov) < 1e-20), 0, cov)
+    return coords.set_column("covariance", CoordinateCovariances.from_matrix(cov))
 
 
 def range_observations_worker(
@@ -429,8 +455,9 @@ def assume_heliocentric_distance(
         Coordinates with the missing topocentric distance replaced with the calculated topocentric distance.
     """
     assert len(origin_coords) == 1
-    assert np.all(origin_coords.origin == OriginCodes.SUN)
+    assert pc.all(pc.equal(origin_coords.origin.code, "SUN")).as_py()
 
+    # Calculate the heliocentric distance
     r_mag = np.linalg.norm(r)
 
     # Extract the topocentric distance and topocentric radial velocity from the coordinates
@@ -439,13 +466,22 @@ def assume_heliocentric_distance(
 
     # Transform the coordinates to the ecliptic frame by assuming they lie on a unit sphere
     # (this assumption will only be applied to coordinates with missing rho values)
+    # Convert equatorial spherical units to a unit sphere (so we can rotate them to the ecliptic)
+    # and set nan covariance terms to zero so we preserve the non-zero covariance terms through
+    # the transformations
     coords_eq_unit = coords.to_unit_sphere(only_missing=True)
-    coords_ec = transform_coordinates(coords_eq_unit, SphericalCoordinates, frame_out="ecliptic")
+    coords_eq_unit = zero_covariances(coords_eq_unit)
+
+    # Transform to the equatorial coordinates (so we can rotate them to the ecliptic)
+    coords_eq_cart = coords_eq_unit.to_cartesian()
+
+    # Rotate to the ecliptic coordinates (again set nan covariance terms to zero)
+    coords_ec_cart = cartesian_to_frame(coords_eq_cart, "ecliptic")
+    coords_ec_cart = zero_covariances(coords_ec_cart)
 
     # Transform the coordinates to cartesian and calculate the unit vectors pointing
     # from the origin to the coordinates
-    coords_ec_xyz = coords_ec.to_cartesian()
-    unit_vectors = coords_ec_xyz.r_hat
+    unit_vectors = coords_ec_cart.r_hat
 
     # Calculate the topocentric distance such that the heliocentric distance to the coordinate
     # is r_mag
@@ -457,6 +493,8 @@ def assume_heliocentric_distance(
     # Where rho was not defined, replace it with the calculated topocentric distance
     # By default we take the positive solution which applies for all orbits exterior to the
     # observer's orbit
+    coords_ec = coords_ec_cart.to_spherical()
+    coords_ec = zero_covariances(coords_ec)
     coords_ec = coords_ec.set_column("rho", np.where(np.isnan(rho), delta_p, rho))
 
     # For cases where the orbit is interior to the observer's orbit there are two valid solutions
