@@ -18,7 +18,6 @@ from .utils import setupLogger
 # Import new stages
 from . import index
 from . import mapping
-from . import labeling
 from . import clock_gating
 
 

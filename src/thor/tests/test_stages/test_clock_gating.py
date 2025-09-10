@@ -9,9 +9,9 @@ from adam_core.coordinates import SphericalCoordinates, CartesianCoordinates, Or
 from adam_core.time import Timestamp
 from adam_core.observations.rays import ObservationRays
 from adam_core.geometry.overlap import OverlapHits
+from adam_core.geometry.anomaly import AnomalyLabels
 
 from thor.clock_gating import apply_clock_gating, Chains, ChainMembers
-from thor.labeling import AnomalyLabels
 from thor.clock_gating.apply_clock_gating import accept_time_consistency
 
 

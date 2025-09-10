@@ -14,17 +14,13 @@ import pyarrow.compute as pc
 
 from adam_core.geometry.overlap import OverlapHits
 from adam_core.geometry.clock_gating import ClockGateConfig, apply_clock_gating as adam_apply_clock_gating
+from adam_core.geometry.anomaly import AnomalyLabels
 from adam_core.observations.rays import ObservationRays
 from adam_core.orbits.polyline import OrbitsPlaneParams
 from adam_core.coordinates.origin import Origin, OriginCodes
 from adam_core.time import Timestamp
 
 from .kchains import Chains, ChainMembers
-
-# Import AnomalyLabels - avoid circular import by using TYPE_CHECKING
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from ..labeling.label_anomalies import AnomalyLabels
 
 
 def apply_clock_gating(
