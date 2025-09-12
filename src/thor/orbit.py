@@ -40,6 +40,22 @@ CoordinateType = TypeVar(
 logger = logging.getLogger(__name__)
 
 
+def _compute_chunk_size(covariance: bool, num_samples: int, max_processes: Optional[int]) -> int:
+    """
+    Compute a safe chunk size for propagation/ephemeris generation.
+
+    - When covariance is False, always use chunk size 1.
+    - When covariance is True, split samples across processes if possible,
+      but never return less than 1.
+    """
+    if not covariance:
+        return 1
+    if max_processes is None or max_processes <= 1:
+        return 1
+    per_process = num_samples // max_processes
+    return max(1, per_process)
+
+
 class RangedPointSourceDetections(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
@@ -210,6 +226,9 @@ class TestOrbits(qv.Table):
         times: Timestamp,
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = False,
+        covariance_method: Literal["monte-carlo", "sigma-point", "auto"] = "monte-carlo",
+        num_samples: int = 1000,
     ) -> Orbits:
         """
         Propagate this test orbit to the given times.
@@ -222,6 +241,16 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
+        covariance_method : {'sigma-point', 'monte-carlo', 'auto'}, optional
+            The method to use for sampling the covariance matrix. If 'auto' is selected then the method
+            will be automatically selected based on the covariance matrix. The default is 'monte-carlo'.
+        num_samples : int, optional
+            The number of samples to draw when sampling with monte-carlo.
 
         Returns
         -------
@@ -233,7 +262,10 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             times,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size=_compute_chunk_size(covariance, num_samples, max_processes),
+            covariance=covariance,
+            covariance_method=covariance_method,
+            num_samples=num_samples,
         )
 
     def generate_ephemeris(
@@ -241,6 +273,9 @@ class TestOrbits(qv.Table):
         observers: Observers,
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = False,
+        covariance_method: Literal["monte-carlo", "sigma-point", "auto"] = "monte-carlo",
+        num_samples: int = 1000,
     ) -> Ephemeris:
         """
         Generate ephemeris for this test orbit at the given observers.
@@ -253,6 +288,16 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
+        covariance_method : {'sigma-point', 'monte-carlo', 'auto'}, optional
+            The method to use for sampling the covariance matrix. If 'auto' is selected then the method
+            will be automatically selected based on the covariance matrix. The default is 'monte-carlo'.
+        num_samples : int, optional
+            The number of samples to draw when sampling with monte-carlo.
 
         Returns
         -------
@@ -264,7 +309,10 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             observers,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size=_compute_chunk_size(covariance, num_samples, max_processes),
+            covariance=covariance,
+            covariance_method=covariance_method,
+            num_samples=num_samples,
         )
 
     def generate_ephemeris_from_observations(
@@ -272,6 +320,7 @@ class TestOrbits(qv.Table):
         observations: Union[Observations, ray.ObjectRef],
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = False,
     ):
         """
         For each unique time and code in the observations (a state), generate an ephemeris for
@@ -289,7 +338,11 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
-
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
 
         Returns
         -------
@@ -328,6 +381,7 @@ class TestOrbits(qv.Table):
             observers_with_states.observers,
             propagator_class=propagator_class,
             max_processes=max_processes,
+            covariance=covariance,
         )
         ephemeris = ephemeris.sort_by(
             by=[

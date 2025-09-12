@@ -107,7 +107,9 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         logger.info(f"Using radius = {self.radius:.5f} deg")
 
         # Generate an ephemeris for every observer time/location in the dataset
-        ephemeris = test_orbit.generate_ephemeris_from_observations(observations, propagator_class)
+        ephemeris = test_orbit.generate_ephemeris_from_observations(
+            observations, propagator_class, covariance=False
+        )
 
         filtered_observations = Observations.empty()
         state_ids = observations.state_id.unique()
