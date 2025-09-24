@@ -1,13 +1,14 @@
+import json
 import logging
 import pathlib
+from dataclasses import asdict, dataclass
 from typing import Literal, Optional, Union
-
-from pydantic import BaseModel
 
 logger = logging.getLogger("thor")
 
 
-class Config(BaseModel):
+@dataclass(eq=True)
+class Config:
     max_processes: Optional[int] = None
     ray_memory_bytes: int = 0
     propagator_namespace: str = "adam_assist.ASSISTPropagator"
@@ -70,6 +71,15 @@ class Config(BaseModel):
         self.iod_min_arc_length = min_arc_length
         self.od_min_arc_length = min_arc_length
         self.arc_extension_min_arc_length = min_arc_length
+
+    def json(self, indent: Optional[int] = None) -> str:
+        return json.dumps(asdict(self), indent=indent)
+
+    @classmethod
+    def parse_file(cls, path: Union[str, pathlib.Path]) -> "Config":
+        path = pathlib.Path(path)
+        data = json.loads(path.read_text())
+        return cls(**data)
 
 
 def initialize_config(
