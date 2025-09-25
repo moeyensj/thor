@@ -12,9 +12,11 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
+from adam_core.coordinates.residuals import Residuals
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.utils.iter import _iterate_chunks
 
+from .projections import GnomonicCoordinates
 from .range_and_transform import TransformedDetections
 from .utils.linkages import sort_by_id_and_time
 
@@ -136,6 +138,26 @@ class Clusters(qv.Table):
 class ClusterMembers(qv.Table):
     cluster_id = qv.LargeStringColumn()
     obs_id = qv.LargeStringColumn()
+
+
+class FittedClusters(qv.Table):
+    cluster_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
+    theta_x0 = qv.Float64Column()
+    theta_y0 = qv.Float64Column()
+    vtheta_x = qv.Float64Column()
+    vtheta_y = qv.Float64Column()
+    atheta_x = qv.Float64Column()
+    atheta_y = qv.Float64Column()
+    arc_length = qv.Float64Column()
+    num_obs = qv.Int64Column()
+    chi2 = qv.Float64Column()
+    rchi2 = qv.Float64Column()
+
+
+class FittedClusterMembers(qv.Table):
+    cluster_id = qv.LargeStringColumn()
+    obs_id = qv.LargeStringColumn()
+    residuals = Residuals.as_column()
 
 
 def find_clusters(points, eps, min_samples, alg="hotspot_2d"):
@@ -642,7 +664,7 @@ def cluster_and_link(
     alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
     chunk_size: int = 1000,
     max_processes: Optional[int] = 1,
-) -> Tuple[Clusters, ClusterMembers]:
+) -> Tuple[FittedClusters, FittedClusterMembers]:
     """
     Cluster and link correctly projected (after ranging and shifting)
     detections.
@@ -850,7 +872,7 @@ def cluster_and_link(
         time_end_cluster = time.perf_counter()
         logger.info(f"Found {len(clusters)} clusters, exiting early.")
         logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
-        return clusters, cluster_members
+        return FittedClusters.empty(), FittedClusterMembers.empty()
 
     # Ensure clusters, cluster_members are defragmented and sorted
     # prior to dropping duplicates. We do this here so that
@@ -873,8 +895,137 @@ def cluster_and_link(
     # Sort clusters by cluster ID and observation time
     clusters, cluster_members = sort_by_id_and_time(clusters, cluster_members, observations, "cluster_id")
 
+    # Sort cluster members by cluster ID and observation time
+    cluster_members = cluster_members.sort_by([("cluster_id", "ascending")])
+
+    # Fit clusters
+    fitted_clusters, fitted_cluster_members = fit_clusters(clusters, cluster_members, observations)
+
     time_end_cluster = time.perf_counter()
     logger.info(f"Found {len(clusters)} clusters.")
     logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
 
-    return clusters, cluster_members
+    return fitted_clusters, fitted_cluster_members
+
+
+def fit_cluster(
+    cluster: Clusters, cluster_members: ClusterMembers, transformed_detections: TransformedDetections
+) -> Tuple[FittedClusters, FittedClusterMembers]:
+    """
+    Fit a cluster with a 2nd order polynomial motion model in theta_x and theta_y.
+
+    Parameters
+    ----------
+    cluster : `~thor.clusters.Clusters`
+        Cluster.
+    cluster_members : `~thor.clusters.ClusterMembers`
+        Cluster members.
+    transformed_detections : `~thor.transformed_detections.TransformedDetections`
+        Transformed detections.
+
+    Returns
+    -------
+    fitted_cluster : `~thor.clusters.FittedClusters`
+        Fitted cluster.
+    fitted_cluster_members : `~thor.clusters.FittedClusterMembers`
+        Fitted cluster members.
+    """
+    cluster_detections = transformed_detections.apply_mask(
+        pc.is_in(transformed_detections.id, cluster_members.obs_id)
+    )
+    cluster_detections = cluster_detections.sort_by(["coordinates.time.days", "coordinates.time.nanos"])
+
+    gnomonic_coords = cluster_detections.coordinates
+    theta_x = gnomonic_coords.theta_x
+    theta_y = gnomonic_coords.theta_y
+    time = gnomonic_coords.time.mjd()
+
+    # Fit a 2nd order polynomial to the data as a function of time
+    coords = np.empty((len(time), 2))
+    coords[:, 0] = theta_x
+    coords[:, 1] = theta_y
+    coeffs = np.polyfit(time, coords, 2)
+
+    ax = coeffs[0, 0]
+    ay = coeffs[0, 1]
+    vx = coeffs[1, 0]
+    vy = coeffs[1, 1]
+    x0 = coeffs[2, 0]
+    y0 = coeffs[2, 1]
+
+    x_pred = np.polyval(coeffs[:, 0], time)
+    y_pred = np.polyval(coeffs[:, 1], time)
+
+    gnomonic_pred = GnomonicCoordinates.from_kwargs(
+        time=gnomonic_coords.time,
+        theta_x=x_pred,
+        theta_y=y_pred,
+        origin=gnomonic_coords.origin,
+        frame=gnomonic_coords.frame,
+    )
+
+    residuals = Residuals.calculate(gnomonic_coords, gnomonic_pred, custom_coordinates=True)
+
+    fitted_cluster = FittedClusters.from_kwargs(
+        cluster_id=cluster.cluster_id,
+        theta_x0=[x0],
+        theta_y0=[y0],
+        vtheta_x=[vx],
+        vtheta_y=[vy],
+        atheta_x=[ax],
+        atheta_y=[ay],
+        arc_length=[pc.subtract(pc.max(time), pc.min(time))],
+        num_obs=[len(time)],
+        chi2=[pc.sum(residuals.chi2)],
+        rchi2=[pc.divide(pc.sum(residuals.chi2), pc.sum(residuals.dof).as_py() - 6)],
+    )
+
+    fitted_cluster_members = FittedClusterMembers.from_kwargs(
+        cluster_id=cluster_members.cluster_id,
+        obs_id=cluster_members.obs_id,
+        residuals=residuals,
+    )
+
+    return fitted_cluster, fitted_cluster_members
+
+
+def fit_clusters(
+    clusters: Clusters, cluster_members: ClusterMembers, transformed_detections: TransformedDetections
+) -> Tuple[FittedClusters, FittedClusterMembers]:
+    """
+    Fit a set of clusters with a 2nd order polynomial motion model in theta_x and theta_y.
+
+    Parameters
+    ----------
+    clusters : `~thor.clusters.Clusters`
+        Clusters.
+    cluster_members : `~thor.clusters.ClusterMembers`
+        Cluster members.
+    transformed_detections : `~thor.transformed_detections.TransformedDetections`
+        Transformed detections.
+
+    Returns
+    -------
+    fitted_clusters : `~thor.clusters.FittedClusters`
+        Fitted clusters.
+    fitted_cluster_members : `~thor.clusters.FittedClusterMembers`
+        Fitted cluster members.
+    """
+
+    fitted_clusters = FittedClusters.empty()
+    fitted_cluster_members = FittedClusterMembers.empty()
+    if len(clusters) == 0:
+        return fitted_clusters, fitted_cluster_members
+
+    cluster_ids = clusters.cluster_id.to_pylist()
+    for cluster_id in cluster_ids:
+        cluster_i = clusters.select("cluster_id", cluster_id)
+        cluster_members_i = cluster_members.select("cluster_id", cluster_id)
+        fitted_cluster_i, fitted_cluster_members_i = fit_cluster(
+            cluster_i, cluster_members_i, transformed_detections
+        )
+
+        fitted_clusters = qv.concatenate([fitted_clusters, fitted_cluster_i])
+        fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_i])
+
+    return fitted_clusters, fitted_cluster_members

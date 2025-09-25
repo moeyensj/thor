@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import uuid
-from typing import Optional, Type, TypeVar, Union
+from typing import Literal, Optional, Type, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
