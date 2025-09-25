@@ -12,6 +12,19 @@ class Config(BaseModel):
     ray_memory_bytes: int = 0
     propagator_namespace: str = "adam_assist.ASSISTPropagator"
     cell_radius: float = 10
+    volume_type: Literal["circular_cell", "spherical6d", "conical6d"] = "circular_cell"
+    ps_rp_au: float = 0.2  # Position radius in AU
+    ps_rv_au_per_day: float = 0.01  # Velocity radius in AU/day
+    
+    # Conical 6D volume parameters
+    ps_alpha_deg: float = 0.5  # Angular guard in degrees
+    ps_r_min_au: float = 0.5  # Minimum heliocentric distance in AU
+    ps_r_max_au: float = 10.0  # Maximum heliocentric distance in AU
+    ps_vr_min_au_per_day: Optional[float] = -0.02  # Min radial velocity in AU/day
+    ps_vr_max_au_per_day: Optional[float] = 0.02   # Max radial velocity in AU/day
+    ps_vt_max_au_per_day: Optional[float] = 0.03   # Max tangential velocity in AU/day
+    
+    # Velocity space clustering parameters
     vx_min: float = -0.1
     vx_max: float = 0.1
     vy_min: float = -0.1
