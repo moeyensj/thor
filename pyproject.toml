@@ -1,6 +1,6 @@
 [project]
 name = "thor"
-dynamic = ["version"]
+version = "0.0.0.dev0"
 authors = [
   { name = "Joachim Moeyens", email = "moeyensj@uw.edu" },
   { name = "Mario Juric", email = "mjuric@astro.washington.edu" },
@@ -10,7 +10,7 @@ authors = [
 description = "Tracklet-less Heliocentric Orbit Recovery"
 readme = "README.md"
 license = { file = "LICENSE.md" }
-requires-python = "<3.13,>=3.10"
+requires-python = "<3.13,>3.11"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
@@ -25,24 +25,32 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.3.4",
+    "adam-core @ file:///Users/kathleenkiker/25sep5/adam_core",
     "astropy>=5.3.1",
     "astroquery",
     "difi",
     "healpy",
     "jax",
-    "numpy",
+    "numpy>=2.2.6",
     "numba",
     "pandas",
     "psutil",
     "pyarrow>=14.0.0",
-    "pydantic<2.0.0",
+    "pydantic>=2.11.7",
     "pyyaml>=5.1",
     "quivr",
     "ray[default]",
     "scikit-learn",
     "scipy",
     "spiceypy",
+    "jaxlib<0.5.0",
+    "matplotlib>=3.10.6",
+    "ipykernel>=6.30.1",
+    "adam-assist>=0.3.3",
+    "pytest>=8.4.2",
+    "ipywidgets>=8.1.7",
+    "networkx>=3.5",
+    "seaborn>=0.13.2",
 ]
 
 [build-system]
@@ -51,10 +59,7 @@ build-backend = "pdm.backend"
 [tool.pdm.build]
 includes = ["src/thor/"]
 
-[tool.pdm.version]
-source = "scm"
-write_to = "thor/_version.py"
-write_template = "__version__ = '{}'"
+
 
 [tool.pdm.scripts]
 check = { composite = ["lint", "typecheck", "test"] }
@@ -92,8 +97,7 @@ dev = [
     "pytest-memray",
     "pytest",
     "ruff",
-    "adam-assist>=0.2.0",
-    "adam-pyoorb @ git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@0697eeb871f8d2f8577bf545f5da3966c473662e",
+    "adam-assist>=0.3.3",
 ]
 
 [tool.black]
