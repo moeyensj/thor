@@ -25,6 +25,7 @@ from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
 from .observations import Observations
+from .projections.gnomonic import GnomonicCoordinates
 
 CoordinateType = TypeVar(
     "CoordinateType",
@@ -40,22 +41,6 @@ CoordinateType = TypeVar(
 logger = logging.getLogger(__name__)
 
 
-def _compute_chunk_size(covariance: bool, num_samples: int, max_processes: Optional[int]) -> int:
-    """
-    Compute a safe chunk size for propagation/ephemeris generation.
-
-    - When covariance is False, always use chunk size 1.
-    - When covariance is True, split samples across processes if possible,
-      but never return less than 1.
-    """
-    if not covariance:
-        return 1
-    if max_processes is None or max_processes <= 1:
-        return 1
-    per_process = num_samples // max_processes
-    return max(1, per_process)
-
-
 class RangedPointSourceDetections(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
@@ -67,6 +52,7 @@ class TestOrbitEphemeris(qv.Table):
     id = qv.LargeStringColumn()
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
+    gnomonic = GnomonicCoordinates.as_column()
 
 
 def zero_covariances(coords: CoordinateType) -> CoordinateType:
@@ -262,7 +248,7 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             times,
             max_processes=max_processes,
-            chunk_size=_compute_chunk_size(covariance, num_samples, max_processes),
+            chunk_size="auto",
             covariance=covariance,
             covariance_method=covariance_method,
             num_samples=num_samples,
@@ -309,7 +295,7 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             observers,
             max_processes=max_processes,
-            chunk_size=_compute_chunk_size(covariance, num_samples, max_processes),
+            chunk_size="auto",
             covariance=covariance,
             covariance_method=covariance_method,
             num_samples=num_samples,
@@ -320,7 +306,7 @@ class TestOrbits(qv.Table):
         observations: Union[Observations, ray.ObjectRef],
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
-        covariance: bool = False,
+        covariance: bool = True,
     ):
         """
         For each unique time and code in the observations (a state), generate an ephemeris for
@@ -361,14 +347,14 @@ class TestOrbits(qv.Table):
         if len(observations) == 0:
             raise ValueError("Observations must not be empty.")
 
-        # if self._is_cache_fresh(observations):
-        #     logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
-        #     return self._cached_ephemeris
+        if self._is_cache_fresh(observations):
+            logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
+            return self._cached_ephemeris
 
         logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
 
+        # Get observer states
         observers_with_states = observations.get_observers()
-
         observers_with_states = observers_with_states.sort_by(
             by=[
                 "observers.coordinates.time.days",
@@ -376,12 +362,14 @@ class TestOrbits(qv.Table):
                 "observers.code",
             ]
         )
+
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
             observers_with_states.observers,
             propagator_class=propagator_class,
             max_processes=max_processes,
             covariance=covariance,
+            covariance_method="sigma-point",
         )
         ephemeris = ephemeris.sort_by(
             by=[
@@ -391,12 +379,20 @@ class TestOrbits(qv.Table):
             ]
         )
 
+        # Compute the gnomonic coordinates and rotation matrix for each state
+        gnomonic, gnomonic_rotation_matrix = GnomonicCoordinates.from_cartesian(
+            ephemeris.aberrated_coordinates,
+            center_cartesian=ephemeris.aberrated_coordinates,
+        )
+
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
             ephemeris=ephemeris,
             observer=observers_with_states.observers,
+            gnomonic=gnomonic,
         )
-        # self._cache_ephemeris(test_orbit_ephemeris, observations)
+
+        self._cache_ephemeris(test_orbit_ephemeris, observations)
         return test_orbit_ephemeris
 
     def range_observations(
