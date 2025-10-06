@@ -689,8 +689,12 @@ def differential_correction(
                 od_orbit_members = qv.defragment(od_orbit_members)
 
         if len(refs_to_free) > 0:
-            ray.internal.free(refs_to_free)
-            logger.info(f"Removed {len(refs_to_free)} references from the object store.")
+            # Delete local references to allow Ray's distributed GC to clean up
+            # This works for both local and remote Ray clusters
+            for ref in refs_to_free:
+                del ref
+            del refs_to_free
+            logger.info("Deleted local references to allow Ray GC to reclaim object store memory.")
 
     else:
         for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):

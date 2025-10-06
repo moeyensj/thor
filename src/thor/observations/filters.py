@@ -329,8 +329,10 @@ def filter_observations(
                 filtered_observations = qv.defragment(filtered_observations)
 
         if isinstance(observations, ray.ObjectRef):
-            ray.internal.free([observations])
-            logger.info("Removed observations from the object store.")
+            # Delete local references to allow Ray's distributed GC to clean up
+            # This works for both local and remote Ray clusters
+            del observations
+            logger.info("Deleted local references to allow Ray GC to reclaim object store memory.")
 
     else:
         for observations_chunk in observations_iterator(observations, chunk_size=chunk_size):

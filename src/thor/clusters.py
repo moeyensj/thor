@@ -819,8 +819,12 @@ def cluster_and_link(
             if cluster_members.fragmented():
                 cluster_members = qv.defragment(cluster_members)
 
-        ray.internal.free(refs_to_free)
-        logger.info(f"Removed {len(refs_to_free)} references from the object store.")
+        # Delete local references to allow Ray's distributed GC to clean up
+        # This works for both local and remote Ray clusters
+        for ref in refs_to_free:
+            del ref
+        del refs_to_free
+        logger.info("Deleted local references to allow Ray GC to reclaim object store memory.")
 
     else:
         for vxi_chunk, vyi_chunk in zip(_iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)):
