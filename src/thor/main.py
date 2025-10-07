@@ -142,7 +142,7 @@ def link_test_orbit(
         )
 
     if checkpoint.stage == "filter_observations":
-        filtered_observations = filter_observations(observations, test_orbit, config, filters)
+        filtered_observations = filter_observations(observations, test_orbit, config, filters, chunk_size=1000)
 
         filtered_observations_path = None
         if test_orbit_directory is not None:
