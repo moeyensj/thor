@@ -14,7 +14,7 @@ def test_basic_coverage():
     print("=== Testing Basic Coverage Generation ===")
     
     # Test with smaller bounds to show meaningful coverage
-    from thor.phase_space.bounds import PhaseSpaceBounds
+    from thor.phase_space.coverage import PhaseSpaceBounds
     
     # Create a small test region
     small_bounds = PhaseSpaceBounds.from_spherical(
@@ -88,7 +88,7 @@ def test_custom_parameters():
     print(f"  Coverage: {report1['coverage_percentage']:.1f}%")
     
     # Test with PhaseSpaceBounds object
-    from thor.phase_space.bounds import PhaseSpaceBounds
+    from thor.phase_space.coverage import PhaseSpaceBounds
     
     custom_bounds_obj = PhaseSpaceBounds.from_type("inner_main_belt", "keplerian")
     custom_half_widths = np.array([0.05, 0.005, 2.0, 5.0, 5.0, 5.0])  # Keplerian half-widths
@@ -116,7 +116,7 @@ def test_different_sizes():
     print("\n=== Testing Different Orbit Counts ===")
     
     # Use a smaller test region for visible coverage
-    from thor.phase_space.bounds import PhaseSpaceBounds
+    from thor.phase_space.coverage import PhaseSpaceBounds
     test_bounds = PhaseSpaceBounds.from_spherical(
         rho=(2.2, 2.8), lon=(0.0, 90.0), lat=(-15.0, 15.0),
         vrho=(-0.004, 0.004), vlon=(-0.4, 0.4), vlat=(-0.4, 0.4)
@@ -217,7 +217,7 @@ def test_target_coverage():
     print("\n=== Testing Target Coverage Generation ===")
     
     from thor.phase_space.coverage import generate_orbits_for_target_coverage, OrbitVolumes
-    from thor.phase_space.bounds import PhaseSpaceBounds
+    from thor.phase_space.coverage import PhaseSpaceBounds
     from thor.orbit import TestOrbits
     
     # Create a small test region for faster convergence
@@ -334,7 +334,7 @@ def test_fixed_volume_coverage():
     print("\n=== Testing Fixed Volume Coverage Generation ===")
     
     from thor.phase_space.coverage import generate_orbits_for_coverage_with_fixed_volumes, OrbitVolumes
-    from thor.phase_space.bounds import PhaseSpaceBounds
+    from thor.phase_space.coverage import PhaseSpaceBounds
     from thor.orbit import TestOrbits
     
     # Create a small test region for predictable results
@@ -383,8 +383,10 @@ def test_fixed_volume_coverage():
         # Check that all volumes have the same half-widths
         volume_half_widths = orbit_volumes.half_widths
         for i in range(len(orbit_volumes)):
+            # Convert PyArrow scalar to numpy array for comparison
+            actual_half_widths = np.array(list(volume_half_widths[i].as_py()))
             np.testing.assert_array_almost_equal(
-                volume_half_widths[i], half_widths, decimal=6,
+                actual_half_widths, half_widths, decimal=6,
                 err_msg=f"Volume {i} has incorrect half-widths"
             )
         

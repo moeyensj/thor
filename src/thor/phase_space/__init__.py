@@ -10,7 +10,8 @@ from .coverage import (
     generate_even_coverage_test_orbits, 
     generate_orbits_for_target_coverage,
     generate_orbits_for_coverage_with_fixed_volumes,
-    OrbitVolumes
+    OrbitVolumes,
+    PhaseSpaceBounds
 )
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "generate_orbits_for_target_coverage",
     "generate_orbits_for_coverage_with_fixed_volumes",
     "OrbitVolumes",
+    "PhaseSpaceBounds",
 ]
 
 __version__ = "0.1.0"
