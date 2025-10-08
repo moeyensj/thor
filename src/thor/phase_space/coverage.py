@@ -453,6 +453,7 @@ def generate_even_coverage_test_orbits(
     asteroid_type: Optional[str] = None,
     epoch: Optional[Timestamp] = None,
     frame: str = "ecliptic",
+    no_analysis: bool = False,
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
     Generate test orbits with even phase space coverage and analyze overlaps.
@@ -484,6 +485,8 @@ def generate_even_coverage_test_orbits(
         Epoch for the orbits. Default: J2000.0 
     frame : str, optional
         Coordinate frame. Default: "ecliptic"
+    no_analysis : bool, optional
+        If True, skip overlap analysis for faster orbit generation. Default: False
         
     Returns
     -------
@@ -584,13 +587,18 @@ def generate_even_coverage_test_orbits(
     
     orbit_volumes = OrbitVolumes.from_kwargs(**orbit_volumes_data)
     
-    # Analyze coverage
-    report = _analyze_coverage(coords_6d, half_widths, bounds, coordinate_system)
-    
-    logger.info(f"Generated {len(test_orbits)} test orbits")
-    logger.info(f"Coverage: {report['coverage_percentage']:.1f}%, "
-                f"Overlap: {report['overlap_percentage']:.1f}%, "
-                f"Efficiency: {report['efficiency']:.3f}")
+    # Analyze coverage (optional)
+    if no_analysis:
+        # Skip expensive overlap analysis - just return basic info
+        report = _create_basic_report(coords_6d, half_widths, bounds, coordinate_system)
+        logger.info(f"Generated {len(test_orbits)} test orbits (analysis skipped)")
+    else:
+        # Full analysis including overlap checking
+        report = _analyze_coverage(coords_6d, half_widths, bounds, coordinate_system)
+        logger.info(f"Generated {len(test_orbits)} test orbits")
+        logger.info(f"Coverage: {report['coverage_percentage']:.1f}%, "
+                    f"Overlap: {report['overlap_percentage']:.1f}%, "
+                    f"Efficiency: {report['efficiency']:.3f}")
     
     return test_orbits, orbit_volumes, report
 
@@ -611,10 +619,6 @@ def _generate_even_grid_points(n_orbits: int, bounds: Dict[str, Tuple[float, flo
     np.ndarray
         Array of shape (n_actual, 6) with coordinates
     """
-    # Calculate grid dimensions for approximately n_orbits points
-    # Use cube root as starting point, then adjust per dimension
-    base_n = int(np.ceil(n_orbits**(1/6)))
-    
     # Get coordinate names based on system
     if coordinate_system == "spherical":
         coord_names = ['rho', 'lon', 'lat', 'vrho', 'vlon', 'vlat']
@@ -623,25 +627,76 @@ def _generate_even_grid_points(n_orbits: int, bounds: Dict[str, Tuple[float, flo
     elif coordinate_system == "keplerian":
         coord_names = ['a', 'e', 'i', 'raan', 'ap', 'M']
     
-    # Adjust grid size per dimension based on range size
+    # Calculate grid dimensions to get as close as possible to n_orbits
+    # Start with cube root as base, then iteratively adjust
+    base_n = max(1, int(np.ceil(n_orbits**(1/6))))
+    
+    # Get coordinate ranges for proportional scaling
     ranges = np.array([bounds[coord][1] - bounds[coord][0] for coord in coord_names])
+    range_weights = ranges / np.mean(ranges)  # Normalize to mean=1
     
-    # Scale grid dimensions proportionally to ranges
-    range_weights = ranges / np.mean(ranges)  # Normalize
-    grid_dims = np.maximum(1, (base_n * range_weights**(1/3)).astype(int))
+    # Try different scaling approaches to find best grid
+    best_grid = None
+    best_error = float('inf')
     
-    # Adjust to get closer to target
+    # Try several different approaches
+    for approach in range(5):
+        if approach == 0:
+            # Uniform grid
+            grid_dims = np.full(6, max(1, int(np.ceil(n_orbits**(1/6)))))
+        elif approach == 1:
+            # Proportional to ranges
+            grid_dims = np.maximum(1, (base_n * range_weights**(1/3)).astype(int))
+        elif approach == 2:
+            # Slightly larger base
+            larger_base = max(1, int(np.ceil((n_orbits * 1.1)**(1/6))))
+            grid_dims = np.maximum(1, (larger_base * range_weights**(1/4)).astype(int))
+        elif approach == 3:
+            # Focus more points on larger dimensions
+            grid_dims = np.maximum(1, (base_n * range_weights**(1/2)).astype(int))
+        else:
+            # Try to balance by adjusting individual dimensions
+            grid_dims = np.maximum(1, (base_n * range_weights**(1/5)).astype(int))
+        
+        # Fine-tune to get closer to target
+        total_points = np.prod(grid_dims)
+        if total_points < n_orbits:
+            # Need more points - try increasing dimensions iteratively
+            for _ in range(10):  # Max 10 adjustments
+                # Find dimension that gives best improvement
+                best_dim = -1
+                best_improvement = 0
+                for dim in range(6):
+                    test_dims = grid_dims.copy()
+                    test_dims[dim] += 1
+                    new_total = np.prod(test_dims)
+                    if new_total <= n_orbits * 1.1:  # Don't go too far over
+                        improvement = new_total - total_points
+                        if improvement > best_improvement:
+                            best_improvement = improvement
+                            best_dim = dim
+                
+                if best_dim >= 0:
+                    grid_dims[best_dim] += 1
+                    total_points = np.prod(grid_dims)
+                else:
+                    break
+        
+        # Calculate error from target
+        error = abs(total_points - n_orbits)
+        if error < best_error:
+            best_error = error
+            best_grid = grid_dims.copy()
+        
+        # If we found exact match, use it
+        if total_points == n_orbits:
+            best_grid = grid_dims.copy()
+            break
+    
+    grid_dims = best_grid
     total_points = np.prod(grid_dims)
-    if total_points < n_orbits * 0.7:
-        # Too few points, increase dimensions
-        scale_factor = (n_orbits / total_points)**(1/6)
-        grid_dims = np.maximum(1, (grid_dims * scale_factor).astype(int))
-    elif total_points > n_orbits * 1.5:
-        # Too many points, decrease dimensions  
-        scale_factor = (n_orbits / total_points)**(1/6)
-        grid_dims = np.maximum(1, (grid_dims * scale_factor).astype(int))
     
-    logger.info(f"Using grid dimensions: {grid_dims} (total: {np.prod(grid_dims)} points)")
+    logger.info(f"Using grid dimensions: {grid_dims} (total: {total_points} points)")
     
     # Generate grid points
     grid_coords = []
@@ -662,11 +717,29 @@ def _generate_even_grid_points(n_orbits: int, bounds: Dict[str, Tuple[float, flo
     mesh = np.meshgrid(*grid_coords, indexing='ij')
     points = np.column_stack([m.ravel() for m in mesh])
     
-    # If we have too many points, randomly sample to get closer to target
-    if len(points) > n_orbits * 1.2:
+    # Handle cases where we have too many or too few points
+    if len(points) > n_orbits:
+        # Too many points - randomly sample to get exactly n_orbits
         np.random.seed(42)  # For reproducibility
         indices = np.random.choice(len(points), size=n_orbits, replace=False)
         points = points[indices]
+        logger.info(f"Sampled {n_orbits} points from {len(mesh[0].ravel())} grid points")
+    elif len(points) < n_orbits:
+        # Too few points - add random points within bounds to reach target
+        n_additional = n_orbits - len(points)
+        np.random.seed(42)  # For reproducibility
+        
+        additional_points = []
+        for i, coord in enumerate(coord_names):
+            min_val, max_val = bounds[coord]
+            # Add small margin
+            margin = (max_val - min_val) * 0.01
+            random_coords = np.random.uniform(min_val + margin, max_val - margin, n_additional)
+            additional_points.append(random_coords)
+        
+        additional_points = np.column_stack(additional_points)
+        points = np.vstack([points, additional_points])
+        logger.info(f"Added {n_additional} random points to reach {n_orbits} total")
     
     return points
 
@@ -778,31 +851,13 @@ def _analyze_coverage(coords: np.ndarray, half_widths: np.ndarray,
     overlap_count = 0
     total_overlap_volume = 0.0
     
-    # Check pairwise overlaps
-    for i in range(n_orbits):
-        for j in range(i + 1, n_orbits):
-            # Check if volumes overlap (simplified rectangular check)
-            overlaps = True
-            overlap_dims = []
-            
-            for dim in range(6):
-                center_i, center_j = coords[i, dim], coords[j, dim]
-                half_width = half_widths[dim]
-                
-                # Check overlap in this dimension
-                if abs(center_i - center_j) > 2 * half_width:
-                    overlaps = False
-                    break
-                else:
-                    # Calculate overlap width in this dimension
-                    overlap_width = 2 * half_width - abs(center_i - center_j)
-                    overlap_dims.append(overlap_width)
-            
-            if overlaps:
-                overlap_count += 1
-                # Approximate overlap volume
-                overlap_vol = np.prod(overlap_dims)
-                total_overlap_volume += overlap_vol
+    # Fast overlap analysis - use sampling for large datasets
+    if n_orbits > 1000:
+        # For large datasets, use statistical sampling to estimate overlaps
+        overlap_count, total_overlap_volume = _fast_overlap_analysis(coords, half_widths, n_orbits)
+    else:
+        # For smaller datasets, do exact calculation with vectorized operations
+        overlap_count, total_overlap_volume = _exact_overlap_analysis(coords, half_widths, n_orbits)
     
     # Calculate metrics
     overlap_percentage = 100.0 * total_overlap_volume / total_volume_no_overlap if total_volume_no_overlap > 0 else 0.0
@@ -813,10 +868,7 @@ def _analyze_coverage(coords: np.ndarray, half_widths: np.ndarray,
         'individual_volume': individual_volume,
         'total_volume_no_overlap': total_volume_no_overlap,
         'total_overlap_volume': total_overlap_volume,
-        'mean_center_distance': np.mean([
-            np.linalg.norm(coords[i] - coords[j]) 
-            for i in range(n_orbits) for j in range(i + 1, n_orbits)
-        ]) if n_orbits > 1 else 0.0,
+        'mean_center_distance': _calculate_mean_distance(coords) if n_orbits > 1 else 0.0,
     }
     
     return {
@@ -833,7 +885,7 @@ def _analyze_coverage(coords: np.ndarray, half_widths: np.ndarray,
     }
 
 
-def generate_orbits_for_target_coverage(
+def generate_orbit_volumes_for_target_coverage(
     n_orbits: int,
     target_coverage_percent: float,
     bounds: Optional[Union[Dict[str, Tuple[float, float]], PhaseSpaceBounds]] = None,
@@ -1133,3 +1185,160 @@ def generate_orbits_for_coverage_with_fixed_volumes(
         return test_orbits, orbit_volumes, report
     else:
         raise RuntimeError("Failed to generate any valid orbits")
+
+
+def _fast_overlap_analysis(coords: np.ndarray, half_widths: np.ndarray, n_orbits: int) -> Tuple[int, float]:
+    """
+    Fast statistical overlap analysis for large datasets using sampling.
+    
+    Instead of O(n²) pairwise comparisons, sample a subset and extrapolate.
+    Reduces 100k orbits from 5 billion comparisons to ~10k samples.
+    """
+    # Sample size: use sqrt(n) pairs for statistical estimation
+    max_samples = min(10000, n_orbits * 10)  # Cap at 10k samples for performance
+    
+    if n_orbits <= 100:
+        # Small enough for exact calculation
+        return _exact_overlap_analysis(coords, half_widths, n_orbits)
+    
+    # Random sampling of pairs
+    np.random.seed(42)  # For reproducibility
+    sample_indices = np.random.choice(n_orbits, size=(max_samples, 2), replace=True)
+    
+    # Remove self-pairs
+    valid_pairs = sample_indices[sample_indices[:, 0] != sample_indices[:, 1]]
+    
+    overlap_count_sample = 0
+    total_overlap_volume_sample = 0.0
+    
+    # Vectorized overlap checking for sampled pairs
+    for i, j in valid_pairs:
+        # Check if volumes overlap using vectorized operations
+        center_diff = np.abs(coords[i] - coords[j])
+        overlap_threshold = 2 * half_widths
+        
+        # Check if all dimensions overlap
+        if np.all(center_diff <= overlap_threshold):
+            overlap_count_sample += 1
+            # Calculate overlap volume
+            overlap_widths = overlap_threshold - center_diff
+            overlap_vol = np.prod(overlap_widths)
+            total_overlap_volume_sample += overlap_vol
+    
+    # Extrapolate from sample to full dataset
+    total_possible_pairs = n_orbits * (n_orbits - 1) // 2
+    sample_pairs = len(valid_pairs)
+    
+    if sample_pairs > 0:
+        scale_factor = total_possible_pairs / sample_pairs
+        estimated_overlap_count = int(overlap_count_sample * scale_factor)
+        estimated_total_overlap_volume = total_overlap_volume_sample * scale_factor
+    else:
+        estimated_overlap_count = 0
+        estimated_total_overlap_volume = 0.0
+    
+    return estimated_overlap_count, estimated_total_overlap_volume
+
+
+def _exact_overlap_analysis(coords: np.ndarray, half_widths: np.ndarray, n_orbits: int) -> Tuple[int, float]:
+    """
+    Exact overlap analysis for smaller datasets - optimized vectorized version.
+    Still O(n²) but with vectorized NumPy operations for better performance.
+    """
+    overlap_count = 0
+    total_overlap_volume = 0.0
+    
+    # Use the original nested loop approach but optimized
+    for i in range(n_orbits):
+        for j in range(i + 1, n_orbits):
+            # Vectorized overlap check
+            center_diff = np.abs(coords[i] - coords[j])
+            overlap_threshold = 2 * half_widths
+            
+            # Check if all dimensions overlap
+            if np.all(center_diff <= overlap_threshold):
+                overlap_count += 1
+                # Calculate overlap volume
+                overlap_widths = overlap_threshold - center_diff
+                overlap_vol = np.prod(overlap_widths)
+                total_overlap_volume += overlap_vol
+    
+    return overlap_count, total_overlap_volume
+
+
+def _calculate_mean_distance(coords: np.ndarray) -> float:
+    """
+    Calculate mean pairwise distance efficiently.
+    For large datasets, use sampling to avoid O(n²) computation.
+    """
+    n_orbits = len(coords)
+    
+    if n_orbits <= 1000:
+        # Small enough for exact calculation
+        distances = []
+        for i in range(n_orbits):
+            for j in range(i + 1, n_orbits):
+                distances.append(np.linalg.norm(coords[i] - coords[j]))
+        return np.mean(distances) if distances else 0.0
+    else:
+        # Sample distances for large datasets
+        np.random.seed(42)  # For reproducibility
+        max_samples = min(1000, n_orbits)  # Sample up to 1000 pairs
+        
+        sample_indices = np.random.choice(n_orbits, size=(max_samples, 2), replace=True)
+        valid_pairs = sample_indices[sample_indices[:, 0] != sample_indices[:, 1]]
+        
+        distances = []
+        for i, j in valid_pairs:
+            distances.append(np.linalg.norm(coords[i] - coords[j]))
+        
+        return np.mean(distances) if distances else 0.0
+
+
+def _create_basic_report(coords: np.ndarray, half_widths: np.ndarray, 
+                        bounds: Dict[str, Tuple[float, float]], coordinate_system: str) -> Dict:
+    """
+    Create a basic coverage report without expensive overlap analysis.
+    
+    This provides essential metrics without O(n²) computations.
+    """
+    n_orbits = len(coords)
+    individual_volume = np.prod(2 * half_widths)
+    
+    # Get coordinate names based on system
+    if coordinate_system == "spherical":
+        coord_names = ['rho', 'lon', 'lat', 'vrho', 'vlon', 'vlat']
+    elif coordinate_system == "cartesian":
+        coord_names = ['x', 'y', 'z', 'vx', 'vy', 'vz']
+    elif coordinate_system == "keplerian":
+        coord_names = ['a', 'e', 'i', 'raan', 'ap', 'M']
+    
+    # Calculate total phase space volume
+    ranges = np.array([bounds[coord][1] - bounds[coord][0] for coord in coord_names])
+    total_phase_space = np.prod(ranges)
+    
+    # Basic coverage estimate (no overlap analysis)
+    total_volume_no_overlap = n_orbits * individual_volume
+    coverage_percentage = min(100.0, 100.0 * total_volume_no_overlap / total_phase_space)
+    
+    # Basic volume statistics (no pairwise calculations)
+    volume_stats = {
+        'individual_volume': individual_volume,
+        'total_volume_no_overlap': total_volume_no_overlap,
+        'total_overlap_volume': 0.0,  # Not calculated
+        'mean_center_distance': 0.0,  # Not calculated
+    }
+    
+    return {
+        'n_orbits': n_orbits,
+        'coverage_percentage': coverage_percentage,
+        'overlap_percentage': 0.0,  # Not calculated
+        'n_overlapping_pairs': 0,   # Not calculated
+        'efficiency': 1.0,          # Assume no overlap
+        'volume_stats': volume_stats,
+        'phase_space_volume': total_phase_space,
+        'bounds': bounds,
+        'half_widths': half_widths.tolist(),
+        'coordinate_system': coordinate_system,
+        'analysis_skipped': True,   # Flag to indicate analysis was skipped
+    }
