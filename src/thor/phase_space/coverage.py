@@ -453,7 +453,6 @@ def generate_even_coverage_test_orbits(
     asteroid_type: Optional[str] = None,
     epoch: Optional[Timestamp] = None,
     frame: str = "ecliptic",
-    no_analysis: bool = False,
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
     Generate test orbits with even phase space coverage and analyze overlaps.
@@ -485,8 +484,6 @@ def generate_even_coverage_test_orbits(
         Epoch for the orbits. Default: J2000.0 
     frame : str, optional
         Coordinate frame. Default: "ecliptic"
-    no_analysis : bool, optional
-        If True, skip overlap analysis for faster orbit generation. Default: False
         
     Returns
     -------
@@ -588,17 +585,11 @@ def generate_even_coverage_test_orbits(
     orbit_volumes = OrbitVolumes.from_kwargs(**orbit_volumes_data)
     
     # Analyze coverage (optional)
-    if no_analysis:
-        # Skip expensive overlap analysis - just return basic info
-        report = _create_basic_report(coords_6d, half_widths, bounds, coordinate_system)
-        logger.info(f"Generated {len(test_orbits)} test orbits (analysis skipped)")
-    else:
-        # Full analysis including overlap checking
-        report = _analyze_coverage(coords_6d, half_widths, bounds, coordinate_system)
-        logger.info(f"Generated {len(test_orbits)} test orbits")
-        logger.info(f"Coverage: {report['coverage_percentage']:.1f}%, "
-                    f"Overlap: {report['overlap_percentage']:.1f}%, "
-                    f"Efficiency: {report['efficiency']:.3f}")
+    # Create basic report with essential coverage metrics
+    # For detailed diagnostics, use analyze_orbit_coverage_diagnostics() separately
+    report = _create_basic_report(coords_6d, half_widths, bounds, coordinate_system)
+    logger.info(f"Generated {len(test_orbits)} test orbits")
+    logger.info(f"Coverage: {report['coverage_percentage']:.1f}%")
     
     return test_orbits, orbit_volumes, report
 
@@ -1295,12 +1286,12 @@ def _calculate_mean_distance(coords: np.ndarray) -> float:
         return np.mean(distances) if distances else 0.0
 
 
-def _create_basic_report(coords: np.ndarray, half_widths: np.ndarray, 
-                        bounds: Dict[str, Tuple[float, float]], coordinate_system: str) -> Dict:
+def _calculate_coverage_percentage(coords: np.ndarray, half_widths: np.ndarray, 
+                                  bounds: Dict[str, Tuple[float, float]], coordinate_system: str) -> float:
     """
-    Create a basic coverage report without expensive overlap analysis.
+    Calculate ONLY the coverage percentage - the essential metric for iterative functions.
     
-    This provides essential metrics without O(n²) computations.
+    This is fast O(1) calculation without expensive O(n²) overlap analysis.
     """
     n_orbits = len(coords)
     individual_volume = np.prod(2 * half_widths)
@@ -1317,9 +1308,37 @@ def _create_basic_report(coords: np.ndarray, half_widths: np.ndarray,
     ranges = np.array([bounds[coord][1] - bounds[coord][0] for coord in coord_names])
     total_phase_space = np.prod(ranges)
     
-    # Basic coverage estimate (no overlap analysis)
+    # Basic coverage estimate (no overlap analysis needed)
     total_volume_no_overlap = n_orbits * individual_volume
     coverage_percentage = min(100.0, 100.0 * total_volume_no_overlap / total_phase_space)
+    
+    return coverage_percentage
+
+
+def _create_basic_report(coords: np.ndarray, half_widths: np.ndarray, 
+                        bounds: Dict[str, Tuple[float, float]], coordinate_system: str) -> Dict:
+    """
+    Create a basic coverage report with only essential metrics.
+    
+    This provides the coverage_percentage needed by iterative functions without expensive O(n²) computations.
+    """
+    n_orbits = len(coords)
+    individual_volume = np.prod(2 * half_widths)
+    
+    # Get the essential coverage percentage
+    coverage_percentage = _calculate_coverage_percentage(coords, half_widths, bounds, coordinate_system)
+    
+    # Calculate total phase space volume for reporting
+    if coordinate_system == "spherical":
+        coord_names = ['rho', 'lon', 'lat', 'vrho', 'vlon', 'vlat']
+    elif coordinate_system == "cartesian":
+        coord_names = ['x', 'y', 'z', 'vx', 'vy', 'vz']
+    elif coordinate_system == "keplerian":
+        coord_names = ['a', 'e', 'i', 'raan', 'ap', 'M']
+    
+    ranges = np.array([bounds[coord][1] - bounds[coord][0] for coord in coord_names])
+    total_phase_space = np.prod(ranges)
+    total_volume_no_overlap = n_orbits * individual_volume
     
     # Basic volume statistics (no pairwise calculations)
     volume_stats = {
@@ -1341,4 +1360,72 @@ def _create_basic_report(coords: np.ndarray, half_widths: np.ndarray,
         'half_widths': half_widths.tolist(),
         'coordinate_system': coordinate_system,
         'analysis_skipped': True,   # Flag to indicate analysis was skipped
+    }
+
+
+def analyze_orbit_coverage_diagnostics(test_orbits: TestOrbits, orbit_volumes: OrbitVolumes) -> Dict:
+    """
+    Perform detailed coverage diagnostics on existing orbits and volumes.
+    
+    This is the expensive O(n²) analysis separated out for optional use.
+    Takes TestOrbits and OrbitVolumes as input - works with any generation method.
+    
+    Parameters
+    ----------
+    test_orbits : TestOrbits
+        Generated test orbits
+    orbit_volumes : OrbitVolumes  
+        Volume information for each orbit
+        
+    Returns
+    -------
+    Dict
+        Detailed diagnostics including overlap analysis, efficiency metrics, etc.
+    """
+    n_orbits = len(test_orbits)
+    
+    if n_orbits == 0:
+        return {
+            'n_orbits': 0,
+            'overlap_percentage': 0.0,
+            'n_overlapping_pairs': 0,
+            'efficiency': 1.0,
+            'mean_center_distance': 0.0,
+            'diagnostics_note': 'No orbits to analyze'
+        }
+    
+    # Extract coordinates and half-widths from the orbit volumes
+    # Get the first orbit's data to understand the structure
+    first_center = np.array(list(orbit_volumes.centers[0].as_py()))
+    first_half_widths = np.array(list(orbit_volumes.half_widths[0].as_py()))
+    coordinate_system = orbit_volumes.coordinate_system[0].as_py()
+    
+    # Build coords array
+    coords = np.array([list(orbit_volumes.centers[i].as_py()) for i in range(n_orbits)])
+    
+    # Perform the expensive overlap analysis
+    if n_orbits > 1000:
+        overlap_count, total_overlap_volume = _fast_overlap_analysis(coords, first_half_widths, n_orbits)
+    else:
+        overlap_count, total_overlap_volume = _exact_overlap_analysis(coords, first_half_widths, n_orbits)
+    
+    # Calculate metrics
+    individual_volume = np.prod(2 * first_half_widths)
+    total_volume_no_overlap = n_orbits * individual_volume
+    overlap_percentage = 100.0 * total_overlap_volume / total_volume_no_overlap if total_volume_no_overlap > 0 else 0.0
+    efficiency = 1.0 - (total_overlap_volume / total_volume_no_overlap) if total_volume_no_overlap > 0 else 1.0
+    
+    # Calculate mean distance
+    mean_distance = _calculate_mean_distance(coords) if n_orbits > 1 else 0.0
+    
+    return {
+        'n_orbits': n_orbits,
+        'overlap_percentage': overlap_percentage,
+        'n_overlapping_pairs': overlap_count,
+        'efficiency': efficiency,
+        'mean_center_distance': mean_distance,
+        'total_overlap_volume': total_overlap_volume,
+        'individual_volume': individual_volume,
+        'coordinate_system': coordinate_system,
+        'diagnostics_note': f'Detailed analysis using {"statistical sampling" if n_orbits > 1000 else "exact calculation"}'
     }

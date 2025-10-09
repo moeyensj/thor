@@ -216,7 +216,7 @@ def test_target_coverage():
     """Test generating orbits for target coverage percentage."""
     print("\n=== Testing Target Coverage Generation ===")
     
-    from thor.phase_space.coverage import generate_orbits_for_target_coverage, OrbitVolumes
+    from thor.phase_space.coverage import generate_orbit_volumes_for_target_coverage, OrbitVolumes
     from thor.phase_space.coverage import PhaseSpaceBounds
     from thor.orbit import TestOrbits
     
@@ -236,7 +236,7 @@ def test_target_coverage():
     for n_orbits, target_percent in test_cases:
         print(f"\n--- Testing {n_orbits} orbits for {target_percent}% coverage ---")
         
-        test_orbits, orbit_volumes, report = generate_orbits_for_target_coverage(
+        test_orbits, orbit_volumes, report = generate_orbit_volumes_for_target_coverage(
             n_orbits=n_orbits,
             target_coverage_percent=target_percent,
             bounds=small_bounds,
@@ -277,12 +277,12 @@ def test_target_coverage_edge_cases():
     """Test edge cases for target coverage generation."""
     print("\n=== Testing Target Coverage Edge Cases ===")
     
-    from thor.phase_space.coverage import generate_orbits_for_target_coverage
+    from thor.phase_space.coverage import generate_orbit_volumes_for_target_coverage
     from thor.orbit import TestOrbits
     
     # Test with very small target coverage
     print("Testing low coverage target (5%)...")
-    test_orbits, orbit_volumes, report = generate_orbits_for_target_coverage(
+    test_orbits, orbit_volumes, report = generate_orbit_volumes_for_target_coverage(
         n_orbits=5,
         target_coverage_percent=5.0,
         asteroid_type="inner_main_belt",
@@ -294,7 +294,7 @@ def test_target_coverage_edge_cases():
     
     # Test with different coordinate systems
     print("Testing with cartesian coordinates...")
-    test_orbits, orbit_volumes, report = generate_orbits_for_target_coverage(
+    test_orbits, orbit_volumes, report = generate_orbit_volumes_for_target_coverage(
         n_orbits=8,
         target_coverage_percent=20.0,
         coordinate_system="cartesian",
@@ -308,19 +308,19 @@ def test_target_coverage_edge_cases():
     # Test input validation
     print("Testing input validation...")
     try:
-        generate_orbits_for_target_coverage(0, 50.0)  # Invalid n_orbits
+        generate_orbit_volumes_for_target_coverage(0, 50.0)  # Invalid n_orbits
         assert False, "Should raise ValueError for n_orbits=0"
     except ValueError:
         print("  ✓ Correctly rejects n_orbits=0")
     
     try:
-        generate_orbits_for_target_coverage(5, 0.0)  # Invalid coverage
+        generate_orbit_volumes_for_target_coverage(5, 0.0)  # Invalid coverage
         assert False, "Should raise ValueError for coverage=0"
     except ValueError:
         print("  ✓ Correctly rejects coverage=0%")
     
     try:
-        generate_orbits_for_target_coverage(5, 150.0)  # Invalid coverage
+        generate_orbit_volumes_for_target_coverage(5, 150.0)  # Invalid coverage
         assert False, "Should raise ValueError for coverage>100"
     except ValueError:
         print("  ✓ Correctly rejects coverage>100%")
