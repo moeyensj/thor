@@ -14,6 +14,7 @@ import quivr as qv
 import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.ray_cluster import initialize_use_ray
+from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
 
 from .projections import GnomonicCoordinates
@@ -142,6 +143,7 @@ class ClusterMembers(qv.Table):
 
 class FittedClusters(qv.Table):
     cluster_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
+    time = Timestamp.as_column()
     theta_x0 = qv.Float64Column()
     theta_y0 = qv.Float64Column()
     vtheta_x = qv.Float64Column()
@@ -936,25 +938,31 @@ def fit_cluster(
     cluster_detections = cluster_detections.sort_by(["coordinates.time.days", "coordinates.time.nanos"])
 
     gnomonic_coords = cluster_detections.coordinates
-    theta_x = gnomonic_coords.theta_x
-    theta_y = gnomonic_coords.theta_y
-    time = gnomonic_coords.time.mjd()
+    theta_x = gnomonic_coords.theta_x.to_numpy(zero_copy_only=False)
+    theta_y = gnomonic_coords.theta_y.to_numpy(zero_copy_only=False)
+    time = gnomonic_coords.time.mjd().to_numpy(zero_copy_only=False)
 
-    # Fit a 2nd order polynomial to the data as a function of time
-    coords = np.empty((len(time), 2))
+    # Use relative time from the first observation to avoid numerical issues
+    # and make x0, y0 represent position at the first observation
+    t0 = time[0]
+    dt = time - t0  # days since first observation
+
+    # Fit a 2nd order polynomial to the data as a function of relative time
+    # theta(dt) = a*dt² + v*dt + theta0
+    coords = np.empty((len(dt), 2))
     coords[:, 0] = theta_x
     coords[:, 1] = theta_y
-    coeffs = np.polyfit(time, coords, 2)
+    coeffs = np.polyfit(dt, coords, 2)
 
-    ax = coeffs[0, 0]
+    ax = coeffs[0, 0]  # deg/day²
     ay = coeffs[0, 1]
-    vx = coeffs[1, 0]
+    vx = coeffs[1, 0]  # deg/day
     vy = coeffs[1, 1]
-    x0 = coeffs[2, 0]
+    x0 = coeffs[2, 0]  # deg (position at first observation)
     y0 = coeffs[2, 1]
 
-    x_pred = np.polyval(coeffs[:, 0], time)
-    y_pred = np.polyval(coeffs[:, 1], time)
+    x_pred = np.polyval(coeffs[:, 0], dt)
+    y_pred = np.polyval(coeffs[:, 1], dt)
 
     gnomonic_pred = GnomonicCoordinates.from_kwargs(
         time=gnomonic_coords.time,
@@ -968,6 +976,7 @@ def fit_cluster(
 
     fitted_cluster = FittedClusters.from_kwargs(
         cluster_id=cluster.cluster_id,
+        time=gnomonic_coords.time[0],
         theta_x0=[x0],
         theta_y0=[y0],
         vtheta_x=[vx],
