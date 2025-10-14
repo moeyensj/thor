@@ -53,6 +53,8 @@ class TestOrbitEphemeris(qv.Table):
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
     gnomonic = GnomonicCoordinates.as_column()
+    # TODO: This should be a fixed shape tensor when they can be pickled correctly...
+    gnomonic_rotation_matrix = qv.FixedSizeListColumn(pa.float64(), list_size=36)
 
 
 def zero_covariances(coords: CoordinateType) -> CoordinateType:
@@ -384,12 +386,17 @@ class TestOrbits(qv.Table):
             ephemeris.aberrated_coordinates,
             center_cartesian=ephemeris.aberrated_coordinates,
         )
+        # Convert rotation matrix to FixedSizeListArray (flatten to fixed-size chunks of 36)
+        gnomonic_rotation_matrix = pa.FixedSizeListArray.from_arrays(
+            gnomonic_rotation_matrix.flatten(), list_size=36
+        )
 
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
             ephemeris=ephemeris,
             observer=observers_with_states.observers,
             gnomonic=gnomonic,
+            gnomonic_rotation_matrix=gnomonic_rotation_matrix,
         )
 
         self._cache_ephemeris(test_orbit_ephemeris, observations)
