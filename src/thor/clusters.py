@@ -968,70 +968,80 @@ def fit_cluster(
     fitted_cluster_members : `~thor.clusters.FittedClusterMembers`
         Fitted cluster members.
     """
-    cluster_detections = transformed_detections.apply_mask(
-        pc.is_in(transformed_detections.id, cluster_members.obs_id)
-    )
-    cluster_detections = cluster_detections.sort_by(["coordinates.time.days", "coordinates.time.nanos"])
+    try:
+        cluster_detections = transformed_detections.apply_mask(
+            pc.is_in(transformed_detections.id, cluster_members.obs_id)
+        )
+        cluster_detections = cluster_detections.sort_by(["coordinates.time.days", "coordinates.time.nanos"])
 
-    gnomonic_coords = cluster_detections.coordinates
-    theta_x = gnomonic_coords.theta_x.to_numpy(zero_copy_only=False)
-    theta_y = gnomonic_coords.theta_y.to_numpy(zero_copy_only=False)
-    time = gnomonic_coords.time.mjd().to_numpy(zero_copy_only=False)
+        gnomonic_coords = cluster_detections.coordinates
+        theta_x = gnomonic_coords.theta_x.to_numpy(zero_copy_only=False)
+        theta_y = gnomonic_coords.theta_y.to_numpy(zero_copy_only=False)
+        time = gnomonic_coords.time.mjd().to_numpy(zero_copy_only=False)
 
-    # Use relative time from the first observation to avoid numerical issues
-    # and make x0, y0 represent position at the first observation
-    t0 = time[0]
-    dt = time - t0  # days since first observation
+        # Use relative time from the first observation to avoid numerical issues
+        # and make x0, y0 represent position at the first observation
+        t0 = time[0]
+        dt = time - t0  # days since first observation
 
-    # Fit a 2nd order polynomial to the data as a function of relative time
-    # theta(dt) = a*dt² + v*dt + theta0
-    coords = np.empty((len(dt), 2))
-    coords[:, 0] = theta_x
-    coords[:, 1] = theta_y
-    coeffs = np.polyfit(dt, coords, 2)
+        # Fit a 2nd order polynomial to the data as a function of relative time
+        # theta(dt) = a*dt² + v*dt + theta0
+        coords = np.empty((len(dt), 2))
+        coords[:, 0] = theta_x
+        coords[:, 1] = theta_y
+        coeffs = np.polyfit(dt, coords, 2)
 
-    ax = coeffs[0, 0]  # deg/day²
-    ay = coeffs[0, 1]
-    vx = coeffs[1, 0]  # deg/day
-    vy = coeffs[1, 1]
-    x0 = coeffs[2, 0]  # deg (position at first observation)
-    y0 = coeffs[2, 1]
+        ax = coeffs[0, 0]  # deg/day²
+        ay = coeffs[0, 1]
+        vx = coeffs[1, 0]  # deg/day
+        vy = coeffs[1, 1]
+        x0 = coeffs[2, 0]  # deg (position at first observation)
+        y0 = coeffs[2, 1]
 
-    x_pred = np.polyval(coeffs[:, 0], dt)
-    y_pred = np.polyval(coeffs[:, 1], dt)
+        x_pred = np.polyval(coeffs[:, 0], dt)
+        y_pred = np.polyval(coeffs[:, 1], dt)
 
-    gnomonic_pred = GnomonicCoordinates.from_kwargs(
-        time=gnomonic_coords.time,
-        theta_x=x_pred,
-        theta_y=y_pred,
-        origin=gnomonic_coords.origin,
-        frame=gnomonic_coords.frame,
-    )
+        gnomonic_pred = GnomonicCoordinates.from_kwargs(
+            time=gnomonic_coords.time,
+            theta_x=x_pred,
+            theta_y=y_pred,
+            origin=gnomonic_coords.origin,
+            frame=gnomonic_coords.frame,
+        )
 
-    residuals = Residuals.calculate(gnomonic_coords, gnomonic_pred, custom_coordinates=True)
+        residuals = Residuals.calculate(gnomonic_coords, gnomonic_pred, custom_coordinates=True)
 
-    fitted_cluster = FittedClusters.from_kwargs(
-        cluster_id=cluster.cluster_id,
-        time=gnomonic_coords.time[0],
-        theta_x0=[x0],
-        theta_y0=[y0],
-        vtheta_x=[vx],
-        vtheta_y=[vy],
-        atheta_x=[ax],
-        atheta_y=[ay],
-        arc_length=[pc.subtract(pc.max(time), pc.min(time))],
-        num_obs=[len(time)],
-        chi2=[pc.sum(residuals.chi2)],
-        rchi2=[pc.divide(pc.sum(residuals.chi2), pc.sum(residuals.dof).as_py() - 6)],
-    )
+        fitted_cluster = FittedClusters.from_kwargs(
+            cluster_id=cluster.cluster_id,
+            time=gnomonic_coords.time[0],
+            theta_x0=[x0],
+            theta_y0=[y0],
+            vtheta_x=[vx],
+            vtheta_y=[vy],
+            atheta_x=[ax],
+            atheta_y=[ay],
+            arc_length=[pc.subtract(pc.max(time), pc.min(time))],
+            num_obs=[len(time)],
+            chi2=[pc.sum(residuals.chi2)],
+            rchi2=[pc.divide(pc.sum(residuals.chi2), pc.sum(residuals.dof).as_py() - 6)],
+        )
 
-    fitted_cluster_members = FittedClusterMembers.from_kwargs(
-        cluster_id=cluster_members.cluster_id,
-        obs_id=cluster_members.obs_id,
-        residuals=residuals,
-    )
+        fitted_cluster_members = FittedClusterMembers.from_kwargs(
+            cluster_id=cluster_members.cluster_id,
+            obs_id=cluster_members.obs_id,
+            residuals=residuals,
+        )
 
-    return fitted_cluster, fitted_cluster_members
+        return fitted_cluster, fitted_cluster_members
+        
+    except np.linalg.LinAlgError as e:
+        cluster_id = cluster.cluster_id[0].as_py()
+        logger.warning(f"Failed to fit cluster {cluster_id}: Singular matrix (degenerate observations). Skipping cluster.")
+        return FittedClusters.empty(), FittedClusterMembers.empty()
+    except Exception as e:
+        cluster_id = cluster.cluster_id[0].as_py()
+        logger.warning(f"Failed to fit cluster {cluster_id}: {e}. Skipping cluster.")
+        return FittedClusters.empty(), FittedClusterMembers.empty()
 
 
 def fit_clusters(
