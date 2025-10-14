@@ -656,10 +656,12 @@ cluster_velocity_remote.options(
 
 def cluster_and_link(
     observations: Union[TransformedDetections, ray.ObjectRef],
-    vx_range: List[float] = [-0.1, 0.1],
-    vy_range: List[float] = [-0.1, 0.1],
-    vx_bins: int = 100,
-    vy_bins: int = 100,
+    vx_range: Optional[List[float]] = None,
+    vy_range: Optional[List[float]] = None,
+    vx_bins: Optional[int] = None,
+    vy_bins: Optional[int] = None,
+    vx_values: Optional[npt.NDArray[np.float64]] = None,
+    vy_values: Optional[npt.NDArray[np.float64]] = None,
     radius: float = 0.005,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -673,43 +675,53 @@ def cluster_and_link(
 
     Parameters
     ----------
-    observations : `~pandas.DataFrame`
-        DataFrame containing post-range and shift observations.
-    vx_range : {None, list or `~numpy.ndarray` (2)}
-        Maximum and minimum velocity range in x.
-        [Default = [-0.1, 0.1]]
-    vy_range : {None, list or `~numpy.ndarray` (2)}
-        Maximum and minimum velocity range in y.
-        [Default = [-0.1, 0.1]]
+    observations : TransformedDetections or ray.ObjectRef
+        Transformed detections to cluster.
+    vx_range : list of float, optional
+        [min, max] velocity range in x (deg/day). Used only if vx_values is None.
+        If None and vx_values is None, defaults to [-0.1, 0.1].
+    vy_range : list of float, optional
+        [min, max] velocity range in y (deg/day). Used only if vy_values is None.
+        If None and vy_values is None, defaults to [-0.1, 0.1].
     vx_bins : int, optional
-        Length of x-velocity grid between vx_range[0]
-        and vx_range[-1].
-        [Default = 100]
-    vy_bins: int, optional
-        Length of y-velocity grid between vy_range[0]
-        and vy_range[-1].
-        [Default = 100]
+        Number of bins for x-velocity grid. Used only if vx_values is None.
+        If None and vx_values is None, defaults to 100.
+    vy_bins : int, optional
+        Number of bins for y-velocity grid. Used only if vy_values is None.
+        If None and vy_values is None, defaults to 100.
+    vx_values : np.ndarray, optional
+        Pre-computed x-velocity values to use for clustering. If provided,
+        vx_range and vx_bins are ignored.
+    vy_values : np.ndarray, optional
+        Pre-computed y-velocity values to use for clustering. If provided,
+        vy_range and vy_bins are ignored. Must be same length as vx_values.
     radius : float, optional
         The maximum distance between two samples for them to be considered
-        as in the same neighborhood.
-        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        as in the same neighborhood (DBSCAN eps parameter).
         [Default = 0.005]
     min_obs : int, optional
-        The number of samples (or total weight) in a neighborhood for a
-        point to be considered as a core point. This includes the point itself.
-        See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
+        The minimum number of samples in a neighborhood for a point to be
+        considered as a core point (DBSCAN min_samples parameter).
         [Default = 5]
-    alg: str
+    min_arc_length : float, optional
+        Minimum arc length in days for a cluster to be accepted.
+        [Default = 1.0]
+    alg : str, optional
         Algorithm to use. Can be "dbscan" or "hotspot_2d".
-    num_jobs : int, optional
-        Number of jobs to launch.
+        [Default = "dbscan"]
+    chunk_size : int, optional
+        Number of velocity grid points to process in each worker chunk.
+        [Default = 1000]
+    max_processes : int, optional
+        Maximum number of processes to use for parallelization.
+        [Default = 1]
 
     Returns
     -------
-    clusters : `~pandas.DataFrame`
-        DataFrame with the cluster ID, the number of observations, and the x and y velocity.
-    cluster_members : `~pandas.DataFrame`
-        DataFrame containing the cluster ID and the observation IDs of its members.
+    fitted_clusters : FittedClusters
+        Fitted clusters with polynomial motion models.
+    fitted_cluster_members : FittedClusterMembers
+        Members of each fitted cluster.
 
     Notes
     -----
@@ -722,27 +734,51 @@ def cluster_and_link(
     alg="hotspot_2d" is much faster (perhaps 10-20x faster) than dbscan, but it
     may miss some clusters, particularly when points are spaced a distance of 'radius'
     apart.
+
+    If vx_values and vy_values are provided, they will be used directly for the
+    velocity grid. Otherwise, a grid is generated from vx_range, vy_range, vx_bins,
+    and vy_bins.
     """
     time_start_cluster = time.perf_counter()
     logger.info("Running velocity space clustering...")
 
-    vx = np.linspace(*vx_range, num=vx_bins)
-    vy = np.linspace(*vy_range, num=vy_bins)
-    vxx, vyy = np.meshgrid(vx, vy)
-    vxx = vxx.flatten()
-    vyy = vyy.flatten()
-
-    logger.debug("X velocity range: {}".format(vx_range))
-    logger.debug("X velocity bins: {}".format(vx_bins))
-    logger.debug("Y velocity range: {}".format(vy_range))
-    logger.debug("Y velocity bins: {}".format(vy_bins))
-    logger.debug("Velocity grid size: {}".format(vx_bins))
-    logger.info("Max sample distance: {}".format(radius))
-    logger.info("Minimum samples: {}".format(min_obs))
-
     if isinstance(observations, ray.ObjectRef):
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
+
+    # Determine velocity grid
+    if vx_values is not None and vy_values is not None:
+        # Use pre-computed velocity values
+        if len(vx_values) != len(vy_values):
+            raise ValueError(f"vx_values and vy_values must have same length. Got {len(vx_values)} and {len(vy_values)}.")
+        vxx = vx_values
+        vyy = vy_values
+        logger.info(f"Using pre-computed velocity grid with {len(vxx)} points.")
+    else:
+        # Generate velocity grid from range and bins
+        if vx_range is None:
+            vx_range = [-0.1, 0.1]
+        if vy_range is None:
+            vy_range = [-0.1, 0.1]
+        if vx_bins is None:
+            vx_bins = 100
+        if vy_bins is None:
+            vy_bins = 100
+            
+        vx = np.linspace(*vx_range, num=vx_bins)
+        vy = np.linspace(*vy_range, num=vy_bins)
+        vxx, vyy = np.meshgrid(vx, vy)
+        vxx = vxx.flatten()
+        vyy = vyy.flatten()
+
+        logger.debug("X velocity range: {}".format(vx_range))
+        logger.debug("X velocity bins: {}".format(vx_bins))
+        logger.debug("Y velocity range: {}".format(vy_range))
+        logger.debug("Y velocity bins: {}".format(vy_bins))
+        logger.info(f"Generated velocity grid with {len(vxx)} points.")
+
+    logger.info("Max sample distance: {}".format(radius))
+    logger.info("Minimum samples: {}".format(min_obs))
 
     exit_early = False
     if len(observations) > 0:
