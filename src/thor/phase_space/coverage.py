@@ -502,10 +502,12 @@ def generate_even_coverage_test_orbits(
     frame: str = "ecliptic",
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
-    Generate test orbits with even phase space coverage and analyze overlaps.
+    Generate test orbits with even phase space coverage using uniform grid spacing.
 
     This function creates test orbits distributed evenly across 6D orbital
-    phase space and returns both the orbits and a coverage analysis report.
+    phase space using a uniform grid (same number of points in each dimension).
+    This avoids issues with mixing different units and provides symmetric,
+    predictable sampling. For custom grid spacing, use generate_custom_grid_test_orbits().
 
     Parameters
     ----------
@@ -652,7 +654,11 @@ def _generate_even_grid_points(
     n_orbits: int, bounds: Dict[str, Tuple[float, float]], coordinate_system: str
 ) -> np.ndarray:
     """
-    Generate evenly distributed points in 6D phase space using a grid approach.
+    Generate evenly distributed points in 6D phase space using a uniform grid approach.
+    
+    Creates a uniform grid where each dimension gets the same number of grid points,
+    avoiding issues with mixing different units (AU vs degrees). This provides
+    symmetric, predictable sampling across all dimensions.
 
     Parameters
     ----------
@@ -1333,14 +1339,12 @@ def generate_orbit_volumes_for_target_coverage(
     asteroid_type: Optional[str] = None,
     epoch: Optional[Timestamp] = None,
     frame: str = "ecliptic",
-    max_iterations: int = 10,
-    tolerance: float = 2.0,
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
     Generate test orbits with volumes sized to achieve a target coverage percentage.
 
-    This function iteratively adjusts volume sizes to reach the desired phase space
-    coverage with the specified number of orbits.
+    This function calculates the required volume size directly from the target coverage
+    and generates orbits with those volumes. Much faster than iterative approaches.
 
     Parameters
     ----------
@@ -1358,10 +1362,6 @@ def generate_orbit_volumes_for_target_coverage(
         Epoch for the orbits. Default: J2000.0
     frame : str, optional
         Coordinate frame. Default: "ecliptic"
-    max_iterations : int, optional
-        Maximum number of iterations to converge on target coverage. Default: 10
-    tolerance : float, optional
-        Acceptable tolerance in coverage percentage. Default: 2.0%
 
     Returns
     -------
@@ -1370,8 +1370,8 @@ def generate_orbit_volumes_for_target_coverage(
         - OrbitVolumes: Volume information for each orbit (quivr Table)
         - Dict: Coverage analysis report with additional keys:
             - 'target_coverage_percent': Requested coverage percentage
-            - 'iterations_used': Number of iterations needed
-            - 'converged': Whether the algorithm converged within tolerance
+            - 'actual_coverage_percent': Achieved coverage percentage
+            - 'volume_calculation_method': 'direct' (non-iterative)
     """
     logger.info(f"Generating {n_orbits} orbits to achieve {target_coverage_percent:.1f}% coverage")
 
@@ -1389,91 +1389,52 @@ def generate_orbit_volumes_for_target_coverage(
     elif isinstance(bounds, dict):
         bounds = PhaseSpaceBounds(coordinate_system=coordinate_system, bounds=bounds)
 
-    # Calculate phase space volume
+    # Direct calculation of required volume size (no iteration needed!)
     phase_space_volume = bounds.volume
-
-    # Initial estimate: assume minimal overlap for target coverage
-    # Target volume = (target_coverage / 100) * phase_space_volume
     target_total_volume = (target_coverage_percent / 100.0) * phase_space_volume
-
-    # Estimate individual volume size (assuming no overlap initially)
     target_individual_volume = target_total_volume / n_orbits
 
-    # Convert to half-widths (assuming uniform scaling across dimensions)
+    logger.info(f"Target total volume: {target_total_volume:.2e}")
+    logger.info(f"Target individual volume: {target_individual_volume:.2e}")
+
+    # Calculate half-widths to achieve target volume
     # For 6D hyperrectangle: volume = prod(2 * half_widths)
+    # We'll scale proportionally to coordinate ranges for reasonable shapes
     coord_ranges = bounds.ranges
-    relative_ranges = coord_ranges / np.sum(coord_ranges)  # Normalize
+    
+    # Calculate scale factor: if we scale all ranges by this factor, we get target volume
+    # target_volume = prod(scale_factor * ranges) = scale_factor^6 * prod(ranges)
+    # So: scale_factor = (target_volume / prod(ranges))^(1/6)
+    range_volume = np.prod(coord_ranges)
+    scale_factor = (target_individual_volume / range_volume) ** (1 / 6)
+    
+    # Half-widths are half the scaled ranges
+    half_widths = scale_factor * coord_ranges / 2
 
-    # Scale factor to achieve target volume
-    scale_factor = (target_individual_volume / np.prod(coord_ranges)) ** (1 / 6)
-    initial_half_widths = scale_factor * coord_ranges / 2
+    logger.info(f"Volume scale factor: {scale_factor:.4f}")
+    logger.info(f"Half-widths: {half_widths}")
 
-    logger.info(f"Initial volume estimate: {target_individual_volume:.2e}")
-    logger.info(f"Initial half-widths scale factor: {scale_factor:.4f}")
+    # Generate orbits with calculated half-widths (single call!)
+    test_orbits, orbit_volumes, report = generate_even_coverage_test_orbits(
+        n_orbits=n_orbits,
+        half_widths=half_widths,
+        bounds=bounds,
+        coordinate_system=coordinate_system,
+        epoch=epoch,
+        frame=frame,
+    )
 
-    # Iterative refinement
-    current_half_widths = initial_half_widths.copy()
-    best_result = None
-    best_error = float("inf")
+    # Add target coverage info to report
+    actual_coverage = report["coverage_percentage"]
+    report["target_coverage_percent"] = target_coverage_percent
+    report["actual_coverage_percent"] = actual_coverage
+    report["volume_calculation_method"] = "direct"
+    report["coverage_error_percent"] = abs(actual_coverage - target_coverage_percent)
 
-    for iteration in range(max_iterations):
-        logger.info(f"Iteration {iteration + 1}/{max_iterations}")
+    logger.info(f"Target: {target_coverage_percent:.1f}%, Actual: {actual_coverage:.1f}%")
+    logger.info(f"Error: {abs(actual_coverage - target_coverage_percent):.1f}%")
 
-        # Generate orbits with current half-widths
-        test_orbits, orbit_volumes, report = generate_even_coverage_test_orbits(
-            n_orbits=n_orbits,
-            half_widths=current_half_widths,
-            bounds=bounds,
-            coordinate_system=coordinate_system,
-            epoch=epoch,
-            frame=frame,
-        )
-
-        current_coverage = report["coverage_percentage"]
-        error = abs(current_coverage - target_coverage_percent)
-
-        logger.info(f"  Current coverage: {current_coverage:.1f}% (target: {target_coverage_percent:.1f}%)")
-        logger.info(f"  Error: {error:.1f}%")
-
-        # Track best result
-        if error < best_error:
-            best_error = error
-            best_result = (test_orbits, orbit_volumes, report)
-
-        # Check convergence
-        if error <= tolerance:
-            logger.info(f"Converged in {iteration + 1} iterations")
-            report["target_coverage_percent"] = target_coverage_percent
-            report["iterations_used"] = iteration + 1
-            report["converged"] = True
-            return test_orbits, orbit_volumes, report
-
-        # Adjust half-widths for next iteration
-        if iteration < max_iterations - 1:  # Don't adjust on last iteration
-            # Simple scaling approach: if coverage is too low, increase volumes
-            coverage_ratio = target_coverage_percent / max(current_coverage, 0.1)  # Avoid division by zero
-
-            # Apply cube root since we're scaling 6D volumes
-            scale_adjustment = coverage_ratio ** (1 / 6)
-
-            # Limit adjustment to prevent oscillation
-            scale_adjustment = np.clip(scale_adjustment, 0.5, 2.0)
-
-            current_half_widths *= scale_adjustment
-
-            logger.info(f"  Adjusting volumes by factor {scale_adjustment:.3f}")
-
-    # If we didn't converge, return the best result
-    logger.warning(f"Did not converge within {max_iterations} iterations. Best error: {best_error:.1f}%")
-
-    if best_result is not None:
-        test_orbits, orbit_volumes, report = best_result
-        report["target_coverage_percent"] = target_coverage_percent
-        report["iterations_used"] = max_iterations
-        report["converged"] = False
-        return test_orbits, orbit_volumes, report
-    else:
-        raise RuntimeError("Failed to generate any valid orbits")
+    return test_orbits, orbit_volumes, report
 
 
 def generate_orbits_for_coverage_with_fixed_volumes(
