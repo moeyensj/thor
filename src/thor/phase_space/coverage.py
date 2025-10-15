@@ -1445,14 +1445,13 @@ def generate_orbits_for_coverage_with_fixed_volumes(
     asteroid_type: Optional[str] = None,
     epoch: Optional[Timestamp] = None,
     frame: str = "ecliptic",
-    max_orbits: int = 1000,
-    tolerance: float = 2.0,
+    max_orbits: int = 100000,
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
-    Generate as many test orbits as needed to achieve target coverage with fixed volume sizes.
+    Calculate and generate the exact number of orbits needed to achieve target coverage with fixed volume sizes.
 
-    This function iteratively increases the number of orbits until the desired phase space
-    coverage is achieved with the specified volume sizes.
+    This function calculates the required number of orbits directly from the target coverage
+    and fixed volume sizes. Much faster than iterative approaches.
 
     Parameters
     ----------
@@ -1471,9 +1470,7 @@ def generate_orbits_for_coverage_with_fixed_volumes(
     frame : str, optional
         Coordinate frame. Default: "ecliptic"
     max_orbits : int, optional
-        Maximum number of orbits to generate. Default: 1000
-    tolerance : float, optional
-        Acceptable tolerance in coverage percentage. Default: 2.0%
+        Maximum number of orbits to generate. Default: 100,000
 
     Returns
     -------
@@ -1482,8 +1479,10 @@ def generate_orbits_for_coverage_with_fixed_volumes(
         - OrbitVolumes: Volume information for each orbit (quivr Table)
         - Dict: Coverage analysis report with additional keys:
             - 'target_coverage_percent': Requested coverage percentage
-            - 'attempts': List of (n_orbits, coverage) attempts made
-            - 'converged': Whether the algorithm converged within tolerance
+            - 'actual_coverage_percent': Achieved coverage percentage
+            - 'calculation_method': 'direct' (non-iterative)
+            - 'orbits_requested': Number of orbits calculated as needed
+            - 'hit_max_orbits_limit': Whether calculation exceeded max_orbits
     """
     logger.info(f"Generating orbits to achieve {target_coverage_percent:.1f}% coverage with fixed volumes")
 
@@ -1503,89 +1502,47 @@ def generate_orbits_for_coverage_with_fixed_volumes(
     elif isinstance(bounds, dict):
         bounds = PhaseSpaceBounds(coordinate_system=coordinate_system, bounds=bounds)
 
-    # Calculate individual volume and estimate initial number of orbits needed
+    # Direct calculation of required number of orbits (no iteration needed!)
     individual_volume = np.prod(2 * half_widths)
     phase_space_volume = bounds.volume
     target_total_volume = (target_coverage_percent / 100.0) * phase_space_volume
 
-    # Initial estimate (assuming no overlap)
-    initial_estimate = max(1, int(np.ceil(target_total_volume / individual_volume)))
+    # Calculate exact number of orbits needed (assuming minimal overlap)
+    n_orbits_needed = max(1, int(np.ceil(target_total_volume / individual_volume)))
+
+    # Check if we exceed max_orbits limit
+    if n_orbits_needed > max_orbits:
+        logger.warning(f"Need {n_orbits_needed} orbits for {target_coverage_percent:.1f}% coverage, but limited to {max_orbits}")
+        n_orbits_needed = max_orbits
 
     logger.info(f"Individual volume: {individual_volume:.2e}")
     logger.info(f"Phase space volume: {phase_space_volume:.2e}")
-    logger.info(f"Initial orbit estimate: {initial_estimate}")
+    logger.info(f"Target total volume: {target_total_volume:.2e}")
+    logger.info(f"Calculated orbits needed: {n_orbits_needed}")
 
-    # Track attempts and results
-    attempts = []
-    best_result = None
-    best_error = float("inf")
+    # Generate orbits with calculated count (single call!)
+    test_orbits, orbit_volumes, report = generate_even_coverage_test_orbits(
+        n_orbits=n_orbits_needed,
+        half_widths=half_widths,
+        bounds=bounds,
+        coordinate_system=coordinate_system,
+        epoch=epoch,
+        frame=frame,
+    )
 
-    # Start with initial estimate and adjust
-    current_n_orbits = initial_estimate
+    # Add target coverage info to report
+    actual_coverage = report["coverage_percentage"]
+    report["target_coverage_percent"] = target_coverage_percent
+    report["actual_coverage_percent"] = actual_coverage
+    report["calculation_method"] = "direct"
+    report["coverage_error_percent"] = abs(actual_coverage - target_coverage_percent)
+    report["orbits_requested"] = n_orbits_needed
+    report["hit_max_orbits_limit"] = n_orbits_needed >= max_orbits
 
-    # Search strategy: start with estimate, then increase if coverage is too low
-    search_multipliers = [1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0]
+    logger.info(f"Target: {target_coverage_percent:.1f}%, Actual: {actual_coverage:.1f}%")
+    logger.info(f"Error: {abs(actual_coverage - target_coverage_percent):.1f}%")
 
-    for multiplier in search_multipliers:
-        n_orbits_to_try = max(1, int(current_n_orbits * multiplier))
-
-        # Don't exceed max_orbits
-        if n_orbits_to_try > max_orbits:
-            n_orbits_to_try = max_orbits
-
-        logger.info(f"Trying {n_orbits_to_try} orbits (multiplier: {multiplier:.1f})")
-
-        # Generate orbits with current count
-        test_orbits, orbit_volumes, report = generate_even_coverage_test_orbits(
-            n_orbits=n_orbits_to_try,
-            half_widths=half_widths,
-            bounds=bounds,
-            coordinate_system=coordinate_system,
-            epoch=epoch,
-            frame=frame,
-        )
-
-        current_coverage = report["coverage_percentage"]
-        error = abs(current_coverage - target_coverage_percent)
-
-        logger.info(f"  Generated {len(test_orbits)} orbits")
-        logger.info(f"  Coverage: {current_coverage:.1f}% (target: {target_coverage_percent:.1f}%)")
-        logger.info(f"  Error: {error:.1f}%")
-
-        # Track this attempt
-        attempts.append((len(test_orbits), current_coverage))
-
-        # Track best result
-        if error < best_error:
-            best_error = error
-            best_result = (test_orbits, orbit_volumes, report)
-
-        # Check if we've achieved the target
-        if error <= tolerance:
-            logger.info(f"Achieved target coverage with {len(test_orbits)} orbits")
-            report["target_coverage_percent"] = target_coverage_percent
-            report["attempts"] = attempts
-            report["converged"] = True
-            return test_orbits, orbit_volumes, report
-
-        # If coverage is still too low and we haven't hit max_orbits, continue
-        if current_coverage < target_coverage_percent and n_orbits_to_try < max_orbits:
-            continue
-        else:
-            # Either we overshot the target or hit max_orbits
-            break
-
-    # If we didn't converge, return the best result
-    logger.warning(f"Did not converge within tolerance. Best error: {best_error:.1f}%")
-
-    if best_result is not None:
-        test_orbits, orbit_volumes, report = best_result
-        report["target_coverage_percent"] = target_coverage_percent
-        report["attempts"] = attempts
-        report["converged"] = False
-        return test_orbits, orbit_volumes, report
-    else:
-        raise RuntimeError("Failed to generate any valid orbits")
+    return test_orbits, orbit_volumes, report
 
 
 def _fast_overlap_analysis(coords: np.ndarray, half_widths: np.ndarray, n_orbits: int) -> Tuple[int, float]:
