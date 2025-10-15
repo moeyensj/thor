@@ -676,76 +676,41 @@ def _generate_even_grid_points(
     elif coordinate_system == "keplerian":
         coord_names = ["a", "e", "i", "raan", "ap", "M"]
 
-    # Calculate grid dimensions to get as close as possible to n_orbits
-    # Start with cube root as base, then iteratively adjust
+    # Calculate uniform grid dimensions to get as close as possible to n_orbits
+    # Start with 6th root as base for uniform grid
     base_n = max(1, int(np.ceil(n_orbits ** (1 / 6))))
-
-    # Get coordinate ranges for proportional scaling
-    ranges = np.array([bounds[coord][1] - bounds[coord][0] for coord in coord_names])
-    range_weights = ranges / np.mean(ranges)  # Normalize to mean=1
-
-    # Try different scaling approaches to find best grid
-    best_grid = None
-    best_error = float("inf")
-
-    # Try several different approaches
-    for approach in range(5):
-        if approach == 0:
-            # Uniform grid
-            grid_dims = np.full(6, max(1, int(np.ceil(n_orbits ** (1 / 6)))))
-        elif approach == 1:
-            # Proportional to ranges
-            grid_dims = np.maximum(1, (base_n * range_weights ** (1 / 3)).astype(int))
-        elif approach == 2:
-            # Slightly larger base
-            larger_base = max(1, int(np.ceil((n_orbits * 1.1) ** (1 / 6))))
-            grid_dims = np.maximum(1, (larger_base * range_weights ** (1 / 4)).astype(int))
-        elif approach == 3:
-            # Focus more points on larger dimensions
-            grid_dims = np.maximum(1, (base_n * range_weights ** (1 / 2)).astype(int))
-        else:
-            # Try to balance by adjusting individual dimensions
-            grid_dims = np.maximum(1, (base_n * range_weights ** (1 / 5)).astype(int))
-
-        # Fine-tune to get closer to target
-        total_points = np.prod(grid_dims)
-        if total_points < n_orbits:
-            # Need more points - try increasing dimensions iteratively
-            for _ in range(10):  # Max 10 adjustments
-                # Find dimension that gives best improvement
-                best_dim = -1
-                best_improvement = 0
-                for dim in range(6):
-                    test_dims = grid_dims.copy()
-                    test_dims[dim] += 1
-                    new_total = np.prod(test_dims)
-                    if new_total <= n_orbits * 1.1:  # Don't go too far over
-                        improvement = new_total - total_points
-                        if improvement > best_improvement:
-                            best_improvement = improvement
-                            best_dim = dim
-
-                if best_dim >= 0:
-                    grid_dims[best_dim] += 1
-                    total_points = np.prod(grid_dims)
-                else:
-                    break
-
-        # Calculate error from target
-        error = abs(total_points - n_orbits)
-        if error < best_error:
-            best_error = error
-            best_grid = grid_dims.copy()
-
-        # If we found exact match, use it
-        if total_points == n_orbits:
-            best_grid = grid_dims.copy()
-            break
-
-    grid_dims = best_grid
+    
+    # Start with uniform grid
+    grid_dims = np.full(6, base_n)
     total_points = np.prod(grid_dims)
+    
+    # If we're under target, try incrementing dimensions one by one
+    if total_points < n_orbits:
+        # Try increasing each dimension by 1 and see which gets closest
+        for _ in range(10):  # Max 10 adjustments to avoid infinite loops
+            best_dim = -1
+            best_total = total_points
+            
+            # Try incrementing each dimension
+            for dim in range(6):
+                test_dims = grid_dims.copy()
+                test_dims[dim] += 1
+                test_total = np.prod(test_dims)
+                
+                # Pick the increment that gets closest to target without going too far over
+                if test_total <= n_orbits * 1.2:  # Allow 20% overshoot
+                    if abs(test_total - n_orbits) < abs(best_total - n_orbits):
+                        best_total = test_total
+                        best_dim = dim
+            
+            # Apply the best increment
+            if best_dim >= 0:
+                grid_dims[best_dim] += 1
+                total_points = np.prod(grid_dims)
+            else:
+                break  # No good increments found
 
-    logger.info(f"Using grid dimensions: {grid_dims} (total: {total_points} points)")
+    logger.info(f"Using uniform grid dimensions: {grid_dims} (total: {total_points} points)")
 
     # Generate grid points
     grid_coords = []
