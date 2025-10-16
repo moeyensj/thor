@@ -12,22 +12,26 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-logger = logging.getLogger(__name__)
-
-try:
-    from adam_core.utils.iter import _iterate_chunks
-    logger.debug("Using _iterate_chunks from adam_core.utils.iter")
-except ImportError:
-    try:
-        from adam_core.propagator.utils import _iterate_chunks
-        logger.debug("Using _iterate_chunks from adam_core.propagator.utils")
-    except ImportError:
-        from adam_core.propagator import _iterate_chunks
-        logger.debug("Using _iterate_chunks from adam_core.propagator")
 from adam_core.ray_cluster import initialize_use_ray
 
 from .range_and_transform import TransformedDetections
 from .utils.linkages import sort_by_id_and_time
+
+logger = logging.getLogger(__name__)
+
+try:
+    from adam_core.utils.iter import _iterate_chunks
+
+    logger.debug("Using _iterate_chunks from adam_core.utils.iter")
+except ImportError:
+    try:
+        from adam_core.propagator.utils import _iterate_chunks
+
+        logger.debug("Using _iterate_chunks from adam_core.propagator.utils")
+    except ImportError:
+        from adam_core.propagator import _iterate_chunks
+
+        logger.debug("Using _iterate_chunks from adam_core.propagator")
 
 # Disable GPU until the GPU-accelerated clustering codes
 # are better tested and implemented
