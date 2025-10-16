@@ -6,16 +6,14 @@ even phase space coverage and analyzing their overlap characteristics.
 """
 
 import logging
-import uuid
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 import quivr as qv
 from adam_core.coordinates import SphericalCoordinates
-from adam_core.coordinates.origin import Origin, OriginCodes
+from adam_core.coordinates.origin import Origin
 from adam_core.time import Timestamp
 
 from ..orbit import TestOrbits
@@ -527,7 +525,7 @@ def generate_even_coverage_test_orbits(
         Default: "spherical"
     asteroid_type : str, optional
         Type of asteroid population for default bounds: "main_belt", "near_earth",
-        "jupiter_trojans", "comprehensive", or "inner_main_belt". 
+        "jupiter_trojans", "comprehensive", or "inner_main_belt".
         Used only if bounds is None. Default: "comprehensive"
     epoch : Timestamp, optional
         Epoch for the orbits. Default: J2000.0
@@ -655,7 +653,7 @@ def _generate_even_grid_points(
 ) -> np.ndarray:
     """
     Generate evenly distributed points in 6D phase space using a uniform grid approach.
-    
+
     Creates a uniform grid where each dimension gets the same number of grid points,
     avoiding issues with mixing different units (AU vs degrees). This provides
     symmetric, predictable sampling across all dimensions.
@@ -685,30 +683,30 @@ def _generate_even_grid_points(
     # Calculate uniform grid dimensions to get as close as possible to n_orbits
     # Start with 6th root as base for uniform grid
     base_n = max(1, int(np.ceil(n_orbits ** (1 / 6))))
-    
+
     # Start with uniform grid
     grid_dims = np.full(6, base_n)
     total_points = np.prod(grid_dims)
-    
+
     # If we're under target, try incrementing dimensions one by one
     if total_points < n_orbits:
         # Try increasing each dimension by 1 and see which gets closest
         for _ in range(10):  # Max 10 adjustments to avoid infinite loops
             best_dim = -1
             best_total = total_points
-            
+
             # Try incrementing each dimension
             for dim in range(6):
                 test_dims = grid_dims.copy()
                 test_dims[dim] += 1
                 test_total = np.prod(test_dims)
-                
+
                 # Pick the increment that gets closest to target without going too far over
                 if test_total <= n_orbits * 1.2:  # Allow 20% overshoot
                     if abs(test_total - n_orbits) < abs(best_total - n_orbits):
                         best_total = test_total
                         best_dim = dim
-            
+
             # Apply the best increment
             if best_dim >= 0:
                 grid_dims[best_dim] += 1
@@ -775,17 +773,17 @@ def generate_custom_grid_test_orbits(
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
     Generate test orbits using custom grid dimensions for precise control over sampling density.
-    
+
     This function creates test orbits on a regular 6D grid with user-specified dimensions
     for each coordinate. Unlike generate_even_coverage_test_orbits, this gives exact control
     over the number of grid points in each dimension.
-    
+
     Parameters
     ----------
     grid_dimensions : np.ndarray
         Number of grid points in each dimension [dim0, dim1, dim2, dim3, dim4, dim5].
         For spherical: [n_rho, n_lon, n_lat, n_vrho, n_vlon, n_vlat]
-        For cartesian: [n_x, n_y, n_z, n_vx, n_vy, n_vz]  
+        For cartesian: [n_x, n_y, n_z, n_vx, n_vy, n_vz]
         For keplerian: [n_a, n_e, n_i, n_raan, n_ap, n_M]
         Total orbits = product of all dimensions.
     half_widths : np.ndarray, optional
@@ -802,13 +800,13 @@ def generate_custom_grid_test_orbits(
         Default: "spherical"
     asteroid_type : str, optional
         Type of asteroid population for default bounds: "main_belt", "near_earth",
-        "jupiter_trojans", "comprehensive", or "inner_main_belt". 
+        "jupiter_trojans", "comprehensive", or "inner_main_belt".
         Used only if bounds is None. Default: "comprehensive"
     epoch : Timestamp, optional
         Epoch for the orbits. Default: J2000.0
     frame : str, optional
         Coordinate frame. Default: "ecliptic"
-        
+
     Returns
     -------
     test_orbits : TestOrbits
@@ -821,36 +819,34 @@ def generate_custom_grid_test_orbits(
         - coverage_percentage: Fraction of phase space covered
         - grid_dimensions: The grid dimensions used
         - coordinate_system: Which coordinate system was used
-        
+
     Examples
     --------
     >>> # 2x more spatial resolution than velocity
     >>> grid_dims = np.array([10, 20, 20, 5, 5, 5])  # 200k orbits total
     >>> orbits, volumes, report = generate_custom_grid_test_orbits(grid_dims)
-    
+
     >>> # High longitude resolution for sky surveys
     >>> grid_dims = np.array([5, 50, 10, 3, 3, 3])  # 67.5k orbits
     >>> orbits, volumes, report = generate_custom_grid_test_orbits(
     ...     grid_dims, coordinate_system="spherical"
     ... )
     """
-    logger.info(
-        f"Generating custom grid test orbits in {coordinate_system} coordinates"
-    )
+    logger.info(f"Generating custom grid test orbits in {coordinate_system} coordinates")
     logger.info(f"Grid dimensions: {grid_dimensions} (total: {np.prod(grid_dimensions):,} orbits)")
-    
+
     # Validate inputs
     if coordinate_system not in ["spherical", "cartesian", "keplerian"]:
         raise ValueError(
             f"coordinate_system must be 'spherical', 'cartesian', or 'keplerian', got '{coordinate_system}'"
         )
-        
+
     if len(grid_dimensions) != 6:
         raise ValueError(f"grid_dimensions must have 6 elements, got {len(grid_dimensions)}")
-        
+
     if np.any(grid_dimensions < 1):
         raise ValueError(f"All grid dimensions must be >= 1, got {grid_dimensions}")
-    
+
     # Set defaults based on coordinate system
     if half_widths is None:
         if coordinate_system == "spherical":
@@ -885,7 +881,7 @@ def generate_custom_grid_test_orbits(
 
     # Generate grid points using custom dimensions
     coords_6d = _generate_custom_grid_points(grid_dimensions, bounds, coordinate_system)
-    
+
     # Create coordinates in the specified system
     n_points = len(coords_6d)
 
@@ -935,7 +931,7 @@ def generate_custom_grid_test_orbits(
     report = _create_basic_report(coords_6d, half_widths, bounds, coordinate_system)
     report["grid_dimensions"] = grid_dimensions.tolist()
     report["n_orbits"] = n_points
-    
+
     logger.info(f"Generated {len(test_orbits)} test orbits")
     logger.info(f"Coverage: {report['coverage_percentage']:.1f}%")
 
@@ -947,7 +943,7 @@ def _generate_custom_grid_points(
 ) -> np.ndarray:
     """
     Generate grid points using custom dimensions for each coordinate.
-    
+
     Parameters
     ----------
     grid_dimensions : np.ndarray
@@ -956,7 +952,7 @@ def _generate_custom_grid_points(
         Phase space bounds
     coordinate_system : str
         Coordinate system being used
-        
+
     Returns
     -------
     np.ndarray
@@ -969,55 +965,55 @@ def _generate_custom_grid_points(
         coord_names = ["x", "y", "z", "vx", "vy", "vz"]
     elif coordinate_system == "keplerian":
         coord_names = ["a", "e", "i", "raan", "ap", "M"]
-    
+
     # Create 1D grids for each dimension
     grids_1d = []
     for i, coord in enumerate(coord_names):
         min_val, max_val = bounds[coord]
         n_points = int(grid_dimensions[i])
-        
+
         if n_points == 1:
             # Single point at center
             grid_1d = np.array([(min_val + max_val) / 2])
         else:
             # Regular grid from min to max
             grid_1d = np.linspace(min_val, max_val, n_points)
-        
+
         grids_1d.append(grid_1d)
-    
+
     # Create 6D meshgrid
-    mesh = np.meshgrid(*grids_1d, indexing='ij')
-    
+    mesh = np.meshgrid(*grids_1d, indexing="ij")
+
     # Flatten and combine
     points = np.column_stack([m.ravel() for m in mesh])
-    
+
     total_points = np.prod(grid_dimensions)
     logger.info(f"Generated {len(points)} grid points (expected: {total_points})")
-    
+
     return points
 
 
 def get_sampling_weights_preset(preset: str, coordinate_system: str = "spherical") -> np.ndarray:
     """
     Get predefined sampling weight presets for common use cases.
-    
+
     Parameters
     ----------
     preset : str
         Preset name:
         - "uniform": Equal sampling in all dimensions
         - "spatial_focus": 2x more sampling in spatial dimensions
-        - "spatial_heavy": 3x more sampling in spatial dimensions  
+        - "spatial_heavy": 3x more sampling in spatial dimensions
         - "velocity_focus": 2x more sampling in velocity dimensions
         - "position_only": Heavy focus on position, minimal velocity
     coordinate_system : str, optional
         Coordinate system for dimension interpretation. Default: "spherical"
-        
+
     Returns
     -------
     np.ndarray
         Sampling weights array [dim0, dim1, dim2, dim3, dim4, dim5]
-        
+
     Examples
     --------
     >>> # Generate orbits with 2x spatial resolution
@@ -1029,17 +1025,17 @@ def get_sampling_weights_preset(preset: str, coordinate_system: str = "spherical
     presets = {
         "uniform": [1, 1, 1, 1, 1, 1],
         "spatial_focus": [2, 2, 2, 1, 1, 1],
-        "spatial_heavy": [3, 3, 3, 1, 1, 1], 
+        "spatial_heavy": [3, 3, 3, 1, 1, 1],
         "velocity_focus": [1, 1, 1, 2, 2, 2],
         "position_only": [4, 4, 4, 0.5, 0.5, 0.5],
     }
-    
+
     if preset not in presets:
         available = ", ".join(presets.keys())
         raise ValueError(f"Unknown preset '{preset}'. Available: {available}")
-    
+
     weights = np.array(presets[preset], dtype=float)
-    
+
     # Log what the weights mean for the coordinate system
     if coordinate_system == "spherical":
         coord_names = ["ρ", "lon", "lat", "vρ", "vlon", "vlat"]
@@ -1049,86 +1045,100 @@ def get_sampling_weights_preset(preset: str, coordinate_system: str = "spherical
         coord_names = ["a", "e", "i", "Ω", "ω", "M"]
     else:
         coord_names = ["dim0", "dim1", "dim2", "dim3", "dim4", "dim5"]
-    
+
     logger.info(f"Sampling weights preset '{preset}' for {coordinate_system}:")
     for i, (name, weight) in enumerate(zip(coord_names, weights)):
         logger.info(f"  {name}: {weight:.1f}x")
-    
+
     return weights
 
 
 def create_grid_dimensions(
-    spatial_resolution: int = 10,
-    velocity_resolution: int = 5,
-    coordinate_system: str = "spherical"
+    spatial_resolution: int = 10, velocity_resolution: int = 5, coordinate_system: str = "spherical"
 ) -> np.ndarray:
     """
     Create grid dimensions with different spatial and velocity resolutions.
-    
+
     This is a convenience function for the common case of wanting more spatial
     resolution than velocity resolution.
-    
+
     Parameters
     ----------
     spatial_resolution : int, optional
         Number of grid points for spatial coordinates. Default: 10
-    velocity_resolution : int, optional  
+    velocity_resolution : int, optional
         Number of grid points for velocity coordinates. Default: 5
     coordinate_system : str, optional
         Coordinate system to determine which dimensions are spatial vs velocity.
         Default: "spherical"
-        
+
     Returns
     -------
     np.ndarray
         Grid dimensions array suitable for generate_custom_grid_test_orbits()
-        
+
     Examples
     --------
     >>> # 2x more spatial resolution
     >>> grid_dims = create_grid_dimensions(spatial_resolution=20, velocity_resolution=10)
     >>> # Results in [20, 20, 20, 10, 10, 10] for spherical coordinates
-    
-    >>> # High spatial focus for sky surveys  
+
+    >>> # High spatial focus for sky surveys
     >>> grid_dims = create_grid_dimensions(spatial_resolution=50, velocity_resolution=3)
     >>> # Results in [50, 50, 50, 3, 3, 3] = 1.125M orbits
     """
     if coordinate_system in ["spherical", "cartesian"]:
         # First 3 are spatial, last 3 are velocity
-        grid_dims = np.array([
-            spatial_resolution, spatial_resolution, spatial_resolution,
-            velocity_resolution, velocity_resolution, velocity_resolution
-        ])
+        grid_dims = np.array(
+            [
+                spatial_resolution,
+                spatial_resolution,
+                spatial_resolution,
+                velocity_resolution,
+                velocity_resolution,
+                velocity_resolution,
+            ]
+        )
     elif coordinate_system == "keplerian":
         # For Keplerian, a/e/i are more "spatial", angles/M are more "velocity-like"
-        grid_dims = np.array([
-            spatial_resolution, spatial_resolution, spatial_resolution,
-            velocity_resolution, velocity_resolution, velocity_resolution
-        ])
+        grid_dims = np.array(
+            [
+                spatial_resolution,
+                spatial_resolution,
+                spatial_resolution,
+                velocity_resolution,
+                velocity_resolution,
+                velocity_resolution,
+            ]
+        )
     else:
         raise ValueError(f"Unknown coordinate_system: {coordinate_system}")
-    
+
     total_orbits = np.prod(grid_dims)
     logger.info(f"Created grid dimensions {grid_dims} for {coordinate_system}")
     logger.info(f"Total orbits: {total_orbits:,}")
-    
+
     return grid_dims
 
 
 def create_custom_grid_dimensions(
-    rho_or_x: int = 10, lon_or_y: int = 10, lat_or_z: int = 10,
-    vrho_or_vx: int = 5, vlon_or_vy: int = 5, vlat_or_vz: int = 5,
-    coordinate_system: str = "spherical"
+    rho_or_x: int = 10,
+    lon_or_y: int = 10,
+    lat_or_z: int = 10,
+    vrho_or_vx: int = 5,
+    vlon_or_vy: int = 5,
+    vlat_or_vz: int = 5,
+    coordinate_system: str = "spherical",
 ) -> np.ndarray:
     """
     Create fully custom grid dimensions with individual control over each coordinate.
-    
+
     Parameters
     ----------
     rho_or_x : int, optional
         Grid points for first coordinate (ρ/x/a). Default: 10
     lon_or_y : int, optional
-        Grid points for second coordinate (lon/y/e). Default: 10  
+        Grid points for second coordinate (lon/y/e). Default: 10
     lat_or_z : int, optional
         Grid points for third coordinate (lat/z/i). Default: 10
     vrho_or_vx : int, optional
@@ -1139,20 +1149,20 @@ def create_custom_grid_dimensions(
         Grid points for sixth coordinate (vlat/vz/M). Default: 5
     coordinate_system : str, optional
         Coordinate system for labeling. Default: "spherical"
-        
+
     Returns
     -------
     np.ndarray
         Grid dimensions array [dim0, dim1, dim2, dim3, dim4, dim5]
-        
+
     Examples
     --------
     >>> # High longitude resolution for sky surveys
     >>> grid_dims = create_custom_grid_dimensions(
-    ...     rho_or_x=5, lon_or_y=100, lat_or_z=20, 
+    ...     rho_or_x=5, lon_or_y=100, lat_or_z=20,
     ...     vrho_or_vx=3, vlon_or_vy=3, vlat_or_vz=3
     ... )  # 5×100×20×3×3×3 = 270k orbits
-    
+
     >>> # Focus on semi-major axis and eccentricity for Keplerian
     >>> grid_dims = create_custom_grid_dimensions(
     ...     rho_or_x=50, lon_or_y=20, lat_or_z=5,
@@ -1161,7 +1171,7 @@ def create_custom_grid_dimensions(
     ... )  # 50×20×5×5×5×5 = 1.25M orbits
     """
     grid_dims = np.array([rho_or_x, lon_or_y, lat_or_z, vrho_or_vx, vlon_or_vy, vlat_or_vz])
-    
+
     # Get coordinate names for logging
     if coordinate_system == "spherical":
         coord_names = ["ρ", "lon", "lat", "vρ", "vlon", "vlat"]
@@ -1171,13 +1181,13 @@ def create_custom_grid_dimensions(
         coord_names = ["a", "e", "i", "Ω", "ω", "M"]
     else:
         coord_names = ["dim0", "dim1", "dim2", "dim3", "dim4", "dim5"]
-    
+
     total_orbits = np.prod(grid_dims)
     logger.info(f"Created custom grid dimensions for {coordinate_system}:")
     for name, dim in zip(coord_names, grid_dims):
         logger.info(f"  {name}: {dim} points")
     logger.info(f"Total orbits: {total_orbits:,}")
-    
+
     return grid_dims
 
 
@@ -1401,13 +1411,13 @@ def generate_orbit_volumes_for_target_coverage(
     # For 6D hyperrectangle: volume = prod(2 * half_widths)
     # We'll scale proportionally to coordinate ranges for reasonable shapes
     coord_ranges = bounds.ranges
-    
+
     # Calculate scale factor: if we scale all ranges by this factor, we get target volume
     # target_volume = prod(scale_factor * ranges) = scale_factor^6 * prod(ranges)
     # So: scale_factor = (target_volume / prod(ranges))^(1/6)
     range_volume = np.prod(coord_ranges)
     scale_factor = (target_individual_volume / range_volume) ** (1 / 6)
-    
+
     # Half-widths are half the scaled ranges
     half_widths = scale_factor * coord_ranges / 2
 
@@ -1512,7 +1522,9 @@ def generate_orbits_for_coverage_with_fixed_volumes(
 
     # Check if we exceed max_orbits limit
     if n_orbits_needed > max_orbits:
-        logger.warning(f"Need {n_orbits_needed} orbits for {target_coverage_percent:.1f}% coverage, but limited to {max_orbits}")
+        logger.warning(
+            f"Need {n_orbits_needed} orbits for {target_coverage_percent:.1f}% coverage, but limited to {max_orbits}"
+        )
         n_orbits_needed = max_orbits
 
     logger.info(f"Individual volume: {individual_volume:.2e}")
@@ -1770,8 +1782,7 @@ def analyze_orbit_coverage_diagnostics(test_orbits: TestOrbits, orbit_volumes: O
         }
 
     # Extract coordinates and half-widths from the orbit volumes
-    # Get the first orbit's data to understand the structure
-    first_center = np.array(list(orbit_volumes.centers[0].as_py()))
+    # Get the first orbit's half-widths (assuming all orbits have same volume sizes)
     first_half_widths = np.array(list(orbit_volumes.half_widths[0].as_py()))
     coordinate_system = orbit_volumes.coordinate_system[0].as_py()
 
