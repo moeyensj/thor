@@ -12,7 +12,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-from adam_core.propagator.utils import _iterate_chunks
+from adam_core.propagator import _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
 
 from .range_and_transform import TransformedDetections
