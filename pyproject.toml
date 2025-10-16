@@ -25,10 +25,11 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.5.2",
+    "adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core.git@support-thor-v3",
+    "adam-assist @ git+https://github.com/B612-Asteroid-Institute/adam-assist.git@04014c6145521d6599c838e99ba854dd1974879f",
     "astropy>=5.3.1",
     "astroquery",
-    "difi",
+    "difi>=2.0rc1",
     "healpy",
     "jax",
     "numpy",
@@ -37,8 +38,8 @@ dependencies = [
     "psutil",
     "pyarrow>=14.0.0",
     "pyyaml>=5.1",
-    "quivr",
-    "ray[default]",
+    "quivr>=0.8.1",
+    "ray[default]==2.49.1",
     "scikit-learn",
     "scipy",
     "spiceypy",
@@ -53,10 +54,36 @@ build-backend = "pdm.backend"
 "Issues" = "https://github.com/moeyensj/thor/issues"
 "Source" = "https://github.com/moeyensj/thor"
 
-[project.optional-dependencies]
+[tool.pdm.build]
+includes = ["src/thor/"]
+
+[tool.pdm.version]
+source = "scm"
+write_to = "thor/_version.py"
+write_template = "__version__ = '{}'"
+
+[tool.pdm.scripts]
+check = { composite = ["lint", "typecheck", "test"] }
+format = { composite = ["black ./src/thor", "isort ./src/thor"] }
+lint = { composite = [
+  "ruff check ./src/thor",
+  "black --check ./src/thor",
+  "isort --check-only ./src/thor",
+] }
+fix = "ruff ./src/thor --fix"
+typecheck = "mypy --strict ./src/thor"
+
+test = "pytest --benchmark-disable {args}"
+doctest = "pytest --doctest-plus --doctest-only"
+benchmark = "pytest --benchmark-only"
+coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
+
+[dependency-groups]
 dev = [
     "black",
     "ipython",
+    "jupyter",
+    "ipykernel",
     "matplotlib",
     "isort",
     "mypy",
@@ -68,7 +95,7 @@ dev = [
     "pytest-memray",
     "pytest",
     "ruff",
-    "adam-assist>=0.3.3",
+    "ipdb>=0.13.13",
 ]
 
 [tool.black]
