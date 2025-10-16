@@ -10,7 +10,7 @@ authors = [
 description = "Tracklet-less Heliocentric Orbit Recovery"
 readme = "README.md"
 license = { file = "LICENSE.md" }
-requires-python = "<3.13,>=3.10"
+requires-python = "<3.13,>3.11"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
@@ -25,7 +25,7 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.3.4",
+    "adam-core>=0.5.2",
     "astropy>=5.3.1",
     "astroquery",
     "difi",
@@ -36,7 +36,6 @@ dependencies = [
     "pandas",
     "psutil",
     "pyarrow>=14.0.0",
-    "pydantic<2.0.0",
     "pyyaml>=5.1",
     "quivr",
     "ray[default]",
@@ -48,8 +47,6 @@ dependencies = [
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
-[tool.pdm.build]
-includes = ["src/thor/"]
 
 [tool.pdm.version]
 source = "scm"
@@ -92,8 +89,7 @@ dev = [
     "pytest-memray",
     "pytest",
     "ruff",
-    "adam-assist>=0.2.0",
-    "adam-pyoorb @ git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@0697eeb871f8d2f8577bf545f5da3966c473662e",
+    "adam-assist>=0.3.3",
 ]
 
 [tool.black]

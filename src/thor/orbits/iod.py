@@ -14,17 +14,10 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
-
-try:
-    from adam_core.utils.iter import _iterate_chunk_indices, _iterate_chunks
-except ImportError:
-    try:
-        from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
-    except ImportError:
-        from adam_core.propagator import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
+from adam_core.utils.iter import _iterate_chunk_indices, _iterate_chunks
 
-from ..clusters import ClusterMembers
+from ..clusters import ClusterMembers, FittedClusterMembers
 from ..observations.observations import Observations
 from ..orbit_determination.fitted_orbits import (
     FittedOrbitMembers,
@@ -124,7 +117,7 @@ def select_observations(
 def iod_worker(
     linkage_ids: npt.NDArray[np.str_],
     observations: Union[Observations, ray.ObjectRef],
-    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedClusterMembers, FittedOrbitMembers, ray.ObjectRef],
     propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
@@ -204,7 +197,7 @@ def iod_worker_remote(
     linkage_ids: Union[npt.NDArray[np.str_], ray.ObjectRef],
     linkage_members_indices: Tuple[int, int],
     observations: Union[Observations, ray.ObjectRef],
-    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedClusterMembers, FittedOrbitMembers, ray.ObjectRef],
     propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
@@ -530,7 +523,7 @@ def iod(
 
 def initial_orbit_determination(
     observations: Union[Observations, ray.ObjectRef],
-    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedClusterMembers, FittedOrbitMembers, ray.ObjectRef],
     propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,

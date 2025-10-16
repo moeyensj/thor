@@ -10,6 +10,7 @@ import pyarrow.parquet as pq
 import quivr as qv
 import ray
 from adam_core.coordinates import SphericalCoordinates
+from adam_core.coordinates.residuals import Residuals
 from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 
@@ -107,7 +108,9 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         logger.info(f"Using radius = {self.radius:.5f} deg")
 
         # Generate an ephemeris for every observer time/location in the dataset
-        ephemeris = test_orbit.generate_ephemeris_from_observations(observations, propagator_class)
+        ephemeris = test_orbit.generate_ephemeris_from_observations(
+            observations, propagator_class, covariance=False
+        )
 
         filtered_observations = Observations.empty()
         state_ids = observations.state_id.unique()
@@ -145,6 +148,84 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
             f"Filtered {len(observations)} observations to {len(filtered_observations)} observations."
         )
         logger.info(f"TestOrbitRadiusObservationFilter completed in {time_end - time_start:.3f} seconds.")
+        return filtered_observations
+
+
+class TestOrbitMahalanobisObservationFilter(ObservationFilter):
+    """
+    Filter observations by Mahalanobis distance in spherical RA/Dec, combining
+    observation covariance and (optionally) propagated predicted covariance.
+    """
+
+    def __init__(
+        self,
+        chi2_threshold: float = 11.83,
+    ):
+        """
+        Parameters
+        ----------
+        chi2_threshold: float
+            Chi2 threshold to filter observations by. For 2 degrees of freedom, 5 sigma corresponds to a chi2 of 11.83.
+        """
+        self.chi2_threshold = chi2_threshold
+
+    def apply(
+        self,
+        observations: Union["Observations", ray.ObjectRef],
+        test_orbit: TestOrbits,
+        propagator_class: Type[Propagator],
+    ) -> "Observations":
+        time_start = time.perf_counter()
+        logger.info("Applying TestOrbitMahalanobisObservationFilter...")
+        logger.info(f"chi2_threshold = {self.chi2_threshold:.3f}, ")
+
+        # Only compute predicted covariance if we’re going to use it
+        ephemeris = test_orbit.generate_ephemeris_from_observations(
+            observations,
+            propagator_class,
+            covariance=True,
+        )
+
+        filtered_observations = Observations.empty()
+        state_ids = observations.state_id.unique()
+
+        for state_id in state_ids:
+            ephemeris_state = ephemeris.select("id", state_id)
+            observations_state = observations.select("state_id", state_id)
+            assert len(ephemeris_state) == 1, "there should be exactly one ephemeris per exposure/state"
+
+            pred_sph = ephemeris_state.ephemeris.coordinates
+            obs_sph = observations_state.coordinates
+
+            # RA wrap and cos(lat) handling occur inside Residuals.calculate
+            residuals = Residuals.calculate(
+                obs_sph,
+                pred_sph,
+                use_predicted_covariance=True,
+            )
+            chi2 = residuals.chi2.to_numpy(zero_copy_only=False)
+            mask = chi2 <= self.chi2_threshold
+
+            filtered_chunk = observations_state.apply_mask(mask)
+            filtered_observations = qv.concatenate([filtered_observations, filtered_chunk])
+            if filtered_observations.fragmented():
+                filtered_observations = qv.defragment(filtered_observations)
+
+        filtered_observations = filtered_observations.sort_by(
+            [
+                "coordinates.time.days",
+                "coordinates.time.nanos",
+                "coordinates.origin.code",
+            ]
+        )
+
+        time_end = time.perf_counter()
+        logger.info(
+            f"Filtered {len(observations)} observations to {len(filtered_observations)} observations."
+        )
+        logger.info(
+            f"TestOrbitMahalanobisSphericalObservationFilter completed in {time_end - time_start:.3f} seconds."
+        )
         return filtered_observations
 
 

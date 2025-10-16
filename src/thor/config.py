@@ -1,17 +1,19 @@
+import json
 import logging
 import pathlib
+from dataclasses import asdict, dataclass
 from typing import Literal, Optional, Union
-
-from pydantic import BaseModel
 
 logger = logging.getLogger("thor")
 
 
-class Config(BaseModel):
+@dataclass(eq=True)
+class Config:
     max_processes: Optional[int] = None
     ray_memory_bytes: int = 0
     propagator_namespace: str = "adam_assist.ASSISTPropagator"
     cell_radius: float = 10
+    filter_mahalanobis_distance: float = 5.0
     vx_min: float = -0.1
     vx_max: float = 0.1
     vy_min: float = -0.1
@@ -21,8 +23,12 @@ class Config(BaseModel):
     cluster_radius: float = 0.005
     cluster_min_obs: int = 6
     cluster_min_arc_length: float = 1.0
+    cluster_min_radius: float = 5/3600
+    cluster_velocity_resolution_factor: float = 1.0
     cluster_algorithm: Literal["hotspot_2d", "dbscan"] = "dbscan"
     cluster_chunk_size: int = 1000
+    use_covariance_informed_clustering: bool = True
+    covariance_mahalanobis_distance: float = 3.0
     iod_min_obs: int = 6
     iod_min_arc_length: float = 1.0
     iod_contamination_percentage: float = 20.0
@@ -70,6 +76,15 @@ class Config(BaseModel):
         self.iod_min_arc_length = min_arc_length
         self.od_min_arc_length = min_arc_length
         self.arc_extension_min_arc_length = min_arc_length
+
+    def json(self, indent: Optional[int] = None) -> str:
+        return json.dumps(asdict(self), indent=indent)
+
+    @classmethod
+    def parse_file(cls, path: Union[str, pathlib.Path]) -> "Config":
+        path = pathlib.Path(path)
+        data = json.loads(path.read_text())
+        return cls(**data)
 
 
 def initialize_config(

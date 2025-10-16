@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import uuid
-from typing import Optional, Type, TypeVar, Union
+from typing import Literal, Optional, Type, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
@@ -11,11 +11,13 @@ import ray
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
+    CoordinateCovariances,
     KeplerianCoordinates,
     OriginCodes,
     SphericalCoordinates,
     transform_coordinates,
 )
+from adam_core.coordinates.transform import cartesian_to_frame
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
@@ -23,6 +25,7 @@ from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
 from .observations import Observations
+from .projections.gnomonic import GnomonicCoordinates
 
 CoordinateType = TypeVar(
     "CoordinateType",
@@ -49,6 +52,33 @@ class TestOrbitEphemeris(qv.Table):
     id = qv.LargeStringColumn()
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
+    gnomonic = GnomonicCoordinates.as_column()
+    # TODO: This should be a fixed shape tensor when they can be pickled correctly...
+    gnomonic_rotation_matrix = qv.FixedSizeListColumn(pa.float64(), list_size=36)
+
+
+def zero_covariances(coords: CoordinateType) -> CoordinateType:
+    """
+    Zero out covariances that are nan, inf, or less than 1e-20 in magnitude.
+
+    This is function is designed to be used in conjunction with transformations where we
+    want to propagate covariance matrices through but not all the covariance terms are valid or defined.
+
+    The user should careful with the downstream effects of this function.
+
+    Parameters
+    ----------
+    coords : `~adam_core.coordinates.CoordinateType`
+        Coordinates to zero out the covariances for.
+
+    Returns
+    -------
+    coords : `~adam_core.coordinates.CoordinateType`
+        Coordinates with the covariances zeroed out.
+    """
+    cov = coords.covariance.to_matrix()
+    cov = np.where(np.isnan(cov) | np.isinf(cov) | (np.abs(cov) < 1e-20), 0, cov)
+    return coords.set_column("covariance", CoordinateCovariances.from_matrix(cov))
 
 
 def range_observations_worker(
@@ -184,6 +214,9 @@ class TestOrbits(qv.Table):
         times: Timestamp,
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = False,
+        covariance_method: Literal["monte-carlo", "sigma-point", "auto"] = "monte-carlo",
+        num_samples: int = 1000,
     ) -> Orbits:
         """
         Propagate this test orbit to the given times.
@@ -196,6 +229,16 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
+        covariance_method : {'sigma-point', 'monte-carlo', 'auto'}, optional
+            The method to use for sampling the covariance matrix. If 'auto' is selected then the method
+            will be automatically selected based on the covariance matrix. The default is 'monte-carlo'.
+        num_samples : int, optional
+            The number of samples to draw when sampling with monte-carlo.
 
         Returns
         -------
@@ -207,7 +250,10 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             times,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size="auto",
+            covariance=covariance,
+            covariance_method=covariance_method,
+            num_samples=num_samples,
         )
 
     def generate_ephemeris(
@@ -215,6 +261,9 @@ class TestOrbits(qv.Table):
         observers: Observers,
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = False,
+        covariance_method: Literal["monte-carlo", "sigma-point", "auto"] = "monte-carlo",
+        num_samples: int = 1000,
     ) -> Ephemeris:
         """
         Generate ephemeris for this test orbit at the given observers.
@@ -227,6 +276,16 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
+        covariance_method : {'sigma-point', 'monte-carlo', 'auto'}, optional
+            The method to use for sampling the covariance matrix. If 'auto' is selected then the method
+            will be automatically selected based on the covariance matrix. The default is 'monte-carlo'.
+        num_samples : int, optional
+            The number of samples to draw when sampling with monte-carlo.
 
         Returns
         -------
@@ -238,7 +297,10 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             observers,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size="auto",
+            covariance=covariance,
+            covariance_method=covariance_method,
+            num_samples=num_samples,
         )
 
     def generate_ephemeris_from_observations(
@@ -246,6 +308,7 @@ class TestOrbits(qv.Table):
         observations: Union[Observations, ray.ObjectRef],
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = True,
     ):
         """
         For each unique time and code in the observations (a state), generate an ephemeris for
@@ -263,7 +326,11 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
-
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
 
         Returns
         -------
@@ -282,14 +349,14 @@ class TestOrbits(qv.Table):
         if len(observations) == 0:
             raise ValueError("Observations must not be empty.")
 
-        # if self._is_cache_fresh(observations):
-        #     logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
-        #     return self._cached_ephemeris
+        if self._is_cache_fresh(observations):
+            logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
+            return self._cached_ephemeris
 
         logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
 
+        # Get observer states
         observers_with_states = observations.get_observers()
-
         observers_with_states = observers_with_states.sort_by(
             by=[
                 "observers.coordinates.time.days",
@@ -297,11 +364,14 @@ class TestOrbits(qv.Table):
                 "observers.code",
             ]
         )
+
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
             observers_with_states.observers,
             propagator_class=propagator_class,
             max_processes=max_processes,
+            covariance=covariance,
+            covariance_method="sigma-point",
         )
         ephemeris = ephemeris.sort_by(
             by=[
@@ -311,12 +381,25 @@ class TestOrbits(qv.Table):
             ]
         )
 
+        # Compute the gnomonic coordinates and rotation matrix for each state
+        gnomonic, gnomonic_rotation_matrix = GnomonicCoordinates.from_cartesian(
+            ephemeris.aberrated_coordinates,
+            center_cartesian=ephemeris.aberrated_coordinates,
+        )
+        # Convert rotation matrix to FixedSizeListArray (flatten to fixed-size chunks of 36)
+        gnomonic_rotation_matrix = pa.FixedSizeListArray.from_arrays(
+            gnomonic_rotation_matrix.flatten(), list_size=36
+        )
+
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
             ephemeris=ephemeris,
             observer=observers_with_states.observers,
+            gnomonic=gnomonic,
+            gnomonic_rotation_matrix=gnomonic_rotation_matrix,
         )
-        # self._cache_ephemeris(test_orbit_ephemeris, observations)
+
+        self._cache_ephemeris(test_orbit_ephemeris, observations)
         return test_orbit_ephemeris
 
     def range_observations(
@@ -429,8 +512,9 @@ def assume_heliocentric_distance(
         Coordinates with the missing topocentric distance replaced with the calculated topocentric distance.
     """
     assert len(origin_coords) == 1
-    assert np.all(origin_coords.origin == OriginCodes.SUN)
+    assert pc.all(pc.equal(origin_coords.origin.code, "SUN")).as_py()
 
+    # Calculate the heliocentric distance
     r_mag = np.linalg.norm(r)
 
     # Extract the topocentric distance and topocentric radial velocity from the coordinates
@@ -439,13 +523,22 @@ def assume_heliocentric_distance(
 
     # Transform the coordinates to the ecliptic frame by assuming they lie on a unit sphere
     # (this assumption will only be applied to coordinates with missing rho values)
+    # Convert equatorial spherical units to a unit sphere (so we can rotate them to the ecliptic)
+    # and set nan covariance terms to zero so we preserve the non-zero covariance terms through
+    # the transformations
     coords_eq_unit = coords.to_unit_sphere(only_missing=True)
-    coords_ec = transform_coordinates(coords_eq_unit, SphericalCoordinates, frame_out="ecliptic")
+    coords_eq_unit = zero_covariances(coords_eq_unit)
+
+    # Transform to the equatorial coordinates (so we can rotate them to the ecliptic)
+    coords_eq_cart = coords_eq_unit.to_cartesian()
+
+    # Rotate to the ecliptic coordinates (again set nan covariance terms to zero)
+    coords_ec_cart = cartesian_to_frame(coords_eq_cart, "ecliptic")
+    coords_ec_cart = zero_covariances(coords_ec_cart)
 
     # Transform the coordinates to cartesian and calculate the unit vectors pointing
     # from the origin to the coordinates
-    coords_ec_xyz = coords_ec.to_cartesian()
-    unit_vectors = coords_ec_xyz.r_hat
+    unit_vectors = coords_ec_cart.r_hat
 
     # Calculate the topocentric distance such that the heliocentric distance to the coordinate
     # is r_mag
@@ -457,6 +550,8 @@ def assume_heliocentric_distance(
     # Where rho was not defined, replace it with the calculated topocentric distance
     # By default we take the positive solution which applies for all orbits exterior to the
     # observer's orbit
+    coords_ec = coords_ec_cart.to_spherical()
+    coords_ec = zero_covariances(coords_ec)
     coords_ec = coords_ec.set_column("rho", np.where(np.isnan(rho), delta_p, rho))
 
     # For cases where the orbit is interior to the observer's orbit there are two valid solutions
