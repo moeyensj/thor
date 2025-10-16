@@ -13,9 +13,8 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Orbits
 from adam_core.propagator import Propagator
-from adam_core.utils.iter import _iterate_chunks
-from adam_core.utils.iter import _iterate_chunk_indices
 from adam_core.ray_cluster import initialize_use_ray
+from adam_core.utils.iter import _iterate_chunk_indices, _iterate_chunks
 from scipy.linalg import solve
 
 from ..observations.observations import Observations
