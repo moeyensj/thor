@@ -10,12 +10,12 @@ from .coverage import (
     OrbitVolumes,
     PhaseSpaceBounds,
     analyze_orbit_coverage_diagnostics,
-    generate_even_coverage_test_orbits,
+    create_custom_grid_dimensions,
+    create_grid_dimensions,
     generate_custom_grid_test_orbits,
+    generate_even_coverage_test_orbits,
     generate_orbit_volumes_for_target_coverage,
     generate_orbits_for_coverage_with_fixed_volumes,
-    create_grid_dimensions,
-    create_custom_grid_dimensions,
 )
 
 __all__ = [
