@@ -9,12 +9,11 @@ import quivr as qv
 import ray
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
 from adam_core.observations import Exposures, PointSourceDetections
-from adam_core.observers import Observers
+from adam_core.observers import Observers, calculate_observing_night
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
-from thor.config import Config
-
+from ..config import Config
 from .photometry import Photometry
 from .states import calculate_state_id_hashes
 
@@ -254,6 +253,7 @@ class InputObservations(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
     time = Timestamp.as_column()
+    night = qv.Int64Column(nullable=True)
     ra = qv.Float64Column()
     dec = qv.Float64Column()
     ra_sigma = qv.Float64Column(nullable=True)
@@ -268,6 +268,7 @@ class InputObservations(qv.Table):
 class Observations(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
+    night = qv.Int64Column()
     coordinates = SphericalCoordinates.as_column()
     photometry = Photometry.as_column()
     state_id = qv.LargeStringColumn()
@@ -320,9 +321,18 @@ class Observations(qv.Table):
             mag_sigma=observations.mag_sigma,
         )
 
+        # Handle night field: if null, calculate from observatory code and time
+        night = observations.night
+        if pc.sum(pc.is_null(night)).as_py() > 0:
+            # Some or all nights are null, calculate them
+            calculated_night = calculate_observing_night(observations.observatory_code, observations.time)
+            # Fill nulls with calculated values
+            night = pc.fill_null(night, calculated_night)
+
         return cls.from_kwargs(
             id=observations.id,
             exposure_id=observations.exposure_id,
+            night=night,
             coordinates=coords,
             photometry=photometry,
             state_id=calculate_state_id_hashes(coords),
@@ -393,9 +403,13 @@ class Observations(qv.Table):
             mag_sigma=detections_exposures["mag_sigma"],
         )
 
+        # Calculate observing night from observatory code and time
+        night = calculate_observing_night(detections_exposures["observatory_code"], coordinates.time)
+
         return cls.from_kwargs(
             id=detections_exposures["id"],
             exposure_id=detections_exposures["exposure_id"],
+            night=night,
             coordinates=coordinates,
             photometry=photometry,
             state_id=calculate_state_id_hashes(coordinates),

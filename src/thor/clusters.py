@@ -205,45 +205,48 @@ def find_clusters(points, eps, min_samples, alg="hotspot_2d"):
         raise NotImplementedError(f"algorithm '{alg}' is not implemented")
 
 
-def filter_clusters_by_length(clusters, dt, min_samples, min_arc_length):
+def filter_clusters_by_length(clusters, dt, nights, min_samples, min_arc_length, min_nights):
     """
     Filter cluster results on the conditions that they span at least
-    min_arc_length in the time dimension, and that each point in the cluster
-    is from a different dt value.
+    min_arc_length in the time dimension, that each point in the cluster
+    is from a different dt value, and that they span at least min_nights.
 
     Parameters
     -----------
     clusters: `list of numpy.ndarray'
-
         A list of clusters. Each cluster should be an array of indexes
         of observations that are members of the same cluster. The indexes
-        are into the 'dt' array.
-
+        are into the 'dt' and 'nights' arrays.
     dt: `~numpy.ndarray' (N)
         Change in time from the 0th exposure in units of MJD.
-
+    nights: `~numpy.ndarray' (N)
+        Observing night for each observation.
     min_samples: int
         Minimum size for a cluster to be included.
-
     min_arc_length: float
         Minimum arc length in units of days for a cluster to be accepted.
+    min_nights: int
+        Minimum number of unique nights a cluster must span.
 
     Returns
     -------
     list of numpy.ndarray
-
         The original clusters list, filtered down.
     """
     filtered_clusters = []
     arc_lengths = []
     for cluster in clusters:
         dt_in_cluster = dt[cluster]
+        nights_in_cluster = nights[cluster]
         num_obs = len(dt_in_cluster)
         arc_length = dt_in_cluster.max() - dt_in_cluster.min()
+        num_nights = len(np.unique(nights_in_cluster))
+
         if (
             (num_obs == len(np.unique(dt_in_cluster)))
             and ((num_obs >= min_samples))
             and (arc_length >= min_arc_length)
+            and (num_nights >= min_nights)
         ):
             filtered_clusters.append(cluster)
             arc_lengths.append(arc_length)
@@ -513,16 +516,19 @@ def cluster_velocity(
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     dt: npt.NDArray[np.float64],
+    nights: npt.NDArray[np.int64],
     vx: float,
     vy: float,
-    radius: float = 0.005,
-    min_obs: int = 5,
-    min_arc_length: float = 1.0,
+    radius: float = 1 / 3600,
+    min_obs: int = 6,
+    min_arc_length: float = 1.5,
+    min_nights: int = 3,
     alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
 ) -> Tuple[Clusters, ClusterMembers]:
     """
     Clusters THOR projection with different velocities
     in the projection plane using `~scipy.cluster.DBSCAN`.
+
     Parameters
     ----------
     obs_ids : `~numpy.ndarray' (N)
@@ -533,6 +539,8 @@ def cluster_velocity(
         Projection space y coordinate in degrees or radians.
     dt : `~numpy.ndarray' (N)
         Change in time from 0th exposure in units of MJD.
+    nights : `~numpy.ndarray' (N)
+        Observing night for each observation.
     vx : float
         Projection space x velocity in units of degrees or radians per day in MJD.
     vy : float
@@ -541,20 +549,23 @@ def cluster_velocity(
         The maximum distance between two samples for them to be considered
         as in the same neighborhood.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
-        [Default = 0.005]
     min_obs : int, optional
         The number of samples (or total weight) in a neighborhood for a
         point to be considered as a core point. This includes the point itself.
         See: http://scikit-learn.org/stable/modules/generated/sklearn.cluster.dbscan.html
-        [Default = 5]
     min_arc_length : float, optional
         Minimum arc length in units of days for a cluster to be accepted.
+    min_nights : int, optional
+        Minimum number of unique nights a cluster must span.
+    alg : str, optional
+        Algorithm to use ("dbscan" or "hotspot_2d").
 
     Returns
     -------
-    list
-        If clusters are found, will return a list of numpy arrays containing the
-        observation IDs for each cluster. If no clusters are found, will return np.NaN.
+    clusters : Clusters
+        Clusters found.
+    cluster_members : lusterMembers
+        Cluster members.
     """
     logger.debug(f"cluster: vx={vx} vy={vy} n_obs={len(obs_ids)}")
     xx = x - vx * dt
@@ -566,8 +577,10 @@ def cluster_velocity(
     clusters, arc_lengths = filter_clusters_by_length(
         clusters,
         dt,
+        nights,
         min_obs,
         min_arc_length,
+        min_nights,
     )
 
     if len(clusters) == 0:
@@ -610,9 +623,11 @@ def cluster_velocity_worker(
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     dt: npt.NDArray[np.float64],
-    radius: float = 0.005,
-    min_obs: int = 5,
-    min_arc_length: float = 1.0,
+    nights: npt.NDArray[np.int64],
+    radius: float = 1 / 3600,
+    min_obs: int = 6,
+    min_arc_length: float = 1.5,
+    min_nights: int = 3,
     alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
 ) -> Tuple[Clusters, ClusterMembers]:
     """
@@ -629,11 +644,13 @@ def cluster_velocity_worker(
             x,
             y,
             dt,
+            nights,
             vx_i,
             vy_i,
             radius=radius,
             min_obs=min_obs,
             min_arc_length=min_arc_length,
+            min_nights=min_nights,
             alg=alg,
         )
         clusters = qv.concatenate([clusters, clusters_i])
@@ -665,6 +682,7 @@ def cluster_and_link(
     radius: float = 0.005,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
+    min_nights: int = 3,
     alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
     chunk_size: int = 1000,
     max_processes: Optional[int] = 1,
@@ -698,23 +716,19 @@ def cluster_and_link(
     radius : float, optional
         The maximum distance between two samples for them to be considered
         as in the same neighborhood (DBSCAN eps parameter).
-        [Default = 0.005]
     min_obs : int, optional
         The minimum number of samples in a neighborhood for a point to be
         considered as a core point (DBSCAN min_samples parameter).
-        [Default = 5]
     min_arc_length : float, optional
         Minimum arc length in days for a cluster to be accepted.
-        [Default = 1.0]
+    min_nights : int, optional
+        Minimum number of unique nights a cluster must span.
     alg : str, optional
         Algorithm to use. Can be "dbscan" or "hotspot_2d".
-        [Default = "dbscan"]
     chunk_size : int, optional
         Number of velocity grid points to process in each worker chunk.
-        [Default = 1000]
     max_processes : int, optional
         Maximum number of processes to use for parallelization.
-        [Default = 1]
 
     Returns
     -------
@@ -814,6 +828,7 @@ def cluster_and_link(
 
     # Extract useful quantities
     obs_ids = observations.id.to_numpy(zero_copy_only=False)
+    nights = observations.night.to_numpy(zero_copy_only=False)
     theta_x = observations.coordinates.theta_x.to_numpy(zero_copy_only=False)
     theta_y = observations.coordinates.theta_y.to_numpy(zero_copy_only=False)
     mjd = observations.coordinates.time.mjd().to_numpy(zero_copy_only=False)
@@ -831,10 +846,11 @@ def cluster_and_link(
         # Put all arrays (which can be large) in ray's
         # local object store ahead of time
         obs_ids_ref = ray.put(obs_ids)
+        nights_ref = ray.put(nights)
         theta_x_ref = ray.put(theta_x)
         theta_y_ref = ray.put(theta_y)
         dt_ref = ray.put(dt)
-        refs_to_free = [obs_ids_ref, theta_x_ref, theta_y_ref, dt_ref]
+        refs_to_free = [obs_ids_ref, nights_ref, theta_x_ref, theta_y_ref, dt_ref]
         logger.info("Placed gnomonic coordinate arrays in the object store.")
         # TODO: transformed detections are already in the object store so we might
         # want to instead pass references to those rather than extract arrays
@@ -850,9 +866,11 @@ def cluster_and_link(
                     theta_x_ref,
                     theta_y_ref,
                     dt_ref,
+                    nights_ref,
                     radius=radius,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
+                    min_nights=min_nights,
                     alg=alg,
                 )
             )
@@ -891,9 +909,11 @@ def cluster_and_link(
                 theta_x,
                 theta_y,
                 dt,
+                nights,
                 radius=radius,
                 min_obs=min_obs,
                 min_arc_length=min_arc_length,
+                min_nights=min_nights,
                 alg=alg,
             )
 

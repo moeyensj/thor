@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 class TransformedDetections(qv.Table):
     id = qv.LargeStringColumn()
+    night = qv.Int64Column()
     coordinates = GnomonicCoordinates.as_column()
     state_id = qv.LargeStringColumn()
 
@@ -92,13 +93,16 @@ def range_and_transform_worker(
         "time", ephemeris_state.ephemeris.coordinates.time
     )
 
+    gnomonic_coords, _ = GnomonicCoordinates.from_cartesian(
+        ranged_detections_cartesian_state,
+        center_cartesian=test_orbit_at_detection_time,
+    )
+
     # Transform the detections into the co-rotating frame
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
-        coordinates=GnomonicCoordinates.from_cartesian(
-            ranged_detections_cartesian_state,
-            center_cartesian=test_orbit_at_detection_time,
-        ),
+        night=observations_state.night,
+        coordinates=gnomonic_coords,
         state_id=observations_state.state_id,
     )
 
