@@ -780,18 +780,18 @@ def cluster_and_link(
             vx_bins = 100
         if vy_bins is None:
             vy_bins = 100
-            
-        vx = np.linspace(*vx_range, num=vx_bins)
-        vy = np.linspace(*vy_range, num=vy_bins)
-        vxx, vyy = np.meshgrid(vx, vy)
-        vxx = vxx.flatten()
-        vyy = vyy.flatten()
 
-        logger.debug("X velocity range: {}".format(vx_range))
-        logger.debug("X velocity bins: {}".format(vx_bins))
-        logger.debug("Y velocity range: {}".format(vy_range))
-        logger.debug("Y velocity bins: {}".format(vy_bins))
-        logger.info(f"Generated velocity grid with {len(vxx)} points.")
+    vx = np.linspace(*vx_range, num=vx_bins)
+    vy = np.linspace(*vy_range, num=vy_bins)
+    vxx, vyy = np.meshgrid(vx, vy)
+    vxx = vxx.flatten()
+    vyy = vyy.flatten()
+
+    logger.debug("X velocity range: {}".format(vx_range))
+    logger.debug("X velocity bins: {}".format(vx_bins))
+    logger.debug("Y velocity range: {}".format(vy_range))
+    logger.debug("Y velocity bins: {}".format(vy_bins))
+    logger.info(f"Generated velocity grid with {len(vxx)} points.")
 
     logger.info("Max sample distance: {}".format(radius))
     logger.info("Minimum samples: {}".format(min_obs))
