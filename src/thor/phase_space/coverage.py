@@ -625,8 +625,8 @@ def generate_even_coverage_test_orbits(
     individual_volume = np.prod(2 * half_widths)
 
     # Prepare data for OrbitVolumes table
-    centers_list = [coords_6d[i, :].tolist() for i in range(n_points)]
-    half_widths_list = [half_widths.tolist() for _ in range(n_points)]
+    centers_list = [coords_6d[i, :] for i in range(n_points)]
+    half_widths_list = [half_widths for _ in range(n_points)]
 
     orbit_volumes_data = {
         "orbit_id": orbit_ids,
@@ -847,6 +847,13 @@ def generate_custom_grid_test_orbits(
     if np.any(np.array(grid_dimensions) < 1):
         raise ValueError(f"All grid dimensions must be >= 1, got {grid_dimensions}")
 
+    # Ensure grid_dimensions is a numpy array for consistency
+    grid_dimensions = np.array(grid_dimensions)
+    
+    # Ensure half_widths is a numpy array for consistency (if provided)
+    if half_widths is not None:
+        half_widths = np.array(half_widths)
+
     # Set defaults based on coordinate system
     if half_widths is None:
         if coordinate_system == "spherical":
@@ -914,8 +921,8 @@ def generate_custom_grid_test_orbits(
     individual_volume = np.prod(2 * half_widths)
 
     # Prepare data for OrbitVolumes table
-    centers_list = [coords_6d[i, :].tolist() for i in range(n_points)]
-    half_widths_list = [half_widths.tolist() for _ in range(n_points)]
+    centers_list = [coords_6d[i, :] for i in range(n_points)]
+    half_widths_list = [half_widths for _ in range(n_points)]
 
     orbit_volumes_data = {
         "orbit_id": orbit_ids,
@@ -929,7 +936,7 @@ def generate_custom_grid_test_orbits(
 
     # Create basic report with essential coverage metrics
     report = _create_basic_report(coords_6d, half_widths, bounds, coordinate_system)
-    report["grid_dimensions"] = grid_dimensions if isinstance(grid_dimensions, list) else grid_dimensions.tolist()
+    report["grid_dimensions"] = grid_dimensions
     report["n_orbits"] = n_points
 
     logger.info(f"Generated {len(test_orbits)} test orbits")
@@ -1336,7 +1343,7 @@ def _analyze_coverage(
         "volume_stats": volume_stats,
         "phase_space_volume": total_phase_space,
         "bounds": bounds,
-        "half_widths": half_widths.tolist(),
+        "half_widths": half_widths,
         "coordinate_system": coordinate_system,
     }
 
@@ -1949,7 +1956,7 @@ def _create_basic_report(
         "volume_stats": volume_stats,
         "phase_space_volume": total_phase_space,
         "bounds": bounds,
-        "half_widths": half_widths.tolist(),
+        "half_widths": half_widths,
         "coordinate_system": coordinate_system,
         "analysis_skipped": True,  # Flag to indicate analysis was skipped
     }
