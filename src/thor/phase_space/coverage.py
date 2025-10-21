@@ -844,7 +844,7 @@ def generate_custom_grid_test_orbits(
     if len(grid_dimensions) != 6:
         raise ValueError(f"grid_dimensions must have 6 elements, got {len(grid_dimensions)}")
 
-    if np.any(grid_dimensions < 1):
+    if np.any(np.array(grid_dimensions) < 1):
         raise ValueError(f"All grid dimensions must be >= 1, got {grid_dimensions}")
 
     # Set defaults based on coordinate system
@@ -929,7 +929,7 @@ def generate_custom_grid_test_orbits(
 
     # Create basic report with essential coverage metrics
     report = _create_basic_report(coords_6d, half_widths, bounds, coordinate_system)
-    report["grid_dimensions"] = grid_dimensions.tolist()
+    report["grid_dimensions"] = grid_dimensions if isinstance(grid_dimensions, list) else grid_dimensions.tolist()
     report["n_orbits"] = n_points
 
     logger.info(f"Generated {len(test_orbits)} test orbits")
