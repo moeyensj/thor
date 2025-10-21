@@ -14,14 +14,8 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 
-from thor.config import Config
-from thor.observations.observations import Observations, observations_iterator
-
 from ..orbit import TestOrbits
-
-if TYPE_CHECKING:
-    from .observations import Observations
-
+from .observations import Observations, observations_iterator
 
 logger = logging.getLogger(__name__)
 
@@ -159,15 +153,18 @@ class TestOrbitMahalanobisObservationFilter(ObservationFilter):
 
     def __init__(
         self,
-        chi2_threshold: float = 11.83,
+        mahalanobis_distance: float = 5.0,
     ):
         """
         Parameters
         ----------
-        chi2_threshold: float
-            Chi2 threshold to filter observations by. For 2 degrees of freedom, 5 sigma corresponds to a chi2 of 11.83.
+        mahalanobis_distance: float
+            Mahalanobis distance threshold for filtering observations.
+            For a 5-sigma ellipse in 2D (RA/Dec), set this to 5.0.
+            For a 3-sigma ellipse, set this to 3.0.
+            [Default = 5.0]
         """
-        self.chi2_threshold = chi2_threshold
+        self.mahalanobis_distance = mahalanobis_distance
 
     def apply(
         self,
@@ -177,7 +174,7 @@ class TestOrbitMahalanobisObservationFilter(ObservationFilter):
     ) -> "Observations":
         time_start = time.perf_counter()
         logger.info("Applying TestOrbitMahalanobisObservationFilter...")
-        logger.info(f"chi2_threshold = {self.chi2_threshold:.3f}, ")
+        logger.info(f"Using mahalanobis_distance = {self.mahalanobis_distance:.1f}-sigma")
 
         # Only compute predicted covariance if we’re going to use it
         ephemeris = test_orbit.generate_ephemeris_from_observations(
@@ -188,6 +185,7 @@ class TestOrbitMahalanobisObservationFilter(ObservationFilter):
 
         filtered_observations = Observations.empty()
         state_ids = observations.state_id.unique()
+        chi2_threshold = self.mahalanobis_distance**2
 
         for state_id in state_ids:
             ephemeris_state = ephemeris.select("id", state_id)
@@ -204,7 +202,7 @@ class TestOrbitMahalanobisObservationFilter(ObservationFilter):
                 use_predicted_covariance=True,
             )
             chi2 = residuals.chi2.to_numpy(zero_copy_only=False)
-            mask = chi2 <= self.chi2_threshold
+            mask = chi2 <= chi2_threshold
 
             filtered_chunk = observations_state.apply_mask(mask)
             filtered_observations = qv.concatenate([filtered_observations, filtered_chunk])
@@ -325,8 +323,9 @@ filter_observations_worker_remote.options(num_cpus=1, num_returns=1)
 def filter_observations(
     observations: Union[str, Observations],
     test_orbit: TestOrbits,
-    config: Config,
-    filters: Optional[List[ObservationFilter]] = None,
+    filters: List[ObservationFilter],
+    propagator_class: Type[Propagator],
+    max_processes: Optional[int] = None,
     chunk_size: int = 1_000_000,
 ) -> Observations:
     """
@@ -340,15 +339,18 @@ def filter_observations(
         Observations to filter.
     test_orbit : `~thor.orbit.TestOrbits`
         Test orbit to use for filtering.
-    config : `~thor.config.Config`
-        Configuration parameters.
-    filters : list of `~thor.observations.filters.ObservationFilter`, optional
-        List of filters to apply to the observations. If None, the default
-        TestOrbitRadiusObservationFilter will be used.
+    filters : list of `~thor.observations.filters.ObservationFilter`,
+        List of filters to apply to the observations.
+    propagator_class : `~adam_core.propagator.Propagator`
+        Propagator class to use for generating the ephemeris.
+    max_processes : int, optional
+        Maximum number of processes to use for parallelization. If
+        an existing ray cluster is already running, this parameter
+        will be ignored if larger than 1 or not None.
     chunk_size : int, optional
-        Chunk size of state IDs to use when filtering the observations. Each worker
-        will process a chunk of state IDs in parallel. If not using ray, then each
-        chunk is processed serially.
+        Chunk size to use when filtering the observations. When using ray,
+        chunks are distributed to multiple workers for parallel processing.
+        When not using ray, chunks are processed sequentially.
 
     Returns
     -------
@@ -357,10 +359,6 @@ def filter_observations(
     """
     time_start = time.perf_counter()
     logger.info("Running observation filters...")
-
-    module_path, class_name = config.propagator_namespace.rsplit(".", 1)
-    propagator_module = importlib.import_module(module_path)
-    propagator_class = getattr(propagator_module, class_name)
 
     if len(test_orbit) != 1:
         raise ValueError(f"filter_observations received {len(test_orbit)} orbits but expected 1.")
@@ -376,17 +374,18 @@ def filter_observations(
     else:
         raise ValueError("observations should be a parquet file or an Observations object.")
 
-    if filters is None:
-        # By default we always filter by radius from the predicted position of the test orbit
-        filters = [TestOrbitRadiusObservationFilter(radius=config.cell_radius)]
+    if len(filters) == 0:
+        filtered_observations = observations
+        logger.info("No filters provided, returning observations unchanged.")
+        time_end = time.perf_counter()
+        logger.info(f"Filtered {num_obs} observations to {len(filtered_observations)} observations.")
+        logger.info(f"Observations filters completed in {time_end - time_start:.3f} seconds.")
+        return filtered_observations
 
-    if config.max_processes is None:
+    if max_processes is None:
         max_processes = mp.cpu_count()
-    else:
-        max_processes = config.max_processes
 
     filtered_observations = Observations.empty()
-    logger.info(f"{config.json()}")
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
 

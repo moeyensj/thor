@@ -12,8 +12,9 @@ class Config:
     max_processes: Optional[int] = None
     ray_memory_bytes: int = 0
     propagator_namespace: str = "adam_assist.ASSISTPropagator"
-    cell_radius: float = 10
-    filter_mahalanobis_distance: float = 5.0
+    filter_cell_radius: Optional[float] = None
+    filter_mahalanobis_distance: Optional[float] = 5.0
+    filter_chunk_size: int = 100000
     vx_min: float = -0.1
     vx_max: float = 0.1
     vy_min: float = -0.1

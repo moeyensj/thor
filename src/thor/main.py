@@ -13,7 +13,12 @@ from adam_core.ray_cluster import initialize_use_ray
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
 from .clusters import cluster_and_link
 from .config import Config, initialize_config
-from .observations.filters import ObservationFilter, filter_observations
+from .observations.filters import (
+    ObservationFilter,
+    TestOrbitMahalanobisObservationFilter,
+    TestOrbitRadiusObservationFilter,
+    filter_observations,
+)
 from .observations.observations import Observations
 from .orbit import TestOrbits
 from .orbits import (
@@ -142,7 +147,23 @@ def link_test_orbit(
         )
 
     if checkpoint.stage == "filter_observations":
-        filtered_observations = filter_observations(observations, test_orbit, config, filters)
+
+        filters = []
+        if config.filter_cell_radius is not None:
+            filters.append(TestOrbitRadiusObservationFilter(radius=config.filter_cell_radius))
+        if config.filter_mahalanobis_distance is not None:
+            filters.append(
+                TestOrbitMahalanobisObservationFilter(mahalanobis_distance=config.filter_mahalanobis_distance)
+            )
+
+        filtered_observations = filter_observations(
+            observations,
+            test_orbit,
+            filters,
+            propagator_class=propagator_class,
+            max_processes=config.max_processes,
+            chunk_size=config.filter_chunk_size,
+        )
 
         filtered_observations_path = None
         if test_orbit_directory is not None:
