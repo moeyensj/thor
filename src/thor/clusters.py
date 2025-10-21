@@ -17,6 +17,8 @@ from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
 
+from .observations.observations import Observations
+from .orbit import TestOrbitEphemeris
 from .projections import GnomonicCoordinates
 from .range_and_transform import TransformedDetections
 from .utils.linkages import sort_by_id_and_time
@@ -33,6 +35,7 @@ else:
 
 __all__ = [
     "cluster_and_link",
+    "calculate_clustering_parameters_from_covariance",
     "Clusters",
     "ClusterMembers",
 ]
@@ -671,6 +674,250 @@ cluster_velocity_remote.options(
 )
 
 
+def calculate_clustering_parameters_from_covariance(
+    test_orbit_ephemeris: TestOrbitEphemeris,
+    transformed_detections: Union[TransformedDetections, ray.ObjectRef],
+    mahalanobis_distance: float = 3.0,
+    velocity_bin_separation: float = 2.0,
+    min_radius: float = 1 / 3600,
+    min_bins: int = 10,
+    max_bins: int = 1000,
+) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], float, dict]:
+    """
+    Calculate clustering parameters (velocity grid and radius) from test orbit
+    ephemeris covariances in the co-rotating gnomonic frame.
+
+    In the co-rotating frame, the test orbit has zero velocity. The velocity
+    grid is centered at (0, 0) and extends to the specified Mahalanobis distance
+    based on velocity uncertainties.
+
+    The clustering radius is computed from the observation density, calculated
+    as the total number of observations divided by the minimum area of the
+    positional covariance ellipse.
+
+    Parameters
+    ----------
+    test_orbit_ephemeris : TestOrbitEphemeris
+        Test orbit ephemeris with gnomonic coordinates containing covariances.
+        The gnomonic coordinates should be in a co-rotating frame centered on
+        the test orbit's motion.
+    transformed_detections : TransformedDetections or ray.ObjectRef
+        Transformed detections (observations in the co-rotating gnomonic frame).
+        Can be either the Quivr table or a Ray object reference.
+    mahalanobis_distance : float, optional
+        Mahalanobis distance threshold for velocity grid and covariance area.
+        For a 3-sigma ellipse in 2D, set this to 3.0.
+        For a 2-sigma ellipse in 2D, set this to 2.0.
+        [Default = 3.0]
+    velocity_bin_separation : float, optional
+        Separation between adjacent velocity bins in units of clustering radius.
+        At maximum time offset (dt_arc), adjacent bins will shift observations by
+        velocity_bin_separation × radius in position space.
+        Higher values → coarser grid → fewer duplicates. Lower values → finer grid → more duplicates.
+        Recommended: 2.0 (minimal overlap), 1.0 (bins touch), 0.5 (significant overlap).
+        [Default = 2.0]
+    min_radius : float, optional
+        Minimum radius in degrees.
+        [Default = 5/3600]
+    min_bins : int, optional
+        Minimum number of bins per dimension.
+        [Default = 10]
+    max_bins : int, optional
+        Maximum number of bins per dimension.
+        [Default = 1000]
+
+    Returns
+    -------
+    vx : np.ndarray
+        X-velocity grid values (flattened), centered at 0.
+    vy : np.ndarray
+        Y-velocity grid values (flattened), centered at 0.
+    radius : float
+        Effective clustering radius in degrees.
+    metadata : dict
+        Dictionary with computed parameters for logging.
+
+    Raises
+    ------
+    ValueError
+        If covariances are invalid or parameters cannot be computed.
+    """
+    logger.info("Calculating clustering parameters from test orbit ephemeris covariances...")
+
+    # Square the Mahalanobis distance for calculations
+    mahalanobis_distance_sq = mahalanobis_distance**2
+
+    # Get transformed detections from Ray if needed
+    if isinstance(transformed_detections, ray.ObjectRef):
+        transformed_detections = ray.get(transformed_detections)
+
+    # Extract gnomonic coordinates from ephemeris
+    ephemeris_gnomonic = test_orbit_ephemeris.gnomonic
+    n_obs = len(transformed_detections)  # Total observations across all times
+    n_times = len(ephemeris_gnomonic)  # Number of unique observation times
+
+    # Get time span
+    times = ephemeris_gnomonic.time.mjd().to_numpy(zero_copy_only=False)
+    dt_arc = np.max(times) - np.min(times)
+
+    # Extract covariances from ephemeris
+    covariances = ephemeris_gnomonic.covariance.to_matrix()
+
+    # Check if covariances are valid
+    if np.all(np.isnan(covariances)):
+        raise ValueError("All covariance values are NaN. Cannot compute clustering parameters.")
+
+    # Calculate mean covariance
+    mean_cov = np.nanmean(covariances, axis=0)
+
+    # Check if mean covariance is valid
+    if np.any(np.isnan(mean_cov)) or np.any(~np.isfinite(mean_cov)):
+        raise ValueError("Mean covariance matrix contains NaN or infinite values.")
+
+    # Extract position and velocity covariances
+    pos_cov = mean_cov[0:2, 0:2]  # theta_x, theta_y
+    vel_cov = mean_cov[2:4, 2:4]  # vtheta_x, vtheta_y
+    cross_cov = mean_cov[0:2, 2:4]  # cross terms
+
+    # === Calculate effective clustering radius from observation density ===
+
+    # Find minimum positional covariance area at n_sigma across all times
+    # Area of ellipse at n_sigma is: A = π * n_sigma^2 * sqrt(det(pos_cov))
+    pos_covariances = covariances[:, 0:2, 0:2]
+
+    # Calculate determinant for each positional covariance
+    # det([[a, b], [c, d]]) = ad - bc
+    dets = (
+        pos_covariances[:, 0, 0] * pos_covariances[:, 1, 1]
+        - pos_covariances[:, 0, 1] * pos_covariances[:, 1, 0]
+    )
+
+    # Filter out invalid determinants
+    valid_dets = dets[np.isfinite(dets) & (dets > 0)]
+
+    if len(valid_dets) == 0:
+        raise ValueError("No valid positional covariance determinants found.")
+
+    # Minimum covariance area (smallest ellipse)
+    min_det = np.min(valid_dets)
+    min_area = np.pi * mahalanobis_distance_sq * np.sqrt(min_det)
+
+    # Calculate observation density
+    density = n_obs / min_area
+
+    # Radius based on density: target ~1 observation per circle of radius r
+    # Area = π * r^2, so r = sqrt(1 / (π * density))
+    radius = max(np.sqrt(1.0 / (np.pi * density)), min_radius)
+
+    logger.info(f"Effective clustering radius: {radius:.6f} deg ({radius*3600:.3f} arcsec)")
+    logger.info(f"  - Minimum covariance area ({mahalanobis_distance:.1f}-sigma): {min_area:.6e} deg^2")
+    logger.info(f"  - Observation density: {density:.2f} obs/deg^2")
+    logger.info(f"  - Total observations: {n_obs} across {n_times} times")
+    logger.info(f"  - Time span: {dt_arc:.3f} days")
+
+    # === Calculate velocity grid ===
+    # Extract standard deviations
+    sigma_vx = np.sqrt(vel_cov[0, 0])
+    sigma_vy = np.sqrt(vel_cov[1, 1])
+
+    if np.isnan(sigma_vx) or np.isnan(sigma_vy) or sigma_vx <= 0 or sigma_vy <= 0:
+        raise ValueError(f"Invalid velocity sigmas: σ_vx={sigma_vx}, σ_vy={sigma_vy}")
+
+    logger.info(f"Velocity uncertainties: σ_vx={sigma_vx:.6f}, σ_vy={sigma_vy:.6f} deg/day")
+
+    # Calculate rectangular bounds at Mahalanobis distance centered at zero
+    vx_min = -mahalanobis_distance * sigma_vx
+    vx_max = mahalanobis_distance * sigma_vx
+    vy_min = -mahalanobis_distance * sigma_vy
+    vy_max = mahalanobis_distance * sigma_vy
+
+    logger.info(
+        f"Velocity grid edges ({mahalanobis_distance:.1f}-sigma): vx=[{vx_min:.6f}, {vx_max:.6f}], vy=[{vy_min:.6f}, {vy_max:.6f}] deg/day"
+    )
+
+    # Calculate number of bins
+    # Key insight: At maximum time offset (dt_arc), a velocity difference dv produces
+    # a position difference of dv * dt_arc. For proper DBSCAN clustering with radius r,
+    # we want adjacent velocity bins to be separated by velocity_bin_separation × radius
+    # in position space at maximum time.
+    #
+    # Therefore:
+    #   dv_bin * dt_arc = velocity_bin_separation * radius
+    #   dv_bin = velocity_bin_separation * radius / dt_arc
+    #   n_bins = velocity_range / dv_bin = velocity_range * dt_arc / (velocity_bin_separation * radius)
+    #
+    # The velocity_bin_separation parameter controls spacing between velocity bins:
+    # - Higher values → coarser grid → fewer bins → fewer duplicate clusters
+    # - Lower values → finer grid → more bins → more duplicate clusters
+    n_vx_bins = int(np.ceil((vx_max - vx_min) * dt_arc / (velocity_bin_separation * radius)))
+    n_vy_bins = int(np.ceil((vy_max - vy_min) * dt_arc / (velocity_bin_separation * radius)))
+
+    # Apply limits
+    n_vx_bins = np.clip(n_vx_bins, min_bins, max_bins)
+    n_vy_bins = np.clip(n_vy_bins, min_bins, max_bins)
+
+    # Log the derived velocity bin spacing
+    dv_x = (vx_max - vx_min) / n_vx_bins if n_vx_bins > 0 else 0
+    dv_y = (vy_max - vy_min) / n_vy_bins if n_vy_bins > 0 else 0
+    dx_max = dv_x * dt_arc
+    dy_max = dv_y * dt_arc
+    logger.info(f"Velocity grid bins: vx_bins={n_vx_bins}, vy_bins={n_vy_bins}")
+    logger.info(f"Velocity bin spacing: dv_x={dv_x:.6f}, dv_y={dv_y:.6f} deg/day")
+    logger.info(f"Position offset at dt_max={dt_arc:.3f} days: dx={dx_max:.6f}, dy={dy_max:.6f} deg")
+    logger.info(f"Bin separation in radii: x={dx_max/radius:.2f}, y={dy_max/radius:.2f}")
+
+    # Create rectangular velocity grid
+    vx_grid = np.linspace(vx_min, vx_max, n_vx_bins)
+    vy_grid = np.linspace(vy_min, vy_max, n_vy_bins)
+    vxx, vyy = np.meshgrid(vx_grid, vy_grid)
+
+    # Flatten the grid
+    vxx_flat = vxx.flatten()
+    vyy_flat = vyy.flatten()
+
+    # Filter to elliptical region using Mahalanobis distance
+    # Since we're centered at zero, the Mahalanobis distance simplifies
+    try:
+        vel_cov_inv = np.linalg.inv(vel_cov)
+        velocity_vectors = np.stack([vxx_flat, vyy_flat], axis=1)
+        mahalanobis_sq = np.sum(velocity_vectors @ vel_cov_inv * velocity_vectors, axis=1)
+        velocity_mask = mahalanobis_sq <= mahalanobis_distance_sq
+
+        n_total = len(velocity_mask)
+        n_inside = np.sum(velocity_mask)
+        logger.info(
+            f"Velocity grid points: {n_inside}/{n_total} inside {mahalanobis_distance:.1f}-sigma ellipse ({100*n_inside/n_total:.1f}%)"
+        )
+
+        # Apply mask
+        vxx_flat = vxx_flat[velocity_mask]
+        vyy_flat = vyy_flat[velocity_mask]
+    except np.linalg.LinAlgError:
+        logger.warning("Could not invert velocity covariance matrix. Using all grid points.")
+
+    # Prepare metadata
+    metadata = {
+        "n_obs": n_obs,
+        "n_times": n_times,
+        "dt_arc": dt_arc,
+        "sigma_vx": sigma_vx,
+        "sigma_vy": sigma_vy,
+        "vx_min": vx_min,
+        "vx_max": vx_max,
+        "vy_min": vy_min,
+        "vy_max": vy_max,
+        "n_vx_bins": n_vx_bins,
+        "n_vy_bins": n_vy_bins,
+        "n_velocity_points": len(vxx_flat),
+        "min_area": min_area,
+        "density": density,
+        "radius": radius,
+        "mahalanobis_distance": mahalanobis_distance,
+    }
+
+    return vxx_flat, vyy_flat, radius, metadata
+
+
 def cluster_and_link(
     observations: Union[TransformedDetections, ray.ObjectRef],
     vx_range: Optional[List[float]] = None,
@@ -751,7 +998,9 @@ def cluster_and_link(
 
     If vx_values and vy_values are provided, they will be used directly for the
     velocity grid. Otherwise, a grid is generated from vx_range, vy_range, vx_bins,
-    and vy_bins.
+    and vy_bins. To use covariance-informed clustering, call
+    calculate_clustering_parameters_from_covariance() first and pass the results
+    as vx_values, vy_values, and radius.
     """
     time_start_cluster = time.perf_counter()
     logger.info("Running velocity space clustering...")
@@ -764,7 +1013,9 @@ def cluster_and_link(
     if vx_values is not None and vy_values is not None:
         # Use pre-computed velocity values
         if len(vx_values) != len(vy_values):
-            raise ValueError(f"vx_values and vy_values must have same length. Got {len(vx_values)} and {len(vy_values)}.")
+            raise ValueError(
+                f"vx_values and vy_values must have same length. Got {len(vx_values)} and {len(vy_values)}."
+            )
         vxx = vx_values
         vyy = vy_values
         logger.info(f"Using pre-computed velocity grid with {len(vxx)} points.")
@@ -778,7 +1029,7 @@ def cluster_and_link(
             vx_bins = 100
         if vy_bins is None:
             vy_bins = 100
-            
+
         vx = np.linspace(*vx_range, num=vx_bins)
         vy = np.linspace(*vy_range, num=vy_bins)
         vxx, vyy = np.meshgrid(vx, vy)
@@ -956,11 +1207,22 @@ def cluster_and_link(
     # Sort cluster members by cluster ID and observation time
     cluster_members = cluster_members.sort_by([("cluster_id", "ascending")])
 
-    # Fit clusters
-    fitted_clusters, fitted_cluster_members = fit_clusters(clusters, cluster_members, observations)
+    logger.info(f"Fitting {len(clusters)} clusters...")
+    time_start_fit = time.perf_counter()
+
+    fitted_clusters, fitted_cluster_members = fit_clusters(
+        clusters, cluster_members, observations, chunk_size=chunk_size, max_processes=max_processes
+    )
+    time_end_fit = time.perf_counter()
+    logger.info(f"Fitting completed in {time_end_fit - time_start_fit:.3f} seconds.")
+
+    fitted_clusters = fitted_clusters.apply_mask(pc.less_equal(fitted_clusters.rchi2, 1e4))
+    fitted_cluster_members = fitted_cluster_members.apply_mask(
+        pc.is_in(fitted_cluster_members.cluster_id, fitted_clusters.cluster_id)
+    )
 
     time_end_cluster = time.perf_counter()
-    logger.info(f"Found {len(clusters)} clusters.")
+    logger.info(f"Found {len(fitted_clusters)} clusters.")
     logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
 
     return fitted_clusters, fitted_cluster_members
@@ -1053,10 +1315,12 @@ def fit_cluster(
         )
 
         return fitted_cluster, fitted_cluster_members
-        
+
     except np.linalg.LinAlgError as e:
         cluster_id = cluster.cluster_id[0].as_py()
-        logger.warning(f"Failed to fit cluster {cluster_id}: Singular matrix (degenerate observations). Skipping cluster.")
+        logger.warning(
+            f"Failed to fit cluster {cluster_id}: Singular matrix (degenerate observations). Skipping cluster."
+        )
         return FittedClusters.empty(), FittedClusterMembers.empty()
     except Exception as e:
         cluster_id = cluster.cluster_id[0].as_py()
@@ -1064,8 +1328,49 @@ def fit_cluster(
         return FittedClusters.empty(), FittedClusterMembers.empty()
 
 
+def fit_cluster_worker(
+    clusters: Union[Clusters, ray.ObjectRef],
+    cluster_members: Union[ClusterMembers, ray.ObjectRef],
+    transformed_detections: Union[TransformedDetections, ray.ObjectRef],
+    cluster_ids: List[str],
+) -> Tuple[FittedClusters, FittedClusterMembers]:
+    """
+    Worker function for fitting a single cluster (used by Ray).
+
+    This function selects the cluster and its members by cluster_id,
+    then calls fit_cluster.
+
+    Parameters can be either the actual tables or Ray object references.
+    """
+    fitted_clusters = FittedClusters.empty()
+    fitted_cluster_members = FittedClusterMembers.empty()
+
+    for cluster_id in cluster_ids:
+        cluster_i = clusters.select("cluster_id", cluster_id)
+        cluster_members_i = cluster_members.select("cluster_id", cluster_id)
+
+        fitted_cluster_i, fitted_cluster_members_i = fit_cluster(
+            cluster_i, cluster_members_i, transformed_detections
+        )
+        fitted_clusters = qv.concatenate([fitted_clusters, fitted_cluster_i])
+        fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_i])
+
+    return fitted_clusters, fitted_cluster_members
+
+
+fit_cluster_worker_remote = ray.remote(fit_cluster_worker)
+fit_cluster_worker_remote = fit_cluster_worker_remote.options(
+    num_returns=1,
+    num_cpus=1,
+)
+
+
 def fit_clusters(
-    clusters: Clusters, cluster_members: ClusterMembers, transformed_detections: TransformedDetections
+    clusters: Clusters,
+    cluster_members: ClusterMembers,
+    transformed_detections: TransformedDetections,
+    chunk_size: int = 1000,
+    max_processes: Optional[int] = 1,
 ) -> Tuple[FittedClusters, FittedClusterMembers]:
     """
     Fit a set of clusters with a 2nd order polynomial motion model in theta_x and theta_y.
@@ -1078,6 +1383,13 @@ def fit_clusters(
         Cluster members.
     transformed_detections : `~thor.transformed_detections.TransformedDetections`
         Transformed detections.
+    chunk_size : int, optional
+        Chunk size to use for parallelization. When using ray,
+        chunks are distributed to multiple workers for parallel processing.
+        When not using ray, chunks are processed sequentially.
+    max_processes : int, optional
+        Maximum number of processes to use for parallelization.
+        [Default = 1]
 
     Returns
     -------
@@ -1092,15 +1404,51 @@ def fit_clusters(
     if len(clusters) == 0:
         return fitted_clusters, fitted_cluster_members
 
+    use_ray = initialize_use_ray(num_cpus=max_processes)
     cluster_ids = clusters.cluster_id.to_pylist()
-    for cluster_id in cluster_ids:
-        cluster_i = clusters.select("cluster_id", cluster_id)
-        cluster_members_i = cluster_members.select("cluster_id", cluster_id)
-        fitted_cluster_i, fitted_cluster_members_i = fit_cluster(
-            cluster_i, cluster_members_i, transformed_detections
-        )
+    if use_ray:
+        # Put tables in Ray object store to avoid repeated serialization
+        clusters_ref = ray.put(clusters)
+        cluster_members_ref = ray.put(cluster_members)
+        transformed_detections_ref = ray.put(transformed_detections)
 
-        fitted_clusters = qv.concatenate([fitted_clusters, fitted_cluster_i])
-        fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_i])
+        futures = []
+        for cluster_id_chunk in _iterate_chunks(cluster_ids, chunk_size):
+            futures.append(
+                fit_cluster_worker_remote.remote(
+                    clusters_ref, cluster_members_ref, transformed_detections_ref, cluster_id_chunk
+                )
+            )
+
+            if len(futures) >= max_processes * 1.5:
+                finished, futures = ray.wait(futures, num_returns=1)
+                fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+                fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
+                if fitted_clusters.fragmented():
+                    fitted_clusters = qv.defragment(fitted_clusters)
+                fitted_cluster_members = qv.concatenate(
+                    [fitted_cluster_members, fitted_cluster_members_chunk]
+                )
+                if fitted_cluster_members.fragmented():
+                    fitted_cluster_members = qv.defragment(fitted_cluster_members)
+
+        while futures:
+            finished, futures = ray.wait(futures, num_returns=1)
+            fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+            fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
+            fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_chunk])
+            if fitted_clusters.fragmented():
+                fitted_clusters = qv.defragment(fitted_clusters)
+            if fitted_cluster_members.fragmented():
+                fitted_cluster_members = qv.defragment(fitted_cluster_members)
+    else:
+        for cluster_id in cluster_ids:
+            cluster_i = clusters.select("cluster_id", cluster_id)
+            cluster_members_i = cluster_members.select("cluster_id", cluster_id)
+            fitted_cluster_i, fitted_cluster_members_i = fit_cluster(
+                cluster_i, cluster_members_i, transformed_detections
+            )
+            fitted_clusters = qv.concatenate([fitted_clusters, fitted_cluster_i])
+            fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_i])
 
     return fitted_clusters, fitted_cluster_members

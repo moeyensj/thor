@@ -11,7 +11,7 @@ import ray
 from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
-from .clusters import cluster_and_link
+from .clusters import calculate_clustering_parameters_from_covariance, cluster_and_link
 from .config import Config, initialize_config
 from .observations.filters import (
     ObservationFilter,
@@ -238,6 +238,37 @@ def link_test_orbit(
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
 
+        # Compute clustering parameters from covariances if requested
+        vx_values = None
+        vy_values = None
+        radius = config.cluster_radius
+
+        if config.use_covariance_informed_clustering:
+            try:
+                logger.info("Generating test orbit ephemeris with covariances for clustering...")
+                test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
+                    filtered_observations,
+                    propagator_class=propagator_class,
+                    max_processes=config.max_processes,
+                    covariance=True,
+                )
+
+                # Calculate clustering parameters from covariances
+                # Pass transformed_detections directly (can be ray.ObjectRef or the table)
+                vx_values, vy_values, radius, metadata = calculate_clustering_parameters_from_covariance(
+                    test_orbit_ephemeris,
+                    transformed_detections,
+                    mahalanobis_distance=config.covariance_mahalanobis_distance,
+                    velocity_bin_separation=config.cluster_velocity_bin_separation,
+                    min_radius=config.cluster_min_radius,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to compute clustering parameters from covariances: {e}")
+                logger.warning("Falling back to explicit parameters from config.")
+                vx_values = None
+                vy_values = None
+                radius = config.cluster_radius
+
         # Run clustering
         clusters, cluster_members = cluster_and_link(
             transformed_detections,
@@ -245,7 +276,9 @@ def link_test_orbit(
             vy_range=[config.vy_min, config.vy_max],
             vx_bins=config.vx_bins,
             vy_bins=config.vy_bins,
-            radius=config.cluster_radius,
+            vx_values=vx_values,
+            vy_values=vy_values,
+            radius=radius,
             min_obs=config.cluster_min_obs,
             min_arc_length=config.cluster_min_arc_length,
             min_nights=config.cluster_min_nights,

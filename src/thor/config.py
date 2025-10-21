@@ -25,6 +25,8 @@ class Config:
     cluster_min_obs: int = 6
     cluster_min_arc_length: float = 1.0
     cluster_min_nights: int = 3
+    cluster_min_radius: float = 1 / 3600
+    cluster_velocity_bin_separation: float = 2.0
     cluster_algorithm: Literal["hotspot_2d", "dbscan"] = "dbscan"
     cluster_chunk_size: int = 1000
     use_covariance_informed_clustering: bool = True
