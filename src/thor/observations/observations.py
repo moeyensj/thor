@@ -8,7 +8,7 @@ import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
-from adam_core.observations import Exposures, PointSourceDetections
+from adam_core.observations import Exposures, PointSourceDetections, SourceCatalog
 from adam_core.observers import Observers, calculate_observing_night
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
@@ -22,6 +22,7 @@ __all__ = [
     "Observations",
     "convert_input_observations_to_observations",
     "input_observations_to_observations_worker",
+    "convert_source_catalog_to_observations",
 ]
 
 
@@ -48,7 +49,6 @@ def observations_iterator(
         A chunk of observations.
     """
     if isinstance(observations, str):
-
         # Discover if it's a single file or a folder using pathlib
         parquet_paths = []
         path = pathlib.Path(observations)
@@ -124,7 +124,6 @@ def _input_observations_iterator(
         A chunk of input observations.
     """
     if isinstance(input_observations, str):
-
         # Discover if it's a single file or a folder using pathlib
         parquet_paths = []
         path = pathlib.Path(input_observations)
@@ -173,6 +172,26 @@ def input_observations_to_observations_worker(
 input_observations_to_observations_worker_remote = ray.remote(input_observations_to_observations_worker)
 
 
+def _process_all_completed_futures(
+    futures: list,
+    output_observations: Optional["Observations"],
+    output_writer: Optional[pa.parquet.ParquetWriter],
+):
+    if output_observations is None:
+        output_observations = Observations.empty()
+    local_observations = Observations.empty()
+    finished, futures = ray.wait(futures, timeout=0, num_returns=0)
+    for finished_future in finished:
+        observations_chunk = ray.get(finished_future)
+        local_observations = qv.concatenate([local_observations, observations_chunk], defrag=True)
+
+    if output_writer is not None:
+        output_writer.write_table(local_observations.table)
+
+    output_observations = qv.concatenate([output_observations, local_observations], defrag=True)
+    return futures, output_observations
+
+
 def _process_next_future_result(
     futures: list,
     output_observations: "Observations",
@@ -217,14 +236,13 @@ def convert_input_observations_to_observations(
         futures: List[ray.ObjectRef] = []
         for input_observation_chunk in input_iterator:
             if len(futures) > max_processes * 1.5:
-                futures, output_observations = _process_next_future_result(
+                futures, output_observations = _process_all_completed_futures(
                     futures, output_observations, output_writer
                 )
-
             futures.append(input_observations_to_observations_worker_remote.remote(input_observation_chunk))
 
         while futures:
-            futures, output_observations = _process_next_future_result(
+            futures, output_observations = _process_all_completed_futures(
                 futures, output_observations, output_writer
             )
     else:
@@ -516,3 +534,103 @@ class Observations(qv.Table):
         observatory_codes = self.coordinates.origin.code
         for observatory_code in observatory_codes.unique().sort():
             yield observatory_code.as_py(), self.select_observatory_code(observatory_code)
+
+
+def source_catalog_to_observations_worker(
+    source_catalog: SourceCatalog,
+) -> Observations:
+    """
+    Convert a SourceCatalog to InputObservations.
+    """
+    source_catalog = qv.defragment(source_catalog)
+    # Convert from arcseconds to degrees
+    ra_sigma_deg = source_catalog.ra_sigma.to_numpy(zero_copy_only=False) / 3600.0
+    dec_sigma_deg = source_catalog.dec_sigma.to_numpy(zero_copy_only=False) / 3600.0
+    # Convert from correlation to covariance
+    ra_dec_cov = source_catalog.radec_corr * ra_sigma_deg * dec_sigma_deg
+
+    # Create the covariance matrices
+    covariance_matrices = np.full((len(source_catalog), 6, 6), np.nan)
+    covariance_matrices[:, 1, 1] = ra_sigma_deg**2
+    covariance_matrices[:, 2, 2] = dec_sigma_deg**2
+    covariance_matrices[:, 1, 2] = ra_dec_cov
+    covariance_matrices[:, 2, 1] = ra_dec_cov
+    covariances = CoordinateCovariances.from_matrix(covariance_matrices)
+
+    coordinates = SphericalCoordinates.from_kwargs(
+        lon=source_catalog.ra,
+        lat=source_catalog.dec,
+        time=source_catalog.time,
+        covariance=covariances,
+        origin=Origin.from_kwargs(code=source_catalog.observatory_code),
+        frame="equatorial",
+    )
+
+    photometry = Photometry.from_kwargs(
+        filter=source_catalog.filter,
+        mag=source_catalog.mag,
+        mag_sigma=source_catalog.mag_sigma,
+    )
+
+    nights = calculate_observing_night(source_catalog.observatory_code, source_catalog.time)
+    state_ids = calculate_state_id_hashes(coordinates)
+
+    observations = Observations.from_kwargs(
+        id=source_catalog.id,
+        exposure_id=source_catalog.exposure_id,
+        night=nights,
+        coordinates=coordinates,
+        photometry=photometry,
+        state_id=state_ids,
+    )
+
+    return observations
+
+
+source_catalog_to_observations_worker_remote = ray.remote(source_catalog_to_observations_worker)
+
+
+def _source_catalog_iterator(
+    source_catalog_path: str,
+    chunk_size: int = 1_000_000,
+) -> Iterator[SourceCatalog]:
+    """
+    Create an iterator that yields chunks of SourceCatalog from a file
+    """
+    source_catalog_file = pa.parquet.ParquetFile(source_catalog_path, memory_map=True)
+    for batch in source_catalog_file.iter_batches(batch_size=chunk_size):
+        table = SourceCatalog.from_pyarrow(pa.Table.from_batches([batch]))
+        yield table
+
+
+def convert_source_catalog_to_observations(
+    source_catalog_path: str,
+    observations_path: str,
+    chunk_size: int = 1_000_000,
+    max_processes: int = None,
+) -> None:
+    """
+    Convert a SourceCatalog to Observations by reading and writing from files in chunks
+    """
+    source_catalog_iterator = _source_catalog_iterator(source_catalog_path, chunk_size)
+    observations_writer = pa.parquet.ParquetWriter(observations_path, Observations.schema)
+    futures: List[ray.ObjectRef] = []
+    use_ray = initialize_use_ray(num_cpus=max_processes)
+    observations = Observations.empty()
+    if not use_ray:
+        for source_catalog_chunk in source_catalog_iterator:
+            observations_chunk = source_catalog_to_observations_worker(source_catalog_chunk)
+            observations_writer.write_table(observations_chunk.table)
+    else:
+        for source_catalog_chunk in source_catalog_iterator:
+            futures.append(source_catalog_to_observations_worker_remote.remote(source_catalog_chunk))
+            if len(futures) >= max_processes * 1.5:
+                futures, observations = _process_all_completed_futures(
+                    futures, observations, observations_writer
+                )
+    while futures:
+        futures, observations = _process_all_completed_futures(futures, observations, observations_writer)
+
+    observations_writer.close()
+
+    return observations_path
