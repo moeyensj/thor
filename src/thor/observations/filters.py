@@ -409,7 +409,7 @@ def filter_observations(
                 filtered_observations = qv.defragment(filtered_observations)
 
         if isinstance(observations, ray.ObjectRef):
-            ray.internal.free([observations])
+            del [observations]
             logger.info("Removed observations from the object store.")
 
     else:

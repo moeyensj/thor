@@ -689,8 +689,9 @@ def differential_correction(
                 od_orbit_members = qv.defragment(od_orbit_members)
 
         if len(refs_to_free) > 0:
-            ray.internal.free(refs_to_free)
-            logger.info(f"Removed {len(refs_to_free)} references from the object store.")
+            len_refs_to_free = len(refs_to_free)
+            del refs_to_free
+            logger.info(f"Removed {len_refs_to_free} references from the object store.")
 
     else:
         for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):

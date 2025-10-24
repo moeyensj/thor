@@ -361,8 +361,9 @@ def attribute_observations(
                 attributions = qv.defragment(attributions)
 
         if len(refs_to_free) > 0:
-            ray.internal.free(refs_to_free)
-            logger.info(f"Removed {len(refs_to_free)} references from the object store.")
+            len_refs_to_free = len(refs_to_free)
+            del refs_to_free
+            logger.info(f"Removed {len_refs_to_free} references from the object store.")
 
     else:
         for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
@@ -504,7 +505,7 @@ def merge_and_extend_orbits(
         orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_members.orbit_id.unique()))
 
         if use_ray:
-            ray.internal.free(refs_to_free)
+            del refs_to_free
             orbits_ref = ray.put(orbits)
             orbits = ray.get(orbits_ref)
             orbit_members_ref = ray.put(orbit_members)
@@ -597,7 +598,7 @@ def merge_and_extend_orbits(
             # Orbits will change with differential correction so we need to add them
             # to the object store at the start of each iteration (we cannot simply
             # pass references to the same immutable object)
-            ray.internal.free(refs_to_free)
+            del refs_to_free
             orbits_ref = ray.put(orbits)
             orbits = ray.get(orbits_ref)
             orbit_members_ref = ray.put(orbit_members)
@@ -617,7 +618,7 @@ def merge_and_extend_orbits(
     # change with differential correction so we need to add them again at
     # the start of the next iteration)
     if use_ray:
-        ray.internal.free(refs_to_free)
+        del refs_to_free
         logger.info("Removed orbits from the object store.")
 
     if len(odp_orbits) > 0:

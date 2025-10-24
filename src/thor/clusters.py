@@ -1148,8 +1148,9 @@ def cluster_and_link(
             if cluster_members.fragmented():
                 cluster_members = qv.defragment(cluster_members)
 
-        ray.internal.free(refs_to_free)
-        logger.info(f"Removed {len(refs_to_free)} references from the object store.")
+        len_refs_to_free = len(refs_to_free)
+        del refs_to_free
+        logger.info(f"Removed {len_refs_to_free} references from the object store.")
 
     else:
         for vxi_chunk, vyi_chunk in zip(_iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)):

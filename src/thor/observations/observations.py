@@ -176,23 +176,32 @@ def _process_all_completed_futures(
     futures: list,
     output_observations: Optional["Observations"],
     output_writer: Optional[pa.parquet.ParquetWriter],
+    num_returns: int = 100,
 ):
     print("Processing all completed futures")
     if output_observations is None:
         output_observations = Observations.empty()
     local_observations = Observations.empty()
-    finished, futures = ray.wait(futures, timeout=0, num_returns=100)
+    # Use smaller batches to control memory while still getting batched ray.get performance
+    finished, futures = ray.wait(futures, timeout=0, num_returns=min(num_returns, len(futures)))
     print(f"Found {len(finished)} completed futures")
+
+    # Stream writes when an output writer is provided to minimize memory use
+    if output_writer is not None:
+        # Batched ray.get for better throughput (8x faster than sequential gets)
+        chunks = ray.get(list(finished))
+        for i, observations_chunk in enumerate(chunks):
+            print(f"Writing observations chunk {i}")
+            output_writer.write_table(observations_chunk.table)
+        return futures, output_observations
+
+    # Otherwise, accumulate in memory (non-writer path)
     for i, finished_future in enumerate(finished):
         print(f"Processing completed future {i}")
         observations_chunk = ray.get(finished_future)
         print(f"Concatenating observations chunk {i}")
         local_observations = qv.concatenate([local_observations, observations_chunk], defrag=True)
         print(f"Concatenated observations chunk {i}")
-
-    if output_writer is not None:
-        print(f"Writing observations from {len(finished)} completed futures")
-        output_writer.write_table(local_observations.table)
 
     print("Concatenating local observations with output observations")
     output_observations = qv.concatenate([output_observations, local_observations], defrag=True)
@@ -219,6 +228,7 @@ def convert_input_observations_to_observations(
     input_observations: Union["InputObservations", str],
     config: Config,
     output_path: Optional[str] = None,
+    num_returns: int = 100,
 ) -> Union["Observations", str]:
     """
     Converts input observations to observations, optionally reading and writing from files.
@@ -245,7 +255,7 @@ def convert_input_observations_to_observations(
         for input_observation_chunk in input_iterator:
             if len(futures) > max_processes * 1.5:
                 futures, output_observations = _process_all_completed_futures(
-                    futures, output_observations, output_writer
+                    futures, output_observations, output_writer, num_returns=num_returns
                 )
             print(f"Queueing input observation chunk {i}")
             futures.append(input_observations_to_observations_worker_remote.remote(input_observation_chunk))
@@ -253,7 +263,7 @@ def convert_input_observations_to_observations(
 
         while futures:
             futures, output_observations = _process_all_completed_futures(
-                futures, output_observations, output_writer
+                futures, output_observations, output_writer, num_returns=num_returns
             )
     else:
         for input_observation_chunk in input_iterator:
@@ -622,6 +632,7 @@ def convert_source_catalog_to_observations(
     observations_path: str,
     chunk_size: int = 1_000_000,
     max_processes: int = None,
+    num_returns: int = 100,
 ) -> None:
     """
     Convert a SourceCatalog to Observations by reading and writing from files in chunks
@@ -643,10 +654,10 @@ def convert_source_catalog_to_observations(
             print(f"Queued source catalog chunk {i}")
             if len(futures) >= max_processes * 1.5:
                 futures, _ = _process_all_completed_futures(
-                    futures, None, observations_writer
+                    futures, None, observations_writer, num_returns=num_returns
                 )
     while futures:
-        futures, _ = _process_all_completed_futures(futures, None, observations_writer)
+        futures, _ = _process_all_completed_futures(futures, None, observations_writer, num_returns=num_returns)
 
     print("Closing output writer")
     observations_writer.close()
