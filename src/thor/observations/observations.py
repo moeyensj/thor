@@ -173,39 +173,29 @@ input_observations_to_observations_worker_remote = ray.remote(input_observations
 
 
 def _process_all_completed_futures(
-    futures: list,
-    output_observations: Optional["Observations"],
-    output_writer: Optional[pa.parquet.ParquetWriter],
-    num_returns: int = 100,
+    futures: List[ray.ObjectRef],
+    output_table: Optional[qv.Table] = None,
+    output_writer: Optional[pa.parquet.ParquetWriter] = None,
+    chunk_size: int = 100,
 ):
-    print("Processing all completed futures")
-    if output_observations is None:
-        output_observations = Observations.empty()
-    local_observations = Observations.empty()
-    # Use smaller batches to control memory while still getting batched ray.get performance
-    finished, futures = ray.wait(futures, timeout=0, num_returns=min(num_returns, len(futures)))
-    print(f"Found {len(finished)} completed futures")
 
-    # Stream writes when an output writer is provided to minimize memory use
-    if output_writer is not None:
-        # Batched ray.get for better throughput (8x faster than sequential gets)
-        chunks = ray.get(list(finished))
-        for i, observations_chunk in enumerate(chunks):
-            print(f"Writing observations chunk {i}")
-            output_writer.write_table(observations_chunk.table)
-        return futures, output_observations
-
-    # Otherwise, accumulate in memory (non-writer path)
-    for i, finished_future in enumerate(finished):
-        print(f"Processing completed future {i}")
-        observations_chunk = ray.get(finished_future)
-        print(f"Concatenating observations chunk {i}")
-        local_observations = qv.concatenate([local_observations, observations_chunk], defrag=True)
-        print(f"Concatenated observations chunk {i}")
-
-    print("Concatenating local observations with output observations")
-    output_observations = qv.concatenate([output_observations, local_observations], defrag=True)
-    return futures, output_observations
+    num_processed = 0
+    finished, futures = ray.wait(futures, timeout=0, num_returns=min(chunk_size, len(futures)))
+    while len(finished) > 0:
+        # Get the chunk of future results from object store all at once.
+        finished_chunks = ray.get(finished)
+        # Either accumulate in memory or on disk
+        for qv_table_chunk in finished_chunks:
+            if output_writer is not None:
+                logger.info(f"Writing chunk size {len(qv_table_chunk)}")
+                output_writer.write_table(qv_table_chunk.table)
+            if output_table is not None:
+                logger.info(f"Concatenating chunk size {len(qv_table_chunk)} to output table")
+                output_table = qv.concatenate([output_table, qv_table_chunk], defrag=True)
+            num_processed += 1
+        finished, futures = ray.wait(futures, timeout=0, num_returns=min(chunk_size, len(futures)))
+    logger.info(f"Processed {num_processed} futures")
+    return futures
 
 
 def _process_next_future_result(
@@ -227,17 +217,19 @@ def _process_next_future_result(
 def convert_input_observations_to_observations(
     input_observations: Union["InputObservations", str],
     config: Config,
+    output_table: Optional["Observations"] = None,
     output_path: Optional[str] = None,
-    num_returns: int = 100,
+    observations_chunk_size: int = 100000,
+    futures_chunk_size: int = 100,
 ) -> Union["Observations", str]:
     """
     Converts input observations to observations, optionally reading and writing from files.
 
     Use files as input / output when they are exceedingly large.
     """
-    input_iterator = _input_observations_iterator(input_observations)
-
-    output_observations = Observations.empty()
+    assert output_table is not None or output_path is not None, "Either output_table or output_path must be provided"
+    
+    input_iterator = _input_observations_iterator(input_observations, chunk_size=observations_chunk_size)
 
     output_writer = None
     if output_path is not None:
@@ -248,39 +240,45 @@ def convert_input_observations_to_observations(
     else:
         max_processes = config.max_processes
 
+
+    futures_kwargs = {
+        "chunk_size": futures_chunk_size,
+        "output_table": output_table,
+        "output_writer": output_writer,
+    }
+
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
         futures: List[ray.ObjectRef] = []
         i = 0
         for input_observation_chunk in input_iterator:
             if len(futures) > max_processes * 1.5:
-                futures, output_observations = _process_all_completed_futures(
-                    futures, output_observations, output_writer, num_returns=num_returns
+                futures = _process_all_completed_futures(
+                    futures, **futures_kwargs
                 )
             print(f"Queueing input observation chunk {i}")
             futures.append(input_observations_to_observations_worker_remote.remote(input_observation_chunk))
             i += 1
 
         while futures:
-            futures, output_observations = _process_all_completed_futures(
-                futures, output_observations, output_writer, num_returns=num_returns
+            futures = _process_all_completed_futures(
+                futures, **futures_kwargs
             )
     else:
         for input_observation_chunk in input_iterator:
             observations_chunk = input_observations_to_observations_worker(input_observation_chunk)
             if output_writer is not None:
                 output_writer.write_table(observations_chunk.table)
-            else:
-                output_observations = qv.concatenate([output_observations, observations_chunk])
-                if output_observations.fragmented():
-                    output_observations = qv.defragment(output_observations)
+            if output_table is not None:
+                output_table = qv.concatenate([output_table, observations_chunk])
+                if output_table.fragmented():
+                    output_table = qv.defragment(output_table)
 
-    print("Closing output writer")
-    if output_writer is not None and output_path is not None:
+    if output_writer is not None:
         output_writer.close()
         return output_path
 
-    return output_observations
+    return output_table
 
 
 class ObserversWithStates(qv.Table):
@@ -629,22 +627,40 @@ def _source_catalog_iterator(
 
 def convert_source_catalog_to_observations(
     source_catalog_path: str,
-    observations_path: str,
-    chunk_size: int = 1_000_000,
+    observations_path: Optional[str] = None,
+    observations_table: Optional["Observations"] = None,
+    source_catalog_chunk_size: int = 1_000_000,
+    futures_chunk_size: int = 100,
     max_processes: int = None,
-    num_returns: int = 100,
 ) -> None:
     """
     Convert a SourceCatalog to Observations by reading and writing from files in chunks
     """
-    source_catalog_iterator = _source_catalog_iterator(source_catalog_path, chunk_size)
-    observations_writer = pa.parquet.ParquetWriter(observations_path, Observations.schema)
+    assert observations_path is not None or observations_table is not None, "Either observations_path or observations_table must be provided"
+    
+    source_catalog_iterator = _source_catalog_iterator(source_catalog_path, source_catalog_chunk_size)
+    observations_writer = None
+    if observations_path is not None:
+        observations_writer = pa.parquet.ParquetWriter(observations_path, Observations.schema)
+    
+    output_table = None
+    if observations_table is not None:
+        output_table = observations_table
+
+    futures_kwargs = {
+        "chunk_size": futures_chunk_size,
+        "output_writer": observations_writer,
+        "output_table": output_table,
+    }
     futures: List[ray.ObjectRef] = []
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if not use_ray:
         for source_catalog_chunk in source_catalog_iterator:
             observations_chunk = source_catalog_to_observations_worker(source_catalog_chunk)
-            observations_writer.write_table(observations_chunk.table)
+            if observations_writer is not None:
+                observations_writer.write_table(observations_chunk.table)
+            if output_table is not None:
+                output_table = qv.concatenate([output_table, observations_chunk])
     else:
         i = 0
         for source_catalog_chunk in source_catalog_iterator:
@@ -653,13 +669,14 @@ def convert_source_catalog_to_observations(
             futures.append(source_catalog_to_observations_worker_remote.remote(source_catalog_chunk))
             print(f"Queued source catalog chunk {i}")
             if len(futures) >= max_processes * 1.5:
-                futures, _ = _process_all_completed_futures(
-                    futures, None, observations_writer, num_returns=num_returns
+                futures = _process_all_completed_futures(
+                    futures, **futures_kwargs
                 )
     while futures:
-        futures, _ = _process_all_completed_futures(futures, None, observations_writer, num_returns=num_returns)
+        futures = _process_all_completed_futures(futures, **futures_kwargs)
 
     print("Closing output writer")
-    observations_writer.close()
-    print("Output writer closed")
-    return observations_path
+    if observations_writer is not None:
+        observations_writer.close()
+        return observations_path
+    return output_table
