@@ -181,7 +181,6 @@ def _process_all_completed_futures(
     output_writer: Optional[pa.parquet.ParquetWriter] = None,
     chunk_size: int = 100,
 ):
-
     num_processed = 0
     finished, futures = ray.wait(futures, timeout=0, num_returns=min(chunk_size, len(futures)))
     while len(finished) > 0:
@@ -230,8 +229,10 @@ def convert_input_observations_to_observations(
 
     Use files as input / output when they are exceedingly large.
     """
-    assert output_table is not None or output_path is not None, "Either output_table or output_path must be provided"
-    
+    assert output_table is not None or output_path is not None, (
+        "Either output_table or output_path must be provided"
+    )
+
     input_iterator = _input_observations_iterator(input_observations, chunk_size=observations_chunk_size)
 
     output_writer = None
@@ -242,7 +243,6 @@ def convert_input_observations_to_observations(
         max_processes = mp.cpu_count()
     else:
         max_processes = config.max_processes
-
 
     futures_kwargs = {
         "chunk_size": futures_chunk_size,
@@ -256,17 +256,13 @@ def convert_input_observations_to_observations(
         i = 0
         for input_observation_chunk in input_iterator:
             if len(futures) > max_processes * 1.5:
-                futures = _process_all_completed_futures(
-                    futures, **futures_kwargs
-                )
+                futures = _process_all_completed_futures(futures, **futures_kwargs)
             print(f"Queueing input observation chunk {i}")
             futures.append(input_observations_to_observations_worker_remote.remote(input_observation_chunk))
             i += 1
 
         while futures:
-            futures = _process_all_completed_futures(
-                futures, **futures_kwargs
-            )
+            futures = _process_all_completed_futures(futures, **futures_kwargs)
     else:
         for input_observation_chunk in input_iterator:
             observations_chunk = input_observations_to_observations_worker(input_observation_chunk)
@@ -633,6 +629,7 @@ class QuivrTableSink:
     """
     Writes or concatenates Quivr tables to a file or a table using a non-blocking async loop.
     """
+
     def __init__(
         self,
         path: str,
@@ -644,6 +641,7 @@ class QuivrTableSink:
         compression: Optional[str] = None,
         use_dictionary: Optional[bool] = None,
         row_group_size: Optional[int] = None,
+        max_fetch: int = 10,
     ):
         self.path = path
         writer_kwargs = {}
@@ -658,8 +656,8 @@ class QuivrTableSink:
         self._inflight: List[ray.ObjectRef] = []
         self._stop = False
         self.poll_interval = poll_interval
-        self._capacity = capacity
         self._row_group_size = row_group_size
+        self._max_fetch = max_fetch
 
     async def enqueue(self, obs_ref_container):
         # Accept a nested container (e.g., [ObjectRef]) to avoid auto-dereference
@@ -679,7 +677,9 @@ class QuivrTableSink:
                 await asyncio.sleep(self.poll_interval)
                 continue
 
-            ready, not_ready = ray.wait(self._inflight, timeout=0, num_returns=min(len(self._inflight), 100))
+            ready, not_ready = ray.wait(
+                self._inflight, timeout=0, num_returns=min(len(self._inflight), self._max_fetch)
+            )
             if not ready:
                 logger.info("No ready chunks, sleeping")
                 await asyncio.sleep(self.poll_interval)
@@ -704,12 +704,14 @@ class QuivrTableSink:
     async def stop(self):
         self._stop = True
 
+
 def convert_source_catalog_to_observations(
     source_catalog_path: str,
     destination_path: str,
     callback: Optional[Callable] = None,
     source_catalog_chunk_size: int = 1_000_000,
     max_processes: int = None,
+    max_write_fetch_chunks: int = 100,
 ) -> str:
     """
     Convert a SourceCatalog to Observations by reading and writing from files in chunks
@@ -733,7 +735,6 @@ def convert_source_catalog_to_observations(
 
     source_catalog_iterator = _source_catalog_iterator(source_catalog_path, source_catalog_chunk_size)
 
-
     futures: List[ray.ObjectRef] = []
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if not use_ray:
@@ -750,13 +751,14 @@ def convert_source_catalog_to_observations(
             destination_path,
             Observations.empty(),
             callback=callback,
-            poll_interval=0.1,
+            poll_interval=1,
+            max_fetch=max_write_fetch_chunks,
         )
         sink_run_ref = quivr_table_sink.run.remote()
 
         # Bounded in-flight conversions
         limit = max(1, int(max_processes * 1.5)) if max_processes else 64
-        
+
         for source_catalog_chunk in source_catalog_iterator:
             while len(futures) >= limit:
                 ready, futures = ray.wait(futures, num_returns=1, timeout=0.1)
