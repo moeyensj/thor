@@ -39,7 +39,7 @@ dependencies = [
     "pyarrow>=14.0.0",
     "pyyaml>=5.1",
     "quivr>=0.8.1",
-    "ray[default]==2.49.1",
+    "ray[default]",
     "scikit-learn",
     "scipy",
     "spiceypy",
