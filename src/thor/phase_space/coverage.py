@@ -490,6 +490,63 @@ class OrbitVolumes(qv.Table):
         }
 
 
+def _attach_volume_covariances(
+    original_coords,
+    half_widths: np.ndarray,
+    coordinate_system: str,
+    covariance_scale: float = 1.0,
+):
+    """
+    Attach covariance matrices to coordinates based on volume half-widths, then convert to Cartesian.
+
+    This function converts the volume half-widths (defined in the original coordinate system)
+    into covariance matrices. The coordinate conversion to Cartesian will automatically
+    transform the covariances using the appropriate Jacobian.
+
+    Parameters
+    ----------
+    original_coords : Coordinates
+        Original coordinates in the coordinate system where half-widths are defined
+    half_widths : np.ndarray
+        Half-widths for each dimension (6,)
+    coordinate_system : str
+        The coordinate system of the half-widths
+    covariance_scale : float
+        Scale factor for converting half-widths to sigmas (default: 1.0 = 1-sigma)
+
+    Returns
+    -------
+    CartesianCoordinates
+        Cartesian coordinates with attached covariances
+    """
+    from adam_core.coordinates import CoordinateCovariances
+
+    n_points = len(original_coords)
+
+    # Convert half-widths to sigmas (standard deviations)
+    # half_widths are treated as 1-sigma by default, scale if needed
+    sigmas = half_widths / covariance_scale
+
+    # Create sigmas array (N, 6) - same sigmas for all orbits
+    sigmas_array = np.tile(sigmas, (n_points, 1))
+
+    # Create covariances from sigmas (creates diagonal covariance matrices)
+    covariances = CoordinateCovariances.from_sigmas(sigmas_array)
+
+    # Attach covariances to the original coordinates
+    coords_with_cov = original_coords.set_column("covariance", covariances)
+
+    # Convert to Cartesian - this will automatically transform the covariances!
+    from adam_core.coordinates import CartesianCoordinates
+
+    if not isinstance(coords_with_cov, CartesianCoordinates):
+        cartesian_with_cov = coords_with_cov.to_cartesian()
+    else:
+        cartesian_with_cov = coords_with_cov
+
+    return cartesian_with_cov
+
+
 def generate_even_coverage_test_orbits(
     n_orbits: int,
     half_widths: Optional[np.ndarray] = None,
@@ -498,6 +555,8 @@ def generate_even_coverage_test_orbits(
     asteroid_type: Optional[str] = None,
     epoch: Optional[Timestamp] = None,
     frame: str = "ecliptic",
+    attach_covariances: bool = True,
+    covariance_scale: float = 1.0,
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
     Generate test orbits with even phase space coverage using uniform grid spacing.
@@ -531,6 +590,13 @@ def generate_even_coverage_test_orbits(
         Epoch for the orbits. Default: J2000.0
     frame : str, optional
         Coordinate frame. Default: "ecliptic"
+    attach_covariances : bool, optional
+        If True, attach covariance matrices to the test orbit coordinates based on the
+        volume half-widths. Default: True
+    covariance_scale : float, optional
+        Scale factor for converting half-widths to covariance sigmas. Default: 1.0
+        (treats half-widths as 1-sigma uncertainties). Use 3.0 if half-widths
+        represent 3-sigma confidence intervals.
 
     Returns
     -------
@@ -607,10 +673,21 @@ def generate_even_coverage_test_orbits(
     # Convert to Cartesian coordinates (required by TestOrbits)
     from adam_core.coordinates import CartesianCoordinates
 
-    if not isinstance(coordinates, CartesianCoordinates):
-        cartesian_coords = coordinates.to_cartesian()
+    if attach_covariances:
+        # Attach covariances in original coordinate system, then convert to Cartesian
+        # (conversion will transform covariances automatically)
+        cartesian_coords = _attach_volume_covariances(
+            coordinates,
+            half_widths,
+            coordinate_system,
+            covariance_scale,
+        )
     else:
-        cartesian_coords = coordinates
+        # Just convert to Cartesian without covariances
+        if not isinstance(coordinates, CartesianCoordinates):
+            cartesian_coords = coordinates.to_cartesian()
+        else:
+            cartesian_coords = coordinates
 
     # Generate orbit IDs
     orbit_ids = [f"even_coverage_{i:04d}" for i in range(n_points)]
@@ -770,6 +847,8 @@ def generate_custom_grid_test_orbits(
     asteroid_type: Optional[str] = None,
     epoch: Optional[Timestamp] = None,
     frame: str = "ecliptic",
+    attach_covariances: bool = True,
+    covariance_scale: float = 1.0,
 ) -> Tuple[TestOrbits, OrbitVolumes, Dict]:
     """
     Generate test orbits using custom grid dimensions for precise control over sampling density.
@@ -806,6 +885,13 @@ def generate_custom_grid_test_orbits(
         Epoch for the orbits. Default: J2000.0
     frame : str, optional
         Coordinate frame. Default: "ecliptic"
+    attach_covariances : bool, optional
+        If True, attach covariance matrices to the test orbit coordinates based on the
+        volume half-widths. Default: True
+    covariance_scale : float, optional
+        Scale factor for converting half-widths to covariance sigmas. Default: 1.0
+        (treats half-widths as 1-sigma uncertainties). Use 3.0 if half-widths
+        represent 3-sigma confidence intervals.
 
     Returns
     -------
@@ -903,10 +989,21 @@ def generate_custom_grid_test_orbits(
     # Convert to Cartesian coordinates (required by TestOrbits)
     from adam_core.coordinates import CartesianCoordinates
 
-    if not isinstance(coordinates, CartesianCoordinates):
-        cartesian_coords = coordinates.to_cartesian()
+    if attach_covariances:
+        # Attach covariances in original coordinate system, then convert to Cartesian
+        # (conversion will transform covariances automatically)
+        cartesian_coords = _attach_volume_covariances(
+            coordinates,
+            half_widths,
+            coordinate_system,
+            covariance_scale,
+        )
     else:
-        cartesian_coords = coordinates
+        # Just convert to Cartesian without covariances
+        if not isinstance(coordinates, CartesianCoordinates):
+            cartesian_coords = coordinates.to_cartesian()
+        else:
+            cartesian_coords = coordinates
 
     # Generate orbit IDs
     orbit_ids = [f"custom_grid_{i:04d}" for i in range(n_points)]
