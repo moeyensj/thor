@@ -29,7 +29,7 @@ dependencies = [
     "adam-assist @ git+https://github.com/B612-Asteroid-Institute/adam-assist.git@04014c6145521d6599c838e99ba854dd1974879f",
     "astropy>=5.3.1",
     "astroquery",
-    "difi>=2.0rc1",
+    "difi>=2.0rc2",
     "healpy",
     "jax",
     "numpy",
