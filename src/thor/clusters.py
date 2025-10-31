@@ -869,6 +869,12 @@ def calculate_clustering_parameters_from_covariance(
     # Create rectangular velocity grid
     vx_grid = np.linspace(vx_min, vx_max, n_vx_bins)
     vy_grid = np.linspace(vy_min, vy_max, n_vy_bins)
+    # Create rectangular velocity grid and include the zero velocity point
+    if not np.any(np.isclose(vx_grid, 0.0, atol=1e-6)):
+        vx_grid = np.sort(np.append(vx_grid, 0.0))
+    if not np.any(np.isclose(vy_grid, 0.0, atol=1e-6)):
+        vy_grid = np.sort(np.append(vy_grid, 0.0))
+
     vxx, vyy = np.meshgrid(vx_grid, vy_grid)
 
     # Flatten the grid
