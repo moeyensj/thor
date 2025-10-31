@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
+
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Ephemeris, Orbits

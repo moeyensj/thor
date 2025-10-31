@@ -7,6 +7,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
+
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
 from adam_core.observations import Exposures, PointSourceDetections, SourceCatalog
 from adam_core.observers import Observers, calculate_observing_night
@@ -642,9 +643,7 @@ def convert_source_catalog_to_observations(
             futures.append(source_catalog_to_observations_worker_remote.remote(source_catalog_chunk))
             print(f"Queued source catalog chunk {i}")
             if len(futures) >= max_processes * 1.5:
-                futures, _ = _process_all_completed_futures(
-                    futures, None, observations_writer
-                )
+                futures, _ = _process_all_completed_futures(futures, None, observations_writer)
     while futures:
         futures, _ = _process_all_completed_futures(futures, None, observations_writer)
 

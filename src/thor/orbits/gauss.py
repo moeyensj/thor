@@ -1,4 +1,7 @@
 import numpy as np
+from numba import jit
+from numpy import roots
+
 from adam_core.constants import Constants as c
 from adam_core.coordinates import (
     CartesianCoordinates,
@@ -8,8 +11,6 @@ from adam_core.coordinates import (
 )
 from adam_core.orbits import Orbits
 from adam_core.time import Timestamp
-from numba import jit
-from numpy import roots
 
 from .gibbs import calcGibbs
 from .herrick_gibbs import calcHerrickGibbs

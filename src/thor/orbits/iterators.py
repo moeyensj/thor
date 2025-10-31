@@ -1,4 +1,5 @@
 import numpy as np
+
 from adam_core.constants import Constants as c
 from adam_core.dynamics.lagrange import (
     apply_lagrange_coefficients,

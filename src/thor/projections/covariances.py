@@ -1,8 +1,9 @@
 import numpy as np
 import pyarrow as pa
 import quivr as qv
-from adam_core.coordinates.covariances import sigmas_to_covariances
 from typing_extensions import Self
+
+from adam_core.coordinates.covariances import sigmas_to_covariances
 
 
 class ProjectionCovariances(qv.Table):

@@ -1,4 +1,5 @@
 import numpy as np
+
 from adam_core.coordinates import CartesianCoordinates, Origin, SphericalCoordinates
 from adam_core.time import Timestamp
 

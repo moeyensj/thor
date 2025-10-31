@@ -9,6 +9,7 @@ import numpy as np
 import pyarrow.parquet as pq
 import quivr as qv
 import ray
+
 from adam_core.coordinates import SphericalCoordinates
 from adam_core.coordinates.residuals import Residuals
 from adam_core.propagator import Propagator

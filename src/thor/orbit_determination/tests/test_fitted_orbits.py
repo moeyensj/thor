@@ -4,8 +4,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from adam_core.coordinates import CartesianCoordinates
 
+from adam_core.coordinates import CartesianCoordinates
 from thor.orbit_determination.fitted_orbits import (
     FittedOrbitMembers,
     FittedOrbits,

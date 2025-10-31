@@ -5,6 +5,7 @@ from typing import Optional, Type, Union
 
 import quivr as qv
 import ray
+
 from adam_core.coordinates import (
     CartesianCoordinates,
     OriginCodes,
