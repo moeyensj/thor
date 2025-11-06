@@ -18,11 +18,9 @@ from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
 
-from .observations.observations import Observations
 from .orbit import TestOrbitEphemeris
 from .projections import GnomonicCoordinates
 from .range_and_transform import TransformedDetections
-from .utils.linkages import sort_by_id_and_time
 
 # Disable GPU until the GPU-accelerated clustering codes
 # are better tested and implemented
@@ -54,9 +52,9 @@ def hash_obs_ids(obs_ids: List[str]) -> str:
 
 
 def drop_duplicate_clusters(
-    clusters: "Clusters",
-    cluster_members: "ClusterMembers",
-) -> Tuple["Clusters", "ClusterMembers"]:
+    clusters: "FittedClusters",
+    cluster_members: "FittedClusterMembers",
+) -> Tuple["FittedClusters", "FittedClusterMembers"]:
     """
     Drop clusters that have identical sets of observation IDs.
 
@@ -73,6 +71,14 @@ def drop_duplicate_clusters(
         A table of clusters with duplicate clusters removed.
         The cluster members belonging to those clusters.
     """
+    if isinstance(clusters, ray.ObjectRef):
+        clusters = ray.get(clusters)
+    if isinstance(cluster_members, ray.ObjectRef):
+        cluster_members = ray.get(cluster_members)
+
+    if len(clusters) == 0 or len(cluster_members) == 0:
+        return FittedClusters.empty(), FittedClusterMembers.empty()
+
     # Ensure clusters and cluster members are sorted by cluster id
     # by spot checking the first few and last few rows are
     # in sorted order
@@ -623,25 +629,32 @@ def cluster_velocity(
 def cluster_velocity_worker(
     vx: npt.NDArray[np.float64],
     vy: npt.NDArray[np.float64],
-    obs_ids: npt.ArrayLike,
-    x: npt.NDArray[np.float64],
-    y: npt.NDArray[np.float64],
-    dt: npt.NDArray[np.float64],
-    nights: npt.NDArray[np.int64],
+    transformed_detections: TransformedDetections,
     radius: float = 1 / 3600,
     min_obs: int = 6,
     min_arc_length: float = 1.5,
     min_nights: int = 3,
+    rchi2_threshold: float = 1e4,
     alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
-) -> Tuple[Clusters, ClusterMembers]:
+) -> Tuple[FittedClusters, FittedClusterMembers]:
     """
     Helper function for parallelizing cluster_velocity. This function takes a
     batch or chunk of velocities and returns the clusters and cluster members
     for that batch.
 
     """
-    clusters = Clusters.empty()
-    cluster_members = ClusterMembers.empty()
+    time_start = time.perf_counter()
+
+    obs_ids = transformed_detections.id.to_numpy(zero_copy_only=False)
+    nights = transformed_detections.night.to_numpy(zero_copy_only=False)
+    x = transformed_detections.coordinates.theta_x.to_numpy(zero_copy_only=False)
+    y = transformed_detections.coordinates.theta_y.to_numpy(zero_copy_only=False)
+    mjd = transformed_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
+    dt = mjd - mjd.min()
+
+    fitted_clusters = FittedClusters.empty()
+    fitted_cluster_members = FittedClusterMembers.empty()
+
     for vx_i, vy_i in zip(vx, vy):
         clusters_i, cluster_members_i = cluster_velocity(
             obs_ids,
@@ -657,15 +670,46 @@ def cluster_velocity_worker(
             min_nights=min_nights,
             alg=alg,
         )
-        clusters = qv.concatenate([clusters, clusters_i])
-        if clusters.fragmented():
-            clusters = qv.defragment(clusters)
+        if len(clusters_i) == 0:
+            continue
 
-        cluster_members = qv.concatenate([cluster_members, cluster_members_i])
-        if cluster_members.fragmented():
-            cluster_members = qv.defragment(cluster_members)
+        # Fit each cluster found for this velocity
+        fitted_cluster_i, fitted_cluster_members_i = fit_cluster_worker(
+            clusters_i, cluster_members_i, transformed_detections, clusters_i.cluster_id.to_pylist()
+        )
 
-    return clusters, cluster_members
+        # Filter out clusters with rchi2 greater than the threshold
+        fitted_cluster_i = fitted_cluster_i.apply_mask(pc.less_equal(fitted_cluster_i.rchi2, rchi2_threshold))
+        fitted_cluster_members_i = fitted_cluster_members_i.apply_mask(
+            pc.is_in(fitted_cluster_members_i.cluster_id, fitted_cluster_i.cluster_id)
+        )
+
+        fitted_clusters = qv.concatenate([fitted_clusters, fitted_cluster_i])
+        if fitted_clusters.fragmented():
+            fitted_clusters = qv.defragment(fitted_clusters)
+        fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_i])
+        if fitted_cluster_members.fragmented():
+            fitted_cluster_members = qv.defragment(fitted_cluster_members)
+
+    time_end = time.perf_counter()
+    logger.info(
+        f"Found {len(fitted_clusters)} clusters for {len(vx)} velocity combinations in {time_end - time_start:.3f}s"
+    )
+
+    time_start_drop = time.perf_counter()
+    logger.info("Removing duplicate clusters...")
+    fitted_clusters = qv.defragment(fitted_clusters)
+    fitted_cluster_members = qv.defragment(fitted_cluster_members)
+    fitted_clusters = fitted_clusters.sort_by([("cluster_id", "ascending")])
+    fitted_cluster_members = fitted_cluster_members.sort_by([("cluster_id", "ascending")])
+
+    num_clusters = len(fitted_clusters)
+    fitted_clusters, fitted_cluster_members = drop_duplicate_clusters(fitted_clusters, fitted_cluster_members)
+    logger.info(f"Removed {num_clusters - len(fitted_clusters)} duplicate clusters.")
+    time_end_drop = time.perf_counter()
+    logger.info(f"Cluster deduplication completed in {time_end_drop - time_start_drop:.3f} seconds.")
+
+    return fitted_clusters, fitted_cluster_members
 
 
 cluster_velocity_remote = ray.remote(cluster_velocity_worker)
@@ -937,6 +981,7 @@ def cluster_and_link(
     min_obs: int = 5,
     min_arc_length: float = 1.0,
     min_nights: int = 3,
+    rchi2_threshold: float = 1e4,
     alg: Literal["hotspot_2d", "dbscan"] = "dbscan",
     chunk_size: int = 1000,
     max_processes: Optional[int] = 1,
@@ -977,6 +1022,8 @@ def cluster_and_link(
         Minimum arc length in days for a cluster to be accepted.
     min_nights : int, optional
         Minimum number of unique nights a cluster must span.
+    rchi2_threshold : float, optional
+        The maximum chi2 value for a cluster to be accepted.
     alg : str, optional
         Algorithm to use. Can be "dbscan" or "hotspot_2d".
     chunk_size : int, optional
@@ -1081,38 +1128,22 @@ def cluster_and_link(
         logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
         return Clusters.empty(), ClusterMembers.empty()
 
-    clusters = Clusters.empty()
-    cluster_members = ClusterMembers.empty()
-
-    # Extract useful quantities
-    obs_ids = observations.id.to_numpy(zero_copy_only=False)
-    nights = observations.night.to_numpy(zero_copy_only=False)
-    theta_x = observations.coordinates.theta_x.to_numpy(zero_copy_only=False)
-    theta_y = observations.coordinates.theta_y.to_numpy(zero_copy_only=False)
-    mjd = observations.coordinates.time.mjd().to_numpy(zero_copy_only=False)
-
-    # Select detections in first exposure
-    first = np.where(mjd == mjd.min())[0]
-    mjd0 = mjd[first][0]
-    dt = mjd - mjd0
+    # Accumulate fitted clusters
+    fitted_clusters = FittedClusters.empty()
+    fitted_cluster_members = FittedClusterMembers.empty()
 
     if max_processes is None:
         max_processes = mp.cpu_count()
 
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
-        # Put all arrays (which can be large) in ray's
-        # local object store ahead of time
-        obs_ids_ref = ray.put(obs_ids)
-        nights_ref = ray.put(nights)
-        theta_x_ref = ray.put(theta_x)
-        theta_y_ref = ray.put(theta_y)
-        dt_ref = ray.put(dt)
-        refs_to_free = [obs_ids_ref, nights_ref, theta_x_ref, theta_y_ref, dt_ref]
-        logger.info("Placed gnomonic coordinate arrays in the object store.")
-        # TODO: transformed detections are already in the object store so we might
-        # want to instead pass references to those rather than extract arrays
-        # from them and put them in the object store again.
+        # Put transformed detections in the Ray object store
+        if isinstance(observations, ray.ObjectRef):
+            transformed_ref = observations
+        else:
+            transformed_ref = ray.put(observations)
+            logger.info("Placed transformed detections in the object store.")
+
         futures = []
         for vxi_chunk, vyi_chunk in zip(_iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)):
 
@@ -1120,73 +1151,66 @@ def cluster_and_link(
                 cluster_velocity_remote.remote(
                     vxi_chunk,
                     vyi_chunk,
-                    obs_ids_ref,
-                    theta_x_ref,
-                    theta_y_ref,
-                    dt_ref,
-                    nights_ref,
+                    transformed_ref,
                     radius=radius,
                     min_obs=min_obs,
                     min_arc_length=min_arc_length,
                     min_nights=min_nights,
+                    rchi2_threshold=rchi2_threshold,
                     alg=alg,
                 )
             )
 
             if len(futures) >= max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
-                clusters_chunk, cluster_members_chunk = ray.get(finished[0])
-                clusters = qv.concatenate([clusters, clusters_chunk])
-                if clusters.fragmented():
-                    clusters = qv.defragment(clusters)
+                fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+                fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
+                if fitted_clusters.fragmented():
+                    fitted_clusters = qv.defragment(fitted_clusters)
 
-                cluster_members = qv.concatenate([cluster_members, cluster_members_chunk])
-                if cluster_members.fragmented():
-                    cluster_members = qv.defragment(cluster_members)
+                fitted_cluster_members = qv.concatenate(
+                    [fitted_cluster_members, fitted_cluster_members_chunk]
+                )
+                if fitted_cluster_members.fragmented():
+                    fitted_cluster_members = qv.defragment(fitted_cluster_members)
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
-            clusters_chunk, cluster_members_chunk = ray.get(finished[0])
-            clusters = qv.concatenate([clusters, clusters_chunk])
-            if clusters.fragmented():
-                clusters = qv.defragment(clusters)
+            fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+            fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
+            if fitted_clusters.fragmented():
+                fitted_clusters = qv.defragment(fitted_clusters)
 
-            cluster_members = qv.concatenate([cluster_members, cluster_members_chunk])
-            if cluster_members.fragmented():
-                cluster_members = qv.defragment(cluster_members)
-
-        ray.internal.free(refs_to_free)
-        logger.info(f"Removed {len(refs_to_free)} references from the object store.")
+            fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_chunk])
+            if fitted_cluster_members.fragmented():
+                fitted_cluster_members = qv.defragment(fitted_cluster_members)
 
     else:
         for vxi_chunk, vyi_chunk in zip(_iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)):
-            clusters_i, cluster_members_i = cluster_velocity_worker(
+            fitted_clusters_i, fitted_cluster_members_i = cluster_velocity_worker(
                 vxi_chunk,
                 vyi_chunk,
-                obs_ids,
-                theta_x,
-                theta_y,
-                dt,
-                nights,
+                observations,
                 radius=radius,
                 min_obs=min_obs,
                 min_arc_length=min_arc_length,
                 min_nights=min_nights,
+                rchi2_threshold=rchi2_threshold,
                 alg=alg,
             )
 
-            clusters = qv.concatenate([clusters, clusters_i])
-            if clusters.fragmented():
-                clusters = qv.defragment(clusters)
+            fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_i])
+            if fitted_clusters.fragmented():
+                fitted_clusters = qv.defragment(fitted_clusters)
 
-            cluster_members = qv.concatenate([cluster_members, cluster_members_i])
-            if cluster_members.fragmented():
-                cluster_members = qv.defragment(cluster_members)
+            fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_i])
+            if fitted_cluster_members.fragmented():
+                fitted_cluster_members = qv.defragment(fitted_cluster_members)
 
-    num_clusters = len(clusters)
+    num_clusters = len(fitted_clusters)
     if num_clusters == 0:
         time_end_cluster = time.perf_counter()
-        logger.info(f"Found {len(clusters)} clusters, exiting early.")
+        logger.info(f"Found {len(fitted_clusters)} clusters, exiting early.")
         logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
         return FittedClusters.empty(), FittedClusterMembers.empty()
 
@@ -1198,35 +1222,15 @@ def cluster_and_link(
     # Drop duplicate clusters
     time_start_drop = time.perf_counter()
     logger.info("Removing duplicate clusters...")
-    clusters = qv.defragment(clusters)
-    cluster_members = qv.defragment(cluster_members)
-    clusters = clusters.sort_by([("cluster_id", "ascending")])
-    cluster_members = cluster_members.sort_by([("cluster_id", "ascending")])
+    fitted_clusters = qv.defragment(fitted_clusters)
+    fitted_cluster_members = qv.defragment(fitted_cluster_members)
+    fitted_clusters = fitted_clusters.sort_by([("cluster_id", "ascending")])
+    fitted_cluster_members = fitted_cluster_members.sort_by([("cluster_id", "ascending")])
 
-    clusters, cluster_members = drop_duplicate_clusters(clusters, cluster_members)
-    logger.info(f"Removed {num_clusters - len(clusters)} duplicate clusters.")
+    fitted_clusters, fitted_cluster_members = drop_duplicate_clusters(fitted_clusters, fitted_cluster_members)
+    logger.info(f"Removed {num_clusters - len(fitted_clusters)} duplicate clusters.")
     time_end_drop = time.perf_counter()
     logger.info(f"Cluster deduplication completed in {time_end_drop - time_start_drop:.3f} seconds.")
-
-    # Sort clusters by cluster ID and observation time
-    clusters, cluster_members = sort_by_id_and_time(clusters, cluster_members, observations, "cluster_id")
-
-    # Sort cluster members by cluster ID and observation time
-    cluster_members = cluster_members.sort_by([("cluster_id", "ascending")])
-
-    logger.info(f"Fitting {len(clusters)} clusters...")
-    time_start_fit = time.perf_counter()
-
-    fitted_clusters, fitted_cluster_members = fit_clusters(
-        clusters, cluster_members, observations, chunk_size=chunk_size, max_processes=max_processes
-    )
-    time_end_fit = time.perf_counter()
-    logger.info(f"Fitting completed in {time_end_fit - time_start_fit:.3f} seconds.")
-
-    fitted_clusters = fitted_clusters.apply_mask(pc.less_equal(fitted_clusters.rchi2, 1e4))
-    fitted_cluster_members = fitted_cluster_members.apply_mask(
-        pc.is_in(fitted_cluster_members.cluster_id, fitted_clusters.cluster_id)
-    )
 
     time_end_cluster = time.perf_counter()
     logger.info(f"Found {len(fitted_clusters)} clusters.")

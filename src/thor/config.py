@@ -25,6 +25,7 @@ class Config:
     cluster_min_obs: int = 6
     cluster_min_arc_length: float = 1.0
     cluster_min_nights: int = 3
+    cluster_rchi2_threshold: float = 1e4
     cluster_min_radius: float = 1 / 3600
     cluster_velocity_bin_separation: float = 2.0
     cluster_algorithm: Literal["hotspot_2d", "dbscan"] = "dbscan"
@@ -34,13 +35,13 @@ class Config:
     iod_min_obs: int = 6
     iod_min_arc_length: float = 1.0
     iod_contamination_percentage: float = 20.0
-    iod_rchi2_threshold: float = 100000
+    iod_rchi2_threshold: float = 1e3
     iod_observation_selection_method: Literal["combinations", "first+middle+last"] = "combinations"
     iod_chunk_size: int = 10
     od_min_obs: int = 6
     od_min_arc_length: float = 1.0
     od_contamination_percentage: float = 20.0
-    od_rchi2_threshold: float = 10
+    od_rchi2_threshold: float = 1e2
     od_delta: float = 1e-6
     od_max_iter: int = 10
     od_chunk_size: int = 10
