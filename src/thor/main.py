@@ -128,8 +128,6 @@ def link_test_orbit(
         object_store_bytes=config.ray_memory_bytes or None,
     )
 
-    refs_to_free = []
-
     checkpoint = load_initial_checkpoint_values(test_orbit_directory)
     logger.info(f"Starting at stage: {checkpoint.stage}")
 
@@ -180,7 +178,6 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -196,7 +193,6 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
 
         # Range and transform the observations
@@ -222,11 +218,9 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(transformed_detections, ray.ObjectRef):
                 transformed_detections = ray.put(transformed_detections)
-                refs_to_free.append(transformed_detections)
                 logger.info("Placed transformed detections in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -306,15 +300,12 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(clusters, ray.ObjectRef):
                 clusters = ray.put(clusters)
-                refs_to_free.append(clusters)
                 logger.info("Placed clusters in the object store.")
             if not isinstance(cluster_members, ray.ObjectRef):
                 cluster_members = ray.put(cluster_members)
-                refs_to_free.append(cluster_members)
                 logger.info("Placed cluster members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -365,15 +356,12 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(iod_orbits, ray.ObjectRef):
                 iod_orbits = ray.put(iod_orbits)
-                refs_to_free.append(iod_orbits)
                 logger.info("Placed initial orbits in the object store.")
             if not isinstance(iod_orbit_members, ray.ObjectRef):
                 iod_orbit_members = ray.put(iod_orbit_members)
-                refs_to_free.append(iod_orbit_members)
                 logger.info("Placed initial orbit members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -425,15 +413,12 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(od_orbits, ray.ObjectRef):
                 od_orbits = ray.put(od_orbits)
-                refs_to_free.append(od_orbits)
                 logger.info("Placed differentially corrected orbits in the object store.")
             if not isinstance(od_orbit_members, ray.ObjectRef):
                 od_orbit_members = ray.put(od_orbit_members)
-                refs_to_free.append(od_orbit_members)
                 logger.info("Placed differentially corrected orbit members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -468,10 +453,6 @@ def link_test_orbit(
             method="central",
             observations_chunk_size=100000,
         )
-
-        if use_ray and len(refs_to_free) > 0:
-            ray.internal.free(refs_to_free)
-            logger.info(f"Removed {len(refs_to_free)} references from the object store.")
 
         recovered_orbits_path = None
         recovered_orbit_members_path = None
