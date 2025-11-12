@@ -182,15 +182,12 @@ def range_and_transform(
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
-            refs_to_free = []
             if observations_ref is None:
                 observations_ref = ray.put(observations)
-                refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
 
             if not isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ray.put(ephemeris)
-                refs_to_free.append(ephemeris_ref)
                 logger.info("Placed ephemeris in the object store.")
             else:
                 ephemeris_ref = ephemeris
@@ -221,11 +218,6 @@ def range_and_transform(
                 transformed_detections = qv.concatenate([transformed_detections, ray.get(finished[0])])
                 if transformed_detections.fragmented():
                     transformed_detections = qv.defragment(transformed_detections)
-
-            if len(refs_to_free) > 0:
-                len_refs_to_free = len(refs_to_free)
-                del refs_to_free
-                logger.info(f"Removed {len_refs_to_free} references from the object store.")
 
         else:
             # Get state IDs

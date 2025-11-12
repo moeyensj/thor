@@ -622,28 +622,23 @@ def differential_correction(
 
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
-        refs_to_free = []
 
         orbit_ids_ref = ray.put(orbit_ids)
         orbit_ids = ray.get(orbit_ids_ref)
-        refs_to_free.append(orbit_ids_ref)
         logger.info("Placed orbit IDs in the object store.")
 
         if orbits_ref is None:
             orbits_ref = ray.put(orbits)
             orbits = ray.get(orbits_ref)
-            refs_to_free.append(orbits_ref)
             logger.info("Placed orbits in the object store.")
 
         if orbit_members_ref is None:
             orbit_members_ref = ray.put(orbit_members)
             orbit_members = ray.get(orbit_members_ref)
-            refs_to_free.append(orbit_members_ref)
             logger.info("Placed orbit members in the object store.")
 
         if observations_ref is None:
             observations_ref = ray.put(observations)
-            refs_to_free.append(observations_ref)
             observations = ray.get(observations_ref)
             logger.info("Placed observations in the object store.")
 
@@ -687,11 +682,6 @@ def differential_correction(
             od_orbit_members = qv.concatenate([od_orbit_members, od_orbit_members_chunk])
             if od_orbit_members.fragmented():
                 od_orbit_members = qv.defragment(od_orbit_members)
-
-        if len(refs_to_free) > 0:
-            len_refs_to_free = len(refs_to_free)
-            del refs_to_free
-            logger.info(f"Removed {len_refs_to_free} references from the object store.")
 
     else:
         for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):

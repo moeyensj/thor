@@ -11,7 +11,7 @@ import ray
 from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
-from .clusters import calculate_clustering_parameters_from_covariance, cluster_and_link
+from .clusters import cluster_and_link
 from .config import Config, initialize_config
 from .observations.filters import (
     ObservationFilter,
@@ -127,8 +127,6 @@ def link_test_orbit(
         object_store_bytes=config.ray_memory_bytes or None,
     )
 
-    refs_to_free = []
-
     checkpoint = load_initial_checkpoint_values(test_orbit_directory)
     logger.info(f"Starting at stage: {checkpoint.stage}")
 
@@ -179,7 +177,6 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -195,7 +192,6 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
 
         # Range and transform the observations
@@ -221,11 +217,9 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(transformed_detections, ray.ObjectRef):
                 transformed_detections = ray.put(transformed_detections)
-                refs_to_free.append(transformed_detections)
                 logger.info("Placed transformed detections in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -238,51 +232,33 @@ def link_test_orbit(
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
 
-        # Compute clustering parameters from covariances if requested
-        vx_values = None
-        vy_values = None
-        radius = config.cluster_radius
-
+        # Generate test orbit ephemeris with covariances if requested
+        test_orbit_ephemeris = None
         if config.use_covariance_informed_clustering:
-            try:
-                logger.info("Generating test orbit ephemeris with covariances for clustering...")
-                test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
-                    filtered_observations,
-                    propagator_class=propagator_class,
-                    max_processes=config.max_processes,
-                    covariance=True,
-                )
+            logger.info("Generating test orbit ephemeris with covariances for clustering...")
+            test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
+                filtered_observations,
+                propagator_class=propagator_class,
+                max_processes=config.max_processes,
+                covariance=True,
+            )
 
-                # Calculate clustering parameters from covariances
-                # Pass transformed_detections directly (can be ray.ObjectRef or the table)
-                vx_values, vy_values, radius, metadata = calculate_clustering_parameters_from_covariance(
-                    test_orbit_ephemeris,
-                    transformed_detections,
-                    mahalanobis_distance=config.covariance_mahalanobis_distance,
-                    velocity_bin_separation=config.cluster_velocity_bin_separation,
-                    min_radius=config.cluster_min_radius,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to compute clustering parameters from covariances: {e}")
-                logger.warning("Falling back to explicit parameters from config.")
-                vx_values = None
-                vy_values = None
-                radius = config.cluster_radius
-
-        # Run clustering
+        # Run clustering (parameters calculated automatically from test_orbit_ephemeris if provided)
         clusters, cluster_members = cluster_and_link(
             transformed_detections,
+            test_orbit_ephemeris=test_orbit_ephemeris,
+            velocity_bin_separation=config.cluster_velocity_bin_separation,
+            min_obs=config.cluster_min_obs,
+            min_arc_length=config.cluster_min_arc_length,
+            min_nights=config.cluster_min_nights,
+            rchi2_threshold=config.cluster_rchi2_threshold,
+            mahalanobis_distance=config.covariance_mahalanobis_distance if test_orbit_ephemeris else None,
+            alg=config.cluster_algorithm,
+            radius=config.cluster_radius,
             vx_range=[config.vx_min, config.vx_max],
             vy_range=[config.vy_min, config.vy_max],
             vx_bins=config.vx_bins,
             vy_bins=config.vy_bins,
-            vx_values=vx_values,
-            vy_values=vy_values,
-            radius=radius,
-            min_obs=config.cluster_min_obs,
-            min_arc_length=config.cluster_min_arc_length,
-            min_nights=config.cluster_min_nights,
-            alg=config.cluster_algorithm,
             chunk_size=config.cluster_chunk_size,
             max_processes=config.max_processes,
         )
@@ -305,15 +281,12 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(clusters, ray.ObjectRef):
                 clusters = ray.put(clusters)
-                refs_to_free.append(clusters)
                 logger.info("Placed clusters in the object store.")
             if not isinstance(cluster_members, ray.ObjectRef):
                 cluster_members = ray.put(cluster_members)
-                refs_to_free.append(cluster_members)
                 logger.info("Placed cluster members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -364,15 +337,12 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(iod_orbits, ray.ObjectRef):
                 iod_orbits = ray.put(iod_orbits)
-                refs_to_free.append(iod_orbits)
                 logger.info("Placed initial orbits in the object store.")
             if not isinstance(iod_orbit_members, ray.ObjectRef):
                 iod_orbit_members = ray.put(iod_orbit_members)
-                refs_to_free.append(iod_orbit_members)
                 logger.info("Placed initial orbit members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -424,15 +394,12 @@ def link_test_orbit(
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(od_orbits, ray.ObjectRef):
                 od_orbits = ray.put(od_orbits)
-                refs_to_free.append(od_orbits)
                 logger.info("Placed differentially corrected orbits in the object store.")
             if not isinstance(od_orbit_members, ray.ObjectRef):
                 od_orbit_members = ray.put(od_orbit_members)
-                refs_to_free.append(od_orbit_members)
                 logger.info("Placed differentially corrected orbit members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -467,11 +434,6 @@ def link_test_orbit(
             method="central",
             observations_chunk_size=100000,
         )
-
-        if use_ray and len(refs_to_free) > 0:
-            len_refs_to_free = len(refs_to_free)
-            del refs_to_free
-            logger.info(f"Removed {len_refs_to_free} references from the object store.")
 
         recovered_orbits_path = None
         recovered_orbit_members_path = None

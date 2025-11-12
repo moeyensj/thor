@@ -4,6 +4,7 @@ from typing import List, Literal, Optional, Tuple
 import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
+
 from adam_core.coordinates import CartesianCoordinates
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits

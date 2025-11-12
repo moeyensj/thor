@@ -568,20 +568,16 @@ def initial_orbit_determination(
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
-            refs_to_free = []
 
             linkage_ids_ref = ray.put(linkage_ids)
-            refs_to_free.append(linkage_ids_ref)
             logger.info("Placed linkage IDs in the object store.")
 
             if linkage_members_ref is None:
                 linkage_members_ref = ray.put(linkage_members)
-                refs_to_free.append(linkage_members_ref)
                 logger.info("Placed linkage members in the object store.")
 
             if observations_ref is None:
                 observations_ref = ray.put(observations)
-                refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
 
             futures = []
@@ -626,11 +622,6 @@ def initial_orbit_determination(
                     iod_orbits = qv.defragment(iod_orbits)
                 if iod_orbit_members.fragmented():
                     iod_orbit_members = qv.defragment(iod_orbit_members)
-
-            if len(refs_to_free) > 0:
-                len_refs_to_free = len(refs_to_free)
-                del refs_to_free
-                logger.info(f"Removed {len_refs_to_free} references from the object store.")
 
         else:
             for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):

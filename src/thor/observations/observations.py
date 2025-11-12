@@ -1,5 +1,5 @@
-import collections
 import asyncio
+import collections
 import multiprocessing as mp
 import pathlib
 import time
