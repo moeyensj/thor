@@ -15,6 +15,7 @@ from adam_core.observations import Exposures, PointSourceDetections, SourceCatal
 from adam_core.observers import Observers, calculate_observing_night
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
+from adam_core.utils.iter import qv_table_iter
 
 from ..config import Config
 from .photometry import Photometry
@@ -714,12 +715,12 @@ def convert_source_catalog_to_observations(
     max_write_fetch_chunks: int = 100,
 ) -> str:
     """
-    Convert a SourceCatalog to Observations by reading and writing from files in chunks
+    Convert a SourceCatalog (single file or directory of parquet files) to Observations by reading and writing in chunks.
 
     Parameters
     ----------
     source_catalog_path : str
-        The path to the source catalog.
+        Path to a single parquet file OR a directory containing multiple parquet files.
     callback : Optional[Callable]
         A callback to call when the conversion is complete.
     source_catalog_chunk_size : int
@@ -733,7 +734,14 @@ def convert_source_catalog_to_observations(
         The path to the output file, which can be modified by the final callback.
     """
 
-    source_catalog_iterator = _source_catalog_iterator(source_catalog_path, source_catalog_chunk_size)
+    # Build a unified iterator over SourceCatalog chunks using qv_table_iter
+
+    source_catalog_iterator = qv_table_iter(
+        SourceCatalog,
+        source_catalog_path,
+        filename_pattern="*.parquet",
+        max_chunk_size=source_catalog_chunk_size,
+    )
 
     futures: List[ray.ObjectRef] = []
     use_ray = initialize_use_ray(num_cpus=max_processes)
