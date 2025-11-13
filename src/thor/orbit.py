@@ -8,7 +8,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
@@ -348,7 +347,8 @@ class TestOrbits(qv.Table):
             observations = ray.get(observations)
 
         if len(observations) == 0:
-            raise ValueError("Observations must not be empty.")
+            logger.warning("Observations must not be empty. Returning empty ephemeris.")
+            return TestOrbitEphemeris.empty()
 
         if self._is_cache_fresh(observations):
             logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")

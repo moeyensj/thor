@@ -1111,6 +1111,35 @@ def cluster_and_link(
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
 
+    exit_early = False
+    if len(observations) > 0:
+        # Calculate the unique times
+        unique_times = observations.coordinates.time.unique()
+
+        # Check that there are enough unique times to cluster
+        num_unique_times = len(unique_times)
+        if num_unique_times < min_obs:
+            logger.info("Number of unique times is less than the minimum number of observations required.")
+            exit_early = True
+
+        # Calculate the time range and make sure it is greater than the minimum arc length
+        time_range = unique_times.max().mjd()[0].as_py() - unique_times.min().mjd()[0].as_py()
+        if time_range < min_arc_length:
+            logger.info("Time range of transformed detections is less than the minimum arc length.")
+            exit_early = True
+
+    else:
+        # If there are no transformed detections, exit early
+        logger.info("No transformed detections to cluster.")
+        exit_early = True
+
+    # If any of the above conditions are met then we exit early
+    if exit_early:
+        time_end_cluster = time.perf_counter()
+        logger.info("Found 0 clusters. Minimum requirements for clustering not met.")
+        logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
+        return Clusters.empty(), ClusterMembers.empty()
+
     # Determine velocity grid and radius
     if vx_values is not None and vy_values is not None:
         # Use pre-computed velocity values
@@ -1180,34 +1209,6 @@ def cluster_and_link(
     logger.info("Max sample distance: {}".format(radius))
     logger.info("Minimum samples: {}".format(min_obs))
 
-    exit_early = False
-    if len(observations) > 0:
-        # Calculate the unique times
-        unique_times = observations.coordinates.time.unique()
-
-        # Check that there are enough unique times to cluster
-        num_unique_times = len(unique_times)
-        if num_unique_times < min_obs:
-            logger.info("Number of unique times is less than the minimum number of observations required.")
-            exit_early = True
-
-        # Calculate the time range and make sure it is greater than the minimum arc length
-        time_range = unique_times.max().mjd()[0].as_py() - unique_times.min().mjd()[0].as_py()
-        if time_range < min_arc_length:
-            logger.info("Time range of transformed detections is less than the minimum arc length.")
-            exit_early = True
-
-    else:
-        # If there are no transformed detections, exit early
-        logger.info("No transformed detections to cluster.")
-        exit_early = True
-
-    # If any of the above conditions are met then we exit early
-    if exit_early:
-        time_end_cluster = time.perf_counter()
-        logger.info("Found 0 clusters. Minimum requirements for clustering not met.")
-        logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
-        return Clusters.empty(), ClusterMembers.empty()
 
     # Accumulate fitted clusters
     fitted_clusters = FittedClusters.empty()
