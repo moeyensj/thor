@@ -17,6 +17,7 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
+from adam_core.coordinates import Origin
 
 from .orbit import TestOrbitEphemeris
 from .projections import GnomonicCoordinates
@@ -162,10 +163,68 @@ class FittedClusters(qv.Table):
     vtheta_y = qv.Float64Column()
     atheta_x = qv.Float64Column()
     atheta_y = qv.Float64Column()
+    origin = Origin.as_column()
+    frame = qv.StringAttribute(default="testorbit")
     arc_length = qv.Float64Column()
     num_obs = qv.Int64Column()
     chi2 = qv.Float64Column()
     rchi2 = qv.Float64Column()
+
+    def evaluate(
+        self,
+        times: Timestamp
+    ) -> Tuple[pa.Array, GnomonicCoordinates]:
+        """
+        Propagate cluster positions to given times using the fitted polynomial model.
+
+        The polynomial motion model is:
+            theta_x(t) = 0.5 * atheta_x * dt² + vtheta_x * dt + theta_x0
+            theta_y(t) = 0.5 * atheta_y * dt² + vtheta_y * dt + theta_y0
+
+        where dt = t - t0 (in days).
+
+        Parameters
+        ----------
+        times : Timestamp
+            Times to propagate to.
+
+        Returns
+        -------
+        cluster_ids : pa.Array
+            Cluster IDs for each time.
+        coords : GnomonicCoordinates
+            Gnomonic coordinates for each time.
+
+        Examples
+        --------
+        >>> # Evaluate clusters to given times
+        >>> cluster_ids, coords = clusters.evaluate(times)
+        """
+        times_stacked = qv.concatenate([times for i in range(len(self))])
+        origin_stacked = pa.concat_arrays(
+            [pa.repeat(self.origin.code[i], len(times)) for i in range(len(self))]
+        )
+        epochs_mjd_stacked = np.repeat(self.time.rescale("tdb").mjd().to_numpy(zero_copy_only=False), len(times))
+        x0_stacked = np.repeat(self.theta_x0.to_numpy(zero_copy_only=False), len(times))
+        y0_stacked = np.repeat(self.theta_y0.to_numpy(zero_copy_only=False), len(times))
+        ax_stacked = np.repeat(self.atheta_x.to_numpy(zero_copy_only=False), len(times))
+        ay_stacked = np.repeat(self.atheta_y.to_numpy(zero_copy_only=False), len(times))
+        vx_stacked = np.repeat(self.vtheta_x.to_numpy(zero_copy_only=False), len(times))
+        vy_stacked = np.repeat(self.vtheta_y.to_numpy(zero_copy_only=False), len(times))
+
+        dt = times_stacked.rescale("tdb").mjd().to_numpy(zero_copy_only=False) - epochs_mjd_stacked
+        x = 0.5 * ax_stacked * dt**2 + vx_stacked * dt + x0_stacked
+        y = 0.5 * ay_stacked * dt**2 + vy_stacked * dt + y0_stacked
+        cluster_ids = np.repeat(self.cluster_id.to_numpy(zero_copy_only=False), len(times))
+
+        coords = GnomonicCoordinates.from_kwargs(
+            theta_x=x,
+            theta_y=y,
+            time=times_stacked,
+            origin=Origin.from_kwargs(code=origin_stacked),
+            frame="testorbit"
+        )
+        return cluster_ids, coords
 
 
 class FittedClusterMembers(qv.Table):
@@ -1364,14 +1423,16 @@ def fit_cluster(
         dt = time - t0  # days since first observation
 
         # Fit a 2nd order polynomial to the data as a function of relative time
-        # theta(dt) = a*dt² + v*dt + theta0
+        # theta(dt) = theta0 + v*dt + 0.5*a*dt²
         coords = np.empty((len(dt), 2))
         coords[:, 0] = theta_x
         coords[:, 1] = theta_y
         coeffs = np.polyfit(dt, coords, 2)
 
-        ax = coeffs[0, 0]  # deg/day²
-        ay = coeffs[0, 1]
+        # coeffs[0] is the quadratic coefficient in theta(dt) = c2*dt² + c1*dt + c0
+        # Store atheta as physical acceleration, i.e., atheta = 2 * c2
+        ax = 2.0 * coeffs[0, 0]  # deg/day²
+        ay = 2.0 * coeffs[0, 1]
         vx = coeffs[1, 0]  # deg/day
         vy = coeffs[1, 1]
         x0 = coeffs[2, 0]  # deg (position at first observation)
@@ -1399,6 +1460,8 @@ def fit_cluster(
             vtheta_y=[vy],
             atheta_x=[ax],
             atheta_y=[ay],
+            origin=gnomonic_coords.origin[0],
+            frame=gnomonic_coords.frame,
             arc_length=[pc.subtract(pc.max(time), pc.min(time))],
             num_obs=[len(time)],
             chi2=[pc.sum(residuals.chi2)],
