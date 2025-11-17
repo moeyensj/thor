@@ -1,9 +1,10 @@
 import abc
-import importlib
+import glob
 import logging
 import multiprocessing as mp
+import os
 import time
-from typing import TYPE_CHECKING, List, Optional, Type, Union
+from typing import List, Optional, Type, Union
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -365,8 +366,15 @@ def filter_observations(
         raise ValueError(f"filter_observations received {len(test_orbit)} orbits but expected 1.")
 
     if isinstance(observations, str):
-        num_obs = pq.read_metadata(observations).num_rows
-        logger.info(f"Filtering {num_obs} observations in parquet file.")
+        if os.path.isdir(observations):
+            num_files = len(glob.glob(os.path.join(observations, "*.parquet")))
+            num_obs = sum(
+                pq.read_metadata(f).num_rows for f in glob.glob(os.path.join(observations, "*.parquet"))
+            )
+            logger.info(f"Filtering {num_obs} observations in {num_files} parquet files in directory.")
+        else:
+            num_obs = pq.read_metadata(observations).num_rows
+            logger.info(f"Filtering {num_obs} observations in 1 parquet file.")
 
     elif isinstance(observations, Observations):
         num_obs = len(observations)
