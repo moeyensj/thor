@@ -122,6 +122,7 @@ def link_test_orbit(
     module_path, class_name = config.propagator_namespace.rsplit(".", 1)
     propagator_module = importlib.import_module(module_path)
     propagator_class = getattr(propagator_module, class_name)
+    test_orbit_ephemeris = None
 
     use_ray = initialize_use_ray(
         num_cpus=config.max_processes,
@@ -233,10 +234,7 @@ def link_test_orbit(
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
 
-        # Generate test orbit ephemeris with covariances if requested
-        test_orbit_ephemeris = None
-        if config.use_covariance_informed_clustering:
-            logger.info("Generating test orbit ephemeris with covariances for clustering...")
+        if test_orbit_ephemeris is None:
             test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
                 filtered_observations,
                 propagator_class=propagator_class,
@@ -253,13 +251,15 @@ def link_test_orbit(
             min_arc_length=config.cluster_min_arc_length,
             min_nights=config.cluster_min_nights,
             rchi2_threshold=config.cluster_rchi2_threshold,
-            mahalanobis_distance=config.covariance_mahalanobis_distance if test_orbit_ephemeris else None,
+            mahalanobis_distance=config.cluster_mahalanobis_distance,
             alg=config.cluster_algorithm,
             radius=config.cluster_radius,
-            vx_range=[config.vx_min, config.vx_max],
-            vy_range=[config.vy_min, config.vy_max],
-            vx_bins=config.vx_bins,
-            vy_bins=config.vy_bins,
+            vx_range=[config.cluster_vx_min, config.cluster_vx_max],
+            vy_range=[config.cluster_vy_min, config.cluster_vy_max],
+            vx_bins=config.cluster_vx_bins,
+            vy_bins=config.cluster_vy_bins,
+            vx_values=None,
+            vy_values=None,
             chunk_size=config.cluster_chunk_size,
             max_processes=config.max_processes,
         )
