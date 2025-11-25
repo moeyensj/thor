@@ -19,13 +19,12 @@ from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
 from thor.observations import Observations
+from thor.observations.utils import calculate_healpixels
 from thor.orbit import TestOrbits
-
-from .observations.utils import calculate_healpixels
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["generate_test_orbits"]
+__all__ = ["generate_known_test_orbits"]
 
 
 @dataclass
@@ -265,7 +264,7 @@ generate_test_orbits_worker_remote = ray.remote(generate_test_orbits_worker)
 generate_test_orbits_worker_remote.options(num_cpus=1, num_returns=1)
 
 
-def generate_test_orbits(
+def generate_known_test_orbits(
     observations: Union[str, Observations],
     catalog: Orbits,
     propagator_class: Type[Propagator],
@@ -282,32 +281,6 @@ def generate_test_orbits(
 
     The catalog will be propagated to start time of the observations using the propagator
     and ephemerides will be generated for the propagated orbits (assuming a geocentric observer).
-
-    Parameters
-    ----------
-    observations
-        Observations for which to generate test orbits. These observations can
-        be an in-memory Observations object or a path to a parquet file containing the
-        observations.
-    catalog
-        Catalog of known orbits.
-    nside
-        Healpixel size.
-    propagator
-        Propagator to use to propagate the orbits.
-    max_processes
-        Maximum number of processes to use while propagating orbits and
-        generating ephemerides.
-    chunk_size
-        The maximum number of unique healpixels for which to generate test orbits per
-        process. This function will dynamically compute the chunk size based on the
-        number of unique healpixels and the number of processes. The dynamic chunk
-        size will never exceed the given value.
-
-    Returns
-    -------
-    test_orbits
-        Test orbits generated from the catalog.
     """
     time_start = time.perf_counter()
     logger.info("Generating test orbits...")
