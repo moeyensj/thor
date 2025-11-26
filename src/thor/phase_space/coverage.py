@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pyarrow as pa
 import quivr as qv
+
 from adam_core.coordinates import SphericalCoordinates
 from adam_core.coordinates.origin import Origin
 from adam_core.time import Timestamp
@@ -935,7 +936,7 @@ def generate_custom_grid_test_orbits(
 
     # Ensure grid_dimensions is a numpy array for consistency
     grid_dimensions = np.array(grid_dimensions)
-    
+
     # Ensure half_widths is a numpy array for consistency (if provided)
     if half_widths is not None:
         half_widths = np.array(half_widths)
@@ -1775,11 +1776,11 @@ def calculate_coverage_percentage(
     bounds: Dict[str, Tuple[float, float]],
     coordinate_system: str,
     method: str = "fast",
-    **kwargs
+    **kwargs,
 ) -> float:
     """
     Calculate coverage percentage using different methods.
-    
+
     Parameters
     ----------
     coords : np.ndarray
@@ -1800,7 +1801,7 @@ def calculate_coverage_percentage(
         Additional parameters for specific methods:
         - n_samples: int (for monte_carlo, default=100000)
         - n_bins_per_dim: int (for adaptive_grid, default=20/50)
-    
+
     Returns
     -------
     float
@@ -1816,7 +1817,9 @@ def calculate_coverage_percentage(
     elif method == "exact":
         return _calculate_coverage_exact(coords, half_widths, bounds, coordinate_system)
     else:
-        raise ValueError(f"Unknown coverage method: {method}. Choose from: fast, monte_carlo, adaptive_grid, exact")
+        raise ValueError(
+            f"Unknown coverage method: {method}. Choose from: fast, monte_carlo, adaptive_grid, exact"
+        )
 
 
 def _calculate_coverage_fast(
@@ -1827,7 +1830,7 @@ def _calculate_coverage_fast(
 ) -> float:
     """
     Fast O(1) coverage calculation - assumes no overlap.
-    
+
     This is the original method used for iterative functions.
     """
     n_orbits = len(coords)
@@ -1852,27 +1855,23 @@ def _calculate_coverage_monte_carlo(
     half_widths: np.ndarray,
     bounds: Dict[str, Tuple[float, float]],
     coordinate_system: str,
-    n_samples: int = 100000
+    n_samples: int = 100000,
 ) -> float:
     """
     Monte Carlo coverage calculation - samples phase space randomly.
-    
+
     Time complexity: O(n × samples)
     No assumptions about orbit positions or overlaps.
     """
     coord_names = _get_coordinate_names(coordinate_system)
     ranges = np.array([bounds[coord] for coord in coord_names])
-    
+
     # Generate random sample points across phase space
     np.random.seed(42)  # Reproducible results
-    sample_points = np.random.uniform(
-        low=ranges[:, 0], 
-        high=ranges[:, 1], 
-        size=(n_samples, len(coord_names))
-    )
-    
+    sample_points = np.random.uniform(low=ranges[:, 0], high=ranges[:, 1], size=(n_samples, len(coord_names)))
+
     covered_count = 0
-    
+
     # Check each sample point against all orbit volumes
     for point in sample_points:
         # Check if point is inside any orbit volume
@@ -1880,7 +1879,7 @@ def _calculate_coverage_monte_carlo(
             if np.all(np.abs(point - orbit_center) <= half_widths):
                 covered_count += 1
                 break  # Point is covered, move to next
-    
+
     coverage_percentage = covered_count / n_samples * 100
     return coverage_percentage
 
@@ -1892,11 +1891,11 @@ def _calculate_coverage_adaptive_grid(
     coordinate_system: str,
     coarse_bins: int = 20,
     fine_bins: int = 50,
-    coverage_threshold: float = 10.0
+    coverage_threshold: float = 10.0,
 ) -> float:
     """
     Adaptive grid coverage calculation - uses coarse grid, refines if needed.
-    
+
     Time complexity: O(n × bins^6) but adaptive
     Balances accuracy and performance.
     """
@@ -1904,16 +1903,16 @@ def _calculate_coverage_adaptive_grid(
     coverage_coarse = _calculate_coverage_grid_binning(
         coords, half_widths, bounds, coordinate_system, coarse_bins
     )
-    
+
     # If coverage is low, use coarse estimate (sparse orbits, high accuracy)
     if coverage_coarse < coverage_threshold:
         return coverage_coarse
-    
+
     # If coverage is high, refine the grid for better accuracy
     coverage_fine = _calculate_coverage_grid_binning(
         coords, half_widths, bounds, coordinate_system, fine_bins
     )
-    
+
     return coverage_fine
 
 
@@ -1922,45 +1921,45 @@ def _calculate_coverage_grid_binning(
     half_widths: np.ndarray,
     bounds: Dict[str, Tuple[float, float]],
     coordinate_system: str,
-    n_bins_per_dim: int
+    n_bins_per_dim: int,
 ) -> float:
     """
     Grid binning coverage calculation - bins phase space and counts occupied bins.
-    
+
     Time complexity: O(n × bins^6)
     No assumptions about orbit positions or overlaps.
     """
     import itertools
-    
+
     coord_names = _get_coordinate_names(coordinate_system)
     ranges = [bounds[coord] for coord in coord_names]
-    
+
     # Create bins for each dimension
     bin_edges = [np.linspace(r[0], r[1], n_bins_per_dim + 1) for r in ranges]
-    
+
     # Track which bins are covered by any orbit volume
     covered_bins = set()
-    
+
     for orbit_center in coords:
         # Find all bins this orbit volume touches
         orbit_min = orbit_center - half_widths
         orbit_max = orbit_center + half_widths
-        
+
         # Get bin indices for this orbit's extent
         bin_indices = []
         for dim in range(len(coord_names)):
-            min_bin = np.searchsorted(bin_edges[dim], orbit_min[dim], side='right') - 1
-            max_bin = np.searchsorted(bin_edges[dim], orbit_max[dim], side='left')
+            min_bin = np.searchsorted(bin_edges[dim], orbit_min[dim], side="right") - 1
+            max_bin = np.searchsorted(bin_edges[dim], orbit_max[dim], side="left")
             bin_indices.append(range(max(0, min_bin), min(n_bins_per_dim, max_bin + 1)))
-        
+
         # Add all combinations of bin indices that this orbit covers
         for bin_combo in itertools.product(*bin_indices):
             covered_bins.add(bin_combo)
-    
+
     # Coverage = fraction of bins covered
     total_bins = n_bins_per_dim ** len(coord_names)
     coverage_percentage = len(covered_bins) / total_bins * 100
-    
+
     return coverage_percentage
 
 
@@ -1972,24 +1971,24 @@ def _calculate_coverage_exact(
 ) -> float:
     """
     Exact coverage calculation using full overlap analysis.
-    
+
     Time complexity: O(n²)
     Most accurate but slowest method.
     """
     n_orbits = len(coords)
     individual_volume = np.prod(2 * half_widths)
-    
+
     # Calculate overlaps using existing exact analysis
     overlap_count, total_overlap_volume = _exact_overlap_analysis(coords, half_widths, n_orbits)
-    
+
     # Calculate actual covered volume accounting for overlaps
     total_volume_with_overlap = n_orbits * individual_volume - total_overlap_volume
-    
+
     # Get total phase space volume
     coord_names = _get_coordinate_names(coordinate_system)
     ranges = np.array([bounds[coord][1] - bounds[coord][0] for coord in coord_names])
     total_phase_space = np.prod(ranges)
-    
+
     coverage_percentage = min(100.0, 100.0 * total_volume_with_overlap / total_phase_space)
     return coverage_percentage
 
@@ -2004,7 +2003,6 @@ def _get_coordinate_names(coordinate_system: str) -> List[str]:
         return ["a", "e", "i", "raan", "ap", "M"]
     else:
         raise ValueError(f"Unknown coordinate system: {coordinate_system}")
-
 
 
 def _create_basic_report(
@@ -2022,7 +2020,9 @@ def _create_basic_report(
     individual_volume = np.prod(2 * half_widths)
 
     # Get the essential coverage percentage using fast method
-    coverage_percentage = calculate_coverage_percentage(coords, half_widths, bounds, coordinate_system, method="fast")
+    coverage_percentage = calculate_coverage_percentage(
+        coords, half_widths, bounds, coordinate_system, method="fast"
+    )
 
     # Calculate total phase space volume for reporting
     if coordinate_system == "spherical":

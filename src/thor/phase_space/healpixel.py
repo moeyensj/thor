@@ -13,6 +13,7 @@ from adam_core.constants import Constants as c
 from adam_core.coordinates import (
     CoordinateCovariances,
     Origin,
+    OriginCodes,
     SphericalCoordinates,
 )
 from adam_core.ray_cluster import initialize_use_ray
@@ -69,7 +70,7 @@ def centers_and_halfwidths(bin_edges: np.ndarray) -> Tuple[np.ndarray, np.ndarra
     return centers, halfwidths
 
 
-def kepler_to_spherical_velocities(elements: jnp.ndarray, mu: float = MU) -> jnp.ndarray:
+def kepler_to_spherical_velocities(elements: jnp.ndarray, lat: float, mu: float = MU) -> jnp.ndarray:
     """
     JAX function mapping (rho, e, nu, psi) → (vr, omega_lon_deg, omega_lat_deg).
 
@@ -84,56 +85,63 @@ def kepler_to_spherical_velocities(elements: jnp.ndarray, mu: float = MU) -> jnp
                     psi = 0   → purely prograde along +lon
                     psi ∈ (-90, +90) → prograde
                     psi ∈ (90, 270)   → retrograde
+    lat : float
+        Latitude in degrees.
     mu : float, optional
         Gravitational parameter in units of distance^3 / time^2. Defaults to MU.
 
     Returns
     -------
     jnp.ndarray: (3,)
-        [vr, omega_lon_deg, omega_lat_deg]
-          vr             : linear radial speed
-          omega_lon_deg  : angular rate in lon (deg/time)
-          omega_lat_deg  : angular rate in lat (deg/time)
+        [vr, vlon, vlat]
+          vr             : radial velocity
+          vlon           : velocity in lon (deg/time)
+          vlat           : velocity in lat (deg/time)
     """
     rho, e, nu, psi = elements
     nu = jnp.radians(nu)
     psi = jnp.radians(psi)
+    beta = jnp.radians(lat)
 
     cosnu = jnp.cos(nu)
     sinnu = jnp.sin(nu)
     cospsi = jnp.cos(psi)
     sinpsi = jnp.sin(psi)
+    cosbeta = jnp.cos(beta)
 
-    A = 1.0 + e * cosnu
-    h2 = mu * rho * A
-    h = jnp.sqrt(h2)
+    a = rho * (1.0 + e * cosnu) / (1.0 - e**2)
+    p = a * (1.0 - e**2)
+    h = jnp.sqrt(mu * p)
 
     v_r = (mu / h) * e * sinnu
-    v_t = (mu / h) * A
+    v_t = h / rho
 
-    vlon_linear = v_t * cospsi
-    vlat_linear = v_t * sinpsi
+    v_t_lon = v_t * cospsi
+    v_t_lat = v_t * sinpsi
 
-    omega_lon_rad = vlon_linear / rho
-    omega_lat_rad = vlat_linear / rho
+    eps = 1e-12
+    cosbeta_safe = jnp.where(jnp.abs(cosbeta) < eps, eps * jnp.sign(cosbeta), cosbeta)
 
-    omega_lon_deg = jnp.degrees(omega_lon_rad)
-    omega_lat_deg = jnp.degrees(omega_lat_rad)
+    omega_lon_rad = v_t_lon / (rho * cosbeta_safe)
+    omega_lat_rad = v_t_lat / rho
 
-    return jnp.array([v_r, omega_lon_deg, omega_lat_deg])
+    vlon_deg = jnp.degrees(omega_lon_rad)
+    vlat_deg = jnp.degrees(omega_lat_rad)
+
+    return jnp.array([v_r, vlon_deg, vlat_deg])
 
 
 _kepler_to_spherical_velocities_vmap = jit(
     vmap(
         kepler_to_spherical_velocities,
-        in_axes=(0, None),
+        in_axes=(0, None, None),
     )
 )
 
 _kepler_to_spherical_velocities_jac_vmap = jit(
     vmap(
         jax.jacrev(kepler_to_spherical_velocities),
-        in_axes=(0, None),
+        in_axes=(0, None, None),
     )
 )
 
@@ -145,6 +153,7 @@ def create_healpixel_test_orbit_worker(
     psi_bin_edges: np.ndarray,
     pixels: Iterable[int],
     time: Timestamp,
+    origin: OriginCodes,
     nside: int = 64,
 ) -> TestOrbits:
     """
@@ -166,6 +175,8 @@ def create_healpixel_test_orbit_worker(
         HEALPix pixels (nest=True) defining (lon, lat) for localization.
     time : Timestamp
         Representative time at which these test orbits are defined.
+    origin : OriginCodes
+        Origin code for the test orbits.
     nside : int, optional
         HEALPix nside. Defaults to 64.
 
@@ -186,6 +197,16 @@ def create_healpixel_test_orbit_worker(
     num_psi = len(psi_centers)
 
     num_states_per_rho = num_e * num_nu * num_psi
+    num_states = num_rho * num_states_per_rho
+
+    times = Timestamp.from_kwargs(
+        days=pa.repeat(time.days[0], num_states),
+        nanos=pa.repeat(time.nanos[0], num_states),
+        scale=time.scale,
+    )
+    origins = Origin.from_OriginCodes(origin, size=num_states)
+    mu = origins.mu()[0]
+
     e_grid, nu_grid, psi_grid = np.meshgrid(
         e_centers,
         nu_centers,
@@ -217,8 +238,6 @@ def create_healpixel_test_orbit_worker(
         lon_boundaries, lat_boundaries = compute_lon_lat_boundaries(nside, pixel)
         dlon = np.max(np.abs(lon_boundaries - lon))
         dlat = np.max(np.abs(lat_boundaries - lat))
-
-        num_states = num_rho * num_states_per_rho
 
         states = np.empty((num_states, 6), dtype=float)
         covs = np.zeros((num_states, 6, 6), dtype=float)
@@ -254,9 +273,9 @@ def create_healpixel_test_orbit_worker(
             )  # (N, 4)
 
             vels = _kepler_to_spherical_velocities_vmap(
-                params_batch, c.MU
+                params_batch, lat, mu
             )  # (N, 3): [vr, ω_lon_deg, ω_lat_deg]
-            Js = _kepler_to_spherical_velocities_jac_vmap(params_batch, c.MU)  # (N, 3, 4)
+            Js = _kepler_to_spherical_velocities_jac_vmap(params_batch, lat, mu)  # (N, 3, 4)
 
             states[idx_start:idx_end, 3] = np.array(vels[:, 0])
             states[idx_start:idx_end, 4] = np.array(vels[:, 1])
@@ -294,8 +313,6 @@ def create_healpixel_test_orbit_worker(
                 ]
             )
 
-        num_states = states.shape[0]
-
         coords = SphericalCoordinates.from_kwargs(
             rho=states[:, 0],
             lon=states[:, 1],
@@ -303,13 +320,9 @@ def create_healpixel_test_orbit_worker(
             vrho=states[:, 3],
             vlon=states[:, 4],
             vlat=states[:, 5],
-            time=Timestamp.from_kwargs(
-                days=pa.repeat(time.days[0], num_states),
-                nanos=pa.repeat(time.nanos[0], num_states),
-                scale=time.scale,
-            ),
+            time=times,
             covariance=CoordinateCovariances.from_matrix(covs),
-            origin=Origin.from_kwargs(code=pa.repeat("SUN", num_states)),
+            origin=origins,
             frame="ecliptic",
         )
 
@@ -333,6 +346,7 @@ def create_healpixel_test_orbits(
     nu_bin_edges: np.ndarray,
     psi_bin_edges: np.ndarray,
     time: Timestamp,
+    origin: OriginCodes = OriginCodes.SOLAR_SYSTEM_BARYCENTER,
     nside: int = 64,
     pixels: Optional[Iterable[int]] = None,
     chunk_size: int = 100,
@@ -354,7 +368,9 @@ def create_healpixel_test_orbits(
         psi = 0 is purely prograde along +lon; psi in (-90, 90) is prograde.
     time : Timestamp
         Time for the test orbits.
-    nside : int
+    origin: OriginCodes, optional
+        Origin code for the test orbits.
+    nside : int, optional
         HEALPix nside.
     pixels : array-like or None
         Pixels to process. If None, use all pixels for this nside.
@@ -386,6 +402,7 @@ def create_healpixel_test_orbits(
                     psi_bin_edges,
                     pixel_chunk,
                     time,
+                    origin,
                     nside=nside,
                 )
             )
@@ -414,6 +431,7 @@ def create_healpixel_test_orbits(
                 psi_bin_edges,
                 pixel_chunk,
                 time,
+                origin,
                 nside=nside,
             )
             test_orbits = qv.concatenate([test_orbits, test_orbits_i])

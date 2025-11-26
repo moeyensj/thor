@@ -495,11 +495,11 @@ def test_fixed_volume_edge_cases():
 def test_covariance_attachment():
     """Test that covariances are correctly attached to test orbits."""
     print("\n=== Testing Covariance Attachment ===")
-    
+
     # Test 1: Generate test orbits with covariances in spherical coordinates
     print("\n[Test 1] Generating test orbits in SPHERICAL coordinates with covariances...")
     half_widths = np.array([0.1, 15.0, 8.0, 0.002, 0.2, 0.15])  # spherical
-    
+
     test_orbits, orbit_volumes, report = generate_even_coverage_test_orbits(
         n_orbits=5,
         half_widths=half_widths,
@@ -508,28 +508,28 @@ def test_covariance_attachment():
         attach_covariances=True,
         covariance_scale=1.0,
     )
-    
+
     print(f"✓ Generated {len(test_orbits)} test orbits")
-    
+
     # Check that covariances are attached
     cov_matrices = test_orbits.coordinates.covariance.to_matrix()
     print(f"✓ Covariance shape: {cov_matrices.shape}")
     assert cov_matrices.shape == (5, 6, 6), f"Expected (5, 6, 6), got {cov_matrices.shape}"
-    
+
     # Check that covariances are not NaN
     has_nan = np.any(np.isnan(cov_matrices))
     print(f"✓ Covariances contain NaN: {has_nan}")
     assert not has_nan, "Covariances should not contain NaN values"
-    
+
     # Check that covariances are positive definite (diagonal elements > 0)
     diag_elements = np.diagonal(cov_matrices, axis1=1, axis2=2)
     print(f"✓ Diagonal elements (variances) shape: {diag_elements.shape}")
     assert np.all(diag_elements > 0), "All diagonal elements should be positive"
-    
+
     # Check that sigmas are extracted correctly
     sigmas = test_orbits.coordinates.covariance.sigmas
     print(f"✓ Sigmas shape: {sigmas.shape}")
-    
+
     # Test 2: Test without covariances
     print("\n[Test 2] Generating test orbits WITHOUT covariances...")
     test_orbits_no_cov, _, _ = generate_even_coverage_test_orbits(
@@ -538,16 +538,16 @@ def test_covariance_attachment():
         asteroid_type="main_belt",
         attach_covariances=False,
     )
-    
+
     cov_matrices_no_cov = test_orbits_no_cov.coordinates.covariance.to_matrix()
     has_all_nan = np.all(np.isnan(cov_matrices_no_cov))
     print(f"✓ Covariances are NaN (as expected): {has_all_nan}")
     assert has_all_nan, "Covariances should be NaN when attach_covariances=False"
-    
+
     # Test 3: Test with Cartesian coordinates
     print("\n[Test 3] Generating test orbits in CARTESIAN coordinates with covariances...")
     half_widths_cart = np.array([0.1, 0.1, 0.1, 0.002, 0.002, 0.002])
-    
+
     test_orbits_cart, _, _ = generate_even_coverage_test_orbits(
         n_orbits=4,
         half_widths=half_widths_cart,
@@ -555,32 +555,35 @@ def test_covariance_attachment():
         asteroid_type="main_belt",
         attach_covariances=True,
     )
-    
+
     cov_matrices_cart = test_orbits_cart.coordinates.covariance.to_matrix()
     print(f"✓ Covariance shape: {cov_matrices_cart.shape}")
     assert cov_matrices_cart.shape == (4, 6, 6)
-    
+
     # For Cartesian, covariances should be diagonal (no transformation needed)
     # Check that off-diagonal elements are exactly zero
     for i in range(4):
         off_diag = cov_matrices_cart[i].copy()
         np.fill_diagonal(off_diag, 0)
         max_off_diag = np.max(np.abs(off_diag))
-        assert max_off_diag == 0.0, f"Cartesian covariances should be diagonal, got max off-diag: {max_off_diag}"
-    
+        assert (
+            max_off_diag == 0.0
+        ), f"Cartesian covariances should be diagonal, got max off-diag: {max_off_diag}"
+
     sigmas_cart = test_orbits_cart.coordinates.covariance.sigmas
     print(f"✓ Sigmas for first Cartesian orbit: {sigmas_cart[0]}")
-    
+
     # Verify sigmas match half_widths (for Cartesian, should be identical)
     expected_sigmas = half_widths_cart
     actual_sigmas = sigmas_cart[0]
-    assert np.allclose(actual_sigmas, expected_sigmas, rtol=0.01), \
-        f"Cartesian sigmas should match half_widths closely"
-    
+    assert np.allclose(
+        actual_sigmas, expected_sigmas, rtol=0.01
+    ), f"Cartesian sigmas should match half_widths closely"
+
     # Test 4: Test with Keplerian coordinates
     print("\n[Test 4] Generating test orbits in KEPLERIAN coordinates with covariances...")
     half_widths_kep = np.array([0.1, 0.01, 5.0, 10.0, 10.0, 10.0])
-    
+
     test_orbits_kep, _, _ = generate_even_coverage_test_orbits(
         n_orbits=3,
         half_widths=half_widths_kep,
@@ -588,15 +591,15 @@ def test_covariance_attachment():
         asteroid_type="main_belt",
         attach_covariances=True,
     )
-    
+
     cov_matrices_kep = test_orbits_kep.coordinates.covariance.to_matrix()
     print(f"✓ Covariance shape: {cov_matrices_kep.shape}")
     assert cov_matrices_kep.shape == (3, 6, 6)
     assert not np.any(np.isnan(cov_matrices_kep)), "Keplerian covariances should not be NaN"
-    
+
     sigmas_kep = test_orbits_kep.coordinates.covariance.sigmas
     print(f"✓ Sigmas for first Keplerian orbit (transformed to Cartesian)")
-    
+
     # Test 5: Test covariance_scale parameter
     print("\n[Test 5] Testing covariance_scale parameter...")
     test_orbits_scale, _, _ = generate_even_coverage_test_orbits(
@@ -606,13 +609,14 @@ def test_covariance_attachment():
         attach_covariances=True,
         covariance_scale=3.0,  # Treat half_widths as 3-sigma
     )
-    
+
     sigmas_scaled = test_orbits_scale.coordinates.covariance.sigmas
     expected_scaled = half_widths_cart / 3.0
     print(f"✓ Sigmas with scale=3.0: {sigmas_scaled[0]}")
-    assert np.allclose(sigmas_scaled[0], expected_scaled, rtol=0.01), \
-        f"Scaled sigmas should be half_widths/scale"
-    
+    assert np.allclose(
+        sigmas_scaled[0], expected_scaled, rtol=0.01
+    ), f"Scaled sigmas should be half_widths/scale"
+
     print("\n✓ All covariance attachment tests passed!")
 
 
