@@ -348,7 +348,7 @@ class TestOrbits(qv.Table):
             observations = ray.get(observations)
 
         if len(observations) == 0:
-            raise ValueError("Observations must not be empty.")
+            return TestOrbitEphemeris.empty()
 
         if self._is_cache_fresh(observations):
             logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
@@ -372,7 +372,8 @@ class TestOrbits(qv.Table):
             propagator_class=propagator_class,
             max_processes=max_processes,
             covariance=covariance,
-            covariance_method="sigma-point",
+            covariance_method="monte-carlo",
+            num_samples=1000,
         )
         ephemeris = ephemeris.sort_by(
             by=[
