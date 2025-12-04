@@ -3,6 +3,8 @@ import multiprocessing as mp
 import time
 from typing import Optional, Type, Union
 
+import numpy as np
+import numpy.typing as npt
 import quivr as qv
 import ray
 
@@ -245,3 +247,75 @@ def range_and_transform(
     logger.info(f"Transformed {len(transformed_detections)} observations.")
     logger.info(f"Range and transform completed in {time_end - time_start:.3f} seconds.")
     return transformed_detections
+
+
+def whitening_matrix_from_covariance(cov: np.ndarray) -> npt.NDArray[np.float64]:
+    """
+    Compute the whitening matrix W such that:
+        W @ Sigma @ W.T = I
+
+    Parameters
+    ----------
+    cov : (N, N) covariance matrix (positive-definite)
+
+    Returns
+    -------
+    W : (N, N) whitening transform
+    """
+    eigenvals, eigenvectors = np.linalg.eigh(cov)
+    eigenvals = np.maximum(eigenvals, 1e-15)
+
+    Lambda_inv_sqrt = np.diag(1.0 / np.sqrt(eigenvals))
+    W = Lambda_inv_sqrt @ eigenvectors.T
+    return W
+
+
+def whiten_transformed_detections(
+    transformed_detections: TransformedDetections, test_orbit_ephemeris: TestOrbitEphemeris
+) -> TransformedDetections:
+    """
+    Whiten the transformed detections using the per-state test orbit covariance matrix.
+
+    Parameters
+    ----------
+    transformed_detections : TransformedDetections
+        The transformed detections to whiten.
+    test_orbit_ephemeris : TestOrbitEphemeris
+        The test orbit ephemeris to use for whitening.
+
+    Returns
+    -------
+    TransformedDetections
+        The whitened transformed detections. Only theta_x and theta_y are whitened.
+    """
+    transformed_detections_whitened = TransformedDetections.empty()
+
+    for state_id in test_orbit_ephemeris.id.unique():
+        transformed_detections_i = transformed_detections.select("state_id", state_id)
+        test_orbit_ephemeris_i = test_orbit_ephemeris.select("id", state_id)
+
+        cov = test_orbit_ephemeris_i.gnomonic.covariance.to_matrix()[0, :2, :2]
+        W = whitening_matrix_from_covariance(cov)
+        whitened_gnononic_coordinates = transformed_detections_i.coordinates.values[:, :2] @ W[:2, :2].T
+
+        transformed_detections_whitened_i = TransformedDetections.from_kwargs(
+            id=transformed_detections_i.id,
+            state_id=transformed_detections_i.state_id,
+            night=transformed_detections_i.night,
+            coordinates=GnomonicCoordinates.from_kwargs(
+                theta_x=whitened_gnononic_coordinates[:, 0],
+                theta_y=whitened_gnononic_coordinates[:, 1],
+                vtheta_x=transformed_detections_i.coordinates.vtheta_x,
+                vtheta_y=transformed_detections_i.coordinates.vtheta_y,
+                covariance=transformed_detections_i.coordinates.covariance,
+                time=transformed_detections_i.coordinates.time,
+                frame=transformed_detections_i.coordinates.frame,
+                origin=transformed_detections_i.coordinates.origin,
+            ),
+        )
+
+        transformed_detections_whitened = qv.concatenate(
+            [transformed_detections_whitened, transformed_detections_whitened_i]
+        )
+
+    return transformed_detections_whitened
