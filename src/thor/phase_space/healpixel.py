@@ -1,3 +1,4 @@
+import os
 from typing import Iterable, Optional, Tuple
 
 import healpy as hp
@@ -155,6 +156,7 @@ def create_healpixel_test_orbit_worker(
     time: Timestamp,
     origin: OriginCodes,
     nside: int = 64,
+    out_dir: Optional[str] = None,
 ) -> TestOrbits:
     """
     Create Kepler-consistent test orbits localized to HEALPix pixels
@@ -179,6 +181,11 @@ def create_healpixel_test_orbit_worker(
         Origin code for the test orbits.
     nside : int, optional
         HEALPix nside. Defaults to 64.
+    out_dir : str, optional
+        If provided, write per-pixel chunks of `TestOrbits` parquet files into this
+        directory (one file per HEALPix pixel chunk), and return an empty in-memory
+        table. If None (default), all test orbits are concatenated and returned in
+        memory.
 
     Returns
     -------
@@ -228,9 +235,13 @@ def create_healpixel_test_orbit_worker(
     sigma_nu_flat = nu_hw_grid.ravel(order="C")
     sigma_psi_flat = psi_hw_grid.ravel(order="C")
 
+    # Always accumulate a chunk worth of pixels in memory; if `out_dir`
+    # is provided we write a single file per pixel-chunk and then return
+    # an empty table.
+    pixels_array = np.asarray(list(pixels), dtype=int)
     test_orbits = TestOrbits.empty()
 
-    for pixel in pixels:
+    for pixel in pixels_array:
         # Central direction of this pixel (deg)
         lon, lat = hp.pix2ang(nside, pixel, nest=True, lonlat=True)
 
@@ -334,6 +345,17 @@ def create_healpixel_test_orbit_worker(
 
         test_orbits = qv.concatenate([test_orbits, test_orbits_i])
 
+    if out_dir is not None:
+        os.makedirs(out_dir, exist_ok=True)
+        start_pixel = int(pixels_array.min())
+        end_pixel = int(pixels_array.max())
+        filepath = os.path.join(
+            out_dir,
+            f"healpixel_nside{nside}_pixels{start_pixel}_{end_pixel}.parquet",
+        )
+        test_orbits.to_parquet(filepath)
+        return TestOrbits.empty()
+
     return test_orbits
 
 
@@ -351,6 +373,7 @@ def create_healpixel_test_orbits(
     pixels: Optional[Iterable[int]] = None,
     chunk_size: int = 100,
     max_processes: int = 10,
+    out_dir: Optional[str] = None,
 ) -> TestOrbits:
     """
     Generate test orbits over HEALPix pixels using bin edges for ρ, e, ν, and ψ.
@@ -378,12 +401,21 @@ def create_healpixel_test_orbits(
         Number of pixels per worker chunk.
     max_processes : int
         Max number of Ray processes (CPUs) to use.
+    out_dir : str, optional
+        If provided, directory where per-pixel parquet files will be written.
+        Each pixel will be saved as
+        ``healpixel_nside{nside}_pixel{pixel}.parquet`` within this directory.
+        When ``out_dir`` is not None, the function returns an empty in-memory
+        table after writing all partitions to disk.
 
     Returns
     -------
     TestOrbits (N_rho * N_e * N_nu * N_psi * N_pixels)
-        Test orbits generated over the given healpixels.
+        Test orbits generated over the given healpixels (in memory when
+        ``out_dir`` is None, otherwise an empty table is returned).
     """
+    write_to_disk = out_dir is not None
+
     if pixels is None:
         pixels = np.arange(hp.nside2npix(nside))
 
@@ -404,22 +436,25 @@ def create_healpixel_test_orbits(
                     time,
                     origin,
                     nside=nside,
+                    out_dir=out_dir,
                 )
             )
 
             if len(futures) >= max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
                 test_orbits_chunk = ray.get(finished[0])
-                test_orbits = qv.concatenate([test_orbits, test_orbits_chunk])
-                if test_orbits.fragmented():
-                    test_orbits = qv.defragment(test_orbits)
+                if not write_to_disk:
+                    test_orbits = qv.concatenate([test_orbits, test_orbits_chunk])
+                    if test_orbits.fragmented():
+                        test_orbits = qv.defragment(test_orbits)
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
             test_orbits_chunk = ray.get(finished[0])
-            test_orbits = qv.concatenate([test_orbits, test_orbits_chunk])
-            if test_orbits.fragmented():
-                test_orbits = qv.defragment(test_orbits)
+            if not write_to_disk:
+                test_orbits = qv.concatenate([test_orbits, test_orbits_chunk])
+                if test_orbits.fragmented():
+                    test_orbits = qv.defragment(test_orbits)
 
     else:
         test_orbits = TestOrbits.empty()
@@ -433,7 +468,9 @@ def create_healpixel_test_orbits(
                 time,
                 origin,
                 nside=nside,
+                out_dir=out_dir,
             )
-            test_orbits = qv.concatenate([test_orbits, test_orbits_i])
+            if not write_to_disk:
+                test_orbits = qv.concatenate([test_orbits, test_orbits_i])
 
     return test_orbits
