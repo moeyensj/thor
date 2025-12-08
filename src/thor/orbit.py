@@ -14,6 +14,7 @@ from adam_core.coordinates import (
     CometaryCoordinates,
     CoordinateCovariances,
     KeplerianCoordinates,
+    Origin,
     OriginCodes,
     SphericalCoordinates,
     transform_coordinates,
@@ -487,6 +488,90 @@ class TestOrbits(qv.Table):
                     ranged_detections = qv.defragment(ranged_detections)
 
         return ranged_detections.sort_by(by=["state_id"])
+
+    def split(
+        self,
+        dt,
+        k: int = 3,
+        beta: float = 0.6,
+        gamma: float = 1.0,
+        num: int = 2,
+        current_depth: int = 0,
+        max_depth: int = 1,
+    ):
+        """
+        Split the test orbits into multiple test orbits.
+
+        Parameters
+        ----------
+        dt : float
+            Time step used to scale position/velocity coupling.
+        k : int, optional
+            Spread factor for child offsets along principal axis, by default 3 (3-sigma).
+        beta : float, optional
+            Shrink factor applied to leading eigenvalue for children, by default 0.6.
+        gamma : float, optional
+            Shrink factor applied to non-leading eigenvalues for children, by default 0.9.
+        num : int, optional
+            Number of children to create per split, by default 2.
+        current_depth : int, optional
+            Current recursion depth, by default 0.
+        max_depth : int, optional
+            Maximum recursion depth (inclusive), by default 0.
+
+        Returns
+        -------
+        TestOrbits
+            New test orbits spanning the phase space of the original test orbits.
+        """
+        from .phase_space.split import split_phase_space
+
+        test_orbits = TestOrbits.empty()
+        for test_orbit in self:
+            states, covariances = split_phase_space(
+                test_orbit.coordinates.values[0],
+                test_orbit.coordinates.covariance.to_matrix()[0],
+                dt,
+                k,
+                beta,
+                gamma,
+                num,
+                current_depth,
+                max_depth,
+            )
+
+            num_orbits = len(states)
+            test_orbits_i = TestOrbits.from_kwargs(
+                orbit_id=pc.binary_join_element_wise(
+                    pa.repeat(test_orbit.orbit_id[0], num_orbits),
+                    pa.array([f"{i:03d}" for i in range(num_orbits)], pa.large_string()),
+                    pc.cast(pa.scalar("_"), pa.large_string()),
+                ),
+                object_id=pa.repeat(test_orbit.object_id[0], num_orbits),
+                bundle_id=pa.repeat(test_orbit.bundle_id[0], num_orbits),
+                coordinates=CartesianCoordinates.from_kwargs(
+                    x=states[:, 0],
+                    y=states[:, 1],
+                    z=states[:, 2],
+                    vx=states[:, 3],
+                    vy=states[:, 4],
+                    vz=states[:, 5],
+                    covariance=CoordinateCovariances.from_matrix(covariances),
+                    time=Timestamp.from_kwargs(
+                        days=pa.repeat(test_orbit.coordinates.time.days[0], num_orbits),
+                        nanos=pa.repeat(test_orbit.coordinates.time.nanos[0], num_orbits),
+                        scale=test_orbit.coordinates.time.scale,
+                    ),
+                    origin=Origin.from_kwargs(
+                        code=pa.repeat(test_orbit.coordinates.origin.code[0], num_orbits)
+                    ),
+                    frame=test_orbit.coordinates.frame,
+                ),
+            )
+
+            test_orbits = qv.concatenate([test_orbits, test_orbits_i])
+
+        return test_orbits
 
 
 def assume_heliocentric_distance(
