@@ -413,6 +413,7 @@ def filter_observations(
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=ray.get_runtime_context().get_node_id(),
                         soft=True,
+                        _spill_on_unavailable=True,
                     ),
                 ).remote(
                     observations_chunk, test_orbit, filters, propagator_class

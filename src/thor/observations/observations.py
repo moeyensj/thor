@@ -258,6 +258,7 @@ def convert_input_observations_to_observations(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=ray.get_runtime_context().get_node_id(),
                     soft=True,
+                    _spill_on_unavailable=True,
                 ),
             ).remote(input_observation_chunk))
             i += 1
@@ -791,6 +792,7 @@ def convert_source_catalog_to_observations(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=ray.get_runtime_context().get_node_id(),
                     soft=True,
+                    _spill_on_unavailable=True,
                 ),
             ).remote(source_catalog_chunk))
             print(f"Queued source catalog chunk {i}")

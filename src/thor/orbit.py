@@ -404,6 +404,7 @@ class TestOrbits(qv.Table):
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=ray.get_runtime_context().get_node_id(),
                         soft=True,
+                        _spill_on_unavailable=True,
                     ),
                 ).remote(observations_ref, ephemeris_ref, state_id))
 
