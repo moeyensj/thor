@@ -334,6 +334,7 @@ def attribute_observations(
                         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                             node_id=ray.get_runtime_context().get_node_id(),
                             soft=True,
+                            _spill_on_unavailable=True,
                         ),
                     ).remote(
                         orbit_id_chunk,

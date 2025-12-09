@@ -299,7 +299,7 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             observers,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size=10,
             covariance=covariance,
             covariance_method=covariance_method,
             num_samples=num_samples,
@@ -460,6 +460,7 @@ class TestOrbits(qv.Table):
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=ray.get_runtime_context().get_node_id(),
                         soft=True,
+                        _spill_on_unavailable=True,
                     ),
                 ).remote(observations_ref, ephemeris_ref, state_id))
 
