@@ -10,7 +10,6 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import quivr as qv
 import ray
-
 from adam_core.coordinates import KeplerianCoordinates
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
@@ -18,6 +17,7 @@ from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
+
 from thor.observations import Observations
 from thor.observations.utils import calculate_healpixels
 from thor.orbit import TestOrbits
@@ -261,7 +261,7 @@ def generate_test_orbits_worker(
 
 
 generate_test_orbits_worker_remote = ray.remote(generate_test_orbits_worker)
-generate_test_orbits_worker_remote.options(num_cpus=1, num_returns=1)
+generate_test_orbits_worker_remote.options(num_returns=1, num_cpus=1)
 
 
 def generate_known_test_orbits(
@@ -389,7 +389,12 @@ def generate_known_test_orbits(
         futures = []
         for healpixel_chunk in _iterate_chunks(observations_healpixels, chunk_size):
             futures.append(
-                generate_test_orbits_worker_remote.remote(
+                generate_test_orbits_worker_remote.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True,
+                    ),
+                ).remote(
                     healpixel_chunk,
                     ephemeris_healpixels_ref,
                     propagated_orbits_ref,

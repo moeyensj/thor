@@ -7,7 +7,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from difi import analyze_observations
@@ -666,7 +665,12 @@ def analyze_run(
             orbit_name = orbit_dir.name
             logger.info(f"Submitting {orbit_name} to Ray...")
             futures.append(
-                analyze_orbit_worker.remote(
+                analyze_orbit_worker.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True,
+                    ),
+                ).remote(
                     str(orbit_dir),
                     config_ref,
                     labels_ref,
