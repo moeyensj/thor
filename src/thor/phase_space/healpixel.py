@@ -340,6 +340,7 @@ def create_healpixel_test_orbit_worker(
         test_orbits_i = TestOrbits.from_kwargs(
             orbit_id=orbit_ids,
             bundle_id=pa.repeat(f"{pixel}", num_states),
+            nside=pa.repeat(nside, num_states),
             coordinates=coords.to_cartesian(),
         )
 

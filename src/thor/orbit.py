@@ -139,6 +139,7 @@ class TestOrbits(qv.Table):
     orbit_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
     object_id = qv.LargeStringColumn(nullable=True)
     bundle_id = qv.Int64Column(nullable=True)
+    nside = qv.Int64Column(nullable=True)
     coordinates = CartesianCoordinates.as_column()
 
     @classmethod
@@ -567,6 +568,77 @@ class TestOrbits(qv.Table):
                     ),
                     frame=test_orbit.coordinates.frame,
                 ),
+            )
+
+            test_orbits = qv.concatenate([test_orbits, test_orbits_i])
+
+        return test_orbits
+
+    def split_healpixel(
+        self,
+    ):
+        """
+        Refine sky localization by subdividing lon/lat and their variances from a parent
+        HEALPix pixel into all child pixels at a larger nside (2x the parent nside).
+        Keeps rho, vrho, vlon, vlat and their covariances unchanged; only lon/lat and
+        sigma(lon/lat) are adjusted to the child pixel centers and half-widths.
+
+        Returns
+        -------
+        TestOrbits
+            New table with rows replicated per child pixel and lon/lat refined.
+        """
+        from .phase_space.split import split_healpixel as _split_healpixel_states
+
+        test_orbits = TestOrbits.empty()
+        test_orbit_ids = self.orbit_id
+        object_ids = self.object_id
+        bundle_ids = self.bundle_id
+        spherical = self.coordinates.to_spherical()
+        mu = spherical.values
+        cov = spherical.covariance.to_matrix()
+        current_nside = self.nside.to_numpy(zero_copy_only=False)
+        new_nside = current_nside * 2
+
+        for i in range(len(self)):
+
+            states, covariances = _split_healpixel_states(
+                mu[i],
+                cov[i],
+                current_nside[i],
+                new_nside[i],
+            )
+
+            num_orbits = len(states)
+
+            coords_sph = SphericalCoordinates.from_kwargs(
+                rho=states[:, 0],
+                lon=states[:, 1],
+                lat=states[:, 2],
+                vrho=states[:, 3],
+                vlon=states[:, 4],
+                vlat=states[:, 5],
+                time=Timestamp.from_kwargs(
+                    days=pa.repeat(spherical[i].time.days[0], num_orbits),
+                    nanos=pa.repeat(spherical[i].time.nanos[0], num_orbits),
+                    scale=spherical[i].time.scale,
+                ),
+                covariance=CoordinateCovariances.from_matrix(covariances),
+                origin=Origin.from_kwargs(code=pa.repeat(spherical[i].origin.code[0], num_orbits)),
+                frame=spherical[i].frame,
+            )
+            coords_cart = coords_sph.to_cartesian()
+
+            test_orbits_i = TestOrbits.from_kwargs(
+                orbit_id=pc.binary_join_element_wise(
+                    pa.repeat(test_orbit_ids[i], num_orbits),
+                    pa.array([f"{i:03d}" for i in range(num_orbits)], pa.large_string()),
+                    pc.cast(pa.scalar("_"), pa.large_string()),
+                ),
+                object_id=pa.repeat(object_ids[i], num_orbits),
+                bundle_id=pa.repeat(bundle_ids[i], num_orbits),
+                nside=pa.repeat(new_nside[i], num_orbits),
+                coordinates=coords_cart,
             )
 
             test_orbits = qv.concatenate([test_orbits, test_orbits_i])
