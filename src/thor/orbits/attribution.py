@@ -330,7 +330,12 @@ def attribute_observations(
             futures = []
             for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
                 futures.append(
-                    attribution_worker_remote.remote(
+                    attribution_worker_remote.options(
+                        scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                            node_id=ray.get_runtime_context().get_node_id(),
+                            soft=True,
+                        ),
+                    ).remote(
                         orbit_id_chunk,
                         observations_indices_chunk,
                         orbits_ref,

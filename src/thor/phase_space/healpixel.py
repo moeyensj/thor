@@ -587,7 +587,12 @@ def create_healpixel_test_orbits(
 
         for pixel_chunk in _iterate_chunks(pixels, chunk_size):
             futures.append(
-                create_healpixel_test_orbit_worker_remote.remote(
+                create_healpixel_test_orbit_worker_remote.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True,
+                    ),
+                ).remote(
                     rho_bin_edges,
                     e_bin_edges,
                     nu_bin_edges,

@@ -594,7 +594,12 @@ def initial_orbit_determination(
             futures = []
             for linkage_id_chunk_indices in _iterate_chunk_indices(linkage_ids, chunk_size):
                 futures.append(
-                    iod_worker_remote.remote(
+                    iod_worker_remote.options(
+                        scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                            node_id=ray.get_runtime_context().get_node_id(),
+                            soft=True,
+                        ),
+                    ).remote(
                         linkage_ids_ref,
                         linkage_id_chunk_indices,
                         observations_ref,
