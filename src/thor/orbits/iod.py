@@ -598,6 +598,7 @@ def initial_orbit_determination(
                         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                             node_id=ray.get_runtime_context().get_node_id(),
                             soft=True,
+                            _spill_on_unavailable=True,
                         ),
                     ).remote(
                         linkage_ids_ref,

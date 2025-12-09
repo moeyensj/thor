@@ -1412,6 +1412,7 @@ def cluster_and_link(
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=ray.get_runtime_context().get_node_id(),
                         soft=True,
+                        _spill_on_unavailable=True,
                     ),
                 ).remote(
                     vxi_chunk,
@@ -1708,6 +1709,7 @@ def fit_clusters(
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=ray.get_runtime_context().get_node_id(),
                         soft=True,
+                        _spill_on_unavailable=True,
                     ),
                 ).remote(
                     clusters_ref, cluster_members_ref, transformed_detections_ref, cluster_id_chunk
