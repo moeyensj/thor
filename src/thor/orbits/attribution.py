@@ -9,13 +9,12 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-from sklearn.neighbors import BallTree
-
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.utils.iter import _iterate_chunk_indices, _iterate_chunks
+from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
 from ..orbit_determination.fitted_orbits import (
@@ -270,11 +269,7 @@ def attribution_worker(
 
 
 attribution_worker_remote = ray.remote(attribution_worker)
-
-attribution_worker_remote.options(
-    num_returns=1,
-    num_cpus=1,
-)
+attribution_worker_remote.options(num_cpus=1, num_returns=1)
 
 
 def attribute_observations(
@@ -335,7 +330,12 @@ def attribute_observations(
             futures = []
             for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
                 futures.append(
-                    attribution_worker_remote.remote(
+                    attribution_worker_remote.options(
+                        scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                            node_id=ray.get_runtime_context().get_node_id(),
+                            soft=True,
+                        ),
+                    ).remote(
                         orbit_id_chunk,
                         observations_indices_chunk,
                         orbits_ref,

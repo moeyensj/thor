@@ -8,8 +8,6 @@ import numpy as np
 import pyarrow as pa
 import quivr as qv
 import ray
-from jax import jit, vmap
-
 from adam_core.constants import Constants as c
 from adam_core.coordinates import (
     CoordinateCovariances,
@@ -20,6 +18,8 @@ from adam_core.coordinates import (
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
+from jax import jit, vmap
+
 from thor.orbit import TestOrbits
 
 jax.config.update("jax_enable_x64", True)
@@ -361,7 +361,7 @@ def create_healpixel_test_orbit_worker(
 
 
 create_healpixel_test_orbit_worker_remote = ray.remote(create_healpixel_test_orbit_worker)
-
+create_healpixel_test_orbit_worker_remote.options(num_returns=1, num_cpus=1)
 
 def create_healpixel_test_orbits(
     rho_bin_edges: np.ndarray,
@@ -428,7 +428,12 @@ def create_healpixel_test_orbits(
 
         for pixel_chunk in _iterate_chunks(pixels, chunk_size):
             futures.append(
-                create_healpixel_test_orbit_worker_remote.remote(
+                create_healpixel_test_orbit_worker_remote.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True,
+                    ),
+                ).remote(
                     rho_bin_edges,
                     e_bin_edges,
                     nu_bin_edges,

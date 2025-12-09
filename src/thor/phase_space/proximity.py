@@ -4,7 +4,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
 from adam_core.coordinates import transform_coordinates
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
@@ -194,7 +193,12 @@ def find_nearest_test_orbit(
 
         for pixels in _iterate_chunks(unique_orbit_healpixels, chunk_size):
             futures.append(
-                nearest_test_orbit_worker_ray.remote(
+                nearest_test_orbit_worker_ray.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True,
+                    ),
+                ).remote(
                     pixels,
                     orbit_healpixels_ref,
                     test_orbits_healpixels_filtered_ref,

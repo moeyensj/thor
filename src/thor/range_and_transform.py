@@ -7,7 +7,6 @@ import numpy as np
 import numpy.typing as npt
 import quivr as qv
 import ray
-
 from adam_core.coordinates import (
     CartesianCoordinates,
     OriginCodes,
@@ -202,7 +201,12 @@ def range_and_transform(
             futures = []
             for state_id in state_ids:
                 futures.append(
-                    range_and_transform_remote.remote(
+                    range_and_transform_remote.options(
+                        scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                            node_id=ray.get_runtime_context().get_node_id(),
+                            soft=True,
+                        ),
+                    ).remote(
                         ranged_detections_spherical_ref,
                         observations_ref,
                         ephemeris_ref,

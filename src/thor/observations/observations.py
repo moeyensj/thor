@@ -7,7 +7,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
 from adam_core.observations import Exposures, PointSourceDetections, SourceCatalog
 from adam_core.observers import Observers, calculate_observing_night
@@ -171,6 +170,7 @@ def input_observations_to_observations_worker(
 
 
 input_observations_to_observations_worker_remote = ray.remote(input_observations_to_observations_worker)
+input_observations_to_observations_worker_remote.options(num_cpus=1, num_returns=1)
 
 
 def _process_all_completed_futures(
@@ -249,7 +249,12 @@ def convert_input_observations_to_observations(
                     futures, output_observations, output_writer
                 )
             print(f"Queueing input observation chunk {i}")
-            futures.append(input_observations_to_observations_worker_remote.remote(input_observation_chunk))
+            futures.append(input_observations_to_observations_worker_remote.options(
+                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=ray.get_runtime_context().get_node_id(),
+                    soft=True,
+                ),
+            ).remote(input_observation_chunk))
             i += 1
 
         while futures:
@@ -640,7 +645,12 @@ def convert_source_catalog_to_observations(
         for source_catalog_chunk in source_catalog_iterator:
             print(f"Queueing source catalog chunk {i}")
             i += 1
-            futures.append(source_catalog_to_observations_worker_remote.remote(source_catalog_chunk))
+            futures.append(source_catalog_to_observations_worker_remote.options(
+                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=ray.get_runtime_context().get_node_id(),
+                    soft=True,
+                ),
+            ).remote(source_catalog_chunk))
             print(f"Queued source catalog chunk {i}")
             if len(futures) >= max_processes * 1.5:
                 futures, _ = _process_all_completed_futures(futures, None, observations_writer)

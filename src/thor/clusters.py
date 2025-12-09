@@ -12,12 +12,11 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
+from adam_core.coordinates import Origin
 from adam_core.coordinates.residuals import Residuals
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
-from adam_core.coordinates import Origin
 
 from .orbit import TestOrbitEphemeris
 from .projections import GnomonicCoordinates
@@ -1289,7 +1288,12 @@ def cluster_and_link(
         for vxi_chunk, vyi_chunk in zip(_iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)):
 
             futures.append(
-                cluster_velocity_remote.remote(
+                cluster_velocity_remote.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True,
+                    ),
+                ).remote(
                     vxi_chunk,
                     vyi_chunk,
                     transformed_ref,
@@ -1519,7 +1523,7 @@ def fit_cluster_worker(
 
 
 fit_cluster_worker_remote = ray.remote(fit_cluster_worker)
-fit_cluster_worker_remote = fit_cluster_worker_remote.options(
+fit_cluster_worker_remote.options(
     num_returns=1,
     num_cpus=1,
 )
@@ -1575,7 +1579,12 @@ def fit_clusters(
         futures = []
         for cluster_id_chunk in _iterate_chunks(cluster_ids, chunk_size):
             futures.append(
-                fit_cluster_worker_remote.remote(
+                fit_cluster_worker_remote.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True,
+                    ),
+                ).remote(
                     clusters_ref, cluster_members_ref, transformed_detections_ref, cluster_id_chunk
                 )
             )
