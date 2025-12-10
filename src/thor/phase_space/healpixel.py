@@ -583,6 +583,7 @@ def create_geocentric_healpixel_test_orbit_worker(
     psi_bin_edges: np.ndarray,
     pixels: Iterable[int],
     time: Timestamp,
+    origin: OriginCodes = OriginCodes.SOLAR_SYSTEM_BARYCENTER,
     nside: int = 64,
     out_dir: Optional[str] = None,
 ) -> TestOrbits:
@@ -598,11 +599,11 @@ def create_geocentric_healpixel_test_orbit_worker(
     rho_bin_edges : np.ndarray
         Bin edges in geocentric distance (delta) [au].
     e_bin_edges : np.ndarray
-        Bin edges in heliocentric eccentricity.
+        Bin edges in heliocentric/barycentric eccentricity.
     nu_bin_edges : np.ndarray
-        Bin edges in heliocentric true anomaly [deg].
+        Bin edges in heliocentric/barycentric true anomaly [deg].
     psi_bin_edges : np.ndarray
-        Bin edges in heliocentric tangent angle [deg].
+        Bin edges in heliocentric/barycentric tangent angle [deg].
     pixels : Iterable[int]
         Geocentric HEALPix pixels (nest=True).
     time : Timestamp
@@ -622,9 +623,7 @@ def create_geocentric_healpixel_test_orbit_worker(
     """
     # 1. Get Geocenter Position at this time
     # We assume the observer is the Geocenter for the grid definition
-    geocenter = get_perturber_state(
-        OriginCodes.EARTH, time, frame="ecliptic", origin=OriginCodes.SOLAR_SYSTEM_BARYCENTER
-    )
+    geocenter = get_perturber_state(OriginCodes.EARTH, time, frame="ecliptic", origin=origin)
     r_earth = geocenter.r[0]
 
     # Grid centers
@@ -662,7 +661,7 @@ def create_geocentric_healpixel_test_orbit_worker(
 
         num_rho = len(rho_centers)
 
-        # Create Topocentric Spherical Coordinates for this pixel
+        # Create topocentric spherical coordinates for this pixel
         # We repeat the direction for each rho
         geo_sph = SphericalCoordinates.from_kwargs(
             rho=rho_centers,
@@ -680,18 +679,15 @@ def create_geocentric_healpixel_test_orbit_worker(
             frame="ecliptic",
         )
 
-        geo_cart = geo_sph.to_cartesian()
-
         # Prepare parameters for JAX
         # Params: [rho_g, lon_g, lat_g, e, nu, psi]
         # We need to tile everything to num_states_per_rho
-
-        # Tiled Geocentric Coordinates
+        # Tiled geocentric coordinates
         rho_tiled = np.repeat(rho_centers, num_states_per_pos)
         geo_lon_tiled = np.full(len(rho_tiled), geo_lon)
         geo_lat_tiled = np.full(len(rho_tiled), geo_lat)
 
-        # Tiled Orbital Elements
+        # Tiled orbital elements
         e_tiled = np.tile(e_flat, num_rho)
         nu_tiled = np.tile(nu_flat, num_rho)
         psi_tiled = np.tile(psi_flat, num_rho)
@@ -764,7 +760,7 @@ def create_geocentric_healpixel_test_orbit_worker(
                 scale=time.scale,
             ),
             covariance=CoordinateCovariances.from_matrix(covs_helio),
-            origin=Origin.from_kwargs(code=np.full(len(states_helio_np), "SUN")),
+            origin=Origin.from_OriginCodes(origin, size=len(states_helio_np)),
             frame="ecliptic",
         )
 
@@ -816,25 +812,26 @@ def create_geocentric_healpixel_test_orbits(
     psi_bin_edges: np.ndarray,
     time: Timestamp,
     nside: int = 64,
+    origin: OriginCodes = OriginCodes.SOLAR_SYSTEM_BARYCENTER,
     pixels: Optional[Iterable[int]] = None,
     chunk_size: int = 100,
     max_processes: int = 10,
     out_dir: Optional[str] = None,
 ) -> TestOrbits:
     """
-    Generate test orbits over Geocentric HEALPix pixels using bin edges for Geocentric ρ,
-    and Heliocentric e, ν, and ψ.
+    Generate test orbits over geocentric HEALPix pixels using bin edges for Geocentric ρ,
+    and heliocentric/barycentric e, ν, and ψ.
 
     Parameters
     ----------
     rho_bin_edges : np.ndarray (N_rho)
         Bin edges for geocentric distance rho in units of distance (e.g. au).
     e_bin_edges : np.ndarray (N_e)
-        Bin edges for heliocentric eccentricity e.
+        Bin edges for heliocentric/barycentric eccentricity e.
     nu_bin_edges : np.ndarray (N_nu)
-        Bin edges for heliocentric true anomaly nu (degrees).
+        Bin edges for heliocentric/barycentric true anomaly nu (degrees).
     psi_bin_edges : np.ndarray (N_psi)
-        Bin edges for heliocentric tangential direction psi (degrees).
+        Bin edges for heliocentric/barycentric tangential direction psi (degrees).
         psi = 0 is purely prograde along +lon; psi in (-90, 90) is prograde.
     time : Timestamp
         Time for the test orbits.
@@ -879,6 +876,7 @@ def create_geocentric_healpixel_test_orbits(
                     psi_bin_edges,
                     pixel_chunk,
                     time,
+                    origin=origin,
                     nside=nside,
                     out_dir=out_dir,
                 )
@@ -910,6 +908,7 @@ def create_geocentric_healpixel_test_orbits(
                 psi_bin_edges,
                 pixel_chunk,
                 time,
+                origin=origin,
                 nside=nside,
                 out_dir=out_dir,
             )
