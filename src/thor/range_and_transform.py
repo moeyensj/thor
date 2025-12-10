@@ -114,7 +114,7 @@ def range_and_transform_worker(
 
 
 range_and_transform_remote = ray.remote(range_and_transform_worker)
-range_and_transform_remote = range_and_transform_remote.options(
+range_and_transform_remote.options(
     num_cpus=1,
     num_returns=1,
 )
@@ -220,7 +220,7 @@ def range_and_transform(
                         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                             node_id=ray.get_runtime_context().get_node_id(),
                             soft=True,
-                        _spill_on_unavailable=True,
+                            _spill_on_unavailable=True,
                         ),
                     ).remote(
                         ranged_detections_spherical_ref,
