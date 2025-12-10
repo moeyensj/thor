@@ -12,6 +12,7 @@ from jax import jit, vmap
 
 from adam_core.constants import Constants as c
 from adam_core.coordinates import (
+    CartesianCoordinates,
     CoordinateCovariances,
     Origin,
     OriginCodes,
@@ -20,6 +21,7 @@ from adam_core.coordinates import (
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
+from adam_core.utils.spice import get_perturber_state
 from thor.orbit import TestOrbits
 
 jax.config.update("jax_enable_x64", True)
@@ -139,9 +141,106 @@ _kepler_to_spherical_velocities_vmap = jit(
     )
 )
 
+_kepler_to_spherical_velocities_vmap_lat = jit(
+    vmap(
+        kepler_to_spherical_velocities,
+        in_axes=(0, 0, None),
+    )
+)
+
 _kepler_to_spherical_velocities_jac_vmap = jit(
     vmap(
         jax.jacrev(kepler_to_spherical_velocities),
+        in_axes=(0, None, None),
+    )
+)
+
+
+def geocentric_to_heliocentric_cartesian(
+    elements: jnp.ndarray, r_earth: jnp.ndarray, mu: float = MU
+) -> jnp.ndarray:
+    """
+    JAX function mapping (rho, lon, lat, e, nu, psi) → (x, y, z, vx, vy, vz).
+
+    Parameters
+    ----------
+    elements : jnp.ndarray, shape (6,)
+        [rho_g, lon_g, lat_g, e, nu, psi], with:
+          rho_g : geocentric distance in units of distance (e.g. au)
+          lon_g : longitude in degrees
+          lat_g : latitude in degrees
+          e : eccentricity
+          nu : true anomaly in degrees
+          psi : angle in local tangent plane in degrees, where:
+                    psi = 0   → purely prograde along +lon
+                    psi ∈ (-90, +90) → prograde
+                    psi ∈ (90, 270)   → retrograde
+    r_earth : jnp.ndarray, shape (3,)
+        [x, y, z] of Earth in Heliocentric Cartesian
+    mu : float, optional
+        Gravitational parameter in units of distance^3 / time^2. Defaults to MU.
+
+    Returns
+    -------
+    jnp.ndarray: (6,)
+        [x, y, z, vx, vy, vz] heliocentric Cartesian coordinates
+    """
+    rho, lon, lat, e, nu, psi = elements
+
+    lon_rad = jnp.radians(lon)
+    lat_rad = jnp.radians(lat)
+
+    cos_lat = jnp.cos(lat_rad)
+    x_g = rho * cos_lat * jnp.cos(lon_rad)
+    y_g = rho * cos_lat * jnp.sin(lon_rad)
+    z_g = rho * jnp.sin(lat_rad)
+
+    r_h_vec = jnp.array([x_g, y_g, z_g]) + r_earth
+    x_h, y_h, z_h = r_h_vec
+
+    r_h = jnp.linalg.norm(r_h_vec)
+    lat_h_rad = jnp.arcsin(z_h / r_h)
+    lat_h_deg = jnp.degrees(lat_h_rad)
+    lon_h_rad = jnp.arctan2(y_h, x_h)
+
+    # Elements for velocity func: [r_h, e, nu, psi]
+    # Note: kepler_to_spherical_velocities expects degrees for angles in elements
+    elements = jnp.array([r_h, e, nu, psi])
+    v_sph = kepler_to_spherical_velocities(elements, lat_h_deg, mu)
+    # v_sph is [vr, vlon, vlat] in (au/d, deg/d, deg/d)
+
+    vr, vlon_deg, vlat_deg = v_sph
+    vlon_rad = jnp.radians(vlon_deg)
+    vlat_rad = jnp.radians(vlat_deg)
+
+    cos_lat_h = jnp.cos(lat_h_rad)
+    sin_lat_h = jnp.sin(lat_h_rad)
+    cos_lon_h = jnp.cos(lon_h_rad)
+    sin_lon_h = jnp.sin(lon_h_rad)
+
+    r_hat = jnp.array([cos_lat_h * cos_lon_h, cos_lat_h * sin_lon_h, sin_lat_h])
+    lon_hat = jnp.array([-sin_lon_h, cos_lon_h, 0.0])
+    lat_hat = jnp.array([-sin_lat_h * cos_lon_h, -sin_lat_h * sin_lon_h, cos_lat_h])
+
+    v_r_vec = vr * r_hat
+    v_lon_vec = (r_h * cos_lat_h * vlon_rad) * lon_hat
+    v_lat_vec = (r_h * vlat_rad) * lat_hat
+
+    v_vec = v_r_vec + v_lon_vec + v_lat_vec
+
+    return jnp.concatenate([r_h_vec, v_vec])
+
+
+_geocentric_to_heliocentric_cartesian_vmap = jit(
+    vmap(
+        geocentric_to_heliocentric_cartesian,
+        in_axes=(0, None, None),
+    )
+)
+
+_geocentric_to_heliocentric_cartesian_jac_vmap = jit(
+    vmap(
+        jax.jacrev(geocentric_to_heliocentric_cartesian),
         in_axes=(0, None, None),
     )
 )
@@ -468,6 +567,349 @@ def create_healpixel_test_orbits(
                 pixel_chunk,
                 time,
                 origin,
+                nside=nside,
+                out_dir=out_dir,
+            )
+            if not write_to_disk:
+                test_orbits = qv.concatenate([test_orbits, test_orbits_i])
+
+    return test_orbits
+
+
+def create_geocentric_healpixel_test_orbit_worker(
+    rho_bin_edges: np.ndarray,
+    e_bin_edges: np.ndarray,
+    nu_bin_edges: np.ndarray,
+    psi_bin_edges: np.ndarray,
+    pixels: Iterable[int],
+    time: Timestamp,
+    nside: int = 64,
+    out_dir: Optional[str] = None,
+) -> TestOrbits:
+    """
+    Create test orbits with positions defined on a Geocentric grid, but velocities
+    defined by Heliocentric orbital elements.
+
+    This results in a test orbit distribution that has smaller physical volumes
+    near the observer (scaling with geocentric distance^2).
+
+    Parameters
+    ----------
+    rho_bin_edges : np.ndarray
+        Bin edges in geocentric distance (delta) [au].
+    e_bin_edges : np.ndarray
+        Bin edges in heliocentric eccentricity.
+    nu_bin_edges : np.ndarray
+        Bin edges in heliocentric true anomaly [deg].
+    psi_bin_edges : np.ndarray
+        Bin edges in heliocentric tangent angle [deg].
+    pixels : Iterable[int]
+        Geocentric HEALPix pixels (nest=True).
+    time : Timestamp
+        Time at which to generate the orbits.
+    nside : int
+        HEALPix nside.
+    out_dir : str, optional
+        If provided, write per-pixel chunks of `TestOrbits` parquet files into this
+        directory (one file per HEALPix pixel chunk), and return an empty in-memory
+        table. If None (default), all test orbits are concatenated and returned in
+        memory.
+
+    Returns
+    -------
+    TestOrbits
+        Test orbits in Heliocentric Cartesian coordinates.
+    """
+    # 1. Get Geocenter Position at this time
+    # We assume the observer is the Geocenter for the grid definition
+    geocenter = get_perturber_state(
+        OriginCodes.EARTH, time, frame="ecliptic", origin=OriginCodes.SOLAR_SYSTEM_BARYCENTER
+    )
+    r_earth = geocenter.r[0]
+
+    # Grid centers
+    rho_centers, rho_hw = centers_and_halfwidths(rho_bin_edges)
+    e_centers, e_hw = centers_and_halfwidths(e_bin_edges)
+    nu_centers, nu_hw = centers_and_halfwidths(nu_bin_edges)
+    psi_centers, psi_hw = centers_and_halfwidths(psi_bin_edges)
+
+    # Prepare meshgrids for the orbital elements (constant for all positions)
+    # We'll tile these later
+    e_grid, nu_grid, psi_grid = np.meshgrid(e_centers, nu_centers, psi_centers, indexing="ij")
+    e_flat = e_grid.ravel()
+    nu_flat = nu_grid.ravel()
+    psi_flat = psi_grid.ravel()
+
+    num_states_per_pos = len(e_flat)
+
+    test_orbits = TestOrbits.empty()
+    pixels_array = np.asarray(list(pixels), dtype=int)
+
+    for pixel in pixels_array:
+        # 2. Define Geocentric Position Direction
+        # (lon, lat) here are Geocentric Ecliptic (if frame is ecliptic)
+        # usually healpixels are on the sphere.
+        geo_lon, geo_lat = hp.pix2ang(nside, pixel, nest=True, lonlat=True)
+
+        # Positional footprint → lon/lat uncertainties
+        lon_boundaries, lat_boundaries = compute_lon_lat_boundaries(nside, pixel)
+        dlon = np.max(np.abs(lon_boundaries - geo_lon))
+        dlat = np.max(np.abs(lat_boundaries - geo_lat))
+
+        # We need to construct the Geocentric Position vectors for each rho
+        # Convert (rho, geo_lon, geo_lat) -> Cartesian (x, y, z)
+        # We can use SphericalCoordinates to handle the transform easily
+
+        num_rho = len(rho_centers)
+
+        # Create Topocentric Spherical Coordinates for this pixel
+        # We repeat the direction for each rho
+        geo_sph = SphericalCoordinates.from_kwargs(
+            rho=rho_centers,
+            lon=np.full(num_rho, geo_lon),
+            lat=np.full(num_rho, geo_lat),
+            vrho=np.zeros(num_rho),  # Placeholders
+            vlon=np.zeros(num_rho),
+            vlat=np.zeros(num_rho),
+            time=Timestamp.from_kwargs(
+                days=np.full(num_rho, time.days[0]),
+                nanos=np.full(num_rho, time.nanos[0]),
+                scale=time.scale,
+            ),
+            origin=Origin.from_kwargs(code=np.full(num_rho, "EARTH")),
+            frame="ecliptic",
+        )
+
+        geo_cart = geo_sph.to_cartesian()
+
+        # Prepare parameters for JAX
+        # Params: [rho_g, lon_g, lat_g, e, nu, psi]
+        # We need to tile everything to num_states_per_rho
+
+        # Tiled Geocentric Coordinates
+        rho_tiled = np.repeat(rho_centers, num_states_per_pos)
+        geo_lon_tiled = np.full(len(rho_tiled), geo_lon)
+        geo_lat_tiled = np.full(len(rho_tiled), geo_lat)
+
+        # Tiled Orbital Elements
+        e_tiled = np.tile(e_flat, num_rho)
+        nu_tiled = np.tile(nu_flat, num_rho)
+        psi_tiled = np.tile(psi_flat, num_rho)
+
+        params_batch = jnp.stack(
+            [
+                jnp.asarray(rho_tiled),
+                jnp.asarray(geo_lon_tiled),
+                jnp.asarray(geo_lat_tiled),
+                jnp.asarray(e_tiled),
+                jnp.asarray(nu_tiled),
+                jnp.asarray(psi_tiled),
+            ],
+            axis=1,
+        )
+
+        # Compute States (Position + Velocity)
+        states_helio = _geocentric_to_heliocentric_cartesian_vmap(params_batch, jnp.asarray(r_earth), MU)
+        states_helio_np = np.array(states_helio)
+
+        # Compute Covariances
+        # Input uncertainties (sigmas)
+        # [sigma_rho, sigma_lon, sigma_lat, sigma_e, sigma_nu, sigma_psi]
+        sigma_rho_tiled = np.repeat(rho_hw, num_states_per_pos)
+        sigma_lon_tiled = np.full(len(rho_tiled), dlon)
+        sigma_lat_tiled = np.full(len(rho_tiled), dlat)
+
+        e_hw_grid, nu_hw_grid, psi_hw_grid = np.meshgrid(e_hw, nu_hw, psi_hw, indexing="ij")
+        sigma_e_flat = e_hw_grid.ravel()
+        sigma_nu_flat = nu_hw_grid.ravel()
+        sigma_psi_flat = psi_hw_grid.ravel()
+
+        sigma_e_tiled = np.tile(sigma_e_flat, num_rho)
+        sigma_nu_tiled = np.tile(sigma_nu_flat, num_rho)
+        sigma_psi_tiled = np.tile(sigma_psi_flat, num_rho)
+
+        sigmas_np = np.stack(
+            [
+                sigma_rho_tiled,
+                sigma_lon_tiled,
+                sigma_lat_tiled,
+                sigma_e_tiled,
+                sigma_nu_tiled,
+                sigma_psi_tiled,
+            ],
+            axis=1,
+        )
+        sigmas = jnp.asarray(sigmas_np)
+        Sigma_p_diag = sigmas**2  # (N, 6)
+
+        # Jacobian J (N, 6, 6)
+        Js = _geocentric_to_heliocentric_cartesian_jac_vmap(params_batch, jnp.asarray(r_earth), MU)
+
+        # Propagate Covariance: Sigma_v = J * Sigma_p * J^T
+        Sigma_p_diag_exp = jnp.expand_dims(Sigma_p_diag, axis=1)  # (N, 1, 6)
+        J_scaled = Js * Sigma_p_diag_exp  # (N, 6, 6)
+        covs_helio = np.array(jnp.einsum("nij,nkj->nik", Js, J_scaled))  # (N, 6, 6)
+
+        # Construct Final Heliocentric States
+        final_cart = CartesianCoordinates.from_kwargs(
+            x=states_helio_np[:, 0],
+            y=states_helio_np[:, 1],
+            z=states_helio_np[:, 2],
+            vx=states_helio_np[:, 3],
+            vy=states_helio_np[:, 4],
+            vz=states_helio_np[:, 5],
+            time=Timestamp.from_kwargs(
+                days=np.repeat(time.days[0], len(states_helio_np)),
+                nanos=np.repeat(time.nanos[0], len(states_helio_np)),
+                scale=time.scale,
+            ),
+            covariance=CoordinateCovariances.from_matrix(covs_helio),
+            origin=Origin.from_kwargs(code=np.full(len(states_helio_np), "SUN")),
+            frame="ecliptic",
+        )
+
+        # Create IDs
+        # You might want to encode the Geocentric grid info in the ID for debugging
+        # e.g. pixel + geo_rho + e + nu + psi
+        orbit_ids = [
+            f"{pixel}_grho{gr:.3f}_e{e:.3f}_nu{nu:.3f}_psi{psi:.3f}"
+            for gr, e, nu, psi in zip(
+                rho_tiled,
+                e_tiled,
+                nu_tiled,
+                psi_tiled,
+            )
+        ]
+
+        chunk = TestOrbits.from_kwargs(
+            orbit_id=orbit_ids,
+            bundle_id=pa.repeat(f"{pixel}", len(final_cart)),
+            nside=pa.repeat(nside, len(final_cart)),
+            coordinates=final_cart,
+        )
+
+        test_orbits = qv.concatenate([test_orbits, chunk])
+
+    if out_dir is not None:
+        os.makedirs(out_dir, exist_ok=True)
+        start_pixel = int(pixels_array.min())
+        end_pixel = int(pixels_array.max())
+        filepath = os.path.join(
+            out_dir,
+            f"healpixel_nside{nside}_pixels{start_pixel}_{end_pixel}.parquet",
+        )
+        test_orbits.to_parquet(filepath)
+        return TestOrbits.empty()
+
+    return test_orbits
+
+
+create_geocentric_healpixel_test_orbit_worker_remote = ray.remote(
+    create_geocentric_healpixel_test_orbit_worker
+)
+
+
+def create_geocentric_healpixel_test_orbits(
+    rho_bin_edges: np.ndarray,
+    e_bin_edges: np.ndarray,
+    nu_bin_edges: np.ndarray,
+    psi_bin_edges: np.ndarray,
+    time: Timestamp,
+    nside: int = 64,
+    pixels: Optional[Iterable[int]] = None,
+    chunk_size: int = 100,
+    max_processes: int = 10,
+    out_dir: Optional[str] = None,
+) -> TestOrbits:
+    """
+    Generate test orbits over Geocentric HEALPix pixels using bin edges for Geocentric ρ,
+    and Heliocentric e, ν, and ψ.
+
+    Parameters
+    ----------
+    rho_bin_edges : np.ndarray (N_rho)
+        Bin edges for geocentric distance rho in units of distance (e.g. au).
+    e_bin_edges : np.ndarray (N_e)
+        Bin edges for heliocentric eccentricity e.
+    nu_bin_edges : np.ndarray (N_nu)
+        Bin edges for heliocentric true anomaly nu (degrees).
+    psi_bin_edges : np.ndarray (N_psi)
+        Bin edges for heliocentric tangential direction psi (degrees).
+        psi = 0 is purely prograde along +lon; psi in (-90, 90) is prograde.
+    time : Timestamp
+        Time for the test orbits.
+    nside : int, optional
+        HEALPix nside.
+    pixels : array-like or None
+        Pixels to process. If None, use all pixels for this nside.
+    chunk_size : int
+        Number of pixels per worker chunk.
+    max_processes : int
+        Max number of Ray processes (CPUs) to use.
+    out_dir : str, optional
+        If provided, directory where per-pixel parquet files will be written.
+        Each pixel will be saved as
+        ``healpixel_nside{nside}_pixel{pixel}.parquet`` within this directory.
+        When ``out_dir`` is not None, the function returns an empty in-memory
+        table after writing all partitions to disk.
+
+    Returns
+    -------
+    TestOrbits (N_rho * N_e * N_nu * N_psi * N_pixels)
+        Test orbits generated over the given healpixels (in memory when
+        ``out_dir`` is None, otherwise an empty table is returned).
+    """
+    write_to_disk = out_dir is not None
+
+    if pixels is None:
+        pixels = np.arange(hp.nside2npix(nside))
+
+    use_ray = initialize_use_ray(num_cpus=max_processes)
+
+    if use_ray:
+        futures = []
+        test_orbits = TestOrbits.empty()
+
+        for pixel_chunk in _iterate_chunks(pixels, chunk_size):
+            futures.append(
+                create_geocentric_healpixel_test_orbit_worker_remote.remote(
+                    rho_bin_edges,
+                    e_bin_edges,
+                    nu_bin_edges,
+                    psi_bin_edges,
+                    pixel_chunk,
+                    time,
+                    nside=nside,
+                    out_dir=out_dir,
+                )
+            )
+
+            if len(futures) >= max_processes * 1.5:
+                finished, futures = ray.wait(futures, num_returns=1)
+                test_orbits_chunk = ray.get(finished[0])
+                if not write_to_disk:
+                    test_orbits = qv.concatenate([test_orbits, test_orbits_chunk])
+                    if test_orbits.fragmented():
+                        test_orbits = qv.defragment(test_orbits)
+
+        while futures:
+            finished, futures = ray.wait(futures, num_returns=1)
+            test_orbits_chunk = ray.get(finished[0])
+            if not write_to_disk:
+                test_orbits = qv.concatenate([test_orbits, test_orbits_chunk])
+                if test_orbits.fragmented():
+                    test_orbits = qv.defragment(test_orbits)
+
+    else:
+        test_orbits = TestOrbits.empty()
+        for pixel_chunk in _iterate_chunks(pixels, chunk_size):
+            test_orbits_i = create_geocentric_healpixel_test_orbit_worker(
+                rho_bin_edges,
+                e_bin_edges,
+                nu_bin_edges,
+                psi_bin_edges,
+                pixel_chunk,
+                time,
                 nside=nside,
                 out_dir=out_dir,
             )
