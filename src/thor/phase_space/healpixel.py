@@ -27,6 +27,8 @@ from thor.orbit import TestOrbits
 jax.config.update("jax_enable_x64", True)
 
 MU = c.MU
+MIN_SIGMA = 1e-12
+COVARIANCE_JITTER = 1e-18
 
 
 def compute_lon_lat_boundaries(nside: int, pixel: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -586,6 +588,7 @@ def create_geocentric_healpixel_test_orbit_worker(
     origin: OriginCodes = OriginCodes.SOLAR_SYSTEM_BARYCENTER,
     nside: int = 64,
     out_dir: Optional[str] = None,
+    max_phase_angle: Optional[float] = None,
 ) -> TestOrbits:
     """
     Create test orbits with positions defined on a Geocentric grid, but velocities
@@ -615,6 +618,10 @@ def create_geocentric_healpixel_test_orbit_worker(
         directory (one file per HEALPix pixel chunk), and return an empty in-memory
         table. If None (default), all test orbits are concatenated and returned in
         memory.
+    max_phase_angle : float, optional
+        Maximum allowed phase angle (degrees) between the HEALPix center direction
+        (geocentric) and the Earth vector (heliocentric). Pixels exceeding this
+        limit are skipped.
 
     Returns
     -------
@@ -625,6 +632,7 @@ def create_geocentric_healpixel_test_orbit_worker(
     # We assume the observer is the Geocenter for the grid definition
     geocenter = get_perturber_state(OriginCodes.EARTH, time, frame="ecliptic", origin=origin)
     r_earth = geocenter.r[0]
+    earth_unit = r_earth / np.linalg.norm(r_earth)
 
     # Grid centers
     rho_centers, rho_hw = centers_and_halfwidths(rho_bin_edges)
@@ -649,6 +657,20 @@ def create_geocentric_healpixel_test_orbit_worker(
         # (lon, lat) here are Geocentric Ecliptic (if frame is ecliptic)
         # usually healpixels are on the sphere.
         geo_lon, geo_lat = hp.pix2ang(nside, pixel, nest=True, lonlat=True)
+
+        # Approximate phase angle cut: angle between HEALPix center direction and
+        # Earth vector (Sun -> Earth); small angles correspond to opposition.
+        if max_phase_angle is not None:
+            pixel_dir = np.array(
+                [
+                    np.cos(np.deg2rad(geo_lat)) * np.cos(np.deg2rad(geo_lon)),
+                    np.cos(np.deg2rad(geo_lat)) * np.sin(np.deg2rad(geo_lon)),
+                    np.sin(np.deg2rad(geo_lat)),
+                ]
+            )
+            phase_angle = np.degrees(np.arccos(np.clip(np.dot(pixel_dir, earth_unit), -1.0, 1.0)))
+            if phase_angle > max_phase_angle:
+                continue
 
         # Positional footprint → lon/lat uncertainties
         lon_boundaries, lat_boundaries = compute_lon_lat_boundaries(nside, pixel)
@@ -736,6 +758,7 @@ def create_geocentric_healpixel_test_orbit_worker(
             axis=1,
         )
         sigmas = jnp.asarray(sigmas_np)
+        sigmas = jnp.maximum(sigmas, MIN_SIGMA)
         Sigma_p_diag = sigmas**2  # (N, 6)
 
         # Jacobian J (N, 6, 6)
@@ -745,6 +768,7 @@ def create_geocentric_healpixel_test_orbit_worker(
         Sigma_p_diag_exp = jnp.expand_dims(Sigma_p_diag, axis=1)  # (N, 1, 6)
         J_scaled = Js * Sigma_p_diag_exp  # (N, 6, 6)
         covs_helio = np.array(jnp.einsum("nij,nkj->nik", Js, J_scaled))  # (N, 6, 6)
+        covs_helio = covs_helio + np.eye(6)[None, :, :] * COVARIANCE_JITTER  # (N, 6, 6)
 
         # Construct Final Heliocentric States
         final_cart = CartesianCoordinates.from_kwargs(
@@ -817,6 +841,7 @@ def create_geocentric_healpixel_test_orbits(
     chunk_size: int = 100,
     max_processes: int = 10,
     out_dir: Optional[str] = None,
+    max_phase_angle: Optional[float] = None,
 ) -> TestOrbits:
     """
     Generate test orbits over geocentric HEALPix pixels using bin edges for Geocentric ρ,
@@ -849,6 +874,10 @@ def create_geocentric_healpixel_test_orbits(
         ``healpixel_nside{nside}_pixel{pixel}.parquet`` within this directory.
         When ``out_dir`` is not None, the function returns an empty in-memory
         table after writing all partitions to disk.
+    max_phase_angle : float, optional
+        Maximum allowed phase angle (degrees) between the HEALPix center direction
+        and the Earth vector (heliocentric). Pixels exceeding this limit are
+        skipped.
 
     Returns
     -------
@@ -879,6 +908,7 @@ def create_geocentric_healpixel_test_orbits(
                     origin=origin,
                     nside=nside,
                     out_dir=out_dir,
+                    max_phase_angle=max_phase_angle,
                 )
             )
 
@@ -911,6 +941,7 @@ def create_geocentric_healpixel_test_orbits(
                 origin=origin,
                 nside=nside,
                 out_dir=out_dir,
+                max_phase_angle=max_phase_angle,
             )
             if not write_to_disk:
                 test_orbits = qv.concatenate([test_orbits, test_orbits_i])
