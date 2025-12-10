@@ -589,6 +589,8 @@ def create_geocentric_healpixel_test_orbit_worker(
     nside: int = 64,
     out_dir: Optional[str] = None,
     max_phase_angle: Optional[float] = None,
+    min_q: Optional[float] = None,
+    max_q: Optional[float] = None,
 ) -> TestOrbits:
     """
     Create test orbits with positions defined on a Geocentric grid, but velocities
@@ -622,6 +624,12 @@ def create_geocentric_healpixel_test_orbit_worker(
         Maximum allowed phase angle (degrees) between the HEALPix center direction
         (geocentric) and the Earth vector (heliocentric). Pixels exceeding this
         limit are skipped.
+    min_q : float, optional
+        Minimum allowed heliocentric perihelion distance q (au). States with
+        perihelion below this value are skipped.
+    max_q : float, optional
+        Maximum allowed heliocentric perihelion distance q (au). States with
+        perihelion above this value are skipped.
 
     Returns
     -------
@@ -730,21 +738,45 @@ def create_geocentric_healpixel_test_orbit_worker(
         states_helio = _geocentric_to_heliocentric_cartesian_vmap(params_batch, jnp.asarray(r_earth), MU)
         states_helio_np = np.array(states_helio)
 
+        # Perihelion filter (q = a * (1 - e))
+        r_norm = np.linalg.norm(states_helio_np[:, :3], axis=1)
+        v_norm2 = np.sum(states_helio_np[:, 3:] ** 2, axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            a = 1.0 / (2.0 / r_norm - v_norm2 / MU)
+        q_vals = a * (1.0 - e_tiled)
+        mask = np.isfinite(q_vals)
+        if min_q is not None:
+            mask &= q_vals >= min_q
+        if max_q is not None:
+            mask &= q_vals <= max_q
+        if not mask.any():
+            continue
+
+        # Apply mask to element grids for consistent downstream use
+        rho_tiled = rho_tiled[mask]
+        geo_lon_tiled = geo_lon_tiled[mask]
+        geo_lat_tiled = geo_lat_tiled[mask]
+        e_tiled = e_tiled[mask]
+        nu_tiled = nu_tiled[mask]
+        psi_tiled = psi_tiled[mask]
+        params_batch = params_batch[mask]
+        states_helio_np = states_helio_np[mask]
+
         # Compute Covariances
         # Input uncertainties (sigmas)
         # [sigma_rho, sigma_lon, sigma_lat, sigma_e, sigma_nu, sigma_psi]
-        sigma_rho_tiled = np.repeat(rho_hw, num_states_per_pos)
-        sigma_lon_tiled = np.full(len(rho_tiled), dlon)
-        sigma_lat_tiled = np.full(len(rho_tiled), dlat)
+        sigma_rho_tiled = np.repeat(rho_hw, num_states_per_pos)[mask]
+        sigma_lon_tiled = np.full(mask.sum(), dlon)
+        sigma_lat_tiled = np.full(mask.sum(), dlat)
 
         e_hw_grid, nu_hw_grid, psi_hw_grid = np.meshgrid(e_hw, nu_hw, psi_hw, indexing="ij")
         sigma_e_flat = e_hw_grid.ravel()
         sigma_nu_flat = nu_hw_grid.ravel()
         sigma_psi_flat = psi_hw_grid.ravel()
 
-        sigma_e_tiled = np.tile(sigma_e_flat, num_rho)
-        sigma_nu_tiled = np.tile(sigma_nu_flat, num_rho)
-        sigma_psi_tiled = np.tile(sigma_psi_flat, num_rho)
+        sigma_e_tiled = np.tile(sigma_e_flat, num_rho)[mask]
+        sigma_nu_tiled = np.tile(sigma_nu_flat, num_rho)[mask]
+        sigma_psi_tiled = np.tile(sigma_psi_flat, num_rho)[mask]
 
         sigmas_np = np.stack(
             [
@@ -842,6 +874,8 @@ def create_geocentric_healpixel_test_orbits(
     max_processes: int = 10,
     out_dir: Optional[str] = None,
     max_phase_angle: Optional[float] = None,
+    min_q: Optional[float] = None,
+    max_q: Optional[float] = None,
 ) -> TestOrbits:
     """
     Generate test orbits over geocentric HEALPix pixels using bin edges for Geocentric ρ,
@@ -878,6 +912,12 @@ def create_geocentric_healpixel_test_orbits(
         Maximum allowed phase angle (degrees) between the HEALPix center direction
         and the Earth vector (heliocentric). Pixels exceeding this limit are
         skipped.
+    min_q : float, optional
+        Minimum allowed heliocentric perihelion distance q (au). States with
+        perihelion below this value are skipped.
+    max_q : float, optional
+        Maximum allowed heliocentric perihelion distance q (au). States with
+        perihelion above this value are skipped.
 
     Returns
     -------
@@ -909,6 +949,8 @@ def create_geocentric_healpixel_test_orbits(
                     nside=nside,
                     out_dir=out_dir,
                     max_phase_angle=max_phase_angle,
+                    min_q=min_q,
+                    max_q=max_q,
                 )
             )
 
@@ -942,6 +984,8 @@ def create_geocentric_healpixel_test_orbits(
                 nside=nside,
                 out_dir=out_dir,
                 max_phase_angle=max_phase_angle,
+                min_q=min_q,
+                max_q=max_q,
             )
             if not write_to_disk:
                 test_orbits = qv.concatenate([test_orbits, test_orbits_i])
