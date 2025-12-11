@@ -4,7 +4,11 @@ import healpy as hp
 import numpy as np
 import numpy.typing as npt
 
+from adam_core.coordinates.covariances import make_positive_semidefinite
+
 from .healpixel import compute_lon_lat_boundaries
+
+SEMIDEF_TOL = 1e-12
 
 
 def split_phase_space(
@@ -107,6 +111,33 @@ def split_phase_space(
     return states, covs
 
 
+def _ensure_psd(cov: np.ndarray, tol: float = SEMIDEF_TOL) -> np.ndarray:
+    """
+    Return a PSD copy of `cov`, flipping small negative eigenvalues.
+
+    Parameters
+    ----------
+    cov : (6, 6) numpy.ndarray
+        Covariance matrix to ensure positive semidefinite.
+    tol : float, optional
+        Tolerance for eigenvalues close to zero.
+
+    Returns
+    -------
+    cov: (6, 6) numpy.ndarray
+        Positive semidefinite covariance matrix.
+    """
+    # Keep symmetry before eigen-decomposition.
+    cov = 0.5 * (cov + cov.T)
+    try:
+        return make_positive_semidefinite(cov, semidef_tol=tol)
+    except ValueError:
+        # Fall back by flooring all eigenvalues at zero if below tolerance.
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        eigvals = np.maximum(eigvals, 0.0)
+        return eigvecs @ np.diag(eigvals) @ eigvecs.T
+
+
 def split_healpixel(
     mu: np.ndarray,
     cov: np.ndarray,
@@ -176,5 +207,6 @@ def split_healpixel(
         covs[i, 2, 2] = dlat**2
         covs[i, 1, 2] = 0.0
         covs[i, 2, 1] = 0.0
+        covs[i] = _ensure_psd(covs[i])
 
     return states, covs
