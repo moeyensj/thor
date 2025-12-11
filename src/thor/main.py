@@ -70,6 +70,7 @@ def link_test_orbit(
     working_dir: Optional[str] = None,
     filters: Optional[List[ObservationFilter]] = None,
     config: Optional[Config] = None,
+    stop_after_stage: Optional[str] = None,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """
     Run THOR for a single test orbit on the given observations. This function will yield
@@ -96,6 +97,10 @@ def link_test_orbit(
         List of filters to apply to the observations before running THOR.
     config : `~thor.config.Config`, optional
         Configuration to use for THOR. If None, the default configuration will be used.
+    stop_after_stage : str, optional
+        If provided, stop processing after this stage completes. Valid values are
+        "filter_observations", "range_and_transform", "cluster_and_link",
+        "initial_orbit_determination", "differential_correction", "recover_orbits".
     """
     time_start = time.perf_counter()
     logger.info("Running test orbit...")
@@ -175,6 +180,8 @@ def link_test_orbit(
             result=(filtered_observations,),
             path=(filtered_observations_path,),
         )
+        if stop_after_stage == "filter_observations":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
@@ -215,6 +222,8 @@ def link_test_orbit(
             result=(transformed_detections,),
             path=(transformed_detections_path,),
         )
+        if stop_after_stage == "range_and_transform":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
@@ -278,6 +287,8 @@ def link_test_orbit(
             result=(clusters, cluster_members),
             path=(clusters_path, cluster_members_path),
         )
+        if stop_after_stage == "cluster_and_link":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
@@ -334,6 +345,8 @@ def link_test_orbit(
             result=(iod_orbits, iod_orbit_members),
             path=(iod_orbits_path, iod_orbit_members_path),
         )
+        if stop_after_stage == "initial_orbit_determination":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
@@ -391,6 +404,8 @@ def link_test_orbit(
             result=(od_orbits, od_orbit_members),
             path=(od_orbits_path, od_orbit_members_path),
         )
+        if stop_after_stage == "differential_correction":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
