@@ -54,6 +54,7 @@ class LinkTestOrbitStageResult:
 
     name: Literal[
         "filter_observations",
+        "generate_ephemeris",
         "range_and_transform",
         "cluster_and_link",
         "initial_orbit_determination",
@@ -76,12 +77,13 @@ def link_test_orbit(
     """
     Run THOR for a single test orbit on the given observations. This function will yield
     results at each stage of the pipeline.
-        1. filtered observations
-        2. transformed_detections
-        3. clusters, cluster_members
-        4. iod_orbits, iod_orbit_members
-        5. od_orbits, od_orbit_members
-        6. recovered_orbits, recovered_orbit_members
+        1. filtered_observations
+        2. test_orbit_ephemeris
+        3. transformed_detections
+        4. clusters, cluster_members
+        5. iod_orbits, iod_orbit_members
+        6. od_orbits, od_orbit_members
+        7. recovered_orbits, recovered_orbit_members
 
     Parameters
     ----------
@@ -100,7 +102,7 @@ def link_test_orbit(
         Configuration to use for THOR. If None, the default configuration will be used.
     stop_after_stage : str, optional
         If provided, stop processing after this stage completes. Valid values are
-        "filter_observations", "range_and_transform", "cluster_and_link",
+        "filter_observations", "generate_ephemeris", "range_and_transform", "cluster_and_link",
         "initial_orbit_determination", "differential_correction", "recover_orbits".
     """
     time_start = time.perf_counter()
@@ -132,7 +134,6 @@ def link_test_orbit(
     module_path, class_name = config.propagator_namespace.rsplit(".", 1)
     propagator_module = importlib.import_module(module_path)
     propagator_class = getattr(propagator_module, class_name)
-    test_orbit_ephemeris = None
 
     use_ray = initialize_use_ray(
         num_cpus=config.max_processes,
@@ -157,7 +158,6 @@ def link_test_orbit(
         )
 
     if checkpoint.stage == "filter_observations":
-
         filters = []
         if config.filter_cell_radius is not None:
             filters.append(TestOrbitRadiusObservationFilter(radius=config.filter_cell_radius))
@@ -166,7 +166,8 @@ def link_test_orbit(
                 TestOrbitMahalanobisObservationFilter(mahalanobis_distance=config.filter_mahalanobis_distance)
             )
 
-        filtered_observations = filter_observations(
+        # filter_observations now returns both filtered observations and captured ephemeris
+        filtered_observations, test_orbit_ephemeris = filter_observations(
             observations,
             test_orbit,
             filters,
@@ -194,14 +195,57 @@ def link_test_orbit(
                 logger.info("Placed filtered observations in the object store.")
 
         checkpoint = create_checkpoint_data(
-            "range_and_transform",
+            "generate_ephemeris",
             filtered_observations=filtered_observations,
+            test_orbit_ephemeris=test_orbit_ephemeris,
         )
 
     # Observations are no longer needed
     del observations
 
+    if checkpoint.stage == "generate_ephemeris":
+        filtered_observations = checkpoint.filtered_observations
+        test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
+
+        # If ephemeris from filtering is empty, generate it from filtered observations
+        if len(test_orbit_ephemeris) == 0:
+            logger.info("No ephemeris from filtering, generating from filtered observations...")
+            test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
+                filtered_observations,
+                propagator_class=propagator_class,
+                max_processes=config.max_processes,
+                covariance=True,
+            )
+
+        ephemeris_path = None
+        if test_orbit_directory is not None:
+            ephemeris_path = os.path.join(test_orbit_directory, "test_orbit_ephemeris.parquet")
+            test_orbit_ephemeris.to_parquet(ephemeris_path)
+
+        yield LinkTestOrbitStageResult(
+            name="generate_ephemeris",
+            result=(test_orbit_ephemeris,),
+            path=(ephemeris_path,),
+        )
+        if stop_after_stage == "generate_ephemeris":
+            return
+
+        if use_ray:
+            if not isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                test_orbit_ephemeris = ray.put(test_orbit_ephemeris)
+                logger.info("Placed test orbit ephemeris in the object store.")
+            if not isinstance(filtered_observations, ray.ObjectRef):
+                filtered_observations = ray.put(filtered_observations)
+                logger.info("Placed filtered observations in the object store.")
+
+        checkpoint = create_checkpoint_data(
+            "range_and_transform",
+            test_orbit_ephemeris=test_orbit_ephemeris,
+            filtered_observations=filtered_observations,
+        )
+
     if checkpoint.stage == "range_and_transform":
+        test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
         filtered_observations = checkpoint.filtered_observations
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
@@ -214,6 +258,7 @@ def link_test_orbit(
             filtered_observations,
             propagator_class=propagator_class,
             max_processes=config.max_processes,
+            test_orbit_ephemeris=test_orbit_ephemeris,
         )
 
         transformed_detections_path = None
@@ -231,6 +276,9 @@ def link_test_orbit(
             return
 
         if use_ray:
+            if not isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                test_orbit_ephemeris = ray.put(test_orbit_ephemeris)
+                logger.info("Placed test orbit ephemeris in the object store.")
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
@@ -240,21 +288,15 @@ def link_test_orbit(
 
         checkpoint = create_checkpoint_data(
             "cluster_and_link",
+            test_orbit_ephemeris=test_orbit_ephemeris,
             filtered_observations=filtered_observations,
             transformed_detections=transformed_detections,
         )
 
     if checkpoint.stage == "cluster_and_link":
+        test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
-
-        if test_orbit_ephemeris is None:
-            test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
-                filtered_observations,
-                propagator_class=propagator_class,
-                max_processes=config.max_processes,
-                covariance=True,
-            )
 
         # Run clustering (parameters calculated automatically from test_orbit_ephemeris if provided)
         clusters, cluster_members = cluster_and_link(
@@ -514,7 +556,7 @@ def link_test_orbits(
         the covariance. Default is "eigenvalue".
     stop_after_stage : str, optional
         If provided, stop processing each orbit after this stage completes. Valid values are
-        "filter_observations", "range_and_transform", "cluster_and_link",
+        "filter_observations", "generate_ephemeris", "range_and_transform", "cluster_and_link",
         "initial_orbit_determination", "differential_correction", "recover_orbits".
     max_split_depth: int, optional
         Maximum depth to split test orbits.

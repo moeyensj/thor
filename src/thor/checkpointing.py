@@ -8,6 +8,7 @@ import ray
 
 from thor.clusters import FittedClusterMembers, FittedClusters
 from thor.observations.observations import Observations
+from thor.orbit import TestOrbitEphemeris
 from thor.orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from thor.range_and_transform import TransformedDetections
 
@@ -16,6 +17,7 @@ logger = logging.getLogger("thor")
 
 VALID_STAGES = Literal[
     "filter_observations",
+    "generate_ephemeris",
     "range_and_transform",
     "cluster_and_link",
     "initial_orbit_determination",
@@ -29,11 +31,21 @@ class FilterObservations(pydantic.BaseModel):
     stage: Literal["filter_observations"]
 
 
+class GenerateEphemeris(pydantic.BaseModel):
+    class Config:
+        arbitrary_types_allowed = True
+
+    stage: Literal["generate_ephemeris"]
+    filtered_observations: Union[Observations, ray.ObjectRef]
+    test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
+
+
 class RangeAndTransform(pydantic.BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
     stage: Literal["range_and_transform"]
+    test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
     filtered_observations: Union[Observations, ray.ObjectRef]
 
 
@@ -42,6 +54,7 @@ class ClusterAndLink(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
     stage: Literal["cluster_and_link"]
+    test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
     filtered_observations: Union[Observations, ray.ObjectRef]
     transformed_detections: Union[TransformedDetections, ray.ObjectRef]
 
@@ -88,6 +101,7 @@ class Complete(pydantic.BaseModel):
 CheckpointData = Annotated[
     Union[
         FilterObservations,
+        GenerateEphemeris,
         RangeAndTransform,
         ClusterAndLink,
         InitialOrbitDetermination,
@@ -101,6 +115,7 @@ CheckpointData = Annotated[
 # A mapping from stage to model class
 stage_to_model: Dict[str, Type[pydantic.BaseModel]] = {
     "filter_observations": FilterObservations,
+    "generate_ephemeris": GenerateEphemeris,
     "range_and_transform": RangeAndTransform,
     "cluster_and_link": ClusterAndLink,
     "initial_orbit_determination": InitialOrbitDetermination,
@@ -135,6 +150,10 @@ def detect_checkpoint_stage(test_orbit_directory: pathlib.Path) -> VALID_STAGES:
         logger.info("No filtered observations found, starting stage filter_observations")
         return "filter_observations"
 
+    if not (test_orbit_directory / "test_orbit_ephemeris.parquet").exists():
+        logger.info("No test orbit ephemeris found, starting stage generate_ephemeris")
+        return "generate_ephemeris"
+
     if (test_orbit_directory / "recovered_orbits.parquet").exists() and (
         test_orbit_directory / "recovered_orbit_members.parquet"
     ).exists():
@@ -163,8 +182,8 @@ def detect_checkpoint_stage(test_orbit_directory: pathlib.Path) -> VALID_STAGES:
         logger.info("Found transformed detections, starting stage cluster_and_link")
         return "cluster_and_link"
 
-    if (test_orbit_directory / "filtered_observations.parquet").exists():
-        logger.info("Found filtered observations, starting stage range_and_transform")
+    if (test_orbit_directory / "test_orbit_ephemeris.parquet").exists():
+        logger.info("Found test orbit ephemeris, starting stage range_and_transform")
         return "range_and_transform"
 
     raise ValueError(f"Could not detect stage from {test_orbit_directory}")
@@ -182,7 +201,7 @@ def load_initial_checkpoint_values(
         test_orbit_directory = pathlib.Path(test_orbit_directory)
 
     if test_orbit_directory is None:
-        logger.info("Not using a workign directory, start at beginning.")
+        logger.info("Not using a working directory, start at beginning.")
         return create_checkpoint_data("filter_observations")
 
     stage: VALID_STAGES = detect_checkpoint_stage(test_orbit_directory)
@@ -214,6 +233,21 @@ def load_initial_checkpoint_values(
     filtered_observations = Observations.from_parquet(filtered_observations_path)
     if filtered_observations.fragmented():
         filtered_observations = qv.defragment(filtered_observations)
+
+    # Handle generate_ephemeris stage (needs filtered_observations, ephemeris may be empty)
+    if stage == "generate_ephemeris":
+        # Return empty ephemeris - it will be generated in the stage
+        return create_checkpoint_data(
+            stage,
+            filtered_observations=filtered_observations,
+            test_orbit_ephemeris=TestOrbitEphemeris.empty(),
+        )
+
+    # Test orbit ephemeris is required for range_and_transform and cluster_and_link
+    test_orbit_ephemeris_path = pathlib.Path(test_orbit_directory, "test_orbit_ephemeris.parquet")
+    test_orbit_ephemeris = TestOrbitEphemeris.from_parquet(test_orbit_ephemeris_path)
+    if test_orbit_ephemeris.fragmented():
+        test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
 
     if stage == "recover_orbits":
         od_orbits_path = pathlib.Path(test_orbit_directory, "od_orbits.parquet")
@@ -283,8 +317,29 @@ def load_initial_checkpoint_values(
 
             return create_checkpoint_data(
                 "cluster_and_link",
+                test_orbit_ephemeris=test_orbit_ephemeris,
                 filtered_observations=filtered_observations,
                 transformed_detections=transformed_detections,
             )
 
-    return create_checkpoint_data("range_and_transform", filtered_observations=filtered_observations)
+    return create_checkpoint_data(
+        "range_and_transform",
+        test_orbit_ephemeris=test_orbit_ephemeris,
+        filtered_observations=filtered_observations,
+    )
+
+
+# Mapping of output keys to (filename, loader class)
+_OUTPUT_FILES = {
+    "test_orbit_ephemeris": ("test_orbit_ephemeris.parquet", TestOrbitEphemeris),
+    "filtered_observations": ("filtered_observations.parquet", Observations),
+    "transformed_detections": ("transformed_detections.parquet", TransformedDetections),
+    "clusters": ("clusters.parquet", FittedClusters),
+    "cluster_members": ("cluster_members.parquet", FittedClusterMembers),
+    "iod_orbits": ("iod_orbits.parquet", FittedOrbits),
+    "iod_orbit_members": ("iod_orbit_members.parquet", FittedOrbitMembers),
+    "od_orbits": ("od_orbits.parquet", FittedOrbits),
+    "od_orbit_members": ("od_orbit_members.parquet", FittedOrbitMembers),
+    "recovered_orbits": ("recovered_orbits.parquet", FittedOrbits),
+    "recovered_orbit_members": ("recovered_orbit_members.parquet", FittedOrbitMembers),
+}

@@ -4,7 +4,7 @@ import logging
 import multiprocessing as mp
 import os
 import time
-from typing import List, Optional, Type, Union
+from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -16,7 +16,7 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 
-from ..orbit import TestOrbits
+from ..orbit import TestOrbitEphemeris, TestOrbits
 from .observations import Observations, observations_iterator
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class ObservationFilter(abc.ABC):
         observations: Observations,
         test_orbit: TestOrbits,
         propagator_class: Type[Propagator],
-    ) -> "Observations":
+    ) -> Tuple["Observations", TestOrbitEphemeris]:
         """
         Apply the filter to a collection of observations.
 
@@ -44,15 +44,15 @@ class ObservationFilter(abc.ABC):
             The observations to filter.
         test_orbit : `~thor.orbit.TestOrbits`
             The test orbit to use for filtering.
-        max_processes : int, optional
-            Maximum number of processes to use for parallelization. If
-            an existing ray cluster is already running, this parameter
-            will be ignored if larger than 1 or not None.
+        propagator_class : `~adam_core.propagator.Propagator`
+            Propagator class to use for generating ephemeris.
 
         Returns
         -------
         filtered_observations : `~thor.observations.Observations`
             The filtered observations.
+        test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris`
+            The test orbit ephemeris generated during filtering.
         """
         ...
 
@@ -78,7 +78,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
         observations: Union["Observations", ray.ObjectRef],
         test_orbit: TestOrbits,
         propagator_class: Type[Propagator],
-    ) -> "Observations":
+    ) -> Tuple["Observations", TestOrbitEphemeris]:
         """
         Apply the filter to a collection of observations.
 
@@ -88,16 +88,16 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
             The observations to filter.
         test_orbit : `~thor.orbit.TestOrbits`
             The test orbit to use for filtering.
-        max_processes : int, optional
-            Maximum number of processes to use for parallelization. If
-            an existing ray cluster is already running, this parameter
-            will be ignored if larger than 1 or not None.
+        propagator_class : `~adam_core.propagator.Propagator`
+            Propagator class to use for generating ephemeris.
 
         Returns
         -------
         filtered_observations : `~thor.observations.Observations`
             The filtered observations. This will return a copy of the original
             observations.
+        test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris`
+            The test orbit ephemeris generated during filtering (without covariance).
         """
         time_start = time.perf_counter()
         logger.info("Applying TestOrbitRadiusObservationFilter...")
@@ -144,7 +144,7 @@ class TestOrbitRadiusObservationFilter(ObservationFilter):
             f"Filtered {len(observations)} observations to {len(filtered_observations)} observations."
         )
         logger.info(f"TestOrbitRadiusObservationFilter completed in {time_end - time_start:.3f} seconds.")
-        return filtered_observations
+        return filtered_observations, ephemeris
 
 
 class TestOrbitMahalanobisObservationFilter(ObservationFilter):
@@ -173,7 +173,7 @@ class TestOrbitMahalanobisObservationFilter(ObservationFilter):
         observations: Union["Observations", ray.ObjectRef],
         test_orbit: TestOrbits,
         propagator_class: Type[Propagator],
-    ) -> "Observations":
+    ) -> Tuple["Observations", TestOrbitEphemeris]:
         time_start = time.perf_counter()
         logger.info("Applying TestOrbitMahalanobisObservationFilter...")
         logger.info(f"Using mahalanobis_distance = {self.mahalanobis_distance:.1f}-sigma")
@@ -226,7 +226,7 @@ class TestOrbitMahalanobisObservationFilter(ObservationFilter):
         logger.info(
             f"TestOrbitMahalanobisSphericalObservationFilter completed in {time_end - time_start:.3f} seconds."
         )
-        return filtered_observations
+        return filtered_observations, ephemeris
 
 
 def _within_radius(
@@ -284,42 +284,46 @@ def filter_observations_worker(
     test_orbit: TestOrbits,
     filters: List[ObservationFilter],
     propagator_class: Type[Propagator],
-) -> Observations:
+) -> Tuple[Observations, TestOrbitEphemeris]:
     """
     Apply a list of filters to the observations.
 
     Parameters
     ----------
-    state_id_chunk : list of int
-        List of state IDs to filter.
     observations : `~thor.observations.observations.Observations`
         Observations to filter.
     test_orbit : `~thor.orbit.TestOrbits`
         Test orbit to use for filtering.
     filters : list of `~thor.observations.filters.ObservationFilter`
         List of filters to apply to the observations.
+    propagator_class : `~adam_core.propagator.Propagator`
+        Propagator class to use for generating ephemeris.
 
     Returns
     -------
     filtered_observations : `~thor.observations.observations.Observations`
         Filtered observations.
+    test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris`
+        Test orbit ephemeris generated during filtering.
     """
+    test_orbit_ephemeris = TestOrbitEphemeris.empty()
     for filter_i in filters:
-        observations = filter_i.apply(
+        observations, ephemeris = filter_i.apply(
             observations,
             test_orbit,
             propagator_class,
         )
+        # Keep the most recent ephemeris (later filters may have covariance)
+        test_orbit_ephemeris = ephemeris
 
     # Defragment the observations
     if len(observations) > 0:
         observations = qv.defragment(observations)
 
-    return observations
+    return observations, test_orbit_ephemeris
 
 
-filter_observations_worker_remote = ray.remote(filter_observations_worker)
-filter_observations_worker_remote.options(num_cpus=1, num_returns=1)
+filter_observations_worker_remote = ray.remote(filter_observations_worker).options(num_cpus=1)
 
 
 def filter_observations(
@@ -329,7 +333,7 @@ def filter_observations(
     propagator_class: Type[Propagator],
     max_processes: Optional[int] = None,
     chunk_size: int = 1_000_000,
-) -> Observations:
+) -> Tuple[Observations, TestOrbitEphemeris]:
     """
     Filter observations by applying a list of filters. The input observations
     can be either be a path to a parquet file or an Observations object already loaded
@@ -358,6 +362,9 @@ def filter_observations(
     -------
     filtered_observations : `~thor.observations.observations.Observations`
         Filtered observations.
+    test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris`
+        Test orbit ephemeris generated during filtering. Will be empty if no
+        filters were applied.
     """
     time_start = time.perf_counter()
     logger.info("Running observation filters...")
@@ -389,12 +396,14 @@ def filter_observations(
         time_end = time.perf_counter()
         logger.info(f"Filtered {num_obs} observations to {len(filtered_observations)} observations.")
         logger.info(f"Observations filters completed in {time_end - time_start:.3f} seconds.")
-        return filtered_observations
+        # Return empty ephemeris when no filters applied
+        return filtered_observations, TestOrbitEphemeris.empty()
 
     if max_processes is None:
         max_processes = mp.cpu_count()
 
     filtered_observations = Observations.empty()
+    test_orbit_ephemeris = TestOrbitEphemeris.empty()
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
 
@@ -407,15 +416,23 @@ def filter_observations(
             )
             if len(futures) > max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
-                filtered_observations = qv.concatenate([filtered_observations, ray.get(finished[0])])
+                obs_chunk, ephemeris_chunk = ray.get(finished[0])
+                filtered_observations = qv.concatenate([filtered_observations, obs_chunk])
+                test_orbit_ephemeris = qv.concatenate([test_orbit_ephemeris, ephemeris_chunk])
                 if filtered_observations.fragmented():
                     filtered_observations = qv.defragment(filtered_observations)
+                if test_orbit_ephemeris.fragmented():
+                    test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
-            filtered_observations = qv.concatenate([filtered_observations, ray.get(finished[0])])
+            obs_chunk, ephemeris_chunk = ray.get(finished[0])
+            filtered_observations = qv.concatenate([filtered_observations, obs_chunk])
+            test_orbit_ephemeris = qv.concatenate([test_orbit_ephemeris, ephemeris_chunk])
             if filtered_observations.fragmented():
                 filtered_observations = qv.defragment(filtered_observations)
+            if test_orbit_ephemeris.fragmented():
+                test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
 
         if isinstance(observations, ray.ObjectRef):
             ray.internal.free([observations])
@@ -423,15 +440,18 @@ def filter_observations(
 
     else:
         for observations_chunk in observations_iterator(observations, chunk_size=chunk_size):
-            filtered_observations_chunk = filter_observations_worker(
+            obs_chunk, ephemeris_chunk = filter_observations_worker(
                 observations_chunk,
                 test_orbit,
                 filters,
                 propagator_class,
             )
-            filtered_observations = qv.concatenate([filtered_observations, filtered_observations_chunk])
+            filtered_observations = qv.concatenate([filtered_observations, obs_chunk])
+            test_orbit_ephemeris = qv.concatenate([test_orbit_ephemeris, ephemeris_chunk])
             if filtered_observations.fragmented():
                 filtered_observations = qv.defragment(filtered_observations)
+            if test_orbit_ephemeris.fragmented():
+                test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
 
     filtered_observations = filtered_observations.sort_by(
         [
@@ -441,7 +461,19 @@ def filter_observations(
         ]
     )
 
+    # Drop duplicate ephemeris entries (same time/observer combination)
+    if len(test_orbit_ephemeris) > 0:
+        test_orbit_ephemeris = test_orbit_ephemeris.drop_duplicates(subset=["id"])
+        test_orbit_ephemeris = test_orbit_ephemeris.sort_by(
+            [
+                "ephemeris.coordinates.time.days",
+                "ephemeris.coordinates.time.nanos",
+                "ephemeris.coordinates.origin.code",
+            ]
+        )
+
     time_end = time.perf_counter()
     logger.info(f"Filtered {num_obs} observations to {len(filtered_observations)} observations.")
     logger.info(f"Observations filters completed in {time_end - time_start:.3f} seconds.")
-    return filtered_observations
+
+    return filtered_observations, test_orbit_ephemeris
