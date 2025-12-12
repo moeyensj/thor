@@ -1,10 +1,13 @@
+import glob
 import multiprocessing as mp
+import os
 import pathlib
 from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
+import pyarrow.parquet as pq
 import quivr as qv
 import ray
 
@@ -651,3 +654,40 @@ def convert_source_catalog_to_observations(
     observations_writer.close()
     print("Output writer closed")
     return observations_path
+
+
+def get_observation_times(observations: Union[str, "Observations"]) -> Tuple[Timestamp, Timestamp]:
+    """
+    Get observation times from a table or a path to a file or directory containing a table or tables of observations.
+
+    Parameters
+    ----------
+    observations : `~Observations` or str
+        Either a table or a path to a file or directory containing a table or tables of observations.
+
+    Returns
+    -------
+    time_range : Tuple[Timestamp, Timestamp]
+        The time range of the observations.
+    """
+    if isinstance(observations, str):
+        if os.path.isdir(observations):
+            files = glob.glob(os.path.join(observations, "*.parquet"))
+            metadata_file = files[0]
+        else:
+            metadata_file = observations
+
+        table = pq.read_table(observations, columns=["coordinates.time.days", "coordinates.time.nanos"])
+        schema = pq.read_schema(metadata_file)
+        scale = schema.metadata.get(b"coordinates.time.scale").decode("utf-8")
+        time = Timestamp.from_kwargs(
+            days=table.column("days").combine_chunks(),
+            nanos=table.column("nanos").combine_chunks(),
+            scale=scale,
+        )
+        return time
+
+    elif isinstance(observations, Observations):
+        return observations.time
+    else:
+        raise ValueError(f"Invalid observations type: {type(observations)}")

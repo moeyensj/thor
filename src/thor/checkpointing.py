@@ -6,7 +6,7 @@ import pydantic
 import quivr as qv
 import ray
 
-from thor.clusters import ClusterMembers, Clusters
+from thor.clusters import FittedClusterMembers, FittedClusters
 from thor.observations.observations import Observations
 from thor.orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
 from thor.range_and_transform import TransformedDetections
@@ -52,8 +52,8 @@ class InitialOrbitDetermination(pydantic.BaseModel):
 
     stage: Literal["initial_orbit_determination"]
     filtered_observations: Union[Observations, ray.ObjectRef]
-    clusters: Union[Clusters, ray.ObjectRef]
-    cluster_members: Union[ClusterMembers, ray.ObjectRef]
+    clusters: Union[FittedClusters, ray.ObjectRef]
+    cluster_members: Union[FittedClusterMembers, ray.ObjectRef]
 
 
 class DifferentialCorrection(pydantic.BaseModel):
@@ -260,8 +260,8 @@ def load_initial_checkpoint_values(
         cluster_members_path = pathlib.Path(test_orbit_directory, "cluster_members.parquet")
         if clusters_path.exists() and cluster_members_path.exists():
             logger.info("Found clusters")
-            clusters = Clusters.from_parquet(clusters_path)
-            cluster_members = ClusterMembers.from_parquet(cluster_members_path)
+            clusters = FittedClusters.from_parquet(clusters_path)
+            cluster_members = FittedClusterMembers.from_parquet(cluster_members_path)
 
             if clusters.fragmented():
                 clusters = qv.defragment(clusters)
