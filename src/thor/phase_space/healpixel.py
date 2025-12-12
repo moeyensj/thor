@@ -359,7 +359,9 @@ def create_healpixel_test_orbit_worker(
 
         # Positional footprint → lon/lat uncertainties
         lon_boundaries, lat_boundaries = compute_lon_lat_boundaries(nside, pixel)
-        dlon = np.max(np.abs(lon_boundaries - lon))
+        # Handle longitude wrap-around: compute angular difference in [-180, 180]
+        lon_diff = (lon_boundaries - lon + 180) % 360 - 180
+        dlon = np.max(np.abs(lon_diff))
         dlat = np.max(np.abs(lat_boundaries - lat))
 
         states = np.empty((num_states, 6), dtype=float)
@@ -746,7 +748,9 @@ def create_geocentric_healpixel_test_orbit_worker(
 
         # Positional footprint → lon/lat uncertainties
         lon_boundaries, lat_boundaries = compute_lon_lat_boundaries(nside, pixel)
-        dlon = np.max(np.abs(lon_boundaries - geo_lon))
+        # Handle longitude wrap-around: compute angular difference in [-180, 180]
+        lon_diff = (lon_boundaries - geo_lon + 180) % 360 - 180
+        dlon = np.max(np.abs(lon_diff))
         dlat = np.max(np.abs(lat_boundaries - geo_lat))
 
         num_rho = len(rho_centers)
