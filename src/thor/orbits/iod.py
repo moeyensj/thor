@@ -178,6 +178,17 @@ def iod_worker(
                 pa.array([linkage_id for i in range(len(iod_orbit_orbit_members))]),
             )
 
+            # Propagate test_orbit_id from linkage_members
+            linkage_members_subset = linkage_members.apply_mask(
+                pc.equal(linkage_members.column(linkage_id_col), linkage_id)
+            )
+            test_orbit_id = linkage_members_subset.test_orbit_id[0].as_py()
+            iod_orbit = iod_orbit.set_column("test_orbit_id", pa.array([test_orbit_id]))
+            iod_orbit_orbit_members = iod_orbit_orbit_members.set_column(
+                "test_orbit_id",
+                pa.repeat(test_orbit_id, len(iod_orbit_orbit_members)),
+            )
+
         time_end = time.time()
         duration = time_end - time_start
         logger.debug(f"IOD for linkage {linkage_id} completed in {duration:.3f}s.")

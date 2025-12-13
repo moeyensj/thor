@@ -5,6 +5,7 @@ from typing import Optional, Type, Union
 
 import numpy as np
 import numpy.typing as npt
+import pyarrow as pa
 import quivr as qv
 import ray
 
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 class TransformedDetections(qv.Table):
     id = qv.LargeStringColumn()
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
     night = qv.Int64Column()
     coordinates = GnomonicCoordinates.as_column()
     state_id = qv.LargeStringColumn()
@@ -102,8 +104,10 @@ def range_and_transform_worker(
     )
 
     # Transform the detections into the co-rotating frame
+    test_orbit_id = ephemeris_state.test_orbit_id[0].as_py()
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
+        test_orbit_id=pa.repeat(test_orbit_id, len(observations_state)),
         night=observations_state.night,
         coordinates=gnomonic_coords,
         state_id=observations_state.state_id,
@@ -311,6 +315,7 @@ def whiten_transformed_detections(
 
         transformed_detections_whitened_i = TransformedDetections.from_kwargs(
             id=transformed_detections_i.id,
+            test_orbit_id=transformed_detections_i.test_orbit_id,
             state_id=transformed_detections_i.state_id,
             night=transformed_detections_i.night,
             coordinates=GnomonicCoordinates.from_kwargs(

@@ -528,7 +528,7 @@ def link_test_orbits(
     split_method: Literal["healpixel", "eigenvalue"] = "eigenvalue",
     stop_after_stage: Optional[str] = None,
     use_orbit_subdir: bool = True,
-    max_split_depth: int = 3,
+    max_split_depth: int = 2,
     current_depth: int = 0,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """

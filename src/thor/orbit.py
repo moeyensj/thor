@@ -47,12 +47,14 @@ logger = logging.getLogger(__name__)
 class RangedPointSourceDetections(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
     coordinates = SphericalCoordinates.as_column()
     state_id = qv.LargeStringColumn()
 
 
 class TestOrbitEphemeris(qv.Table):
     id = qv.LargeStringColumn()
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
     gnomonic = GnomonicCoordinates.as_column()
@@ -128,6 +130,7 @@ def range_observations_worker(
     return RangedPointSourceDetections.from_kwargs(
         id=observations_state.id,
         exposure_id=observations_state.exposure_id,
+        test_orbit_id=pa.repeat(ephemeris_state.test_orbit_id[0].as_py(), len(observations_state)),
         coordinates=assume_heliocentric_distance(r, observations_state.coordinates, observer_i.coordinates),
         state_id=observations_state.state_id,
     )
@@ -329,6 +332,7 @@ class TestOrbits(qv.Table):
 
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
+            test_orbit_id=pa.repeat(self.orbit_id[0], len(observers_with_states)),
             ephemeris=ephemeris,
             observer=observers_with_states.observers,
             gnomonic=gnomonic,

@@ -5,6 +5,7 @@ from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
+import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
@@ -517,6 +518,7 @@ def od(
         od_orbit = FittedOrbits.from_kwargs(
             orbit_id=orbit_prev.orbit_id,
             object_id=orbit_prev.object_id,
+            test_orbit_id=orbit.test_orbit_id,
             coordinates=orbit_prev.coordinates,
             arc_length=[arc_length_],
             num_obs=[num_obs],
@@ -527,9 +529,11 @@ def od(
             status_code=[0],
         )
 
+        test_orbit_id = orbit.test_orbit_id[0].as_py()
         od_orbit_members = FittedOrbitMembers.from_kwargs(
             orbit_id=np.full(len(obs_ids_all), orbit_prev.orbit_id[0].as_py(), dtype="object"),
             obs_id=obs_ids_all,
+            test_orbit_id=pa.repeat(test_orbit_id, len(obs_ids_all)),
             residuals=residuals_prev,
             solution=np.isin(obs_ids_all, obs_id_outlier, invert=True),
             outlier=np.isin(obs_ids_all, obs_id_outlier),

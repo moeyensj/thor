@@ -156,6 +156,7 @@ class ClusterMembers(qv.Table):
 
 class FittedClusters(qv.Table):
     cluster_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
     time = Timestamp.as_column()
     theta_x0 = qv.Float64Column()
     theta_y0 = qv.Float64Column()
@@ -229,6 +230,7 @@ class FittedClusters(qv.Table):
 class FittedClusterMembers(qv.Table):
     cluster_id = qv.LargeStringColumn()
     obs_id = qv.LargeStringColumn()
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
     residuals = Residuals.as_column()
 
 
@@ -1450,8 +1452,12 @@ def fit_cluster(
 
         residuals = Residuals.calculate(gnomonic_coords, gnomonic_pred, custom_coordinates=True)
 
+        # Get test_orbit_id from the cluster detections (all detections in a cluster share the same test_orbit_id)
+        test_orbit_id = cluster_detections.test_orbit_id[0].as_py()
+        
         fitted_cluster = FittedClusters.from_kwargs(
             cluster_id=cluster.cluster_id,
+            test_orbit_id=[test_orbit_id],
             time=gnomonic_coords.time[0],
             theta_x0=[x0],
             theta_y0=[y0],
@@ -1470,6 +1476,7 @@ def fit_cluster(
         fitted_cluster_members = FittedClusterMembers.from_kwargs(
             cluster_id=cluster_members.cluster_id,
             obs_id=cluster_members.obs_id,
+            test_orbit_id=pa.repeat(test_orbit_id, len(cluster_members)),
             residuals=residuals,
         )
 
