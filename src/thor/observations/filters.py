@@ -410,13 +410,7 @@ def filter_observations(
         futures: List[ray.ObjectRef] = []
         for observations_chunk in observations_iterator(observations, chunk_size=chunk_size):
             futures.append(
-                filter_observations_worker_remote.options(
-                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=ray.get_runtime_context().get_node_id(),
-                        soft=True,
-                        _spill_on_unavailable=True,
-                    ),
-                ).remote(
+                filter_observations_worker_remote.remote(
                     observations_chunk, test_orbit, filters, propagator_class
                 )
             )

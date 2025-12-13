@@ -389,13 +389,7 @@ def generate_known_test_orbits(
         futures = []
         for healpixel_chunk in _iterate_chunks(observations_healpixels, chunk_size):
             futures.append(
-                generate_test_orbits_worker_remote.options(
-                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=ray.get_runtime_context().get_node_id(),
-                        soft=True,
-                        _spill_on_unavailable=True,
-                    ),
-                ).remote(
+                generate_test_orbits_worker_remote.remote(
                     healpixel_chunk,
                     ephemeris_healpixels_ref,
                     propagated_orbits_ref,
