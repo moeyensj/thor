@@ -73,6 +73,10 @@ def range_and_transform_worker(
     ephemeris_state = ephemeris.select("id", state_id)
     observations_state = observations.select("state_id", state_id)
 
+    # Handle empty detections gracefully - return empty TransformedDetections
+    if len(ranged_detections_spherical_state) == 0:
+        return TransformedDetections.empty()
+
     ranged_detections_cartesian_state = transform_coordinates(
         zero_covariances(ranged_detections_spherical_state.coordinates),
         representation_out=CartesianCoordinates,
@@ -212,7 +216,13 @@ def range_and_transform(
             futures = []
             for state_id in state_ids:
                 futures.append(
-                    range_and_transform_remote.remote(
+                    range_and_transform_remote.options(
+                        scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                            node_id=ray.get_runtime_context().get_node_id(),
+                            soft=True,
+                            _spill_on_unavailable=True,
+                        ),
+                    ).remote(
                         ranged_detections_spherical_ref,
                         observations_ref,
                         ephemeris_ref,
