@@ -649,13 +649,7 @@ def differential_correction(
         futures = []
         for orbit_ids_indices in _iterate_chunk_indices(orbit_ids, chunk_size):
             futures.append(
-                od_worker_remote.options(
-                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=ray.get_runtime_context().get_node_id(),
-                        soft=True,
-                        _spill_on_unavailable=True,
-                    ),
-                ).remote(
+                od_worker_remote.remote(
                     orbit_ids_ref,
                     orbit_ids_indices,
                     orbits_ref,

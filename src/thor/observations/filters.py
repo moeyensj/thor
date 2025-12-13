@@ -322,7 +322,8 @@ def filter_observations_worker(
     return observations, test_orbit_ephemeris
 
 
-filter_observations_worker_remote = ray.remote(filter_observations_worker).options(num_cpus=1)
+filter_observations_worker_remote = ray.remote(filter_observations_worker)
+filter_observations_worker_remote.options(num_cpus=1)
 
 
 def filter_observations(
@@ -409,13 +410,7 @@ def filter_observations(
         futures: List[ray.ObjectRef] = []
         for observations_chunk in observations_iterator(observations, chunk_size=chunk_size):
             futures.append(
-                filter_observations_worker_remote.options(
-                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=ray.get_runtime_context().get_node_id(),
-                        soft=True,
-                        _spill_on_unavailable=True,
-                    ),
-                ).remote(
+                filter_observations_worker_remote.remote(
                     observations_chunk, test_orbit, filters, propagator_class
                 )
             )
