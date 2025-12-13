@@ -299,7 +299,7 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             observers,
             max_processes=max_processes,
-            chunk_size=10,
+            chunk_size=1,
             covariance=covariance,
             covariance_method=covariance_method,
             num_samples=num_samples,
