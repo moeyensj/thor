@@ -886,12 +886,14 @@ def calculate_clustering_parameters_from_covariance(
         transformed_detections = ray.get(transformed_detections)
 
     # Filter ephemeris to only include times that match observation times
-    obs_times_mjd = transformed_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
+    obs_times_mjd = (
+        transformed_detections.coordinates.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
+    )
     obs_time_min = obs_times_mjd.min()
     obs_time_max = obs_times_mjd.max()
 
     ephemeris_gnomonic = test_orbit_ephemeris.gnomonic
-    ephem_times_mjd = ephemeris_gnomonic.time.mjd().to_numpy(zero_copy_only=False)
+    ephem_times_mjd = ephemeris_gnomonic.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
 
     # Filter to ephemeris points within observation time range
     time_mask = (ephem_times_mjd >= obs_time_min) & (ephem_times_mjd <= obs_time_max)
