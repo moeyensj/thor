@@ -72,7 +72,6 @@ def link_test_orbit(
     filters: Optional[List[ObservationFilter]] = None,
     config: Optional[Config] = None,
     use_orbit_subdir: bool = True,
-    stop_after_stage: Optional[str] = None,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """
     Run THOR for a single test orbit on the given observations. This function will yield
@@ -100,10 +99,6 @@ def link_test_orbit(
         List of filters to apply to the observations before running THOR.
     config : `~thor.config.Config`, optional
         Configuration to use for THOR. If None, the default configuration will be used.
-    stop_after_stage : str, optional
-        If provided, stop processing after this stage completes. Valid values are
-        "filter_observations", "generate_ephemeris", "range_and_transform", "cluster_and_link",
-        "initial_orbit_determination", "differential_correction", "recover_orbits".
     """
     time_start = time.perf_counter()
     logger.info("Running test orbit...")
@@ -128,6 +123,8 @@ def link_test_orbit(
 
     if config is None:
         config = Config()
+
+    stop_after_stage = config.stop_after_stage
 
     initialize_config(config, working_dir)
 
@@ -318,6 +315,7 @@ def link_test_orbit(
             vy_values=None,
             chunk_size=config.cluster_chunk_size,
             max_processes=config.max_processes,
+            whiten=config.cluster_whiten,
         )
 
         clusters_path = None
@@ -524,11 +522,7 @@ def link_test_orbits(
     working_dir: Optional[str] = None,
     filters: Optional[List[ObservationFilter]] = None,
     config: Optional[Config] = None,
-    split_threshold: Optional[int] = None,
-    split_method: Literal["healpixel", "eigenvalue"] = "eigenvalue",
-    stop_after_stage: Optional[str] = None,
     use_orbit_subdir: bool = True,
-    max_split_depth: int = 2,
     current_depth: int = 0,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """
@@ -547,19 +541,6 @@ def link_test_orbits(
         List of filters to apply to the observations before running THOR.
     config : `~thor.config.Config`, optional
         Configuration to use for THOR. If None, the default configuration will be used.
-    split_threshold : int, optional
-        If provided, any test orbit that produces more than this number of filtered
-        observations will be split before continuing.
-    split_method : {"healpixel", "eigenvalue"}, optional
-        Method to use for splitting test orbits. "healpixel" refines sky localization
-        by subdividing HEALPix pixels. "eigenvalue" splits along principal axes of
-        the covariance. Default is "eigenvalue".
-    stop_after_stage : str, optional
-        If provided, stop processing each orbit after this stage completes. Valid values are
-        "filter_observations", "generate_ephemeris", "range_and_transform", "cluster_and_link",
-        "initial_orbit_determination", "differential_correction", "recover_orbits".
-    max_split_depth: int, optional
-        Maximum depth to split test orbits.
     current_depth: int, optional
         Current depth of the split.
 
@@ -568,6 +549,13 @@ def link_test_orbits(
     Iterator[LinkTestOrbitStageResult]
         Iterator over the results of each stage of the pipeline for each test orbit.
     """
+    if config is None:
+        config = Config()
+
+    split_threshold = config.split_threshold
+    split_method = config.split_method
+    max_split_depth = config.split_max_depth
+
     for test_orbit in test_orbits:
         for stage_result in link_test_orbit(
             test_orbit,
@@ -576,7 +564,6 @@ def link_test_orbits(
             filters,
             config,
             use_orbit_subdir=use_orbit_subdir,
-            stop_after_stage=stop_after_stage,
         ):
             if (
                 split_threshold is not None
@@ -606,7 +593,7 @@ def link_test_orbits(
                     max_time = times.max()
                     min_time = times.min()
                     dt = max_time.mjd()[0].as_py() - min_time.mjd()[0].as_py()
-                    split_test_orbits = test_orbit.split(dt=dt, k=1, beta=0.67, gamma=1, num=2, max_depth=1)
+                    split_test_orbits = test_orbit.split(dt=dt, k=1, beta=0.67, gamma=1, num=3, max_depth=1)
 
                 if working_dir is not None:
                     parent_dir = (
@@ -627,11 +614,7 @@ def link_test_orbits(
                     child_working_dir,
                     filters,
                     config,
-                    split_threshold=split_threshold,
-                    split_method=split_method,
-                    stop_after_stage=stop_after_stage,
                     use_orbit_subdir=True,
-                    max_split_depth=max_split_depth,
                     current_depth=current_depth + 1,
                 )
                 break

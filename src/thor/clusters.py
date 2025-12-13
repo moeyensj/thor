@@ -807,6 +807,7 @@ def calculate_clustering_parameters_from_covariance(
     min_radius: float = 1 / 3600,
     min_bins: int = 10,
     max_bins: int = 1000,
+    whiten: bool = False,
 ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], float, dict]:
     """
     Calculate clustering parameters (velocity grid and radius) from test orbit
@@ -854,6 +855,9 @@ def calculate_clustering_parameters_from_covariance(
         [Default = 10]
     max_bins : int, optional
         Maximum number of bins per dimension.
+    whiten : bool, optional
+        If True, also report clustering parameters in whitened (sigma) units
+        derived from the positional/velocity covariances. Default is False.
         [Default = 1000]
 
     Returns
@@ -929,6 +933,11 @@ def calculate_clustering_parameters_from_covariance(
     vel_cov = mean_cov[2:4, 2:4]  # vtheta_x, vtheta_y
     cross_cov = mean_cov[0:2, 2:4]  # cross terms
 
+    # Pre-compute scale factors for optional whitening metadata
+    pos_scales = np.sqrt(np.maximum(np.diag(pos_cov), 1e-18))
+    vel_scales = np.sqrt(np.maximum(np.diag(vel_cov), 1e-18))
+    pos_scale_rms = np.sqrt(np.mean(pos_scales**2))
+
     # === Calculate effective clustering radius from observation density ===
 
     # Find minimum positional covariance area at n_sigma across all times
@@ -948,20 +957,71 @@ def calculate_clustering_parameters_from_covariance(
     if len(valid_dets) == 0:
         raise ValueError("No valid positional covariance determinants found.")
 
-    # Minimum covariance area (smallest ellipse)
-    min_det = np.min(valid_dets)
-    min_area = np.pi * mahalanobis_distance_sq * np.sqrt(min_det)
+    # Use maximum positional covariance area across times (conservative density)
+    max_det = np.max(valid_dets)
+    cov_area = np.pi * mahalanobis_distance_sq * np.sqrt(max_det)
 
-    # Calculate observation density
-    density = n_obs / min_area
+    # Background density and characteristic separation
+    density = n_obs / cov_area  # obs / deg^2
 
-    # Radius based on density: target ~1 observation per circle of radius r
-    # Area = π * r^2, so r = sqrt(1 / (π * density))
-    radius = max(np.sqrt(1.0 / (np.pi * density)), min_radius)
+    # Work in whitened units when requested
+    if whiten and pos_scale_rms > 0:
+        area_scale = pos_scale_rms**2
+        density_sigma = density * area_scale  # obs / sigma^2
+        r_sep_sigma = 1.0 / np.sqrt(density_sigma) if density_sigma > 0 else np.inf
+        radius_cand_sigma = np.sqrt(1.0 / (np.pi * density_sigma)) if density_sigma > 0 else np.inf
+        radius_cand_sigma = max(radius_cand_sigma, min_radius / pos_scale_rms)
+
+        c_max = 2.5
+        k_astro = 1.2
+        k_bin = 1.0
+
+        epsilon_max_sigma = c_max * r_sep_sigma if np.isfinite(r_sep_sigma) else radius_cand_sigma
+        epsilon_astro_sigma = k_astro * 1.0  # sigma units
+        epsilon_bin_sigma = k_bin * velocity_bin_separation * radius_cand_sigma
+        epsilon_min_sigma = np.sqrt(epsilon_astro_sigma**2 + epsilon_bin_sigma**2)
+
+        radius_sigma = min(
+            epsilon_max_sigma, max(epsilon_min_sigma, radius_cand_sigma, min_radius / pos_scale_rms)
+        )
+        radius = radius_sigma * pos_scale_rms
+        r_sep = r_sep_sigma * pos_scale_rms if np.isfinite(r_sep_sigma) else np.inf
+        radius_cand = radius_cand_sigma * pos_scale_rms
+        epsilon_max = epsilon_max_sigma * pos_scale_rms if np.isfinite(epsilon_max_sigma) else radius_cand
+        epsilon_min = epsilon_min_sigma * pos_scale_rms
+        epsilon_astro = epsilon_astro_sigma * pos_scale_rms
+        epsilon_bin = epsilon_bin_sigma * pos_scale_rms
+    else:
+        # Separation scale in deg; use sqrt for dimensional consistency
+        r_sep = 1.0 / np.sqrt(density) if density > 0 else np.inf
+
+        # Candidate radius from density (legacy heuristic)
+        radius_cand = np.sqrt(1.0 / (np.pi * density)) if density > 0 else np.inf
+        radius_cand = max(radius_cand, min_radius)
+
+        # Upper and lower bounds
+        c_max = 2.5  # cap factor for background separation
+        k_astro = 1.2  # scale for astrometric scatter
+        k_bin = 1.0  # scale for velocity binning smear
+
+        epsilon_max = c_max * r_sep if np.isfinite(r_sep) else radius_cand
+
+        # Astrometric scatter term (deg); in whitened space sigma~1
+        epsilon_astro = k_astro * pos_scale_rms
+
+        # Velocity binning smear using current candidate radius
+        epsilon_bin = k_bin * velocity_bin_separation * radius_cand
+
+        epsilon_min = np.sqrt(epsilon_astro**2 + epsilon_bin**2)
+
+        # Final radius clamp
+        radius = min(epsilon_max, max(epsilon_min, radius_cand, min_radius))
 
     logger.info(f"Effective clustering radius: {radius:.6f} deg ({radius*3600:.3f} arcsec)")
-    logger.info(f"  - Minimum covariance area ({mahalanobis_distance:.1f}-sigma): {min_area:.6e} deg^2")
+    logger.info(f"  - Covariance area used (max, {mahalanobis_distance:.1f}-sigma): {cov_area:.6e} deg^2")
     logger.info(f"  - Observation density: {density:.2f} obs/deg^2")
+    logger.info(f"  - Characteristic separation: {r_sep:.6f} deg")
+    logger.info(f"  - Radius bounds: epsilon_min={epsilon_min:.6f}, epsilon_max={epsilon_max:.6f}")
     logger.info(f"  - Total observations: {n_obs} across {n_times} times")
     logger.info(f"  - Time span: {dt_arc:.3f} days")
 
@@ -1051,6 +1111,11 @@ def calculate_clustering_parameters_from_covariance(
     except np.linalg.LinAlgError:
         logger.warning("Could not invert velocity covariance matrix. Using all grid points.")
 
+    # Optional whitened representations for metadata/consumers
+    radius_whitened = radius / pos_scale_rms if whiten and pos_scale_rms > 0 else None
+    vx_whitened = vxx_flat / vel_scales[0] if whiten and vel_scales[0] > 0 else None
+    vy_whitened = vyy_flat / vel_scales[1] if whiten and vel_scales[1] > 0 else None
+
     # Prepare metadata
     metadata = {
         "n_obs": n_obs,
@@ -1065,10 +1130,32 @@ def calculate_clustering_parameters_from_covariance(
         "n_vx_bins": n_vx_bins,
         "n_vy_bins": n_vy_bins,
         "n_velocity_points": len(vxx_flat),
-        "min_area": min_area,
+        "dv_x": dv_x,
+        "dv_y": dv_y,
+        "cov_area": cov_area,
         "density": density,
+        "r_sep": r_sep,
+        "radius_candidate": radius_cand,
         "radius": radius,
         "mahalanobis_distance": mahalanobis_distance,
+        "epsilon_min": epsilon_min,
+        "epsilon_max": epsilon_max,
+        "epsilon_astro": epsilon_astro,
+        "epsilon_bin": epsilon_bin,
+        "whiten": whiten,
+        "pos_scales_deg": pos_scales.tolist(),
+        "vel_scales_deg_per_day": vel_scales.tolist(),
+        "radius_whitened": radius_whitened,
+        "vx_whitened_range": (
+            (float(np.min(vx_whitened)), float(np.max(vx_whitened)))
+            if whiten and vx_whitened is not None and len(vx_whitened) > 0
+            else None
+        ),
+        "vy_whitened_range": (
+            (float(np.min(vy_whitened)), float(np.max(vy_whitened)))
+            if whiten and vy_whitened is not None and len(vy_whitened) > 0
+            else None
+        ),
     }
 
     return vxx_flat, vyy_flat, radius, metadata
@@ -1093,6 +1180,7 @@ def cluster_and_link(
     vy_values: Optional[npt.NDArray[np.float64]] = None,
     chunk_size: int = 1000,
     max_processes: Optional[int] = 1,
+    whiten: bool = False,
 ) -> Tuple[FittedClusters, FittedClusterMembers]:
     """
     Cluster and link correctly projected (after ranging and shifting)
@@ -1149,6 +1237,9 @@ def cluster_and_link(
         Number of velocity grid points to process in each worker chunk.
     max_processes : int, optional
         Maximum number of processes to use for parallelization.
+    whiten : bool, optional
+        If True, compute and expose clustering parameters in whitened (sigma)
+        units in addition to the default unwhitened values. Default: False.
 
 
     Returns
@@ -1187,6 +1278,14 @@ def cluster_and_link(
     if isinstance(observations, ray.ObjectRef):
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
+    if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+        test_orbit_ephemeris = ray.get(test_orbit_ephemeris)
+        logger.info("Retrieved test orbit ephemeris from the object store.")
+
+    if len(observations) == 0:
+        logger.info("No observations to cluster; returning empty clusters.")
+        logger.info(f"Clustering completed in {time.perf_counter() - time_start_cluster:.3f} seconds.")
+        return FittedClusters.empty(), FittedClusterMembers.empty()
 
     # Determine velocity grid and radius
     if vx_values is not None and vy_values is not None:
@@ -1208,6 +1307,7 @@ def cluster_and_link(
                 mahalanobis_distance=mahalanobis_distance if mahalanobis_distance is not None else 3.0,
                 velocity_bin_separation=velocity_bin_separation,
                 min_radius=1 / 3600,
+                whiten=whiten,
             )
             logger.info(
                 f"Covariance-informed clustering: radius={radius:.6f}°, "
@@ -1470,7 +1570,7 @@ def fit_cluster(
 
         # Get test_orbit_id from the cluster detections (all detections in a cluster share the same test_orbit_id)
         test_orbit_id = cluster_detections.test_orbit_id[0].as_py()
-        
+
         fitted_cluster = FittedClusters.from_kwargs(
             cluster_id=cluster.cluster_id,
             test_orbit_id=[test_orbit_id],
