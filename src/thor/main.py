@@ -558,6 +558,65 @@ def link_test_orbits(
     max_split_depth = config.split_max_depth
 
     for test_orbit in test_orbits:
+        # ------------------------------------------------------------------
+        # Recursive split resume support
+        # ------------------------------------------------------------------
+        #
+        # When a test orbit exceeds split_threshold at filter_observations, we
+        # branch into child test orbits and intentionally do *not* continue
+        # running downstream stages for the parent.
+        #
+        # However, THOR's per-orbit file-based checkpointing means that if we
+        # restart after writing filtered_observations.parquet, the parent would
+        # normally resume at generate_ephemeris and never re-enter the split
+        # decision point. To make recursion resumable, we persist the chosen
+        # child test orbits and detect them here before running the parent.
+        #
+        # Directory layout:
+        # - parent orbit directory: <working_dir>/<orbit_id>   (when use_orbit_subdir=True)
+        #                          <working_dir>              (when use_orbit_subdir=False)
+        # - persisted children:     <parent_dir>/split_test_orbits.parquet
+        # - filtered observations:  <parent_dir>/filtered_observations.parquet
+        #
+        if working_dir is not None and split_threshold is not None:
+            orbit_id_str = test_orbit.orbit_id[0].as_py()
+            parent_dir = (
+                pathlib.Path(working_dir, orbit_id_str)
+                if use_orbit_subdir
+                else pathlib.Path(working_dir)
+            )
+            split_path = parent_dir / "split_test_orbits.parquet"
+            if split_path.exists():
+                # Resume from the persisted split plan.
+                try:
+                    split_test_orbits = TestOrbits.from_parquet(split_path)
+                    if split_test_orbits.fragmented():
+                        split_test_orbits = qv.defragment(split_test_orbits)
+                except Exception:
+                    # If the split plan is unreadable, fall back to the normal
+                    # behavior (which will likely re-run/repair the parent).
+                    split_test_orbits = None  # type: ignore[assignment]
+
+                if split_test_orbits is not None:
+                    filtered_path = parent_dir / "filtered_observations.parquet"
+                    child_observations: Union[str, Observations]
+                    if filtered_path.exists():
+                        child_observations = str(filtered_path)
+                    else:
+                        # Last resort: use the original observations input.
+                        child_observations = observations
+
+                    yield from link_test_orbits(
+                        split_test_orbits,
+                        child_observations,
+                        str(parent_dir),
+                        filters,
+                        config,
+                        use_orbit_subdir=True,
+                        current_depth=current_depth + 1,
+                    )
+                    continue
+
         for stage_result in link_test_orbit(
             test_orbit,
             observations,
@@ -603,6 +662,18 @@ def link_test_orbits(
                         else pathlib.Path(working_dir)
                     )
                     parent_dir.mkdir(parents=True, exist_ok=True)
+                    # Persist the chosen split test orbits so recursion can be
+                    # resumed deterministically after a restart.
+                    try:
+                        split_path = parent_dir / "split_test_orbits.parquet"
+                        tmp_path = parent_dir / "split_test_orbits.parquet.tmp"
+                        split_test_orbits.to_parquet(str(tmp_path))
+                        tmp_path.replace(split_path)
+                    except Exception:
+                        logger.exception(
+                            "Failed to persist split_test_orbits under %s; recursion may not be resumable",
+                            parent_dir,
+                        )
 
                 child_working_dir: Optional[str] = None
                 if working_dir is not None:
