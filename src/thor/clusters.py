@@ -643,6 +643,22 @@ def cluster_velocity(
     xx = x - vx * dt
     yy = y - vy * dt
 
+    # Drop NaNs before clustering to satisfy DBSCAN input requirements
+    # TODO: We should figure out the geometry that causes the gnomonic transform to produce NaNs. Working
+    # theory is an other corner case for orbits interior to the observer.
+    finite_mask = np.isfinite(xx) & np.isfinite(yy) & np.isfinite(dt)
+    if not np.all(finite_mask):
+        n_drop = np.size(finite_mask) - np.count_nonzero(finite_mask)
+        logger.warning(f"Dropping {n_drop} observations with NaN coordinates before clustering.")
+        xx = xx[finite_mask]
+        yy = yy[finite_mask]
+        dt = dt[finite_mask]
+        nights = nights[finite_mask]
+        obs_ids = obs_ids[finite_mask]
+
+    if len(xx) < min_obs:
+        return Clusters.empty(), ClusterMembers.empty()
+
     X = np.stack((xx, yy), 1)
 
     clusters = find_clusters(X, radius, min_obs, alg=alg)
