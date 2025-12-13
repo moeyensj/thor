@@ -396,13 +396,7 @@ class TestOrbits(qv.Table):
             state_ids = observations.state_id.unique()
             futures = []
             for state_id in state_ids:
-                futures.append(range_observations_remote.options(
-                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=ray.get_runtime_context().get_node_id(),
-                        soft=True,
-                        _spill_on_unavailable=True,
-                    ),
-                ).remote(observations_ref, ephemeris_ref, state_id))
+                futures.append(range_observations_remote.remote(observations_ref, ephemeris_ref, state_id))
 
                 if len(futures) >= max_processes * 1.5:
                     finished, futures = ray.wait(futures, num_returns=1)

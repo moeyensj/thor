@@ -212,13 +212,7 @@ def range_and_transform(
             futures = []
             for state_id in state_ids:
                 futures.append(
-                    range_and_transform_remote.options(
-                        scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                            node_id=ray.get_runtime_context().get_node_id(),
-                            soft=True,
-                            _spill_on_unavailable=True,
-                        ),
-                    ).remote(
+                    range_and_transform_remote.remote(
                         ranged_detections_spherical_ref,
                         observations_ref,
                         ephemeris_ref,
