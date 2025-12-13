@@ -77,6 +77,11 @@ class GnomonicCoordinates(qv.Table):
         gnomonic : `~thor.projections.gnomonic.GnomonicCoordinates`
             Gnomonic coordinates.
         """
+        # Handle empty input gracefully - return empty GnomonicCoordinates
+        # with no rotation matrices, avoiding quivr's empty-chunk crash.
+        if len(cartesian) == 0:
+            return cls.empty(), np.empty((0, 6, 6), dtype=np.float64)
+
         assert len(cartesian.origin.code.unique()) == 1
 
         # Check if input coordinates have times defined, if they do lets make
