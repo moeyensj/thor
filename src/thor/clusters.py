@@ -12,6 +12,10 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
+<<<<<<< HEAD
+=======
+
+>>>>>>> v3
 from adam_core.coordinates import Origin
 from adam_core.coordinates.residuals import Residuals
 from adam_core.ray_cluster import initialize_use_ray
@@ -169,10 +173,7 @@ class FittedClusters(qv.Table):
     chi2 = qv.Float64Column()
     rchi2 = qv.Float64Column()
 
-    def evaluate(
-        self,
-        times: Timestamp
-    ) -> Tuple[pa.Array, GnomonicCoordinates]:
+    def evaluate(self, times: Timestamp) -> Tuple[pa.Array, GnomonicCoordinates]:
         """
         Propagate cluster positions to given times using the fitted polynomial model.
 
@@ -203,7 +204,9 @@ class FittedClusters(qv.Table):
         origin_stacked = pa.concat_arrays(
             [pa.repeat(self.origin.code[i], len(times)) for i in range(len(self))]
         )
-        epochs_mjd_stacked = np.repeat(self.time.rescale("tdb").mjd().to_numpy(zero_copy_only=False), len(times))
+        epochs_mjd_stacked = np.repeat(
+            self.time.rescale("tdb").mjd().to_numpy(zero_copy_only=False), len(times)
+        )
         x0_stacked = np.repeat(self.theta_x0.to_numpy(zero_copy_only=False), len(times))
         y0_stacked = np.repeat(self.theta_y0.to_numpy(zero_copy_only=False), len(times))
         ax_stacked = np.repeat(self.atheta_x.to_numpy(zero_copy_only=False), len(times))
@@ -221,7 +224,7 @@ class FittedClusters(qv.Table):
             theta_y=y,
             time=times_stacked,
             origin=Origin.from_kwargs(code=origin_stacked),
-            frame="testorbit"
+            frame="testorbit",
         )
         return cluster_ids, coords
 
@@ -801,7 +804,7 @@ def calculate_clustering_parameters_from_covariance(
     The clustering radius is computed from the observation density, calculated
     as the total number of observations divided by the minimum area of the
     positional covariance ellipse.
-    
+
     The ephemeris is automatically filtered to only include times within the
     observation time range, ensuring parameters are calculated from relevant
     covariances.
@@ -867,10 +870,10 @@ def calculate_clustering_parameters_from_covariance(
     obs_times_mjd = transformed_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
     obs_time_min = obs_times_mjd.min()
     obs_time_max = obs_times_mjd.max()
-    
+
     ephemeris_gnomonic = test_orbit_ephemeris.gnomonic
     ephem_times_mjd = ephemeris_gnomonic.time.mjd().to_numpy(zero_copy_only=False)
-    
+
     # Filter to ephemeris points within observation time range
     time_mask = (ephem_times_mjd >= obs_time_min) & (ephem_times_mjd <= obs_time_max)
     if not np.any(time_mask):
@@ -878,13 +881,13 @@ def calculate_clustering_parameters_from_covariance(
             f"No ephemeris points found in observation time range "
             f"[{obs_time_min:.2f}, {obs_time_max:.2f}] MJD"
         )
-    
+
     ephemeris_gnomonic = ephemeris_gnomonic.apply_mask(time_mask)
     logger.info(
         f"Filtered ephemeris to {len(ephemeris_gnomonic)}/{len(test_orbit_ephemeris.gnomonic)} points "
         f"spanning observation time range [{obs_time_min:.2f}, {obs_time_max:.2f}] MJD"
     )
-    
+
     n_obs = len(transformed_detections)  # Total observations across all times
     n_times = len(ephemeris_gnomonic)  # Number of unique observation times
 
@@ -1106,7 +1109,7 @@ def cluster_and_link(
     alg : {"dbscan", "hotspot_2d"}, optional
         Algorithm to use for clustering. Default: "dbscan"
     radius : float, optional
-        The maximum distance (in degrees) between two samples for them to be 
+        The maximum distance (in degrees) between two samples for them to be
         considered as in the same neighborhood (DBSCAN eps parameter).
     vx_range : list of float, optional
         [min, max] velocity range in x (deg/day). Used only if test_orbit_ephemeris

@@ -258,6 +258,8 @@ def create_healpixel_test_orbit_worker(
     origin: OriginCodes,
     nside: int = 64,
     out_dir: Optional[str] = None,
+    min_q: Optional[float] = None,
+    max_q: Optional[float] = None,
 ) -> TestOrbits:
     """
     Create Kepler-consistent test orbits localized to HEALPix pixels
@@ -287,6 +289,12 @@ def create_healpixel_test_orbit_worker(
         directory (one file per HEALPix pixel chunk), and return an empty in-memory
         table. If None (default), all test orbits are concatenated and returned in
         memory.
+    min_q : float, optional
+        Minimum allowed heliocentric perihelion distance q (au). States with
+        perihelion below this value are skipped.
+    max_q : float, optional
+        Maximum allowed heliocentric perihelion distance q (au). States with
+        perihelion above this value are skipped.
 
     Returns
     -------
@@ -298,6 +306,9 @@ def create_healpixel_test_orbit_worker(
     e_centers, e_hw = centers_and_halfwidths(e_bin_edges)
     nu_centers, nu_hw = centers_and_halfwidths(nu_bin_edges)
     psi_centers, psi_hw = centers_and_halfwidths(psi_bin_edges)
+
+    npix = hp.nside2npix(nside)
+    pixel_width = len(str(npix - 1))
 
     num_rho = len(rho_centers)
     num_e = len(e_centers)
@@ -348,7 +359,9 @@ def create_healpixel_test_orbit_worker(
 
         # Positional footprint → lon/lat uncertainties
         lon_boundaries, lat_boundaries = compute_lon_lat_boundaries(nside, pixel)
-        dlon = np.max(np.abs(lon_boundaries - lon))
+        # Handle longitude wrap-around: compute angular difference in [-180, 180]
+        lon_diff = (lon_boundaries - lon + 180) % 360 - 180
+        dlon = np.max(np.abs(lon_diff))
         dlat = np.max(np.abs(lat_boundaries - lat))
 
         states = np.empty((num_states, 6), dtype=float)
@@ -420,7 +433,7 @@ def create_healpixel_test_orbit_worker(
 
             orbit_ids[idx_start:idx_end] = np.array(
                 [
-                    f"{pixel}_r{rho:.3f}_e{e:.3f}_nu{nu:.3f}_psi{psi:.3f}"
+                    f"{pixel:0{pixel_width}d}_r{rho:.3f}_e{e:.3f}_nu{nu:.3f}_psi{psi:.3f}"
                     for (e, nu, psi) in zip(e_flat, nu_flat, psi_flat)
                 ]
             )
@@ -438,11 +451,48 @@ def create_healpixel_test_orbit_worker(
             frame="ecliptic",
         )
 
+        coords_cart = coords.to_cartesian()
+
+        # Apply perihelion filter if min_q or max_q is specified
+        if min_q is not None or max_q is not None:
+            # Get Cartesian state vectors
+            r_vec = np.column_stack([coords_cart.x, coords_cart.y, coords_cart.z])
+            v_vec = np.column_stack([coords_cart.vx, coords_cart.vy, coords_cart.vz])
+
+            r_norm = np.linalg.norm(r_vec, axis=1)
+            v_norm2 = np.sum(v_vec**2, axis=1)
+
+            # Compute semi-major axis from vis-viva equation
+            with np.errstate(divide="ignore", invalid="ignore"):
+                a = 1.0 / (2.0 / r_norm - v_norm2 / mu)
+
+            # Compute eccentricity from e_flat (tiled for all rho values)
+            e_tiled = np.tile(e_flat, num_rho)
+
+            # Perihelion q = a * (1 - e)
+            q_vals = a * (1.0 - e_tiled)
+
+            mask = np.isfinite(q_vals)
+            if min_q is not None:
+                mask &= q_vals >= min_q
+            if max_q is not None:
+                mask &= q_vals <= max_q
+
+            if not mask.any():
+                continue
+
+            # Apply mask
+            coords_cart = coords_cart.apply_mask(mask)
+            orbit_ids = orbit_ids[mask]
+            num_filtered = mask.sum()
+        else:
+            num_filtered = num_states
+
         test_orbits_i = TestOrbits.from_kwargs(
             orbit_id=orbit_ids,
-            bundle_id=pa.repeat(f"{pixel}", num_states),
-            nside=pa.repeat(nside, num_states),
-            coordinates=coords.to_cartesian(),
+            bundle_id=pa.repeat(pixel, num_filtered),
+            nside=pa.repeat(nside, num_filtered),
+            coordinates=coords_cart,
         )
 
         test_orbits = qv.concatenate([test_orbits, test_orbits_i])
@@ -453,7 +503,7 @@ def create_healpixel_test_orbit_worker(
         end_pixel = int(pixels_array.max())
         filepath = os.path.join(
             out_dir,
-            f"healpixel_nside{nside}_pixels{start_pixel}_{end_pixel}.parquet",
+            f"test_orbits_nside{nside}_{start_pixel:0{pixel_width}d}_{end_pixel:0{pixel_width}d}.parquet",
         )
         test_orbits.to_parquet(filepath)
         return TestOrbits.empty()
@@ -476,6 +526,8 @@ def create_healpixel_test_orbits(
     chunk_size: int = 100,
     max_processes: int = 10,
     out_dir: Optional[str] = None,
+    min_q: Optional[float] = None,
+    max_q: Optional[float] = None,
 ) -> TestOrbits:
     """
     Generate test orbits over HEALPix pixels using bin edges for ρ, e, ν, and ψ.
@@ -509,6 +561,12 @@ def create_healpixel_test_orbits(
         ``healpixel_nside{nside}_pixel{pixel}.parquet`` within this directory.
         When ``out_dir`` is not None, the function returns an empty in-memory
         table after writing all partitions to disk.
+    min_q : float, optional
+        Minimum allowed heliocentric perihelion distance q (au). States with
+        perihelion below this value are skipped.
+    max_q : float, optional
+        Maximum allowed heliocentric perihelion distance q (au). States with
+        perihelion above this value are skipped.
 
     Returns
     -------
@@ -545,6 +603,8 @@ def create_healpixel_test_orbits(
                     origin,
                     nside=nside,
                     out_dir=out_dir,
+                    min_q=min_q,
+                    max_q=max_q,
                 )
             )
 
@@ -577,6 +637,8 @@ def create_healpixel_test_orbits(
                 origin,
                 nside=nside,
                 out_dir=out_dir,
+                min_q=min_q,
+                max_q=max_q,
             )
             if not write_to_disk:
                 test_orbits = qv.concatenate([test_orbits, test_orbits_i])
@@ -654,6 +716,10 @@ def create_geocentric_healpixel_test_orbit_worker(
     nu_centers, nu_hw = centers_and_halfwidths(nu_bin_edges)
     psi_centers, psi_hw = centers_and_halfwidths(psi_bin_edges)
 
+    # Calculate the zero-fill width based on the maximum pixel ID for this nside
+    npix = hp.nside2npix(nside)
+    pixel_width = len(str(npix - 1))
+
     # Prepare meshgrids for the orbital elements (constant for all positions)
     # We'll tile these later
     e_grid, nu_grid, psi_grid = np.meshgrid(e_centers, nu_centers, psi_centers, indexing="ij")
@@ -688,33 +754,12 @@ def create_geocentric_healpixel_test_orbit_worker(
 
         # Positional footprint → lon/lat uncertainties
         lon_boundaries, lat_boundaries = compute_lon_lat_boundaries(nside, pixel)
-        dlon = np.max(np.abs(lon_boundaries - geo_lon))
+        # Handle longitude wrap-around: compute angular difference in [-180, 180]
+        lon_diff = (lon_boundaries - geo_lon + 180) % 360 - 180
+        dlon = np.max(np.abs(lon_diff))
         dlat = np.max(np.abs(lat_boundaries - geo_lat))
 
-        # We need to construct the Geocentric Position vectors for each rho
-        # Convert (rho, geo_lon, geo_lat) -> Cartesian (x, y, z)
-        # We can use SphericalCoordinates to handle the transform easily
-
         num_rho = len(rho_centers)
-
-        # Create topocentric spherical coordinates for this pixel
-        # We repeat the direction for each rho
-        geo_sph = SphericalCoordinates.from_kwargs(
-            rho=rho_centers,
-            lon=np.full(num_rho, geo_lon),
-            lat=np.full(num_rho, geo_lat),
-            vrho=np.zeros(num_rho),  # Placeholders
-            vlon=np.zeros(num_rho),
-            vlat=np.zeros(num_rho),
-            time=Timestamp.from_kwargs(
-                days=np.full(num_rho, time.days[0]),
-                nanos=np.full(num_rho, time.nanos[0]),
-                scale=time.scale,
-            ),
-            origin=Origin.from_kwargs(code=np.full(num_rho, "EARTH")),
-            frame="ecliptic",
-        )
-
         # Prepare parameters for JAX
         # Params: [rho_g, lon_g, lat_g, e, nu, psi]
         # We need to tile everything to num_states_per_rho
@@ -830,7 +875,7 @@ def create_geocentric_healpixel_test_orbit_worker(
         # You might want to encode the Geocentric grid info in the ID for debugging
         # e.g. pixel + geo_rho + e + nu + psi
         orbit_ids = [
-            f"{pixel}_grho{gr:.3f}_e{e:.3f}_nu{nu:.3f}_psi{psi:.3f}"
+            f"{pixel:0{pixel_width}d}_grho{gr:.3f}_e{e:.3f}_nu{nu:.3f}_psi{psi:.3f}"
             for gr, e, nu, psi in zip(
                 rho_tiled,
                 e_tiled,
@@ -854,7 +899,7 @@ def create_geocentric_healpixel_test_orbit_worker(
         end_pixel = int(pixels_array.max())
         filepath = os.path.join(
             out_dir,
-            f"healpixel_nside{nside}_pixels{start_pixel}_{end_pixel}.parquet",
+            f"test_orbits_nside{nside}_{start_pixel:0{pixel_width}d}_{end_pixel:0{pixel_width}d}.parquet",
         )
         test_orbits.to_parquet(filepath)
         return TestOrbits.empty()

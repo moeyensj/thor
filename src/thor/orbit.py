@@ -26,6 +26,7 @@ from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
 from .observations import Observations
+from .observations.observations import get_observation_observers
 from .projections.gnomonic import GnomonicCoordinates
 
 CoordinateType = TypeVar(
@@ -156,61 +157,6 @@ class TestOrbits(qv.Table):
             object_id=self.object_id,
         )
 
-    def _is_cache_fresh(self, observations: Observations) -> bool:
-        """
-        Check if the cached ephemeris is fresh. If the observation IDs are contained within the
-        cached observation IDs, then the cache is fresh. Otherwise, it is stale. This permits
-        observations to be filtered out without having to regenerate the ephemeris.
-
-        Parameters
-        ----------
-        observations : `~thor.observations.observations.Observations`
-            Observations to check against the cached ephemerides.
-
-        Returns
-        -------
-        is_fresh : bool
-            True if the cache is fresh, False otherwise.
-        """
-        if (
-            getattr(self, "_cached_ephemeris", None) is None
-            and getattr(self, "_cached_observation_ids", None) is None
-        ):
-            self._cached_ephemeris: Optional[TestOrbitEphemeris] = None
-            self._cached_observation_ids: Optional[pa.Array] = None
-            return False
-        elif (
-            getattr(self, "_cached_ephemeris", None) is not None
-            and getattr(self, "_cached_observation_ids") is not None
-            and pc.all(
-                pc.is_in(
-                    observations.id.sort(),
-                    self._cached_observation_ids.sort(),  # type: ignore
-                )
-            ).as_py()
-        ):
-            return True
-        else:
-            return False
-
-    def _cache_ephemeris(self, ephemeris: TestOrbitEphemeris, observations: Observations):
-        """
-        Cache the ephemeris and observation IDs.
-
-        Parameters
-        ----------
-        ephemeris : `~thor.orbit.TestOrbitEphemeris`
-            States to cache.
-        observations : `~thor.observations.observations.Observations`
-            Observations to cache. Only observation IDs will be cached.
-
-        Returns
-        -------
-        None
-        """
-        self._cached_ephemeris = ephemeris
-        self._cached_observation_ids = observations.id
-
     def propagate(
         self,
         times: Timestamp,
@@ -252,7 +198,7 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             times,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size=10,
             covariance=covariance,
             covariance_method=covariance_method,
             num_samples=num_samples,
@@ -299,7 +245,7 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             observers,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size=10,
             covariance=covariance,
             covariance_method=covariance_method,
             num_samples=num_samples,
@@ -307,26 +253,26 @@ class TestOrbits(qv.Table):
 
     def generate_ephemeris_from_observations(
         self,
-        observations: Union[Observations, ray.ObjectRef],
+        observations: Union[Observations, ray.ObjectRef, str],
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
         covariance: bool = True,
     ):
         """
         For each unique time and code in the observations (a state), generate an ephemeris for
-        that state and store them in a TestOrbitStates table. The observer's coordinates will also be
-        stored in the table and can be referenced through out the THOR pipeline.
-
-        These ephemerides will be cached. If the cache is fresh, the cached ephemerides will be
-        returned instead of regenerating them.
+        that state and store them in a TestOrbitEphemeris table. The observer's coordinates will also be
+        stored in the table and can be referenced throughout the THOR pipeline.
 
         Parameters
         ----------
-        observations : `~thor.observations.observations.Observations`
-            Observations to compute test orbit ephemerides for.
+        observations : `~thor.observations.observations.Observations`, ray.ObjectRef, or str
+            Observations to compute test orbit ephemerides for. Can be an Observations object,
+            a ray ObjectRef, or a path to a parquet file or directory containing parquet files.
+            When a path is provided, only the time and observatory code columns are read for
+            efficiency.
         propagator_class : `~adam_core.propagator.propagator.Propagator`
             Propagator to use to propagate the orbit.
-        num_processes : int, optional
+        max_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
         covariance: bool, optional
             Propagate the covariance matrices of the orbits. This is done by sampling the
@@ -336,29 +282,15 @@ class TestOrbits(qv.Table):
 
         Returns
         -------
-        states : `~thor.orbit.TestOrbitEphemeris`
+        test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris`
             Table containing the ephemeris of the test orbit, its aberrated state vector, and the
             observer coordinates at each unique time of the observations.
-
-        Raises
-        ------
-        ValueError
-            If the observations are empty.
         """
-        if isinstance(observations, ray.ObjectRef):
-            observations = ray.get(observations)
+        observers_with_states = get_observation_observers(observations)
 
-        if len(observations) == 0:
+        if len(observers_with_states) == 0:
             return TestOrbitEphemeris.empty()
 
-        if self._is_cache_fresh(observations):
-            logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
-            return self._cached_ephemeris
-
-        logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
-
-        # Get observer states
-        observers_with_states = observations.get_observers()
         observers_with_states = observers_with_states.sort_by(
             by=[
                 "observers.coordinates.time.days",
@@ -402,7 +334,6 @@ class TestOrbits(qv.Table):
             gnomonic_rotation_matrix=gnomonic_rotation_matrix,
         )
 
-        self._cache_ephemeris(test_orbit_ephemeris, observations)
         return test_orbit_ephemeris
 
     def range_observations(
@@ -410,6 +341,7 @@ class TestOrbits(qv.Table):
         observations: Union[Observations, ray.ObjectRef],
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        test_orbit_ephemeris: Optional[Union[TestOrbitEphemeris, ray.ObjectRef]] = None,
     ) -> RangedPointSourceDetections:
         """
         Given a set of observations, propagate this test orbit to the times of the observations and calculate the
@@ -419,21 +351,29 @@ class TestOrbits(qv.Table):
         ----------
         observations : `~thor.observations.observations.Observations`
             Observations to range.
-        propagator : `~adam_core.propagator.propagator.Propagator`, optional
-            Propagator to use to propagate the orbit. Defaults to PYOORB.
+        propagator_class : `~adam_core.propagator.propagator.Propagator`
+            Propagator class to use to propagate the orbit.
         max_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris` or ray.ObjectRef, optional
+            Pre-computed test orbit ephemeris. If provided, ephemeris generation will be
+            skipped. If None, ephemeris will be generated from observations.
 
         Returns
         -------
         ranged_point_source_detections : `~thor.orbit.RangedPointSourceDetections`
             The ranged detections.
         """
-        # Generate an ephemeris for each unique observation time and observatory
-        # code combination
-        ephemeris = self.generate_ephemeris_from_observations(
-            observations, propagator_class=propagator_class, max_processes=max_processes
-        )
+        # Use provided ephemeris or generate one
+        if test_orbit_ephemeris is not None:
+            if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                ephemeris = ray.get(test_orbit_ephemeris)
+            else:
+                ephemeris = test_orbit_ephemeris
+        else:
+            ephemeris = self.generate_ephemeris_from_observations(
+                observations, propagator_class=propagator_class, max_processes=max_processes
+            )
 
         if max_processes is None:
             max_processes = mp.cpu_count()

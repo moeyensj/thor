@@ -121,6 +121,7 @@ def range_and_transform(
     observations: Union[Observations, ray.ObjectRef],
     propagator_class: Type[Propagator],
     max_processes: Optional[int] = 1,
+    test_orbit_ephemeris: Optional[Union[TestOrbitEphemeris, ray.ObjectRef]] = None,
 ) -> TransformedDetections:
     """
     Range observations for a single test orbit and transform them into a
@@ -133,13 +134,16 @@ def range_and_transform(
         Test orbit to use to gather and transform observations.
     observations : `~thor.observations.observations.Observations`
         Observations from which range and transform the detections.
-    propagator : `~adam_core.propagator.propagator.Propagator`
-        Propagator to use to propagate the test orbit and generate
+    propagator_class : `~adam_core.propagator.propagator.Propagator`
+        Propagator class to use to propagate the test orbit and generate
         ephemerides.
     max_processes : int, optional
         Maximum number of processes to use for parallelization. If
         an existing ray cluster is already running, this parameter
         will be ignored if larger than 1 or not None.
+    test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris` or ray.ObjectRef, optional
+        Pre-computed test orbit ephemeris. If provided, ephemeris generation will be
+        skipped. If None, ephemeris will be generated from observations.
 
     Returns
     -------
@@ -163,12 +167,18 @@ def range_and_transform(
         observations_ref = None
 
     if len(observations) > 0:
-        # Compute the ephemeris of the test orbit (this will be cached)
-        ephemeris = test_orbit.generate_ephemeris_from_observations(
-            observations,
-            propagator_class=propagator_class,
-            max_processes=max_processes,
-        )
+        # Use provided ephemeris or compute it
+        if test_orbit_ephemeris is not None:
+            if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                ephemeris = ray.get(test_orbit_ephemeris)
+            else:
+                ephemeris = test_orbit_ephemeris
+        else:
+            ephemeris = test_orbit.generate_ephemeris_from_observations(
+                observations,
+                propagator_class=propagator_class,
+                max_processes=max_processes,
+            )
 
         # Assume that the heliocentric distance of all point sources in
         # the observations are the same as that of the test orbit
@@ -176,6 +186,7 @@ def range_and_transform(
             observations,
             propagator_class=propagator_class,
             max_processes=max_processes,
+            test_orbit_ephemeris=ephemeris,
         )
         transformed_detections = TransformedDetections.empty()
 

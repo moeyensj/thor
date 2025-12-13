@@ -1,10 +1,13 @@
+import glob
 import multiprocessing as mp
+import os
 import pathlib
 from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
+import pyarrow.parquet as pq
 import quivr as qv
 import ray
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
@@ -15,12 +18,14 @@ from adam_core.time import Timestamp
 
 from ..config import Config
 from .photometry import Photometry
-from .states import calculate_state_id_hashes
+from .states import calculate_state_id_hash, calculate_state_id_hashes
 
 __all__ = [
     "InputObservations",
     "Observations",
+    "ObserversWithStates",
     "convert_input_observations_to_observations",
+    "get_observation_observers",
     "input_observations_to_observations_worker",
     "convert_source_catalog_to_observations",
 ]
@@ -283,6 +288,143 @@ def convert_input_observations_to_observations(
 class ObserversWithStates(qv.Table):
     state_id = qv.LargeStringColumn()
     observers = Observers.as_column()
+
+
+def get_observation_observers(
+    observations: Union["Observations", ray.ObjectRef, str],
+) -> ObserversWithStates:
+    """
+    Get the unique observers (time and observatory code combinations) from observations.
+
+    This function can handle:
+    - In-memory Observations objects
+    - Ray ObjectRef containing Observations
+    - Path to a single parquet file
+    - Path to a directory containing parquet files
+
+    When given a path, only the time and observatory code columns are read for efficiency.
+
+    Parameters
+    ----------
+    observations : Observations, ray.ObjectRef, or str
+        The observations to extract observers from. Can be an Observations object,
+        a ray ObjectRef, or a path to a parquet file or directory.
+
+    Returns
+    -------
+    observers_with_states : ObserversWithStates
+        The unique observers with their state IDs.
+    """
+    if isinstance(observations, ray.ObjectRef):
+        observations = ray.get(observations)
+
+    if isinstance(observations, str):
+        return _get_observation_observers_from_path(observations)
+    else:
+        return observations.get_observers()
+
+
+def _get_observation_observers_from_path(observations_path: str) -> ObserversWithStates:
+    """
+    Extract unique observers from parquet file(s) by reading only time and observatory
+    code columns for efficiency.
+
+    Parameters
+    ----------
+    observations_path : str
+        Path to a parquet file or directory containing parquet files.
+
+    Returns
+    -------
+    observers_with_states : ObserversWithStates
+        The unique observers extracted from the observations.
+    """
+    # Find all parquet files
+    path = pathlib.Path(observations_path)
+    if path.is_dir():
+        parquet_paths = list(path.glob("**/*.parquet"))
+    else:
+        parquet_paths = [path]
+
+    if len(parquet_paths) == 0:
+        return ObserversWithStates.empty()
+
+    # Read only the columns we need: time.days, time.nanos, origin.code
+    # Note: PyArrow flattens nested column names when reading, so
+    # "coordinates.time.days" becomes "days", etc.
+    columns = [
+        "coordinates.time.days",
+        "coordinates.time.nanos",
+        "coordinates.origin.code",
+    ]
+
+    # Read the time scale from schema metadata (use first file)
+    schema = pq.read_schema(str(parquet_paths[0]))
+    scale = schema.metadata.get(b"coordinates.time.scale").decode("utf-8")
+
+    all_data = []
+    for parquet_path in parquet_paths:
+        table = pq.read_table(str(parquet_path), columns=columns)
+        all_data.append(table)
+
+    if len(all_data) == 0:
+        return ObserversWithStates.empty()
+
+    # Combine all tables
+    combined = pa.concat_tables(all_data)
+
+    # Get unique time/code combinations
+    # Column names are flattened: "coordinates.time.days" -> "days", etc.
+    unique_states = (
+        combined.group_by(["days", "nanos", "code"])
+        .aggregate([])
+        .sort_by(
+            [
+                ("days", "ascending"),
+                ("nanos", "ascending"),
+                ("code", "ascending"),
+            ]
+        )
+    )
+
+    if len(unique_states) == 0:
+        return ObserversWithStates.empty()
+
+    # Group by observatory code and create Observers
+    observers_with_states = ObserversWithStates.empty()
+    unique_codes = pc.unique(unique_states["code"]).to_pylist()
+
+    for code in unique_codes:
+        # Filter to this code's rows
+        mask = pc.equal(unique_states["code"], code)
+        code_states = unique_states.filter(mask)
+
+        days = code_states["days"].to_pylist()
+        nanos = code_states["nanos"].to_pylist()
+
+        # Create timestamps
+        times = Timestamp.from_kwargs(
+            days=days,
+            nanos=nanos,
+            scale=scale,
+        )
+
+        # Create observers for this code
+        observers = Observers.from_code(code, times)
+
+        # Calculate state IDs
+        state_ids = [calculate_state_id_hash(day, nano, code) for day, nano in zip(days, nanos)]
+
+        observers_with_states_i = ObserversWithStates.from_kwargs(
+            state_id=state_ids,
+            observers=observers,
+        )
+
+        observers_with_states = qv.concatenate([observers_with_states, observers_with_states_i])
+        if observers_with_states.fragmented():
+            observers_with_states = qv.defragment(observers_with_states)
+
+    return observers_with_states.sort_by("state_id")
 
 
 class InputObservations(qv.Table):
@@ -663,3 +805,40 @@ def convert_source_catalog_to_observations(
     observations_writer.close()
     print("Output writer closed")
     return observations_path
+
+
+def get_observation_times(observations: Union[str, "Observations"]) -> Tuple[Timestamp, Timestamp]:
+    """
+    Get observation times from a table or a path to a file or directory containing a table or tables of observations.
+
+    Parameters
+    ----------
+    observations : `~Observations` or str
+        Either a table or a path to a file or directory containing a table or tables of observations.
+
+    Returns
+    -------
+    time_range : Tuple[Timestamp, Timestamp]
+        The time range of the observations.
+    """
+    if isinstance(observations, str):
+        if os.path.isdir(observations):
+            files = glob.glob(os.path.join(observations, "*.parquet"))
+            metadata_file = files[0]
+        else:
+            metadata_file = observations
+
+        table = pq.read_table(observations, columns=["coordinates.time.days", "coordinates.time.nanos"])
+        schema = pq.read_schema(metadata_file)
+        scale = schema.metadata.get(b"coordinates.time.scale").decode("utf-8")
+        time = Timestamp.from_kwargs(
+            days=table.column("days").combine_chunks(),
+            nanos=table.column("nanos").combine_chunks(),
+            scale=scale,
+        )
+        return time
+
+    elif isinstance(observations, Observations):
+        return observations.time
+    else:
+        raise ValueError(f"Invalid observations type: {type(observations)}")
