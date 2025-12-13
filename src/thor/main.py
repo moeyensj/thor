@@ -523,6 +523,7 @@ def link_test_orbits(
     filters: Optional[List[ObservationFilter]] = None,
     config: Optional[Config] = None,
     use_orbit_subdir: bool = True,
+    max_split_depth: int = 2,
     current_depth: int = 0,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """
