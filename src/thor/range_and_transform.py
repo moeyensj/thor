@@ -6,6 +6,7 @@ from typing import Optional, Type, Union
 import numpy as np
 import numpy.typing as npt
 import pyarrow as pa
+import pyarrow.compute as pc
 import quivr as qv
 import ray
 
@@ -75,6 +76,16 @@ def range_and_transform_worker(
     ranged_detections_spherical_state = ranged_detections.select("state_id", state_id)
     ephemeris_state = ephemeris.select("id", state_id)
     observations_state = observations.select("state_id", state_id)
+
+    # `range_observations_worker` may have filtered out un-rangeable observations
+    if len(ranged_detections_spherical_state) == 0:
+        return TransformedDetections.empty()
+
+    observations_state = observations_state.apply_mask(
+        pc.is_in(observations_state.id, ranged_detections_spherical_state.id)
+    )
+    if len(observations_state) == 0:
+        return TransformedDetections.empty()
 
     ranged_detections_cartesian_state = transform_coordinates(
         zero_covariances(ranged_detections_spherical_state.coordinates),
@@ -161,8 +172,13 @@ def range_and_transform(
     if len(test_orbit) != 1:
         raise ValueError(f"range_and_transform received {len(test_orbit)} orbits but expected 1.")
 
+    keplerian = test_orbit.coordinates.to_keplerian()
     logger.info(f"Assuming r = {test_orbit.coordinates.r[0]} au")
     logger.info(f"Assuming v = {test_orbit.coordinates.v[0]} au/d")
+    logger.info(f"Assuming a, e, i = {keplerian.a[0]} au, {keplerian.e[0]}, {keplerian.i[0]} deg")
+    logger.info(
+        f"Assuming raan, ap, M = {keplerian.raan[0]} deg, {keplerian.ap[0]} deg, {keplerian.M[0]} deg"
+    )
 
     if isinstance(observations, ray.ObjectRef):
         observations_ref = observations

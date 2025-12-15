@@ -127,11 +127,25 @@ def range_observations_worker(
     # Get the observer's heliocentric coordinates
     observer_i = ephemeris_state.observer
 
+    ranged_coords = assume_heliocentric_distance(r, observations_state.coordinates, observer_i.coordinates)
+
+    # Filter out observations for which no physical ranging solution exists.
+    # These manifest as non-finite (NaN/inf) or non-positive topocentric distances.
+    rho = ranged_coords.rho
+    valid = pc.and_(pc.is_finite(rho), pc.greater(rho, 0.0))
+    observations_state = observations_state.apply_mask(valid)
+    ranged_coords = ranged_coords.apply_mask(valid)
+
+    # If nothing is rangeable for this state, return an empty table.
+    if len(observations_state) == 0:
+        return RangedPointSourceDetections.empty()
+
+    test_orbit_id = ephemeris_state.test_orbit_id[0].as_py()
     return RangedPointSourceDetections.from_kwargs(
         id=observations_state.id,
         exposure_id=observations_state.exposure_id,
-        test_orbit_id=pa.repeat(ephemeris_state.test_orbit_id[0].as_py(), len(observations_state)),
-        coordinates=assume_heliocentric_distance(r, observations_state.coordinates, observer_i.coordinates),
+        test_orbit_id=pa.repeat(test_orbit_id, len(observations_state)),
+        coordinates=ranged_coords,
         state_id=observations_state.state_id,
     )
 
@@ -646,7 +660,13 @@ def assume_heliocentric_distance(
     # Calculate the topocentric distance such that the heliocentric distance to the coordinate
     # is r_mag
     dotprod = np.sum(unit_vectors * origin_coords.r, axis=1)
-    sqrt = np.sqrt(dotprod**2 + r_mag**2 - origin_coords.r_mag**2)
+    # The quadratic discriminant can be negative for physically impossible observing geometries
+    # (no ray–sphere intersection). Avoid emitting RuntimeWarnings by setting those to NaN.
+    # Also clamp tiny negatives to zero to handle near-tangent numerical roundoff.
+    rad = dotprod**2 + r_mag**2 - origin_coords.r_mag**2
+    eps = 1e-15
+    rad_safe = np.where(rad < -eps, np.nan, np.maximum(rad, 0.0))
+    sqrt = np.sqrt(rad_safe)
     delta_p = -dotprod + sqrt
     delta_n = -dotprod - sqrt
 
