@@ -1165,7 +1165,7 @@ def calculate_clustering_parameters_from_covariance(
 
 def cluster_and_link(
     observations: Union[TransformedDetections, ray.ObjectRef],
-    test_orbit_ephemeris: Optional[TestOrbitEphemeris] = None,
+    test_orbit_ephemeris: Optional[Union[TestOrbitEphemeris, ray.ObjectRef]] = None,
     velocity_bin_separation: float = 2.0,
     min_obs: int = 5,
     min_arc_length: float = 1.0,
@@ -1192,7 +1192,7 @@ def cluster_and_link(
     ----------
     observations : TransformedDetections or ray.ObjectRef
         Transformed detections to cluster.
-    test_orbit_ephemeris : TestOrbitEphemeris, optional
+    test_orbit_ephemeris : TestOrbitEphemeris or ray.ObjectRef, optional
         Test orbit ephemeris with covariances. If provided, clustering parameters
         (vx_values, vy_values, radius) will be calculated automatically from the
         covariances, overriding manual parameter specifications.
@@ -1277,10 +1277,16 @@ def cluster_and_link(
     time_start_cluster = time.perf_counter()
     logger.info("Running velocity space clustering...")
 
-    if isinstance(observations, ray.ObjectRef):
+    if isinstance(observations, str):
+        observations = TransformedDetections.from_parquet(observations)
+        logger.info("Loaded transformed detections from parquet path.")
+    elif isinstance(observations, ray.ObjectRef):
         observations = ray.get(observations)
         logger.info("Retrieved observations from the object store.")
-    if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+    if isinstance(test_orbit_ephemeris, str):
+        test_orbit_ephemeris = TestOrbitEphemeris.from_parquet(test_orbit_ephemeris)
+        logger.info("Loaded test orbit ephemeris from parquet path.")
+    elif isinstance(test_orbit_ephemeris, ray.ObjectRef):
         test_orbit_ephemeris = ray.get(test_orbit_ephemeris)
         logger.info("Retrieved test orbit ephemeris from the object store.")
 

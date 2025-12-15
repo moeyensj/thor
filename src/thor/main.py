@@ -4,8 +4,9 @@ import os
 import pathlib
 import time
 from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Literal, Optional, Tuple, Union
+from typing import Iterator, List, Literal, Optional, Tuple, Union
 
+import pyarrow.parquet as pq
 import quivr as qv
 import ray
 
@@ -61,7 +62,7 @@ class LinkTestOrbitStageResult:
         "differential_correction",
         "recover_orbits",
     ]
-    result: Iterable[qv.AnyTable]
+    result: Tuple[Union[qv.AnyTable, str], ...]
     path: Tuple[Optional[str], ...] = (None,)
 
 
@@ -72,6 +73,7 @@ def link_test_orbit(
     filters: Optional[List[ObservationFilter]] = None,
     config: Optional[Config] = None,
     use_orbit_subdir: bool = True,
+    yield_paths: bool = False,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """
     Run THOR for a single test orbit on the given observations. This function will yield
@@ -99,6 +101,10 @@ def link_test_orbit(
         List of filters to apply to the observations before running THOR.
     config : `~thor.config.Config`, optional
         Configuration to use for THOR. If None, the default configuration will be used.
+    yield_paths : bool, optional
+        If True and working_dir is set, yield file paths in result instead of in-memory
+        tables. This allows large tables to be garbage collected after being written to
+        disk, reducing memory usage. Default is False.
     """
     time_start = time.perf_counter()
     logger.info("Running test orbit...")
@@ -180,7 +186,13 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="filter_observations",
-            result=(filtered_observations,),
+            result=(
+                (
+                    filtered_observations_path
+                    if yield_paths and filtered_observations_path
+                    else filtered_observations
+                ),
+            ),
             path=(filtered_observations_path,),
         )
         if stop_after_stage == "filter_observations":
@@ -221,7 +233,7 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="generate_ephemeris",
-            result=(test_orbit_ephemeris,),
+            result=(ephemeris_path if yield_paths and ephemeris_path else test_orbit_ephemeris,),
             path=(ephemeris_path,),
         )
         if stop_after_stage == "generate_ephemeris":
@@ -266,7 +278,13 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="range_and_transform",
-            result=(transformed_detections,),
+            result=(
+                (
+                    transformed_detections_path
+                    if yield_paths and transformed_detections_path
+                    else transformed_detections
+                ),
+            ),
             path=(transformed_detections_path,),
         )
         if stop_after_stage == "range_and_transform":
@@ -329,7 +347,10 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="cluster_and_link",
-            result=(clusters, cluster_members),
+            result=(
+                clusters_path if yield_paths and clusters_path else clusters,
+                cluster_members_path if yield_paths and cluster_members_path else cluster_members,
+            ),
             path=(clusters_path, cluster_members_path),
         )
         if stop_after_stage == "cluster_and_link":
@@ -387,7 +408,10 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="initial_orbit_determination",
-            result=(iod_orbits, iod_orbit_members),
+            result=(
+                iod_orbits_path if yield_paths and iod_orbits_path else iod_orbits,
+                iod_orbit_members_path if yield_paths and iod_orbit_members_path else iod_orbit_members,
+            ),
             path=(iod_orbits_path, iod_orbit_members_path),
         )
         if stop_after_stage == "initial_orbit_determination":
@@ -446,7 +470,10 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="differential_correction",
-            result=(od_orbits, od_orbit_members),
+            result=(
+                od_orbits_path if yield_paths and od_orbits_path else od_orbits,
+                od_orbit_members_path if yield_paths and od_orbit_members_path else od_orbit_members,
+            ),
             path=(od_orbits_path, od_orbit_members_path),
         )
         if stop_after_stage == "differential_correction":
@@ -511,7 +538,14 @@ def link_test_orbit(
         logger.info(f"Test orbit completed in {time_end-time_start:.3f} seconds.")
         yield LinkTestOrbitStageResult(
             name="recover_orbits",
-            result=(recovered_orbits, recovered_orbit_members),
+            result=(
+                recovered_orbits_path if yield_paths and recovered_orbits_path else recovered_orbits,
+                (
+                    recovered_orbit_members_path
+                    if yield_paths and recovered_orbit_members_path
+                    else recovered_orbit_members
+                ),
+            ),
             path=(recovered_orbits_path, recovered_orbit_members_path),
         )
 
@@ -524,6 +558,7 @@ def link_test_orbits(
     config: Optional[Config] = None,
     use_orbit_subdir: bool = True,
     current_depth: int = 0,
+    yield_paths: bool = False,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """
     Run THOR for a list of test orbits on the given observations. This function will yield
@@ -543,6 +578,10 @@ def link_test_orbits(
         Configuration to use for THOR. If None, the default configuration will be used.
     current_depth: int, optional
         Current depth of the split.
+    yield_paths : bool, optional
+        If True and working_dir is set, yield file paths in result instead of in-memory
+        tables. This allows large tables to be garbage collected after being written to
+        disk, reducing memory usage. Default is False.
 
     Returns
     -------
@@ -564,59 +603,68 @@ def link_test_orbits(
             filters,
             config,
             use_orbit_subdir=use_orbit_subdir,
+            yield_paths=yield_paths,
         ):
-            if (
-                split_threshold is not None
-                and stage_result.name == "filter_observations"
-                and len(stage_result.result[0]) > split_threshold
-            ):
-                if current_depth >= max_split_depth:
-                    logger.info(
-                        f"Split threshold exceeded but max depth {max_split_depth} reached; not splitting further.",
-                    )
-                    # Do not split further, but continue running downstream stages for this orbit.
-                    yield stage_result
-                    continue
-                logger.info(
-                    f"Filtered observations ({len(stage_result.result[0])}) exceed threshold ({split_threshold}); splitting test orbit via {split_method}.",
-                )
-
-                # Use the on-disk path if available, otherwise fall back to in-memory observations
-                child_observations = (
-                    stage_result.path[0] if stage_result.path[0] is not None else stage_result.result[0]
-                )
-
-                if split_method == "healpixel":
-                    split_test_orbits = test_orbit.split_healpixel()
+            if split_threshold is not None and stage_result.name == "filter_observations":
+                # Get the number of filtered observations
+                result_item = stage_result.result[0]
+                if isinstance(result_item, str):
+                    # Result is a path, read metadata to get row count
+                    num_filtered = pq.read_metadata(result_item).num_rows
                 else:
-                    times = get_observation_times(child_observations)
-                    max_time = times.max()
-                    min_time = times.min()
-                    dt = max_time.mjd()[0].as_py() - min_time.mjd()[0].as_py()
-                    split_test_orbits = test_orbit.split(dt=dt, k=1, beta=0.67, gamma=1, num=3, max_depth=1)
+                    num_filtered = len(result_item)
 
-                if working_dir is not None:
-                    parent_dir = (
-                        pathlib.Path(working_dir, test_orbit.orbit_id[0].as_py())
-                        if use_orbit_subdir
-                        else pathlib.Path(working_dir)
+                if num_filtered > split_threshold:
+                    if current_depth >= max_split_depth:
+                        logger.info(
+                            f"Split threshold exceeded but max depth {max_split_depth} reached; not splitting further.",
+                        )
+                        # Do not split further, but continue running downstream stages for this orbit.
+                        yield stage_result
+                        continue
+                    logger.info(
+                        f"Filtered observations ({num_filtered}) exceed threshold ({split_threshold}); splitting test orbit via {split_method}.",
                     )
-                    parent_dir.mkdir(parents=True, exist_ok=True)
 
-                child_working_dir: Optional[str] = None
-                if working_dir is not None:
-                    # Each child gets its own subdir inside the parent orbit directory.
-                    child_working_dir = str(parent_dir)
+                    # Use the on-disk path if available, otherwise fall back to in-memory observations
+                    child_observations = (
+                        stage_result.path[0] if stage_result.path[0] is not None else stage_result.result[0]
+                    )
 
-                yield from link_test_orbits(
-                    split_test_orbits,
-                    child_observations,
-                    child_working_dir,
-                    filters,
-                    config,
-                    use_orbit_subdir=True,
-                    current_depth=current_depth + 1,
-                )
-                break
+                    if split_method == "healpixel":
+                        split_test_orbits = test_orbit.split_healpixel()
+                    else:
+                        times = get_observation_times(child_observations)
+                        max_time = times.max()
+                        min_time = times.min()
+                        dt = max_time.mjd()[0].as_py() - min_time.mjd()[0].as_py()
+                        split_test_orbits = test_orbit.split(
+                            dt=dt, k=1, beta=0.67, gamma=1, num=3, max_depth=1
+                        )
+
+                    if working_dir is not None:
+                        parent_dir = (
+                            pathlib.Path(working_dir, test_orbit.orbit_id[0].as_py())
+                            if use_orbit_subdir
+                            else pathlib.Path(working_dir)
+                        )
+                        parent_dir.mkdir(parents=True, exist_ok=True)
+
+                    child_working_dir: Optional[str] = None
+                    if working_dir is not None:
+                        # Each child gets its own subdir inside the parent orbit directory.
+                        child_working_dir = str(parent_dir)
+
+                    yield from link_test_orbits(
+                        split_test_orbits,
+                        child_observations,
+                        child_working_dir,
+                        filters,
+                        config,
+                        use_orbit_subdir=True,
+                        current_depth=current_depth + 1,
+                        yield_paths=yield_paths,
+                    )
+                    break
 
             yield stage_result
