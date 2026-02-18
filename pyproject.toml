@@ -16,7 +16,6 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Astronomy",
@@ -25,8 +24,8 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core @ git+https://github.com/B612-Asteroid-Institute/adam_core.git@support-thor-v3",
-    "adam-assist @ git+https://github.com/B612-Asteroid-Institute/adam-assist.git@04014c6145521d6599c838e99ba854dd1974879f",
+    "adam-core>=0.5.4",
+    "adam-assist>=0.3.6",
     "astropy>=5.3.1",
     "astroquery",
     "difi>=2.0rc2",
@@ -43,6 +42,7 @@ dependencies = [
     "scikit-learn",
     "scipy",
     "spiceypy",
+    "rebound==4.6.0",
 ]
 
 [build-system]
