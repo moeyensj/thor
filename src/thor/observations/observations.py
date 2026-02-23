@@ -10,7 +10,6 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import quivr as qv
 import ray
-
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
 from adam_core.observations import Exposures, PointSourceDetections, SourceCatalog
 from adam_core.observers import Observers, calculate_observing_night

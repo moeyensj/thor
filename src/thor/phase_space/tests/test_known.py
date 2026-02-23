@@ -1,5 +1,4 @@
 import numpy as np
-
 from adam_core.coordinates import KeplerianCoordinates, Origin
 from adam_core.time import Timestamp
 

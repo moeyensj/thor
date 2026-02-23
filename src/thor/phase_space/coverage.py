@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pyarrow as pa
 import quivr as qv
-
 from adam_core.coordinates import SphericalCoordinates
 from adam_core.coordinates.origin import Origin
 from adam_core.time import Timestamp

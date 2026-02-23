@@ -1,5 +1,4 @@
 import numpy as np
-
 from adam_core.constants import Constants as c
 
 __all__ = ["calcHerrickGibbs"]

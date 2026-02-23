@@ -7,7 +7,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from difi import analyze_observations

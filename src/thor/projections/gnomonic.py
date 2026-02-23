@@ -3,7 +3,6 @@ from typing import Optional
 import numpy as np
 import pyarrow as pa
 import quivr as qv
-
 from adam_core.coordinates import CartesianCoordinates, Origin
 from adam_core.coordinates.covariances import transform_covariances_jacobian
 from adam_core.time import Timestamp

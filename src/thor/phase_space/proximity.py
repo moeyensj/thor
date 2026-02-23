@@ -4,7 +4,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
 from adam_core.coordinates import transform_coordinates
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits

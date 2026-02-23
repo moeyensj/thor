@@ -43,6 +43,7 @@ dependencies = [
     "scipy",
     "spiceypy",
     "rebound==4.6.0",
+    "plotly>=6.5.2",
 ]
 
 [build-system]

@@ -10,7 +10,6 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import quivr as qv
 import ray
-
 from adam_core.coordinates import KeplerianCoordinates
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
@@ -18,6 +17,7 @@ from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from adam_core.utils.iter import _iterate_chunks
+
 from thor.observations import Observations
 from thor.observations.utils import calculate_healpixels
 from thor.orbit import TestOrbits

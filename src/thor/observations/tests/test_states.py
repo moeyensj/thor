@@ -1,7 +1,6 @@
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
-
 from adam_core.coordinates import Origin, SphericalCoordinates
 from adam_core.time import Timestamp
 

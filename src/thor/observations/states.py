@@ -3,7 +3,6 @@ from typing import Union
 
 import numpy as np
 import pyarrow as pa
-
 from adam_core.coordinates import CartesianCoordinates, SphericalCoordinates
 
 

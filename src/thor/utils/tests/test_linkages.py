@@ -3,7 +3,6 @@ import uuid
 import numpy as np
 import pyarrow as pa
 import quivr as qv
-
 from adam_core.coordinates import Origin, SphericalCoordinates
 from adam_core.time import Timestamp
 

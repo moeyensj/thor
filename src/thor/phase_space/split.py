@@ -3,7 +3,6 @@ from typing import Tuple
 import healpy as hp
 import numpy as np
 import numpy.typing as npt
-
 from adam_core.coordinates.covariances import make_positive_semidefinite
 
 from .healpixel import compute_lon_lat_boundaries

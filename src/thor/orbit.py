@@ -8,7 +8,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
-
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,

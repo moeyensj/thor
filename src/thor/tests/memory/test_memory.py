@@ -178,7 +178,6 @@ def memory_od_orbits():
 @pytest.fixture
 def ray_cluster(memory_config):
     import ray
-
     from adam_core.ray_cluster import initialize_use_ray
 
     if memory_config.max_processes > 1:
