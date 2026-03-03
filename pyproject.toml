@@ -55,30 +55,6 @@ build-backend = "pdm.backend"
 "Issues" = "https://github.com/moeyensj/thor/issues"
 "Source" = "https://github.com/moeyensj/thor"
 
-[tool.pdm.build]
-includes = ["src/thor/"]
-
-[tool.pdm.version]
-source = "scm"
-write_to = "thor/_version.py"
-write_template = "__version__ = '{}'"
-
-[tool.pdm.scripts]
-check = { composite = ["lint", "typecheck", "test"] }
-format = { composite = ["black ./src/thor", "isort ./src/thor"] }
-lint = { composite = [
-  "ruff check ./src/thor",
-  "black --check ./src/thor",
-  "isort --check-only ./src/thor",
-] }
-fix = "ruff ./src/thor --fix"
-typecheck = "mypy --strict ./src/thor"
-
-test = "pytest --benchmark-disable {args}"
-doctest = "pytest --doctest-plus --doctest-only"
-benchmark = "pytest --benchmark-only"
-coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
-
 [dependency-groups]
 dev = [
     "black",
@@ -95,7 +71,7 @@ dev = [
     "pytest-mock",
     "pytest-memray",
     "pytest",
-    "ruff",
+    "ruff>=0.15.4",
     "ipdb>=0.13.13",
 ]
 
@@ -121,3 +97,27 @@ markers = [
     "integration: Mark a test as an integration test.",
     "memory: Mark a test as a memory test."
 ]
+[tool.pdm.build]
+includes = ["src/thor/"]
+
+[tool.pdm.version]
+source = "scm"
+write_to = "thor/_version.py"
+write_template = "__version__ = '{}'"
+
+[tool.pdm.scripts]
+check = { composite = ["lint", "typecheck", "test"] }
+format = { composite = ["black ./src/thor", "isort ./src/thor"] }
+lint = { composite = [
+  "ruff check ./src/thor",
+  "black --check ./src/thor",
+  "isort --check-only ./src/thor",
+] }
+fix = "ruff ./src/thor --fix"
+typecheck = "mypy --strict ./src/thor"
+
+test = "pytest --benchmark-disable {args}"
+doctest = "pytest --doctest-plus --doctest-only"
+benchmark = "pytest --benchmark-only"
+coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
+

@@ -578,7 +578,7 @@ def test_covariance_attachment():
     actual_sigmas = sigmas_cart[0]
     assert np.allclose(
         actual_sigmas, expected_sigmas, rtol=0.01
-    ), f"Cartesian sigmas should match half_widths closely"
+    ), "Cartesian sigmas should match half_widths closely"
 
     # Test 4: Test with Keplerian coordinates
     print("\n[Test 4] Generating test orbits in KEPLERIAN coordinates with covariances...")
@@ -597,8 +597,8 @@ def test_covariance_attachment():
     assert cov_matrices_kep.shape == (3, 6, 6)
     assert not np.any(np.isnan(cov_matrices_kep)), "Keplerian covariances should not be NaN"
 
-    sigmas_kep = test_orbits_kep.coordinates.covariance.sigmas
-    print(f"✓ Sigmas for first Keplerian orbit (transformed to Cartesian)")
+    # sigmas_kep = test_orbits_kep.coordinates.covariance.sigmas
+    print("✓ Sigmas for first Keplerian orbit (transformed to Cartesian)")
 
     # Test 5: Test covariance_scale parameter
     print("\n[Test 5] Testing covariance_scale parameter...")
@@ -615,7 +615,7 @@ def test_covariance_attachment():
     print(f"✓ Sigmas with scale=3.0: {sigmas_scaled[0]}")
     assert np.allclose(
         sigmas_scaled[0], expected_scaled, rtol=0.01
-    ), f"Scaled sigmas should be half_widths/scale"
+    ), "Scaled sigmas should be half_widths/scale"
 
     print("\n✓ All covariance attachment tests passed!")
 

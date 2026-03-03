@@ -1,6 +1,6 @@
 import logging
 import pathlib
-from typing import Annotated, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Annotated, Dict, List, Literal, Optional, Type, Union
 
 import pyarrow.parquet as pq
 import pydantic
@@ -458,8 +458,11 @@ class RunResults(qv.Table):
             "recovered_orbit_members": [],
         }
 
-        _p = lambda p: str(p.relative_to(root) if store_relative_paths else p.resolve())
-        _n = lambda p: int(pq.ParquetFile(p).metadata.num_rows)
+        def format_path(p: pathlib.Path) -> str:
+            return str(p.relative_to(root) if store_relative_paths else p.resolve())
+
+        def row_count(p: pathlib.Path) -> int:
+            return int(pq.ParquetFile(p).metadata.num_rows)
 
         for run_path in run_dirs:
             # Infer `child_of` from directory structure:
@@ -486,7 +489,7 @@ class RunResults(qv.Table):
                 # Inputs: <run_dir>/inputs/<orbit_id>/test_orbit.parquet
                 test_orbit_path = inputs_dir / orbit_id / "test_orbit.parquet"
                 if test_orbit_path.exists():
-                    cols_files["test_orbit_file"].append(_p(test_orbit_path))
+                    cols_files["test_orbit_file"].append(format_path(test_orbit_path))
                 else:
                     cols_files["test_orbit_file"].append(None)
 
@@ -496,8 +499,8 @@ class RunResults(qv.Table):
                     path = orbit_out_dir / filename
                     file_col = f"{key}_file"
                     if path.exists():
-                        cols_files[file_col].append(_p(path))
-                        cols_counts[key].append(_n(path))
+                        cols_files[file_col].append(format_path(path))
+                        cols_counts[key].append(row_count(path))
                     else:
                         cols_files[file_col].append(None)
                         cols_counts[key].append(0)

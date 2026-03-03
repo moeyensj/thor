@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import time
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt

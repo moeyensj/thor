@@ -1,6 +1,6 @@
 import logging
 import pathlib
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
@@ -10,7 +10,7 @@ import ray
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 from difi import analyze_observations
-from difi.difi import AllLinkages, LinkageMembers, PartitionMapping, analyze_linkages
+from difi.difi import LinkageMembers, PartitionMapping, analyze_linkages
 from difi.metrics import FindabilityMetric, SingletonMetric
 from difi.observations import Observations as AnalysisObservations
 
@@ -235,7 +235,7 @@ def observations_to_analysis_observations(
         night=analysis_observations_with_object_id.column("night"),
     )
     analysis_observations = qv.defragment(analysis_observations)
-    logger.info(f"Converted observations to analysis format successfully")
+    logger.info("Converted observations to analysis format successfully")
     return analysis_observations
 
 

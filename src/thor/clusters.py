@@ -932,7 +932,7 @@ def calculate_clustering_parameters_from_covariance(
     # Extract position and velocity covariances
     pos_cov = mean_cov[0:2, 0:2]  # theta_x, theta_y
     vel_cov = mean_cov[2:4, 2:4]  # vtheta_x, vtheta_y
-    cross_cov = mean_cov[0:2, 2:4]  # cross terms
+    # cross_cov = mean_cov[0:2, 2:4]  # cross terms
 
     # Pre-compute scale factors for optional whitening metadata
     pos_scales = np.sqrt(np.maximum(np.diag(pos_cov), 1e-18))
@@ -1605,7 +1605,7 @@ def fit_cluster(
 
         return fitted_cluster, fitted_cluster_members
 
-    except np.linalg.LinAlgError as e:
+    except np.linalg.LinAlgError:
         cluster_id = cluster.cluster_id[0].as_py()
         logger.warning(
             f"Failed to fit cluster {cluster_id}: Singular matrix (degenerate observations). Skipping cluster."
