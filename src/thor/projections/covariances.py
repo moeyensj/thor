@@ -39,31 +39,39 @@ class ProjectionCovariances(qv.Table):
 
         # If all covariance matrices are None, then return a covariances
         # filled with NaNs.
-        if np.all(values == None):  # noqa: E711
-            return np.full((len(self), 4, 4), np.nan)
+        try:
+            if np.all(values == None):  # noqa: E711
+                return np.full((len(self), 4, 4), np.nan)
 
-        else:
-            # Try to stack the values into a 3D array. If this works, then
-            # all covariance matrices are the same size and we can return
-            # the stacked matrices.
-            try:
-                cov = np.stack(values).reshape(-1, 4, 4)
+        except ValueError as e:
+            err_str = (
+                "The truth value of an array with more than one element is ambiguous."
+                " Use a.any() or a.all()"
+            )
+            if str(e) != err_str:
+                raise e
 
-            # If not then some of the arrays might be None. Lets loop through
-            # the values and fill in the arrays that are missing (None) with NaNs.
-            except ValueError as e:
-                # If we don't get the error we expect, then raise it.
-                if str(e) != "all input arrays must have the same shape":
-                    raise e
-                else:
-                    for i in range(len(values)):
-                        if values[i] is None:
-                            values[i] = np.full(16, np.nan)
+        # Try to stack the values into a 3D array. If this works, then
+        # all covariance matrices are the same size and we can return
+        # the stacked matrices.
+        try:
+            cov = np.stack(values).reshape(-1, 4, 4)
 
-                # Try stacking again
-                cov = np.stack(values).reshape(-1, 4, 4)
+        # If not then some of the arrays might be None. Lets loop through
+        # the values and fill in the arrays that are missing (None) with NaNs.
+        except ValueError as e:
+            # If we don't get the error we expect, then raise it.
+            if str(e) != "all input arrays must have the same shape":
+                raise e
+            else:
+                for i in range(len(values)):
+                    if values[i] is None:
+                        values[i] = np.full(16, np.nan)
 
-            return cov
+            # Try stacking again
+            cov = np.stack(values).reshape(-1, 4, 4)
+
+        return cov
 
     @classmethod
     def from_matrix(cls, covariances: np.ndarray) -> Self:

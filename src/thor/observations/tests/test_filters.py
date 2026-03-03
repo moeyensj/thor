@@ -1,9 +1,6 @@
-from unittest import mock
-
 import pyarrow.compute as pc
 from adam_assist import ASSISTPropagator
 
-from ...config import Config
 from ..filters import TestOrbitRadiusObservationFilter, filter_observations
 
 
@@ -17,7 +14,7 @@ def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
     fos = TestOrbitRadiusObservationFilter(
         radius=0.5,
     )
-    have = fos.apply(fixed_observations, fixed_test_orbit, ASSISTPropagator)
+    have, ephemeris = fos.apply(fixed_observations, fixed_test_orbit, ASSISTPropagator)
     assert len(pc.unique(have.exposure_id)) == 5
     assert pc.all(
         pc.equal(
@@ -28,26 +25,24 @@ def test_orbit_radius_observation_filter(fixed_test_orbit, fixed_observations):
     # Should be about pi/4 fraction of the detections (0.785
     assert len(have.coordinates) < 0.80 * len(fixed_observations.coordinates)
     assert len(have.coordinates) > 0.76 * len(fixed_observations.coordinates)
+    assert len(ephemeris) > 0
 
 
 def test_filter_observations(fixed_observations, fixed_test_orbit):
-    # Test that if not filters are passed, we use
-    # TestOrbitRadiusObservationFilter by defualt
-    config = Config(cell_radius=0.5, max_processes=1)
+    # Test filter_observations with a radius filter
+    filters = [TestOrbitRadiusObservationFilter(radius=0.5)]
 
-    have = filter_observations(fixed_observations, fixed_test_orbit, config)
+    have, ephemeris = filter_observations(
+        fixed_observations, fixed_test_orbit, filters, propagator_class=ASSISTPropagator, max_processes=1
+    )
     assert len(pc.unique(have.exposure_id)) == 5
     assert len(have.coordinates) < 0.80 * len(fixed_observations.coordinates)
     assert len(have.coordinates) > 0.76 * len(fixed_observations.coordinates)
+    assert len(ephemeris) > 0
 
-    # Make sure if we pass a custom list of filters, they are used
-    # instead
-    noop_filter = mock.Mock()
-    noop_filter.apply.return_value = fixed_observations
-
-    filters = [noop_filter]
-    have = filter_observations(fixed_observations, fixed_test_orbit, config, filters=filters)
-    assert len(have.coordinates) == len(fixed_observations.coordinates)
-
-    # Ensure NOOPFilter.apply was run
-    filters[0].apply.assert_called_once()
+    # Test with no filters: observations should be returned unchanged
+    have_no_filter, ephemeris_no_filter = filter_observations(
+        fixed_observations, fixed_test_orbit, [], propagator_class=ASSISTPropagator, max_processes=1
+    )
+    assert len(have_no_filter.coordinates) == len(fixed_observations.coordinates)
+    assert len(ephemeris_no_filter) == 0

@@ -6,7 +6,6 @@ import quivr as qv
 from adam_core.coordinates import CartesianCoordinates, Origin
 from adam_core.coordinates.covariances import transform_covariances_jacobian
 from adam_core.time import Timestamp
-from typing_extensions import Self
 
 from .covariances import ProjectionCovariances
 from .transforms import _cartesian_to_gnomonic, cartesian_to_gnomonic
@@ -60,7 +59,7 @@ class GnomonicCoordinates(qv.Table):
         cls,
         cartesian: CartesianCoordinates,
         center_cartesian: Optional[CartesianCoordinates] = None,
-    ) -> Self:
+    ) -> "GnomonicCoordinates":
         """
         Create a GnomonicCoordinates object from a CartesianCoordinates object.
 
@@ -144,11 +143,12 @@ class GnomonicCoordinates(qv.Table):
         rounded_center_cartesian_times = center_cartesian.time.rounded(precision="ms")  # type: ignore
 
         gnomonic_coords = GnomonicCoordinates.empty()
+        rotation_matrices = np.empty((len(cartesian), 6, 6), dtype=np.float64)
+
         for key, time_i, center_time_i in link.iterate():
 
-            cartesian_i = cartesian.apply_mask(
-                rounded_cartesian_times.equals_scalar(key[0], key[1], precision="ms")
-            )
+            mask = rounded_cartesian_times.equals_scalar(key[0], key[1], precision="ms")
+            cartesian_i = cartesian.apply_mask(mask)
             center_cartesian_i = center_cartesian.apply_mask(
                 rounded_center_cartesian_times.equals_scalar(key[0], key[1], precision="ms")
             )
@@ -161,6 +161,7 @@ class GnomonicCoordinates(qv.Table):
                 center_cartesian=center_cartesian_i.values[0],
             )
             coords_gnomonic = np.array(coords_gnomonic)
+            rotation_matrices[mask] = M
 
             if not cartesian_i.covariance.is_all_nan():
                 cartesian_covariances = cartesian_i.covariance.to_matrix()
@@ -190,4 +191,4 @@ class GnomonicCoordinates(qv.Table):
             if gnomonic_coords.fragmented():
                 gnomonic_coords = qv.defragment(gnomonic_coords)
 
-        return gnomonic_coords
+        return gnomonic_coords, rotation_matrices

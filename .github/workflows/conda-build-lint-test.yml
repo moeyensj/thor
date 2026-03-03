@@ -12,12 +12,10 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.10"]
+        python-version: ["3.11"]
     defaults:
       run:
         shell: bash -l {0}
-    env:
-      OORB_DATA: /tmp/oorb/data
 
     steps:
       - name: Checkout git repo
@@ -30,16 +28,12 @@ jobs:
           activate-environment: "thor"
           auto-update-conda: true
           python-version: ${{ matrix.python-version }}
-      - name: Install openorb dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gfortran liblapack-dev
-          wget  -P /tmp/ https://storage.googleapis.com/oorb-data/oorb_data.tar.gz
-          mkdir -p /tmp/oorb/
-          tar -xvf /tmp/oorb_data.tar.gz -C /tmp/oorb/
       - name: Build and install
         run: pip install .[dev]
       - name: Lint
-        run: pdm lint
+        run: |
+          ruff check ./src/thor
+          black --check ./src/thor
+          isort --check-only ./src/thor
       - name: Test
-        run: pdm test
+        run: pytest --benchmark-disable

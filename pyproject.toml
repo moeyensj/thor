@@ -10,13 +10,12 @@ authors = [
 description = "Tracklet-less Heliocentric Orbit Recovery"
 readme = "README.md"
 license = { file = "LICENSE.md" }
-requires-python = "<3.13,>=3.10"
+requires-python = "<3.13,>3.11"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Astronomy",
@@ -25,52 +24,31 @@ classifiers = [
 keywords = ["astronomy", "astrophysics", "space", "science", "asteroids", "comets", "solar system"]
 
 dependencies = [
-    "adam-core>=0.3.4",
+    "adam-core>=0.5.4",
+    "adam-assist>=0.3.6",
     "astropy>=5.3.1",
     "astroquery",
-    "difi",
-    "healpy",
+    "difi>=2.0rc3",
+    "healpy>=1.19.0",
     "jax",
     "numpy",
     "numba",
     "pandas",
     "psutil",
     "pyarrow>=14.0.0",
-    "pydantic<2.0.0",
     "pyyaml>=5.1",
-    "quivr",
-    "ray[default]",
+    "quivr>=0.8.1",
+    "ray[default]==2.49.1",
     "scikit-learn",
     "scipy",
     "spiceypy",
+    "rebound==4.6.0",
+    "plotly>=6.5.2",
 ]
 
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
-[tool.pdm.build]
-includes = ["src/thor/"]
-
-[tool.pdm.version]
-source = "scm"
-write_to = "thor/_version.py"
-write_template = "__version__ = '{}'"
-
-[tool.pdm.scripts]
-check = { composite = ["lint", "typecheck", "test"] }
-format = { composite = ["black ./src/thor", "isort ./src/thor"] }
-lint = { composite = [
-  "ruff check ./src/thor",
-  "black --check ./src/thor",
-  "isort --check-only ./src/thor",
-] }
-fix = "ruff ./src/thor --fix"
-typecheck = "mypy --strict ./src/thor"
-
-test = "pytest --benchmark-disable {args}"
-doctest = "pytest --doctest-plus --doctest-only"
-benchmark = "pytest --benchmark-only"
-coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
 
 [project.urls]
 "Documentation" = "https://github.com/moeyensj/thor#README.md"
@@ -81,6 +59,8 @@ coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
 dev = [
     "black",
     "ipython",
+    "jupyter",
+    "ipykernel",
     "matplotlib",
     "isort",
     "mypy",
@@ -91,9 +71,8 @@ dev = [
     "pytest-mock",
     "pytest-memray",
     "pytest",
-    "ruff",
-    "adam-assist>=0.2.0",
-    "adam-pyoorb @ git+https://github.com/B612-Asteroid-Institute/adam-pyoorb@0697eeb871f8d2f8577bf545f5da3966c473662e",
+    "ruff>=0.15.4",
+    "ipdb>=0.13.13",
 ]
 
 [tool.black]
@@ -118,3 +97,27 @@ markers = [
     "integration: Mark a test as an integration test.",
     "memory: Mark a test as a memory test."
 ]
+[tool.pdm.build]
+includes = ["src/thor/"]
+
+[tool.pdm.version]
+source = "scm"
+write_to = "thor/_version.py"
+write_template = "__version__ = '{}'"
+
+[tool.pdm.scripts]
+check = { composite = ["lint", "typecheck", "test"] }
+format = { composite = ["black ./src/thor", "isort ./src/thor"] }
+lint = { composite = [
+  "ruff check ./src/thor",
+  "black --check ./src/thor",
+  "isort --check-only ./src/thor",
+] }
+fix = "ruff ./src/thor --fix"
+typecheck = "mypy --strict ./src/thor"
+
+test = "pytest --benchmark-disable {args}"
+doctest = "pytest --doctest-plus --doctest-only"
+benchmark = "pytest --benchmark-only"
+coverage = "pytest --cov=thor --cov-report=xml --benchmark-disable"
+

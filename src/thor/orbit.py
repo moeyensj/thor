@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import uuid
-from typing import Optional, Type, TypeVar, Union
+from typing import Literal, Optional, Type, TypeVar, Union
 
 import numpy as np
 import pyarrow as pa
@@ -11,11 +11,14 @@ import ray
 from adam_core.coordinates import (
     CartesianCoordinates,
     CometaryCoordinates,
+    CoordinateCovariances,
     KeplerianCoordinates,
+    Origin,
     OriginCodes,
     SphericalCoordinates,
     transform_coordinates,
 )
+from adam_core.coordinates.transform import cartesian_to_frame
 from adam_core.observers import Observers
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
@@ -23,6 +26,8 @@ from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
 from .observations import Observations
+from .observations.observations import get_observation_observers
+from .projections.gnomonic import GnomonicCoordinates
 
 CoordinateType = TypeVar(
     "CoordinateType",
@@ -41,14 +46,43 @@ logger = logging.getLogger(__name__)
 class RangedPointSourceDetections(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
     coordinates = SphericalCoordinates.as_column()
     state_id = qv.LargeStringColumn()
 
 
 class TestOrbitEphemeris(qv.Table):
     id = qv.LargeStringColumn()
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
     ephemeris = Ephemeris.as_column()
     observer = Observers.as_column()
+    gnomonic = GnomonicCoordinates.as_column()
+    # TODO: This should be a fixed shape tensor when they can be pickled correctly...
+    gnomonic_rotation_matrix = qv.FixedSizeListColumn(pa.float64(), list_size=36)
+
+
+def zero_covariances(coords: CoordinateType) -> CoordinateType:
+    """
+    Zero out covariances that are nan, inf, or less than 1e-20 in magnitude.
+
+    This is function is designed to be used in conjunction with transformations where we
+    want to propagate covariance matrices through but not all the covariance terms are valid or defined.
+
+    The user should careful with the downstream effects of this function.
+
+    Parameters
+    ----------
+    coords : `~adam_core.coordinates.CoordinateType`
+        Coordinates to zero out the covariances for.
+
+    Returns
+    -------
+    coords : `~adam_core.coordinates.CoordinateType`
+        Coordinates with the covariances zeroed out.
+    """
+    cov = coords.covariance.to_matrix()
+    cov = np.where(np.isnan(cov) | np.isinf(cov) | (np.abs(cov) < 1e-20), 0, cov)
+    return coords.set_column("covariance", CoordinateCovariances.from_matrix(cov))
 
 
 def range_observations_worker(
@@ -92,10 +126,25 @@ def range_observations_worker(
     # Get the observer's heliocentric coordinates
     observer_i = ephemeris_state.observer
 
+    ranged_coords = assume_heliocentric_distance(r, observations_state.coordinates, observer_i.coordinates)
+
+    # Filter out observations for which no physical ranging solution exists.
+    # These manifest as non-finite (NaN/inf) or non-positive topocentric distances.
+    rho = ranged_coords.rho
+    valid = pc.and_(pc.is_finite(rho), pc.greater(rho, 0.0))
+    observations_state = observations_state.apply_mask(valid)
+    ranged_coords = ranged_coords.apply_mask(valid)
+
+    # If nothing is rangeable for this state, return an empty table.
+    if len(observations_state) == 0:
+        return RangedPointSourceDetections.empty()
+
+    test_orbit_id = ephemeris_state.test_orbit_id[0].as_py()
     return RangedPointSourceDetections.from_kwargs(
         id=observations_state.id,
         exposure_id=observations_state.exposure_id,
-        coordinates=assume_heliocentric_distance(r, observations_state.coordinates, observer_i.coordinates),
+        test_orbit_id=pa.repeat(test_orbit_id, len(observations_state)),
+        coordinates=ranged_coords,
         state_id=observations_state.state_id,
     )
 
@@ -107,6 +156,7 @@ class TestOrbits(qv.Table):
     orbit_id = qv.LargeStringColumn(default=lambda: uuid.uuid4().hex)
     object_id = qv.LargeStringColumn(nullable=True)
     bundle_id = qv.Int64Column(nullable=True)
+    nside = qv.Int64Column(nullable=True)
     coordinates = CartesianCoordinates.as_column()
 
     @classmethod
@@ -124,66 +174,14 @@ class TestOrbits(qv.Table):
             object_id=self.object_id,
         )
 
-    def _is_cache_fresh(self, observations: Observations) -> bool:
-        """
-        Check if the cached ephemeris is fresh. If the observation IDs are contained within the
-        cached observation IDs, then the cache is fresh. Otherwise, it is stale. This permits
-        observations to be filtered out without having to regenerate the ephemeris.
-
-        Parameters
-        ----------
-        observations : `~thor.observations.observations.Observations`
-            Observations to check against the cached ephemerides.
-
-        Returns
-        -------
-        is_fresh : bool
-            True if the cache is fresh, False otherwise.
-        """
-        if (
-            getattr(self, "_cached_ephemeris", None) is None
-            and getattr(self, "_cached_observation_ids", None) is None
-        ):
-            self._cached_ephemeris: Optional[TestOrbitEphemeris] = None
-            self._cached_observation_ids: Optional[pa.Array] = None
-            return False
-        elif (
-            getattr(self, "_cached_ephemeris", None) is not None
-            and getattr(self, "_cached_observation_ids") is not None
-            and pc.all(
-                pc.is_in(
-                    observations.id.sort(),
-                    self._cached_observation_ids.sort(),  # type: ignore
-                )
-            ).as_py()
-        ):
-            return True
-        else:
-            return False
-
-    def _cache_ephemeris(self, ephemeris: TestOrbitEphemeris, observations: Observations):
-        """
-        Cache the ephemeris and observation IDs.
-
-        Parameters
-        ----------
-        ephemeris : `~thor.orbit.TestOrbitEphemeris`
-            States to cache.
-        observations : `~thor.observations.observations.Observations`
-            Observations to cache. Only observation IDs will be cached.
-
-        Returns
-        -------
-        None
-        """
-        self._cached_ephemeris = ephemeris
-        self._cached_observation_ids = observations.id
-
     def propagate(
         self,
         times: Timestamp,
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = False,
+        covariance_method: Literal["monte-carlo", "sigma-point", "auto"] = "monte-carlo",
+        num_samples: int = 1000,
     ) -> Orbits:
         """
         Propagate this test orbit to the given times.
@@ -196,6 +194,16 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
+        covariance_method : {'sigma-point', 'monte-carlo', 'auto'}, optional
+            The method to use for sampling the covariance matrix. If 'auto' is selected then the method
+            will be automatically selected based on the covariance matrix. The default is 'monte-carlo'.
+        num_samples : int, optional
+            The number of samples to draw when sampling with monte-carlo.
 
         Returns
         -------
@@ -207,7 +215,10 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             times,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size=10,
+            covariance=covariance,
+            covariance_method=covariance_method,
+            num_samples=num_samples,
         )
 
     def generate_ephemeris(
@@ -215,6 +226,9 @@ class TestOrbits(qv.Table):
         observers: Observers,
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = False,
+        covariance_method: Literal["monte-carlo", "sigma-point", "auto"] = "monte-carlo",
+        num_samples: int = 1000,
     ) -> Ephemeris:
         """
         Generate ephemeris for this test orbit at the given observers.
@@ -227,6 +241,16 @@ class TestOrbits(qv.Table):
             Propagator to use to propagate the orbit.
         num_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
+        covariance_method : {'sigma-point', 'monte-carlo', 'auto'}, optional
+            The method to use for sampling the covariance matrix. If 'auto' is selected then the method
+            will be automatically selected based on the covariance matrix. The default is 'monte-carlo'.
+        num_samples : int, optional
+            The number of samples to draw when sampling with monte-carlo.
 
         Returns
         -------
@@ -238,57 +262,51 @@ class TestOrbits(qv.Table):
             self.to_orbits(),
             observers,
             max_processes=max_processes,
-            chunk_size=1,
+            chunk_size=10,
+            covariance=covariance,
+            covariance_method=covariance_method,
+            num_samples=num_samples,
         )
 
     def generate_ephemeris_from_observations(
         self,
-        observations: Union[Observations, ray.ObjectRef],
+        observations: Union[Observations, ray.ObjectRef, str],
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        covariance: bool = True,
     ):
         """
         For each unique time and code in the observations (a state), generate an ephemeris for
-        that state and store them in a TestOrbitStates table. The observer's coordinates will also be
-        stored in the table and can be referenced through out the THOR pipeline.
-
-        These ephemerides will be cached. If the cache is fresh, the cached ephemerides will be
-        returned instead of regenerating them.
+        that state and store them in a TestOrbitEphemeris table. The observer's coordinates will also be
+        stored in the table and can be referenced throughout the THOR pipeline.
 
         Parameters
         ----------
-        observations : `~thor.observations.observations.Observations`
-            Observations to compute test orbit ephemerides for.
+        observations : `~thor.observations.observations.Observations`, ray.ObjectRef, or str
+            Observations to compute test orbit ephemerides for. Can be an Observations object,
+            a ray ObjectRef, or a path to a parquet file or directory containing parquet files.
+            When a path is provided, only the time and observatory code columns are read for
+            efficiency.
         propagator_class : `~adam_core.propagator.propagator.Propagator`
             Propagator to use to propagate the orbit.
-        num_processes : int, optional
+        max_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
-
+        covariance: bool, optional
+            Propagate the covariance matrices of the orbits. This is done by sampling the
+            orbits from their covariance matrices and propagating each sample and for each
+            sample also generating ephemerides. The covariance
+            of the ephemerides is then the covariance of the samples.
 
         Returns
         -------
-        states : `~thor.orbit.TestOrbitEphemeris`
+        test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris`
             Table containing the ephemeris of the test orbit, its aberrated state vector, and the
             observer coordinates at each unique time of the observations.
-
-        Raises
-        ------
-        ValueError
-            If the observations are empty.
         """
-        if isinstance(observations, ray.ObjectRef):
-            observations = ray.get(observations)
+        observers_with_states = get_observation_observers(observations)
 
-        if len(observations) == 0:
-            raise ValueError("Observations must not be empty.")
-
-        # if self._is_cache_fresh(observations):
-        #     logger.debug("Test orbit ephemeris cache is fresh. Returning cached states.")
-        #     return self._cached_ephemeris
-
-        logger.debug("Test orbit ephemeris cache is stale. Regenerating.")
-
-        observers_with_states = observations.get_observers()
+        if len(observers_with_states) == 0:
+            return TestOrbitEphemeris.empty()
 
         observers_with_states = observers_with_states.sort_by(
             by=[
@@ -297,11 +315,15 @@ class TestOrbits(qv.Table):
                 "observers.code",
             ]
         )
+
         # Generate ephemerides for each unique state and then sort by time and code
         ephemeris = self.generate_ephemeris(
             observers_with_states.observers,
             propagator_class=propagator_class,
             max_processes=max_processes,
+            covariance=covariance,
+            covariance_method="monte-carlo",
+            num_samples=1000,
         )
         ephemeris = ephemeris.sort_by(
             by=[
@@ -311,12 +333,25 @@ class TestOrbits(qv.Table):
             ]
         )
 
+        # Compute the gnomonic coordinates and rotation matrix for each state
+        gnomonic, gnomonic_rotation_matrix = GnomonicCoordinates.from_cartesian(
+            ephemeris.aberrated_coordinates,
+            center_cartesian=ephemeris.aberrated_coordinates,
+        )
+        # Convert rotation matrix to FixedSizeListArray (flatten to fixed-size chunks of 36)
+        gnomonic_rotation_matrix = pa.FixedSizeListArray.from_arrays(
+            gnomonic_rotation_matrix.flatten(), list_size=36
+        )
+
         test_orbit_ephemeris = TestOrbitEphemeris.from_kwargs(
             id=observers_with_states.state_id,
+            test_orbit_id=pa.repeat(self.orbit_id[0], len(observers_with_states)),
             ephemeris=ephemeris,
             observer=observers_with_states.observers,
+            gnomonic=gnomonic,
+            gnomonic_rotation_matrix=gnomonic_rotation_matrix,
         )
-        # self._cache_ephemeris(test_orbit_ephemeris, observations)
+
         return test_orbit_ephemeris
 
     def range_observations(
@@ -324,6 +359,7 @@ class TestOrbits(qv.Table):
         observations: Union[Observations, ray.ObjectRef],
         propagator_class: Type[Propagator],
         max_processes: Optional[int] = 1,
+        test_orbit_ephemeris: Optional[Union[TestOrbitEphemeris, ray.ObjectRef]] = None,
     ) -> RangedPointSourceDetections:
         """
         Given a set of observations, propagate this test orbit to the times of the observations and calculate the
@@ -333,21 +369,29 @@ class TestOrbits(qv.Table):
         ----------
         observations : `~thor.observations.observations.Observations`
             Observations to range.
-        propagator : `~adam_core.propagator.propagator.Propagator`, optional
-            Propagator to use to propagate the orbit. Defaults to PYOORB.
+        propagator_class : `~adam_core.propagator.propagator.Propagator`
+            Propagator class to use to propagate the orbit.
         max_processes : int, optional
             Number of processes to use to propagate the orbit. Defaults to 1.
+        test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris` or ray.ObjectRef, optional
+            Pre-computed test orbit ephemeris. If provided, ephemeris generation will be
+            skipped. If None, ephemeris will be generated from observations.
 
         Returns
         -------
         ranged_point_source_detections : `~thor.orbit.RangedPointSourceDetections`
             The ranged detections.
         """
-        # Generate an ephemeris for each unique observation time and observatory
-        # code combination
-        ephemeris = self.generate_ephemeris_from_observations(
-            observations, propagator_class=propagator_class, max_processes=max_processes
-        )
+        # Use provided ephemeris or generate one
+        if test_orbit_ephemeris is not None:
+            if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                ephemeris = ray.get(test_orbit_ephemeris)
+            else:
+                ephemeris = test_orbit_ephemeris
+        else:
+            ephemeris = self.generate_ephemeris_from_observations(
+                observations, propagator_class=propagator_class, max_processes=max_processes
+            )
 
         if max_processes is None:
             max_processes = mp.cpu_count()
@@ -403,6 +447,161 @@ class TestOrbits(qv.Table):
 
         return ranged_detections.sort_by(by=["state_id"])
 
+    def split(
+        self,
+        dt,
+        k: int = 3,
+        beta: float = 0.6,
+        gamma: float = 1.0,
+        num: int = 2,
+        current_depth: int = 0,
+        max_depth: int = 1,
+    ):
+        """
+        Split the test orbits into multiple test orbits.
+
+        Parameters
+        ----------
+        dt : float
+            Time step used to scale position/velocity coupling.
+        k : int, optional
+            Spread factor for child offsets along principal axis, by default 3 (3-sigma).
+        beta : float, optional
+            Shrink factor applied to leading eigenvalue for children, by default 0.6.
+        gamma : float, optional
+            Shrink factor applied to non-leading eigenvalues for children, by default 0.9.
+        num : int, optional
+            Number of children to create per split, by default 2.
+        current_depth : int, optional
+            Current recursion depth, by default 0.
+        max_depth : int, optional
+            Maximum recursion depth (inclusive), by default 0.
+
+        Returns
+        -------
+        TestOrbits
+            New test orbits spanning the phase space of the original test orbits.
+        """
+        from .phase_space.split import split_phase_space
+
+        test_orbits = TestOrbits.empty()
+        for test_orbit in self:
+            states, covariances = split_phase_space(
+                test_orbit.coordinates.values[0],
+                test_orbit.coordinates.covariance.to_matrix()[0],
+                dt,
+                k,
+                beta,
+                gamma,
+                num,
+                current_depth,
+                max_depth,
+            )
+
+            num_orbits = len(states)
+            test_orbits_i = TestOrbits.from_kwargs(
+                orbit_id=pc.binary_join_element_wise(
+                    pa.repeat(test_orbit.orbit_id[0], num_orbits),
+                    pa.array([f"{i:03d}" for i in range(num_orbits)], pa.large_string()),
+                    pc.cast(pa.scalar("_"), pa.large_string()),
+                ),
+                object_id=pa.repeat(test_orbit.object_id[0], num_orbits),
+                bundle_id=pa.repeat(test_orbit.bundle_id[0], num_orbits),
+                coordinates=CartesianCoordinates.from_kwargs(
+                    x=states[:, 0],
+                    y=states[:, 1],
+                    z=states[:, 2],
+                    vx=states[:, 3],
+                    vy=states[:, 4],
+                    vz=states[:, 5],
+                    covariance=CoordinateCovariances.from_matrix(covariances),
+                    time=Timestamp.from_kwargs(
+                        days=pa.repeat(test_orbit.coordinates.time.days[0], num_orbits),
+                        nanos=pa.repeat(test_orbit.coordinates.time.nanos[0], num_orbits),
+                        scale=test_orbit.coordinates.time.scale,
+                    ),
+                    origin=Origin.from_kwargs(
+                        code=pa.repeat(test_orbit.coordinates.origin.code[0], num_orbits)
+                    ),
+                    frame=test_orbit.coordinates.frame,
+                ),
+            )
+
+            test_orbits = qv.concatenate([test_orbits, test_orbits_i])
+
+        return test_orbits
+
+    def split_healpixel(
+        self,
+    ):
+        """
+        Refine sky localization by subdividing lon/lat and their variances from a parent
+        HEALPix pixel into all child pixels at a larger nside (2x the parent nside).
+        Keeps rho, vrho, vlon, vlat and their covariances unchanged; only lon/lat and
+        sigma(lon/lat) are adjusted to the child pixel centers and half-widths.
+
+        Returns
+        -------
+        TestOrbits
+            New table with rows replicated per child pixel and lon/lat refined.
+        """
+        from .phase_space.split import split_healpixel as _split_healpixel_states
+
+        test_orbits = TestOrbits.empty()
+        test_orbit_ids = self.orbit_id
+        object_ids = self.object_id
+        bundle_ids = self.bundle_id
+        spherical = self.coordinates.to_spherical()
+        mu = spherical.values
+        cov = spherical.covariance.to_matrix()
+        current_nside = self.nside.to_numpy(zero_copy_only=False)
+        new_nside = current_nside * 2
+
+        for i in range(len(self)):
+
+            states, covariances = _split_healpixel_states(
+                mu[i],
+                cov[i],
+                current_nside[i],
+                new_nside[i],
+            )
+
+            num_orbits = len(states)
+
+            coords_sph = SphericalCoordinates.from_kwargs(
+                rho=states[:, 0],
+                lon=states[:, 1],
+                lat=states[:, 2],
+                vrho=states[:, 3],
+                vlon=states[:, 4],
+                vlat=states[:, 5],
+                time=Timestamp.from_kwargs(
+                    days=pa.repeat(spherical[i].time.days[0], num_orbits),
+                    nanos=pa.repeat(spherical[i].time.nanos[0], num_orbits),
+                    scale=spherical[i].time.scale,
+                ),
+                covariance=CoordinateCovariances.from_matrix(covariances),
+                origin=Origin.from_kwargs(code=pa.repeat(spherical[i].origin.code[0], num_orbits)),
+                frame=spherical[i].frame,
+            )
+            coords_cart = coords_sph.to_cartesian()
+
+            test_orbits_i = TestOrbits.from_kwargs(
+                orbit_id=pc.binary_join_element_wise(
+                    pa.repeat(test_orbit_ids[i], num_orbits),
+                    pa.array([f"{i:03d}" for i in range(num_orbits)], pa.large_string()),
+                    pc.cast(pa.scalar("_"), pa.large_string()),
+                ),
+                object_id=pa.repeat(object_ids[i], num_orbits),
+                bundle_id=pa.repeat(bundle_ids[i], num_orbits),
+                nside=pa.repeat(new_nside[i], num_orbits),
+                coordinates=coords_cart,
+            )
+
+            test_orbits = qv.concatenate([test_orbits, test_orbits_i])
+
+        return test_orbits
+
 
 def assume_heliocentric_distance(
     r: np.ndarray, coords: SphericalCoordinates, origin_coords: CartesianCoordinates
@@ -429,8 +628,9 @@ def assume_heliocentric_distance(
         Coordinates with the missing topocentric distance replaced with the calculated topocentric distance.
     """
     assert len(origin_coords) == 1
-    assert np.all(origin_coords.origin == OriginCodes.SUN)
+    assert pc.all(pc.equal(origin_coords.origin.code, "SUN")).as_py()
 
+    # Calculate the heliocentric distance
     r_mag = np.linalg.norm(r)
 
     # Extract the topocentric distance and topocentric radial velocity from the coordinates
@@ -439,24 +639,41 @@ def assume_heliocentric_distance(
 
     # Transform the coordinates to the ecliptic frame by assuming they lie on a unit sphere
     # (this assumption will only be applied to coordinates with missing rho values)
+    # Convert equatorial spherical units to a unit sphere (so we can rotate them to the ecliptic)
+    # and set nan covariance terms to zero so we preserve the non-zero covariance terms through
+    # the transformations
     coords_eq_unit = coords.to_unit_sphere(only_missing=True)
-    coords_ec = transform_coordinates(coords_eq_unit, SphericalCoordinates, frame_out="ecliptic")
+    coords_eq_unit = zero_covariances(coords_eq_unit)
+
+    # Transform to the equatorial coordinates (so we can rotate them to the ecliptic)
+    coords_eq_cart = coords_eq_unit.to_cartesian()
+
+    # Rotate to the ecliptic coordinates (again set nan covariance terms to zero)
+    coords_ec_cart = cartesian_to_frame(coords_eq_cart, "ecliptic")
+    coords_ec_cart = zero_covariances(coords_ec_cart)
 
     # Transform the coordinates to cartesian and calculate the unit vectors pointing
     # from the origin to the coordinates
-    coords_ec_xyz = coords_ec.to_cartesian()
-    unit_vectors = coords_ec_xyz.r_hat
+    unit_vectors = coords_ec_cart.r_hat
 
     # Calculate the topocentric distance such that the heliocentric distance to the coordinate
     # is r_mag
     dotprod = np.sum(unit_vectors * origin_coords.r, axis=1)
-    sqrt = np.sqrt(dotprod**2 + r_mag**2 - origin_coords.r_mag**2)
+    # The quadratic discriminant can be negative for physically impossible observing geometries
+    # (no ray–sphere intersection). Avoid emitting RuntimeWarnings by setting those to NaN.
+    # Also clamp tiny negatives to zero to handle near-tangent numerical roundoff.
+    rad = dotprod**2 + r_mag**2 - origin_coords.r_mag**2
+    eps = 1e-15
+    rad_safe = np.where(rad < -eps, np.nan, np.maximum(rad, 0.0))
+    sqrt = np.sqrt(rad_safe)
     delta_p = -dotprod + sqrt
     delta_n = -dotprod - sqrt
 
     # Where rho was not defined, replace it with the calculated topocentric distance
     # By default we take the positive solution which applies for all orbits exterior to the
     # observer's orbit
+    coords_ec = coords_ec_cart.to_spherical()
+    coords_ec = zero_covariances(coords_ec)
     coords_ec = coords_ec.set_column("rho", np.where(np.isnan(rho), delta_p, rho))
 
     # For cases where the orbit is interior to the observer's orbit there are two valid solutions

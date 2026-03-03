@@ -1,28 +1,33 @@
+import glob
 import multiprocessing as mp
+import os
 import pathlib
 from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
+import pyarrow.parquet as pq
 import quivr as qv
 import ray
 from adam_core.coordinates import CoordinateCovariances, Origin, SphericalCoordinates
-from adam_core.observations import Exposures, PointSourceDetections
-from adam_core.observers import Observers
+from adam_core.observations import Exposures, PointSourceDetections, SourceCatalog
+from adam_core.observers import Observers, calculate_observing_night
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
 
-from thor.config import Config
-
+from ..config import Config
 from .photometry import Photometry
-from .states import calculate_state_id_hashes
+from .states import calculate_state_id_hash, calculate_state_id_hashes
 
 __all__ = [
     "InputObservations",
     "Observations",
+    "ObserversWithStates",
     "convert_input_observations_to_observations",
+    "get_observation_observers",
     "input_observations_to_observations_worker",
+    "convert_source_catalog_to_observations",
 ]
 
 
@@ -49,7 +54,6 @@ def observations_iterator(
         A chunk of observations.
     """
     if isinstance(observations, str):
-
         # Discover if it's a single file or a folder using pathlib
         parquet_paths = []
         path = pathlib.Path(observations)
@@ -125,7 +129,6 @@ def _input_observations_iterator(
         A chunk of input observations.
     """
     if isinstance(input_observations, str):
-
         # Discover if it's a single file or a folder using pathlib
         parquet_paths = []
         path = pathlib.Path(input_observations)
@@ -174,6 +177,33 @@ def input_observations_to_observations_worker(
 input_observations_to_observations_worker_remote = ray.remote(input_observations_to_observations_worker)
 
 
+def _process_all_completed_futures(
+    futures: list,
+    output_observations: Optional["Observations"],
+    output_writer: Optional[pa.parquet.ParquetWriter],
+):
+    print("Processing all completed futures")
+    if output_observations is None:
+        output_observations = Observations.empty()
+    local_observations = Observations.empty()
+    finished, futures = ray.wait(futures, timeout=0, num_returns=100)
+    print(f"Found {len(finished)} completed futures")
+    for i, finished_future in enumerate(finished):
+        print(f"Processing completed future {i}")
+        observations_chunk = ray.get(finished_future)
+        print(f"Concatenating observations chunk {i}")
+        local_observations = qv.concatenate([local_observations, observations_chunk], defrag=True)
+        print(f"Concatenated observations chunk {i}")
+
+    if output_writer is not None:
+        print(f"Writing observations from {len(finished)} completed futures")
+        output_writer.write_table(local_observations.table)
+
+    print("Concatenating local observations with output observations")
+    output_observations = qv.concatenate([output_observations, local_observations], defrag=True)
+    return futures, output_observations
+
+
 def _process_next_future_result(
     futures: list,
     output_observations: "Observations",
@@ -216,16 +246,18 @@ def convert_input_observations_to_observations(
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
         futures: List[ray.ObjectRef] = []
+        i = 0
         for input_observation_chunk in input_iterator:
             if len(futures) > max_processes * 1.5:
-                futures, output_observations = _process_next_future_result(
+                futures, output_observations = _process_all_completed_futures(
                     futures, output_observations, output_writer
                 )
-
+            print(f"Queueing input observation chunk {i}")
             futures.append(input_observations_to_observations_worker_remote.remote(input_observation_chunk))
+            i += 1
 
         while futures:
-            futures, output_observations = _process_next_future_result(
+            futures, output_observations = _process_all_completed_futures(
                 futures, output_observations, output_writer
             )
     else:
@@ -238,6 +270,7 @@ def convert_input_observations_to_observations(
                 if output_observations.fragmented():
                     output_observations = qv.defragment(output_observations)
 
+    print("Closing output writer")
     if output_writer is not None and output_path is not None:
         output_writer.close()
         return output_path
@@ -250,10 +283,148 @@ class ObserversWithStates(qv.Table):
     observers = Observers.as_column()
 
 
+def get_observation_observers(
+    observations: Union["Observations", ray.ObjectRef, str],
+) -> ObserversWithStates:
+    """
+    Get the unique observers (time and observatory code combinations) from observations.
+
+    This function can handle:
+    - In-memory Observations objects
+    - Ray ObjectRef containing Observations
+    - Path to a single parquet file
+    - Path to a directory containing parquet files
+
+    When given a path, only the time and observatory code columns are read for efficiency.
+
+    Parameters
+    ----------
+    observations : Observations, ray.ObjectRef, or str
+        The observations to extract observers from. Can be an Observations object,
+        a ray ObjectRef, or a path to a parquet file or directory.
+
+    Returns
+    -------
+    observers_with_states : ObserversWithStates
+        The unique observers with their state IDs.
+    """
+    if isinstance(observations, ray.ObjectRef):
+        observations = ray.get(observations)
+
+    if isinstance(observations, str):
+        return _get_observation_observers_from_path(observations)
+    else:
+        return observations.get_observers()
+
+
+def _get_observation_observers_from_path(observations_path: str) -> ObserversWithStates:
+    """
+    Extract unique observers from parquet file(s) by reading only time and observatory
+    code columns for efficiency.
+
+    Parameters
+    ----------
+    observations_path : str
+        Path to a parquet file or directory containing parquet files.
+
+    Returns
+    -------
+    observers_with_states : ObserversWithStates
+        The unique observers extracted from the observations.
+    """
+    # Find all parquet files
+    path = pathlib.Path(observations_path)
+    if path.is_dir():
+        parquet_paths = list(path.glob("**/*.parquet"))
+    else:
+        parquet_paths = [path]
+
+    if len(parquet_paths) == 0:
+        return ObserversWithStates.empty()
+
+    # Read only the columns we need: time.days, time.nanos, origin.code
+    # Note: PyArrow flattens nested column names when reading, so
+    # "coordinates.time.days" becomes "days", etc.
+    columns = [
+        "coordinates.time.days",
+        "coordinates.time.nanos",
+        "coordinates.origin.code",
+    ]
+
+    # Read the time scale from schema metadata (use first file)
+    schema = pq.read_schema(str(parquet_paths[0]))
+    scale = schema.metadata.get(b"coordinates.time.scale").decode("utf-8")
+
+    all_data = []
+    for parquet_path in parquet_paths:
+        table = pq.read_table(str(parquet_path), columns=columns)
+        all_data.append(table)
+
+    if len(all_data) == 0:
+        return ObserversWithStates.empty()
+
+    # Combine all tables
+    combined = pa.concat_tables(all_data)
+
+    # Get unique time/code combinations
+    # Column names are flattened: "coordinates.time.days" -> "days", etc.
+    unique_states = (
+        combined.group_by(["days", "nanos", "code"])
+        .aggregate([])
+        .sort_by(
+            [
+                ("days", "ascending"),
+                ("nanos", "ascending"),
+                ("code", "ascending"),
+            ]
+        )
+    )
+
+    if len(unique_states) == 0:
+        return ObserversWithStates.empty()
+
+    # Group by observatory code and create Observers
+    observers_with_states = ObserversWithStates.empty()
+    unique_codes = pc.unique(unique_states["code"]).to_pylist()
+
+    for code in unique_codes:
+        # Filter to this code's rows
+        mask = pc.equal(unique_states["code"], code)
+        code_states = unique_states.filter(mask)
+
+        days = code_states["days"].to_pylist()
+        nanos = code_states["nanos"].to_pylist()
+
+        # Create timestamps
+        times = Timestamp.from_kwargs(
+            days=days,
+            nanos=nanos,
+            scale=scale,
+        )
+
+        # Create observers for this code
+        observers = Observers.from_code(code, times)
+
+        # Calculate state IDs
+        state_ids = [calculate_state_id_hash(day, nano, code) for day, nano in zip(days, nanos)]
+
+        observers_with_states_i = ObserversWithStates.from_kwargs(
+            state_id=state_ids,
+            observers=observers,
+        )
+
+        observers_with_states = qv.concatenate([observers_with_states, observers_with_states_i])
+        if observers_with_states.fragmented():
+            observers_with_states = qv.defragment(observers_with_states)
+
+    return observers_with_states.sort_by("state_id")
+
+
 class InputObservations(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
     time = Timestamp.as_column()
+    night = qv.Int64Column(nullable=True)
     ra = qv.Float64Column()
     dec = qv.Float64Column()
     ra_sigma = qv.Float64Column(nullable=True)
@@ -268,6 +439,7 @@ class InputObservations(qv.Table):
 class Observations(qv.Table):
     id = qv.LargeStringColumn()
     exposure_id = qv.LargeStringColumn()
+    night = qv.Int64Column()
     coordinates = SphericalCoordinates.as_column()
     photometry = Photometry.as_column()
     state_id = qv.LargeStringColumn()
@@ -320,9 +492,18 @@ class Observations(qv.Table):
             mag_sigma=observations.mag_sigma,
         )
 
+        # Handle night field: if null, calculate from observatory code and time
+        night = observations.night
+        if pc.sum(pc.is_null(night)).as_py() > 0:
+            # Some or all nights are null, calculate them
+            calculated_night = calculate_observing_night(observations.observatory_code, observations.time)
+            # Fill nulls with calculated values
+            night = pc.fill_null(night, calculated_night)
+
         return cls.from_kwargs(
             id=observations.id,
             exposure_id=observations.exposure_id,
+            night=night,
             coordinates=coords,
             photometry=photometry,
             state_id=calculate_state_id_hashes(coords),
@@ -393,9 +574,13 @@ class Observations(qv.Table):
             mag_sigma=detections_exposures["mag_sigma"],
         )
 
+        # Calculate observing night from observatory code and time
+        night = calculate_observing_night(detections_exposures["observatory_code"], coordinates.time)
+
         return cls.from_kwargs(
             id=detections_exposures["id"],
             exposure_id=detections_exposures["exposure_id"],
+            night=night,
             coordinates=coordinates,
             photometry=photometry,
             state_id=calculate_state_id_hashes(coordinates),
@@ -502,3 +687,145 @@ class Observations(qv.Table):
         observatory_codes = self.coordinates.origin.code
         for observatory_code in observatory_codes.unique().sort():
             yield observatory_code.as_py(), self.select_observatory_code(observatory_code)
+
+
+def source_catalog_to_observations_worker(
+    source_catalog: SourceCatalog,
+) -> Observations:
+    """
+    Convert a SourceCatalog to InputObservations.
+    """
+    source_catalog = qv.defragment(source_catalog)
+    # Convert from arcseconds to degrees
+    ra_sigma_deg = source_catalog.ra_sigma.to_numpy(zero_copy_only=False) / 3600.0
+    dec_sigma_deg = source_catalog.dec_sigma.to_numpy(zero_copy_only=False) / 3600.0
+    # Convert from correlation to covariance
+    ra_dec_cov = source_catalog.radec_corr * ra_sigma_deg * dec_sigma_deg
+
+    # Create the covariance matrices
+    covariance_matrices = np.full((len(source_catalog), 6, 6), np.nan)
+    covariance_matrices[:, 1, 1] = ra_sigma_deg**2
+    covariance_matrices[:, 2, 2] = dec_sigma_deg**2
+    covariance_matrices[:, 1, 2] = ra_dec_cov
+    covariance_matrices[:, 2, 1] = ra_dec_cov
+    covariances = CoordinateCovariances.from_matrix(covariance_matrices)
+
+    coordinates = SphericalCoordinates.from_kwargs(
+        lon=source_catalog.ra,
+        lat=source_catalog.dec,
+        time=source_catalog.time,
+        covariance=covariances,
+        origin=Origin.from_kwargs(code=source_catalog.observatory_code),
+        frame="equatorial",
+    )
+
+    photometry = Photometry.from_kwargs(
+        filter=source_catalog.filter,
+        mag=source_catalog.mag,
+        mag_sigma=source_catalog.mag_sigma,
+    )
+
+    nights = calculate_observing_night(source_catalog.observatory_code, source_catalog.time)
+    state_ids = calculate_state_id_hashes(coordinates)
+
+    observations = Observations.from_kwargs(
+        id=source_catalog.id,
+        exposure_id=source_catalog.exposure_id,
+        night=nights,
+        coordinates=coordinates,
+        photometry=photometry,
+        state_id=state_ids,
+    )
+
+    return observations
+
+
+source_catalog_to_observations_worker_remote = ray.remote(source_catalog_to_observations_worker)
+
+
+def _source_catalog_iterator(
+    source_catalog_path: str,
+    chunk_size: int = 1_000_000,
+) -> Iterator[SourceCatalog]:
+    """
+    Create an iterator that yields chunks of SourceCatalog from a file
+    """
+    source_catalog_file = pa.parquet.ParquetFile(source_catalog_path, memory_map=True)
+    i = 0
+    for batch in source_catalog_file.iter_batches(batch_size=chunk_size):
+        print(f"Yielding source catalog batch {i}")
+        i += 1
+        table = SourceCatalog.from_pyarrow(pa.Table.from_batches([batch]))
+        yield table
+
+
+def convert_source_catalog_to_observations(
+    source_catalog_path: str,
+    observations_path: str,
+    chunk_size: int = 1_000_000,
+    max_processes: int = None,
+) -> None:
+    """
+    Convert a SourceCatalog to Observations by reading and writing from files in chunks
+    """
+    source_catalog_iterator = _source_catalog_iterator(source_catalog_path, chunk_size)
+    observations_writer = pa.parquet.ParquetWriter(observations_path, Observations.schema)
+    futures: List[ray.ObjectRef] = []
+    use_ray = initialize_use_ray(num_cpus=max_processes)
+    if not use_ray:
+        for source_catalog_chunk in source_catalog_iterator:
+            observations_chunk = source_catalog_to_observations_worker(source_catalog_chunk)
+            observations_writer.write_table(observations_chunk.table)
+    else:
+        i = 0
+        for source_catalog_chunk in source_catalog_iterator:
+            print(f"Queueing source catalog chunk {i}")
+            i += 1
+            futures.append(source_catalog_to_observations_worker_remote.remote(source_catalog_chunk))
+            print(f"Queued source catalog chunk {i}")
+            if len(futures) >= max_processes * 1.5:
+                futures, _ = _process_all_completed_futures(futures, None, observations_writer)
+    while futures:
+        futures, _ = _process_all_completed_futures(futures, None, observations_writer)
+
+    print("Closing output writer")
+    observations_writer.close()
+    print("Output writer closed")
+    return observations_path
+
+
+def get_observation_times(observations: Union[str, "Observations"]) -> Tuple[Timestamp, Timestamp]:
+    """
+    Get observation times from a table or a path to a file or directory containing a table or tables of observations.
+
+    Parameters
+    ----------
+    observations : `~Observations` or str
+        Either a table or a path to a file or directory containing a table or tables of observations.
+
+    Returns
+    -------
+    time_range : Tuple[Timestamp, Timestamp]
+        The time range of the observations.
+    """
+    if isinstance(observations, str):
+        if os.path.isdir(observations):
+            files = glob.glob(os.path.join(observations, "*.parquet"))
+            metadata_file = files[0]
+        else:
+            metadata_file = observations
+
+        table = pq.read_table(observations, columns=["coordinates.time.days", "coordinates.time.nanos"])
+        schema = pq.read_schema(metadata_file)
+        scale = schema.metadata.get(b"coordinates.time.scale").decode("utf-8")
+        time = Timestamp.from_kwargs(
+            days=table.column("days").combine_chunks(),
+            nanos=table.column("nanos").combine_chunks(),
+            scale=scale,
+        )
+        return time
+
+    elif isinstance(observations, Observations):
+        return observations.time
+    else:
+        raise ValueError(f"Invalid observations type: {type(observations)}")

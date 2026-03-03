@@ -73,6 +73,7 @@ def test_sort_by_id_and_time():
     observations = Observations.from_kwargs(
         id=[f"obs_{i:02d}" for i in range(1, 6)],
         exposure_id=[f"exposure_{i:01d}" for i in range(1, 6)],
+        night=np.arange(5, dtype=np.int64),
         coordinates=SphericalCoordinates.from_kwargs(
             rho=np.random.random(5),
             lon=np.random.random(5),

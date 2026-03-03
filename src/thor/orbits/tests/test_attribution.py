@@ -14,6 +14,7 @@ def observations():
     observations = Observations.from_kwargs(
         id=["01", "02", "03", "04", "05"],
         exposure_id=["e01", "e01", "e02", "e02", "e02"],
+        night=[1, 1, 2, 2, 2],
         coordinates=SphericalCoordinates.from_kwargs(
             time=Timestamp.from_mjd([59001.1, 59001.1, 59002.1, 59002.1, 59002.1], scale="utc"),
             lon=[1, 2, 3, 4, 5],

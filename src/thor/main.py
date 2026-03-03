@@ -4,8 +4,9 @@ import os
 import pathlib
 import time
 from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Literal, Optional, Tuple, Union
+from typing import Iterator, List, Literal, Optional, Tuple, Union
 
+import pyarrow.parquet as pq
 import quivr as qv
 import ray
 from adam_core.ray_cluster import initialize_use_ray
@@ -13,8 +14,13 @@ from adam_core.ray_cluster import initialize_use_ray
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
 from .clusters import cluster_and_link
 from .config import Config, initialize_config
-from .observations.filters import ObservationFilter, filter_observations
-from .observations.observations import Observations
+from .observations.filters import (
+    ObservationFilter,
+    TestOrbitMahalanobisObservationFilter,
+    TestOrbitRadiusObservationFilter,
+    filter_observations,
+)
+from .observations.observations import Observations, get_observation_times
 from .orbit import TestOrbits
 from .orbits import (
     differential_correction,
@@ -48,13 +54,14 @@ class LinkTestOrbitStageResult:
 
     name: Literal[
         "filter_observations",
+        "generate_ephemeris",
         "range_and_transform",
         "cluster_and_link",
         "initial_orbit_determination",
         "differential_correction",
         "recover_orbits",
     ]
-    result: Iterable[qv.AnyTable]
+    result: Tuple[Union[qv.AnyTable, str], ...]
     path: Tuple[Optional[str], ...] = (None,)
 
 
@@ -64,16 +71,19 @@ def link_test_orbit(
     working_dir: Optional[str] = None,
     filters: Optional[List[ObservationFilter]] = None,
     config: Optional[Config] = None,
+    use_orbit_subdir: bool = True,
+    yield_paths: bool = False,
 ) -> Iterator[LinkTestOrbitStageResult]:
     """
     Run THOR for a single test orbit on the given observations. This function will yield
     results at each stage of the pipeline.
-        1. filtered observations
-        2. transformed_detections
-        3. clusters, cluster_members
-        4. iod_orbits, iod_orbit_members
-        5. od_orbits, od_orbit_members
-        6. recovered_orbits, recovered_orbit_members
+        1. filtered_observations
+        2. test_orbit_ephemeris
+        3. transformed_detections
+        4. clusters, cluster_members
+        5. iod_orbits, iod_orbit_members
+        6. od_orbits, od_orbit_members
+        7. recovered_orbits, recovered_orbit_members
 
     Parameters
     ----------
@@ -90,6 +100,10 @@ def link_test_orbit(
         List of filters to apply to the observations before running THOR.
     config : `~thor.config.Config`, optional
         Configuration to use for THOR. If None, the default configuration will be used.
+    yield_paths : bool, optional
+        If True and working_dir is set, yield file paths in result instead of in-memory
+        tables. This allows large tables to be garbage collected after being written to
+        disk, reducing memory usage. Default is False.
     """
     time_start = time.perf_counter()
     logger.info("Running test orbit...")
@@ -101,15 +115,21 @@ def link_test_orbit(
     if working_dir is not None:
         working_dir_path = pathlib.Path(working_dir)
         logger.info(f"Using working directory: {working_dir}")
-        test_orbit_directory = pathlib.Path(working_dir, test_orbit.orbit_id[0].as_py())
+        test_orbit_directory = (
+            pathlib.Path(working_dir, test_orbit.orbit_id[0].as_py())
+            if use_orbit_subdir
+            else working_dir_path
+        )
         test_orbit_directory.mkdir(parents=True, exist_ok=True)
         inputs_dir = pathlib.Path(working_dir_path, "inputs")
         inputs_dir.mkdir(parents=True, exist_ok=True)
 
-    initialize_test_orbit(test_orbit, working_dir)
+    initialize_test_orbit(test_orbit, test_orbit_directory if not use_orbit_subdir else working_dir)
 
     if config is None:
         config = Config()
+
+    stop_after_stage = config.stop_after_stage
 
     initialize_config(config, working_dir)
 
@@ -121,8 +141,6 @@ def link_test_orbit(
         num_cpus=config.max_processes,
         object_store_bytes=config.ray_memory_bytes or None,
     )
-
-    refs_to_free = []
 
     checkpoint = load_initial_checkpoint_values(test_orbit_directory)
     logger.info(f"Starting at stage: {checkpoint.stage}")
@@ -142,7 +160,23 @@ def link_test_orbit(
         )
 
     if checkpoint.stage == "filter_observations":
-        filtered_observations = filter_observations(observations, test_orbit, config, filters)
+        filters = []
+        if config.filter_cell_radius is not None:
+            filters.append(TestOrbitRadiusObservationFilter(radius=config.filter_cell_radius))
+        if config.filter_mahalanobis_distance is not None:
+            filters.append(
+                TestOrbitMahalanobisObservationFilter(mahalanobis_distance=config.filter_mahalanobis_distance)
+            )
+
+        # filter_observations now returns both filtered observations and captured ephemeris
+        filtered_observations, test_orbit_ephemeris = filter_observations(
+            observations,
+            test_orbit,
+            filters,
+            propagator_class=propagator_class,
+            max_processes=config.max_processes,
+            chunk_size=config.filter_chunk_size,
+        )
 
         filtered_observations_path = None
         if test_orbit_directory is not None:
@@ -151,30 +185,79 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="filter_observations",
-            result=(filtered_observations,),
+            result=(
+                (
+                    filtered_observations_path
+                    if yield_paths and filtered_observations_path
+                    else filtered_observations
+                ),
+            ),
             path=(filtered_observations_path,),
         )
+        if stop_after_stage == "filter_observations":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
 
         checkpoint = create_checkpoint_data(
-            "range_and_transform",
+            "generate_ephemeris",
             filtered_observations=filtered_observations,
+            test_orbit_ephemeris=test_orbit_ephemeris,
         )
 
     # Observations are no longer needed
     del observations
 
+    if checkpoint.stage == "generate_ephemeris":
+        filtered_observations = checkpoint.filtered_observations
+        test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
+
+        # If ephemeris from filtering is empty, generate it from filtered observations
+        if len(test_orbit_ephemeris) == 0:
+            logger.info("No ephemeris from filtering, generating from filtered observations...")
+            test_orbit_ephemeris = test_orbit.generate_ephemeris_from_observations(
+                filtered_observations,
+                propagator_class=propagator_class,
+                max_processes=config.max_processes,
+                covariance=True,
+            )
+
+        ephemeris_path = None
+        if test_orbit_directory is not None:
+            ephemeris_path = os.path.join(test_orbit_directory, "test_orbit_ephemeris.parquet")
+            test_orbit_ephemeris.to_parquet(ephemeris_path)
+
+        yield LinkTestOrbitStageResult(
+            name="generate_ephemeris",
+            result=(ephemeris_path if yield_paths and ephemeris_path else test_orbit_ephemeris,),
+            path=(ephemeris_path,),
+        )
+        if stop_after_stage == "generate_ephemeris":
+            return
+
+        if use_ray:
+            if not isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                test_orbit_ephemeris = ray.put(test_orbit_ephemeris)
+                logger.info("Placed test orbit ephemeris in the object store.")
+            if not isinstance(filtered_observations, ray.ObjectRef):
+                filtered_observations = ray.put(filtered_observations)
+                logger.info("Placed filtered observations in the object store.")
+
+        checkpoint = create_checkpoint_data(
+            "range_and_transform",
+            test_orbit_ephemeris=test_orbit_ephemeris,
+            filtered_observations=filtered_observations,
+        )
+
     if checkpoint.stage == "range_and_transform":
+        test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
         filtered_observations = checkpoint.filtered_observations
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
 
         # Range and transform the observations
@@ -183,6 +266,7 @@ def link_test_orbit(
             filtered_observations,
             propagator_class=propagator_class,
             max_processes=config.max_processes,
+            test_orbit_ephemeris=test_orbit_ephemeris,
         )
 
         transformed_detections_path = None
@@ -193,43 +277,62 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="range_and_transform",
-            result=(transformed_detections,),
+            result=(
+                (
+                    transformed_detections_path
+                    if yield_paths and transformed_detections_path
+                    else transformed_detections
+                ),
+            ),
             path=(transformed_detections_path,),
         )
+        if stop_after_stage == "range_and_transform":
+            return
 
         if use_ray:
+            if not isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                test_orbit_ephemeris = ray.put(test_orbit_ephemeris)
+                logger.info("Placed test orbit ephemeris in the object store.")
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(transformed_detections, ray.ObjectRef):
                 transformed_detections = ray.put(transformed_detections)
-                refs_to_free.append(transformed_detections)
                 logger.info("Placed transformed detections in the object store.")
 
         checkpoint = create_checkpoint_data(
             "cluster_and_link",
+            test_orbit_ephemeris=test_orbit_ephemeris,
             filtered_observations=filtered_observations,
             transformed_detections=transformed_detections,
         )
 
     if checkpoint.stage == "cluster_and_link":
+        test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
 
-        # Run clustering
+        # Run clustering (parameters calculated automatically from test_orbit_ephemeris if provided)
         clusters, cluster_members = cluster_and_link(
             transformed_detections,
-            vx_range=[config.vx_min, config.vx_max],
-            vy_range=[config.vy_min, config.vy_max],
-            vx_bins=config.vx_bins,
-            vy_bins=config.vy_bins,
-            radius=config.cluster_radius,
+            test_orbit_ephemeris=test_orbit_ephemeris,
+            velocity_bin_separation=config.cluster_velocity_bin_separation,
             min_obs=config.cluster_min_obs,
             min_arc_length=config.cluster_min_arc_length,
+            min_nights=config.cluster_min_nights,
+            rchi2_threshold=config.cluster_rchi2_threshold,
+            mahalanobis_distance=config.cluster_mahalanobis_distance,
             alg=config.cluster_algorithm,
+            radius=config.cluster_radius,
+            vx_range=[config.cluster_vx_min, config.cluster_vx_max],
+            vy_range=[config.cluster_vy_min, config.cluster_vy_max],
+            vx_bins=config.cluster_vx_bins,
+            vy_bins=config.cluster_vy_bins,
+            vx_values=None,
+            vy_values=None,
             chunk_size=config.cluster_chunk_size,
             max_processes=config.max_processes,
+            whiten=config.cluster_whiten,
         )
 
         clusters_path = None
@@ -243,22 +346,24 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="cluster_and_link",
-            result=(clusters, cluster_members),
+            result=(
+                clusters_path if yield_paths and clusters_path else clusters,
+                cluster_members_path if yield_paths and cluster_members_path else cluster_members,
+            ),
             path=(clusters_path, cluster_members_path),
         )
+        if stop_after_stage == "cluster_and_link":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(clusters, ray.ObjectRef):
                 clusters = ray.put(clusters)
-                refs_to_free.append(clusters)
                 logger.info("Placed clusters in the object store.")
             if not isinstance(cluster_members, ray.ObjectRef):
                 cluster_members = ray.put(cluster_members)
-                refs_to_free.append(cluster_members)
                 logger.info("Placed cluster members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -302,22 +407,24 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="initial_orbit_determination",
-            result=(iod_orbits, iod_orbit_members),
+            result=(
+                iod_orbits_path if yield_paths and iod_orbits_path else iod_orbits,
+                iod_orbit_members_path if yield_paths and iod_orbit_members_path else iod_orbit_members,
+            ),
             path=(iod_orbits_path, iod_orbit_members_path),
         )
+        if stop_after_stage == "initial_orbit_determination":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(iod_orbits, ray.ObjectRef):
                 iod_orbits = ray.put(iod_orbits)
-                refs_to_free.append(iod_orbits)
                 logger.info("Placed initial orbits in the object store.")
             if not isinstance(iod_orbit_members, ray.ObjectRef):
                 iod_orbit_members = ray.put(iod_orbit_members)
-                refs_to_free.append(iod_orbit_members)
                 logger.info("Placed initial orbit members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -362,22 +469,24 @@ def link_test_orbit(
 
         yield LinkTestOrbitStageResult(
             name="differential_correction",
-            result=(od_orbits, od_orbit_members),
+            result=(
+                od_orbits_path if yield_paths and od_orbits_path else od_orbits,
+                od_orbit_members_path if yield_paths and od_orbit_members_path else od_orbit_members,
+            ),
             path=(od_orbits_path, od_orbit_members_path),
         )
+        if stop_after_stage == "differential_correction":
+            return
 
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
-                refs_to_free.append(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
             if not isinstance(od_orbits, ray.ObjectRef):
                 od_orbits = ray.put(od_orbits)
-                refs_to_free.append(od_orbits)
                 logger.info("Placed differentially corrected orbits in the object store.")
             if not isinstance(od_orbit_members, ray.ObjectRef):
                 od_orbit_members = ray.put(od_orbit_members)
-                refs_to_free.append(od_orbit_members)
                 logger.info("Placed differentially corrected orbit members in the object store.")
 
         checkpoint = create_checkpoint_data(
@@ -413,10 +522,6 @@ def link_test_orbit(
             observations_chunk_size=100000,
         )
 
-        if use_ray and len(refs_to_free) > 0:
-            ray.internal.free(refs_to_free)
-            logger.info(f"Removed {len(refs_to_free)} references from the object store.")
-
         recovered_orbits_path = None
         recovered_orbit_members_path = None
         if test_orbit_directory is not None:
@@ -432,6 +537,133 @@ def link_test_orbit(
         logger.info(f"Test orbit completed in {time_end-time_start:.3f} seconds.")
         yield LinkTestOrbitStageResult(
             name="recover_orbits",
-            result=(recovered_orbits, recovered_orbit_members),
+            result=(
+                recovered_orbits_path if yield_paths and recovered_orbits_path else recovered_orbits,
+                (
+                    recovered_orbit_members_path
+                    if yield_paths and recovered_orbit_members_path
+                    else recovered_orbit_members
+                ),
+            ),
             path=(recovered_orbits_path, recovered_orbit_members_path),
         )
+
+
+def link_test_orbits(
+    test_orbits: TestOrbits,
+    observations: Union[str, Observations],
+    working_dir: Optional[str] = None,
+    filters: Optional[List[ObservationFilter]] = None,
+    config: Optional[Config] = None,
+    use_orbit_subdir: bool = True,
+    current_depth: int = 0,
+    yield_paths: bool = False,
+) -> Iterator[LinkTestOrbitStageResult]:
+    """
+    Run THOR for a list of test orbits on the given observations. This function will yield
+    results at each stage of the pipeline.
+
+    Parameters
+    ----------
+    test_orbits : `~thor.orbit.TestOrbits`
+        Collection of test orbits to process.
+    observations : `~thor.observations.observations.Observations` or str
+        Observations to search for moving objects.
+    working_dir : str, optional
+        Directory with persisted config and checkpointed results.
+    filters : list of `~thor.observations.filters.ObservationFilter`, optional
+        List of filters to apply to the observations before running THOR.
+    config : `~thor.config.Config`, optional
+        Configuration to use for THOR. If None, the default configuration will be used.
+    current_depth: int, optional
+        Current depth of the split.
+    yield_paths : bool, optional
+        If True and working_dir is set, yield file paths in result instead of in-memory
+        tables. This allows large tables to be garbage collected after being written to
+        disk, reducing memory usage. Default is False.
+
+    Returns
+    -------
+    Iterator[LinkTestOrbitStageResult]
+        Iterator over the results of each stage of the pipeline for each test orbit.
+    """
+    if config is None:
+        config = Config()
+
+    split_threshold = config.split_threshold
+    split_method = config.split_method
+    max_split_depth = config.split_max_depth
+
+    for test_orbit in test_orbits:
+        for stage_result in link_test_orbit(
+            test_orbit,
+            observations,
+            working_dir,
+            filters,
+            config,
+            use_orbit_subdir=use_orbit_subdir,
+            yield_paths=yield_paths,
+        ):
+            if split_threshold is not None and stage_result.name == "filter_observations":
+                # Get the number of filtered observations
+                result_item = stage_result.result[0]
+                if isinstance(result_item, str):
+                    # Result is a path, read metadata to get row count
+                    num_filtered = pq.read_metadata(result_item).num_rows
+                else:
+                    num_filtered = len(result_item)
+
+                if num_filtered > split_threshold:
+                    if current_depth >= max_split_depth:
+                        logger.info(
+                            f"Split threshold exceeded but max depth {max_split_depth} reached; not splitting further.",
+                        )
+                        # Do not split further, but continue running downstream stages for this orbit.
+                        yield stage_result
+                        continue
+                    logger.info(
+                        f"Filtered observations ({num_filtered}) exceed threshold ({split_threshold}); splitting test orbit via {split_method}.",
+                    )
+
+                    # Use the on-disk path if available, otherwise fall back to in-memory observations
+                    child_observations = (
+                        stage_result.path[0] if stage_result.path[0] is not None else stage_result.result[0]
+                    )
+
+                    if split_method == "healpixel":
+                        split_test_orbits = test_orbit.split_healpixel()
+                    else:
+                        times = get_observation_times(child_observations)
+                        max_time = times.max()
+                        min_time = times.min()
+                        dt = max_time.mjd()[0].as_py() - min_time.mjd()[0].as_py()
+                        split_test_orbits = test_orbit.split(
+                            dt=dt, k=1, beta=0.67, gamma=1, num=3, max_depth=1
+                        )
+
+                    if working_dir is not None:
+                        parent_dir = (
+                            pathlib.Path(working_dir, test_orbit.orbit_id[0].as_py())
+                            if use_orbit_subdir
+                            else pathlib.Path(working_dir)
+                        )
+                        parent_dir.mkdir(parents=True, exist_ok=True)
+
+                    child_working_dir: Optional[str] = None
+                    if working_dir is not None:
+                        # Each child gets its own subdir inside the parent orbit directory.
+                        child_working_dir = str(parent_dir)
+
+                    yield from link_test_orbits(
+                        split_test_orbits,
+                        child_observations,
+                        child_working_dir,
+                        filters,
+                        config,
+                        use_orbit_subdir=True,
+                        current_depth=current_depth + 1,
+                        yield_paths=yield_paths,
+                    )
+                    break
+
+            yield stage_result

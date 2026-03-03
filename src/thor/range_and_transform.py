@@ -3,6 +3,10 @@ import multiprocessing as mp
 import time
 from typing import Optional, Type, Union
 
+import numpy as np
+import numpy.typing as npt
+import pyarrow as pa
+import pyarrow.compute as pc
 import quivr as qv
 import ray
 from adam_core.coordinates import (
@@ -14,7 +18,12 @@ from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
 
 from .observations.observations import Observations
-from .orbit import RangedPointSourceDetections, TestOrbitEphemeris, TestOrbits
+from .orbit import (
+    RangedPointSourceDetections,
+    TestOrbitEphemeris,
+    TestOrbits,
+    zero_covariances,
+)
 from .projections import GnomonicCoordinates
 
 __all__ = [
@@ -28,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 class TransformedDetections(qv.Table):
     id = qv.LargeStringColumn()
+    test_orbit_id = qv.LargeStringColumn(nullable=True)
+    night = qv.Int64Column()
     coordinates = GnomonicCoordinates.as_column()
     state_id = qv.LargeStringColumn()
 
@@ -65,12 +76,23 @@ def range_and_transform_worker(
     ephemeris_state = ephemeris.select("id", state_id)
     observations_state = observations.select("state_id", state_id)
 
+    # `range_observations_worker` may have filtered out un-rangeable observations
+    if len(ranged_detections_spherical_state) == 0:
+        return TransformedDetections.empty()
+
+    observations_state = observations_state.apply_mask(
+        pc.is_in(observations_state.id, ranged_detections_spherical_state.id)
+    )
+    if len(observations_state) == 0:
+        return TransformedDetections.empty()
+
     ranged_detections_cartesian_state = transform_coordinates(
-        ranged_detections_spherical_state.coordinates,
+        zero_covariances(ranged_detections_spherical_state.coordinates),
         representation_out=CartesianCoordinates,
         frame_out="ecliptic",
         origin_out=OriginCodes.SUN,
     )
+    ranged_detections_cartesian_state = zero_covariances(ranged_detections_cartesian_state)
 
     # let's test transforming the aberrated coordinates to heliocentric instead of ssb
     test_orbit_at_detection_time = transform_coordinates(
@@ -86,13 +108,18 @@ def range_and_transform_worker(
         "time", ephemeris_state.ephemeris.coordinates.time
     )
 
+    gnomonic_coords, _ = GnomonicCoordinates.from_cartesian(
+        ranged_detections_cartesian_state,
+        center_cartesian=test_orbit_at_detection_time,
+    )
+
     # Transform the detections into the co-rotating frame
+    test_orbit_id = ephemeris_state.test_orbit_id[0].as_py()
     return TransformedDetections.from_kwargs(
         id=observations_state.id,
-        coordinates=GnomonicCoordinates.from_cartesian(
-            ranged_detections_cartesian_state,
-            center_cartesian=test_orbit_at_detection_time,
-        ),
+        test_orbit_id=pa.repeat(test_orbit_id, len(observations_state)),
+        night=observations_state.night,
+        coordinates=gnomonic_coords,
         state_id=observations_state.state_id,
     )
 
@@ -108,8 +135,8 @@ def range_and_transform(
     test_orbit: TestOrbits,
     observations: Union[Observations, ray.ObjectRef],
     propagator_class: Type[Propagator],
-    propagator_kwargs: dict = {},
     max_processes: Optional[int] = 1,
+    test_orbit_ephemeris: Optional[Union[TestOrbitEphemeris, ray.ObjectRef]] = None,
 ) -> TransformedDetections:
     """
     Range observations for a single test orbit and transform them into a
@@ -122,13 +149,16 @@ def range_and_transform(
         Test orbit to use to gather and transform observations.
     observations : `~thor.observations.observations.Observations`
         Observations from which range and transform the detections.
-    propagator : `~adam_core.propagator.propagator.Propagator`
-        Propagator to use to propagate the test orbit and generate
+    propagator_class : `~adam_core.propagator.propagator.Propagator`
+        Propagator class to use to propagate the test orbit and generate
         ephemerides.
     max_processes : int, optional
         Maximum number of processes to use for parallelization. If
         an existing ray cluster is already running, this parameter
         will be ignored if larger than 1 or not None.
+    test_orbit_ephemeris : `~thor.orbit.TestOrbitEphemeris` or ray.ObjectRef, optional
+        Pre-computed test orbit ephemeris. If provided, ephemeris generation will be
+        skipped. If None, ephemeris will be generated from observations.
 
     Returns
     -------
@@ -141,8 +171,13 @@ def range_and_transform(
     if len(test_orbit) != 1:
         raise ValueError(f"range_and_transform received {len(test_orbit)} orbits but expected 1.")
 
+    keplerian = test_orbit.coordinates.to_keplerian()
     logger.info(f"Assuming r = {test_orbit.coordinates.r[0]} au")
     logger.info(f"Assuming v = {test_orbit.coordinates.v[0]} au/d")
+    logger.info(f"Assuming a, e, i = {keplerian.a[0]} au, {keplerian.e[0]}, {keplerian.i[0]} deg")
+    logger.info(
+        f"Assuming raan, ap, M = {keplerian.raan[0]} deg, {keplerian.ap[0]} deg, {keplerian.M[0]} deg"
+    )
 
     if isinstance(observations, ray.ObjectRef):
         observations_ref = observations
@@ -151,15 +186,19 @@ def range_and_transform(
     else:
         observations_ref = None
 
-    # prop = propagator_class(**propagator_kwargs)
-
     if len(observations) > 0:
-        # Compute the ephemeris of the test orbit (this will be cached)
-        ephemeris = test_orbit.generate_ephemeris_from_observations(
-            observations,
-            propagator_class=propagator_class,
-            max_processes=max_processes,
-        )
+        # Use provided ephemeris or compute it
+        if test_orbit_ephemeris is not None:
+            if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                ephemeris = ray.get(test_orbit_ephemeris)
+            else:
+                ephemeris = test_orbit_ephemeris
+        else:
+            ephemeris = test_orbit.generate_ephemeris_from_observations(
+                observations,
+                propagator_class=propagator_class,
+                max_processes=max_processes,
+            )
 
         # Assume that the heliocentric distance of all point sources in
         # the observations are the same as that of the test orbit
@@ -167,6 +206,7 @@ def range_and_transform(
             observations,
             propagator_class=propagator_class,
             max_processes=max_processes,
+            test_orbit_ephemeris=ephemeris,
         )
         transformed_detections = TransformedDetections.empty()
 
@@ -175,15 +215,12 @@ def range_and_transform(
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
-            refs_to_free = []
             if observations_ref is None:
                 observations_ref = ray.put(observations)
-                refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
 
             if not isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ray.put(ephemeris)
-                refs_to_free.append(ephemeris_ref)
                 logger.info("Placed ephemeris in the object store.")
             else:
                 ephemeris_ref = ephemeris
@@ -215,10 +252,6 @@ def range_and_transform(
                 if transformed_detections.fragmented():
                     transformed_detections = qv.defragment(transformed_detections)
 
-            if len(refs_to_free) > 0:
-                ray.internal.free(refs_to_free)
-                logger.info(f"Removed {len(refs_to_free)} references from the object store.")
-
         else:
             # Get state IDs
             state_ids = observations.state_id.unique()
@@ -244,3 +277,76 @@ def range_and_transform(
     logger.info(f"Transformed {len(transformed_detections)} observations.")
     logger.info(f"Range and transform completed in {time_end - time_start:.3f} seconds.")
     return transformed_detections
+
+
+def whitening_matrix_from_covariance(cov: np.ndarray) -> npt.NDArray[np.float64]:
+    """
+    Compute the whitening matrix W such that:
+        W @ Sigma @ W.T = I
+
+    Parameters
+    ----------
+    cov : (N, N) covariance matrix (positive-definite)
+
+    Returns
+    -------
+    W : (N, N) whitening transform
+    """
+    eigenvals, eigenvectors = np.linalg.eigh(cov)
+    eigenvals = np.maximum(eigenvals, 1e-15)
+
+    Lambda_inv_sqrt = np.diag(1.0 / np.sqrt(eigenvals))
+    W = Lambda_inv_sqrt @ eigenvectors.T
+    return W
+
+
+def whiten_transformed_detections(
+    transformed_detections: TransformedDetections, test_orbit_ephemeris: TestOrbitEphemeris
+) -> TransformedDetections:
+    """
+    Whiten the transformed detections using the per-state test orbit covariance matrix.
+
+    Parameters
+    ----------
+    transformed_detections : TransformedDetections
+        The transformed detections to whiten.
+    test_orbit_ephemeris : TestOrbitEphemeris
+        The test orbit ephemeris to use for whitening.
+
+    Returns
+    -------
+    TransformedDetections
+        The whitened transformed detections. Only theta_x and theta_y are whitened.
+    """
+    transformed_detections_whitened = TransformedDetections.empty()
+
+    for state_id in test_orbit_ephemeris.id.unique():
+        transformed_detections_i = transformed_detections.select("state_id", state_id)
+        test_orbit_ephemeris_i = test_orbit_ephemeris.select("id", state_id)
+
+        cov = test_orbit_ephemeris_i.gnomonic.covariance.to_matrix()[0, :2, :2]
+        W = whitening_matrix_from_covariance(cov)
+        whitened_gnononic_coordinates = transformed_detections_i.coordinates.values[:, :2] @ W[:2, :2].T
+
+        transformed_detections_whitened_i = TransformedDetections.from_kwargs(
+            id=transformed_detections_i.id,
+            test_orbit_id=transformed_detections_i.test_orbit_id,
+            state_id=transformed_detections_i.state_id,
+            night=transformed_detections_i.night,
+            coordinates=GnomonicCoordinates.from_kwargs(
+                theta_x=whitened_gnononic_coordinates[:, 0],
+                theta_y=whitened_gnononic_coordinates[:, 1],
+                vtheta_x=transformed_detections_i.coordinates.vtheta_x,
+                vtheta_y=transformed_detections_i.coordinates.vtheta_y,
+                covariance=transformed_detections_i.coordinates.covariance,
+                time=transformed_detections_i.coordinates.time,
+                frame=transformed_detections_i.coordinates.frame,
+                origin=transformed_detections_i.coordinates.origin,
+            ),
+        )
+
+        transformed_detections_whitened = qv.concatenate(
+            [transformed_detections_whitened, transformed_detections_whitened_i]
+        )
+
+    return transformed_detections_whitened

@@ -5,6 +5,7 @@ from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
+import pyarrow as pa
 import pyarrow.compute as pc
 import quivr as qv
 import ray
@@ -12,9 +13,9 @@ from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Orbits
-from adam_core.propagator import Propagator, _iterate_chunks
-from adam_core.propagator.utils import _iterate_chunk_indices
+from adam_core.propagator import Propagator
 from adam_core.ray_cluster import initialize_use_ray
+from adam_core.utils.iter import _iterate_chunk_indices, _iterate_chunks
 from scipy.linalg import solve
 
 from ..observations.observations import Observations
@@ -516,6 +517,7 @@ def od(
         od_orbit = FittedOrbits.from_kwargs(
             orbit_id=orbit_prev.orbit_id,
             object_id=orbit_prev.object_id,
+            test_orbit_id=orbit.test_orbit_id,
             coordinates=orbit_prev.coordinates,
             arc_length=[arc_length_],
             num_obs=[num_obs],
@@ -526,9 +528,11 @@ def od(
             status_code=[0],
         )
 
+        test_orbit_id = orbit.test_orbit_id[0].as_py()
         od_orbit_members = FittedOrbitMembers.from_kwargs(
             orbit_id=np.full(len(obs_ids_all), orbit_prev.orbit_id[0].as_py(), dtype="object"),
             obs_id=obs_ids_all,
+            test_orbit_id=pa.repeat(test_orbit_id, len(obs_ids_all)),
             residuals=residuals_prev,
             solution=np.isin(obs_ids_all, obs_id_outlier, invert=True),
             outlier=np.isin(obs_ids_all, obs_id_outlier),
@@ -622,28 +626,23 @@ def differential_correction(
 
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
-        refs_to_free = []
 
         orbit_ids_ref = ray.put(orbit_ids)
         orbit_ids = ray.get(orbit_ids_ref)
-        refs_to_free.append(orbit_ids_ref)
         logger.info("Placed orbit IDs in the object store.")
 
         if orbits_ref is None:
             orbits_ref = ray.put(orbits)
             orbits = ray.get(orbits_ref)
-            refs_to_free.append(orbits_ref)
             logger.info("Placed orbits in the object store.")
 
         if orbit_members_ref is None:
             orbit_members_ref = ray.put(orbit_members)
             orbit_members = ray.get(orbit_members_ref)
-            refs_to_free.append(orbit_members_ref)
             logger.info("Placed orbit members in the object store.")
 
         if observations_ref is None:
             observations_ref = ray.put(observations)
-            refs_to_free.append(observations_ref)
             observations = ray.get(observations_ref)
             logger.info("Placed observations in the object store.")
 
@@ -687,10 +686,6 @@ def differential_correction(
             od_orbit_members = qv.concatenate([od_orbit_members, od_orbit_members_chunk])
             if od_orbit_members.fragmented():
                 od_orbit_members = qv.defragment(od_orbit_members)
-
-        if len(refs_to_free) > 0:
-            ray.internal.free(refs_to_free)
-            logger.info(f"Removed {len(refs_to_free)} references from the object store.")
 
     else:
         for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):

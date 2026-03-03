@@ -1,4 +1,4 @@
-name: pip - Build Lint Test and Coverage
+name: pdm - Build Lint Test and Coverage
 
 on:
   push:
@@ -25,20 +25,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip' # caching pip dependencies
+      - name: Install pdm
+        run: pip install pdm
       - name: Install Dependencies
-        run: |
-          pip install pip --upgrade
-          pip install ".[dev]"
+        run: pdm install -G dev
       - name: Lint
         run: |
-          ruff check ./src/thor
-          black --check ./src/thor
-          isort --check-only ./src/thor
+          pdm run ruff check ./src/thor
+          pdm run black --check ./src/thor
+          pdm run isort --check-only ./src/thor
       # - name: Type check
-      #   run: mypy --strict ./src/thor
+      #   run: pdm run mypy --strict ./src/thor
       - name: Test with coverage
-        run: pytest --cov=thor --cov-report=xml --benchmark-disable
+        run: pdm run pytest --cov=thor --cov-report=xml --benchmark-disable
       - name: Coverage Report
         uses: coverallsapp/github-action@v2.0.0
         with:

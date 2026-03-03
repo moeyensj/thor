@@ -8,7 +8,7 @@ config.update("jax_enable_x64", True)
 FLOAT_TOLERANCE = 1e-14
 
 X_AXIS = jnp.array([1.0, 0.0, 0.0])
-Y_AXIS = jnp.array([0.0, 1.0, 1.0])
+Y_AXIS = jnp.array([0.0, 1.0, 0.0])
 Z_AXIS = jnp.array([0.0, 0.0, 1.0])
 
 
@@ -114,8 +114,9 @@ def _cartesian_to_gnomonic(
         Gnomonic rotation matrix.
     """
     M = _calc_gnomonic_rotation_matrix(center_cartesian)
-    coords_cartesian_ = jnp.where(jnp.isnan(coords_cartesian), 0.0, coords_cartesian)
-    coords_rotated = M @ coords_cartesian_
+    nan_mask = jnp.isnan(coords_cartesian)
+    coords_rotated = M @ jnp.where(nan_mask, 0.0, coords_cartesian)
+    coords_rotated = jnp.where(nan_mask, jnp.nan, coords_rotated)
 
     x = coords_rotated[0]
     y = coords_rotated[1]

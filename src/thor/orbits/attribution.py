@@ -1,7 +1,7 @@
 import logging
 import multiprocessing as mp
 import time
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -12,8 +12,8 @@ import ray
 from adam_core.coordinates.residuals import Residuals
 from adam_core.orbits import Orbits
 from adam_core.propagator import Propagator
-from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
+from adam_core.utils.iter import _iterate_chunk_indices, _iterate_chunks
 from sklearn.neighbors import BallTree
 
 from ..observations.observations import Observations
@@ -319,14 +319,11 @@ def attribute_observations(
     attributions = Attributions.empty()
 
     if use_ray:
-        refs_to_free = []
         if orbits_ref is None:
             orbits_ref = ray.put(orbits)
-            refs_to_free.append(orbits_ref)
             logger.info("Placed orbits in the object store.")
         if observations_ref is None:
             observations_ref = ray.put(observations)
-            refs_to_free.append(observations_ref)
             logger.info("Placed observations in the object store.")
 
         # For each chunk of observations run attribution with all orbits.
@@ -359,10 +356,6 @@ def attribute_observations(
                 attributions_chunk = ray.get(finished[0])
                 attributions = qv.concatenate([attributions, attributions_chunk])
                 attributions = qv.defragment(attributions)
-
-        if len(refs_to_free) > 0:
-            ray.internal.free(refs_to_free)
-            logger.info(f"Removed {len(refs_to_free)} references from the object store.")
 
     else:
         for orbit_id_chunk in _iterate_chunks(orbit_ids, orbits_chunk_size):
@@ -463,6 +456,7 @@ def merge_and_extend_orbits(
             observations_ref = ray.put(observations)
             observations = ray.get(observations_ref)
 
+    num_orbits = len(orbits)
     odp_orbits = FittedOrbits.empty()
     odp_orbit_members = FittedOrbitMembers.empty()
 
@@ -472,7 +466,6 @@ def merge_and_extend_orbits(
 
     iterations = 0
     converged = False
-    refs_to_free: List[ray.ObjectRef] = []
     while not converged:
         # Update the orbits chunk size
         orbits_chunk_size_iter = np.minimum(
@@ -480,7 +473,6 @@ def merge_and_extend_orbits(
         )
 
         # Run attribution
-        print(radius)
         attributions = attribute_observations(
             orbits_ref if use_ray else orbits,
             observations_ref if use_ray else observations,
@@ -504,12 +496,10 @@ def merge_and_extend_orbits(
         orbits = orbits.apply_mask(pc.is_in(orbits.orbit_id, orbit_members.orbit_id.unique()))
 
         if use_ray:
-            ray.internal.free(refs_to_free)
             orbits_ref = ray.put(orbits)
             orbits = ray.get(orbits_ref)
             orbit_members_ref = ray.put(orbit_members)
             orbit_members = ray.get(orbit_members_ref)
-            refs_to_free = [orbits_ref, orbit_members_ref]
 
         # Run differential orbit correction
         orbits, orbit_members = differential_correction(
@@ -597,12 +587,10 @@ def merge_and_extend_orbits(
             # Orbits will change with differential correction so we need to add them
             # to the object store at the start of each iteration (we cannot simply
             # pass references to the same immutable object)
-            ray.internal.free(refs_to_free)
             orbits_ref = ray.put(orbits)
             orbits = ray.get(orbits_ref)
             orbit_members_ref = ray.put(orbit_members)
             orbit_members = ray.get(orbit_members_ref)
-            refs_to_free = [orbits_ref, orbit_members_ref]
 
         else:
             orbits_ref = orbits
@@ -612,13 +600,6 @@ def merge_and_extend_orbits(
         iterations += 1
         if len(orbits) == 0:
             converged = True
-
-    # Remove orbits from the object store (the underlying state vectors may
-    # change with differential correction so we need to add them again at
-    # the start of the next iteration)
-    if use_ray:
-        ray.internal.free(refs_to_free)
-        logger.info("Removed orbits from the object store.")
 
     if len(odp_orbits) > 0:
         # Assign any remaining duplicate observations to the orbit with
@@ -649,7 +630,7 @@ def merge_and_extend_orbits(
 
     time_end = time.perf_counter()
     logger.info(f"Number of attribution / differential correction iterations: {iterations}")
-    logger.info(f"Extended and/or merged {len(orbits)} orbits into {len(odp_orbits)} orbits.")
+    logger.info(f"Extended and/or merged {num_orbits} orbits into {len(odp_orbits)} orbits.")
     logger.info("Orbit extension and merging completed in {:.3f} seconds.".format(time_end - time_start))
 
     return odp_orbits, odp_orbit_members

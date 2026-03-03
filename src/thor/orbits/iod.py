@@ -14,10 +14,10 @@ from adam_core.coordinates.residuals import Residuals
 from adam_core.orbit_determination import OrbitDeterminationObservations
 from adam_core.orbits import Ephemeris, Orbits
 from adam_core.propagator import Propagator
-from adam_core.propagator.utils import _iterate_chunk_indices, _iterate_chunks
 from adam_core.ray_cluster import initialize_use_ray
+from adam_core.utils.iter import _iterate_chunk_indices, _iterate_chunks
 
-from ..clusters import ClusterMembers
+from ..clusters import ClusterMembers, FittedClusterMembers
 from ..observations.observations import Observations
 from ..orbit_determination.fitted_orbits import (
     FittedOrbitMembers,
@@ -117,7 +117,7 @@ def select_observations(
 def iod_worker(
     linkage_ids: npt.NDArray[np.str_],
     observations: Union[Observations, ray.ObjectRef],
-    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedClusterMembers, FittedOrbitMembers, ray.ObjectRef],
     propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
@@ -171,10 +171,21 @@ def iod_worker(
             propagator_kwargs=propagator_kwargs,
         )
         if len(iod_orbit) > 0:
-            iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id]))
+            iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id], pa.large_string()))
             iod_orbit_orbit_members = iod_orbit_orbit_members.set_column(
                 "orbit_id",
-                pa.array([linkage_id for i in range(len(iod_orbit_orbit_members))]),
+                pa.array([linkage_id] * len(iod_orbit_orbit_members), pa.large_string()),
+            )
+
+            # Propagate test_orbit_id from linkage_members
+            linkage_members_subset = linkage_members.apply_mask(
+                pc.equal(linkage_members.column(linkage_id_col), linkage_id)
+            )
+            test_orbit_id = linkage_members_subset.test_orbit_id[0].as_py()
+            iod_orbit = iod_orbit.set_column("test_orbit_id", pa.array([test_orbit_id], pa.large_string()))
+            iod_orbit_orbit_members = iod_orbit_orbit_members.set_column(
+                "test_orbit_id",
+                pa.repeat(pa.scalar(test_orbit_id, pa.large_string()), len(iod_orbit_orbit_members)),
             )
 
         time_end = time.time()
@@ -197,7 +208,7 @@ def iod_worker_remote(
     linkage_ids: Union[npt.NDArray[np.str_], ray.ObjectRef],
     linkage_members_indices: Tuple[int, int],
     observations: Union[Observations, ray.ObjectRef],
-    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedClusterMembers, FittedOrbitMembers, ray.ObjectRef],
     propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
@@ -523,7 +534,7 @@ def iod(
 
 def initial_orbit_determination(
     observations: Union[Observations, ray.ObjectRef],
-    linkage_members: Union[ClusterMembers, FittedOrbitMembers, ray.ObjectRef],
+    linkage_members: Union[ClusterMembers, FittedClusterMembers, FittedOrbitMembers, ray.ObjectRef],
     propagator_class: Type[Propagator],
     min_obs: int = 6,
     min_arc_length: float = 1.0,
@@ -568,20 +579,16 @@ def initial_orbit_determination(
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
-            refs_to_free = []
 
             linkage_ids_ref = ray.put(linkage_ids)
-            refs_to_free.append(linkage_ids_ref)
             logger.info("Placed linkage IDs in the object store.")
 
             if linkage_members_ref is None:
                 linkage_members_ref = ray.put(linkage_members)
-                refs_to_free.append(linkage_members_ref)
                 logger.info("Placed linkage members in the object store.")
 
             if observations_ref is None:
                 observations_ref = ray.put(observations)
-                refs_to_free.append(observations_ref)
                 logger.info("Placed observations in the object store.")
 
             futures = []
@@ -626,10 +633,6 @@ def initial_orbit_determination(
                     iod_orbits = qv.defragment(iod_orbits)
                 if iod_orbit_members.fragmented():
                     iod_orbit_members = qv.defragment(iod_orbit_members)
-
-            if len(refs_to_free) > 0:
-                ray.internal.free(refs_to_free)
-                logger.info(f"Removed {len(refs_to_free)} references from the object store.")
 
         else:
             for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):

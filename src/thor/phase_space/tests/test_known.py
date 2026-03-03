@@ -2,7 +2,7 @@ import numpy as np
 from adam_core.coordinates import KeplerianCoordinates, Origin
 from adam_core.time import Timestamp
 
-from ..orbit_selection import select_average_within_region
+from ..known import select_average_within_region
 
 
 def test_select_average_within_region():
