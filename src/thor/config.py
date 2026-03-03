@@ -40,6 +40,7 @@ class Config:
             "generate_ephemeris",
             "range_and_transform",
             "cluster_and_link",
+            "fit_clusters",
             "initial_orbit_determination",
             "differential_correction",
             "recover_orbits",

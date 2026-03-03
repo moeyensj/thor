@@ -12,7 +12,7 @@ from ..checkpointing import (
     TransformedDetections,
     load_initial_checkpoint_values,
 )
-from ..clusters import FittedClusterMembers, FittedClusters
+from ..clusters import ClusterMembers, Clusters, FittedClusterMembers, FittedClusters
 from ..config import Config
 from ..main import initialize_use_ray, link_test_orbit
 from ..observations import Observations
@@ -317,8 +317,15 @@ def test_link_test_orbit_simple(orbits, observations, integration_config):
 
         elif stage_result.name == "cluster_and_link":
             clusters, cluster_members = stage_result.result
+            assert isinstance(clusters, Clusters), "cluster_and_link should return unfitted Clusters"
             assert len(clusters) > 0, "cluster_and_link produced no clusters"
             assert len(cluster_members) > 0, "cluster_and_link produced no cluster members"
+
+        elif stage_result.name == "fit_clusters":
+            fitted_clusters, fitted_cluster_members = stage_result.result
+            assert isinstance(fitted_clusters, FittedClusters), "fit_clusters should return FittedClusters"
+            assert len(fitted_clusters) > 0, "fit_clusters produced no fitted clusters"
+            assert len(fitted_cluster_members) > 0, "fit_clusters produced no fitted cluster members"
 
         elif stage_result.name == "initial_orbit_determination":
             iod_orbits, iod_orbit_members = stage_result.result
@@ -339,12 +346,13 @@ def test_link_test_orbit_simple(orbits, observations, integration_config):
             obs_ids_actual = recovered_orbit_members.obs_id
             assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
 
-    # Verify all 7 stages executed
+    # Verify all 8 stages executed
     expected_stages = [
         "filter_observations",
         "generate_ephemeris",
         "range_and_transform",
         "cluster_and_link",
+        "fit_clusters",
         "initial_orbit_determination",
         "differential_correction",
         "recover_orbits",
@@ -393,9 +401,19 @@ def test_load_initial_checkpoint_values(working_dir):
     assert checkpoint.filtered_observations is not None
     assert checkpoint.transformed_detections is not None
 
-    # Create clusters file to simulate third checkpoint
-    FittedClusters.empty().to_parquet(os.path.join(working_dir, "clusters.parquet"))
-    FittedClusterMembers.empty().to_parquet(os.path.join(working_dir, "cluster_members.parquet"))
+    # Create unfitted clusters files to simulate cluster_and_link checkpoint
+    Clusters.empty().to_parquet(os.path.join(working_dir, "clusters.parquet"))
+    ClusterMembers.empty().to_parquet(os.path.join(working_dir, "cluster_members.parquet"))
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "fit_clusters"
+    assert checkpoint.filtered_observations is not None
+    assert checkpoint.clusters is not None
+    assert checkpoint.cluster_members is not None
+
+    # Create fitted clusters files to simulate fit_clusters checkpoint
+    FittedClusters.empty().to_parquet(os.path.join(working_dir, "fitted_clusters.parquet"))
+    FittedClusterMembers.empty().to_parquet(os.path.join(working_dir, "fitted_cluster_members.parquet"))
 
     checkpoint = load_initial_checkpoint_values(working_dir)
     assert checkpoint.stage == "initial_orbit_determination"

@@ -12,7 +12,7 @@ import ray
 from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
-from .clusters import cluster_and_link
+from .clusters import cluster_and_link, fit_clusters
 from .config import Config, initialize_config
 from .observations.filters import (
     ObservationFilter,
@@ -57,6 +57,7 @@ class LinkTestOrbitStageResult:
         "generate_ephemeris",
         "range_and_transform",
         "cluster_and_link",
+        "fit_clusters",
         "initial_orbit_determination",
         "differential_correction",
         "recover_orbits",
@@ -312,7 +313,7 @@ def link_test_orbit(
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
 
-        # Run clustering (parameters calculated automatically from test_orbit_ephemeris if provided)
+        # Run clustering (finding only — no fitting)
         clusters, cluster_members = cluster_and_link(
             transformed_detections,
             test_orbit_ephemeris=test_orbit_ephemeris,
@@ -320,7 +321,6 @@ def link_test_orbit(
             min_obs=config.cluster_min_obs,
             min_arc_length=config.cluster_min_arc_length,
             min_nights=config.cluster_min_nights,
-            rchi2_threshold=config.cluster_rchi2_threshold,
             mahalanobis_distance=config.cluster_mahalanobis_distance,
             alg=config.cluster_algorithm,
             radius=config.cluster_radius,
@@ -338,7 +338,7 @@ def link_test_orbit(
         clusters_path = None
         cluster_members_path = None
         if test_orbit_directory is not None:
-            logger.info(f"Saving clusters to {test_orbit_directory}...")
+            logger.info(f"Saving unfitted clusters to {test_orbit_directory}...")
             clusters_path = os.path.join(test_orbit_directory, "clusters.parquet")
             cluster_members_path = os.path.join(test_orbit_directory, "cluster_members.parquet")
             clusters.to_parquet(clusters_path)
@@ -355,22 +355,73 @@ def link_test_orbit(
         if stop_after_stage == "cluster_and_link":
             return
 
+        checkpoint = create_checkpoint_data(
+            "fit_clusters",
+            filtered_observations=filtered_observations,
+            clusters=clusters,
+            cluster_members=cluster_members,
+            transformed_detections=transformed_detections,
+        )
+
+    if checkpoint.stage == "fit_clusters":
+        filtered_observations = checkpoint.filtered_observations
+        clusters = checkpoint.clusters
+        cluster_members = checkpoint.cluster_members
+        transformed_detections = checkpoint.transformed_detections
+
+        # Fit clusters with polynomial motion model
+        fitted_clusters, fitted_cluster_members = fit_clusters(
+            clusters,
+            cluster_members,
+            transformed_detections,
+            rchi2_threshold=config.cluster_rchi2_threshold,
+            chunk_size=config.cluster_chunk_size,
+            max_processes=config.max_processes,
+        )
+
+        # transformed_detections no longer needed after fitting
+        del transformed_detections
+
+        fitted_clusters_path = None
+        fitted_cluster_members_path = None
+        if test_orbit_directory is not None:
+            logger.info(f"Saving fitted clusters to {test_orbit_directory}...")
+            fitted_clusters_path = os.path.join(test_orbit_directory, "fitted_clusters.parquet")
+            fitted_cluster_members_path = os.path.join(test_orbit_directory, "fitted_cluster_members.parquet")
+            fitted_clusters.to_parquet(fitted_clusters_path)
+            fitted_cluster_members.to_parquet(fitted_cluster_members_path)
+
+        yield LinkTestOrbitStageResult(
+            name="fit_clusters",
+            result=(
+                fitted_clusters_path if yield_paths and fitted_clusters_path else fitted_clusters,
+                (
+                    fitted_cluster_members_path
+                    if yield_paths and fitted_cluster_members_path
+                    else fitted_cluster_members
+                ),
+            ),
+            path=(fitted_clusters_path, fitted_cluster_members_path),
+        )
+        if stop_after_stage == "fit_clusters":
+            return
+
         if use_ray:
             if not isinstance(filtered_observations, ray.ObjectRef):
                 filtered_observations = ray.put(filtered_observations)
                 logger.info("Placed filtered observations in the object store.")
-            if not isinstance(clusters, ray.ObjectRef):
-                clusters = ray.put(clusters)
-                logger.info("Placed clusters in the object store.")
-            if not isinstance(cluster_members, ray.ObjectRef):
-                cluster_members = ray.put(cluster_members)
-                logger.info("Placed cluster members in the object store.")
+            if not isinstance(fitted_clusters, ray.ObjectRef):
+                fitted_clusters = ray.put(fitted_clusters)
+                logger.info("Placed fitted clusters in the object store.")
+            if not isinstance(fitted_cluster_members, ray.ObjectRef):
+                fitted_cluster_members = ray.put(fitted_cluster_members)
+                logger.info("Placed fitted cluster members in the object store.")
 
         checkpoint = create_checkpoint_data(
             "initial_orbit_determination",
             filtered_observations=filtered_observations,
-            clusters=clusters,
-            cluster_members=cluster_members,
+            clusters=fitted_clusters,
+            cluster_members=fitted_cluster_members,
         )
 
     if checkpoint.stage == "initial_orbit_determination":

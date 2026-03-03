@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 import quivr as qv
 import ray
 
-from thor.clusters import FittedClusterMembers, FittedClusters
+from thor.clusters import ClusterMembers, Clusters, FittedClusterMembers, FittedClusters
 from thor.observations.observations import Observations
 from thor.orbit import TestOrbitEphemeris, TestOrbits
 from thor.orbit_determination.fitted_orbits import FittedOrbitMembers, FittedOrbits
@@ -21,6 +21,7 @@ VALID_STAGES = Literal[
     "generate_ephemeris",
     "range_and_transform",
     "cluster_and_link",
+    "fit_clusters",
     "initial_orbit_determination",
     "differential_correction",
     "recover_orbits",
@@ -52,6 +53,15 @@ class ClusterAndLink:
     stage: Literal["cluster_and_link"]
     test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
     filtered_observations: Union[Observations, ray.ObjectRef]
+    transformed_detections: Union[TransformedDetections, ray.ObjectRef]
+
+
+@dataclass
+class FitClusters:
+    stage: Literal["fit_clusters"]
+    filtered_observations: Union[Observations, ray.ObjectRef]
+    clusters: Union[Clusters, ray.ObjectRef]
+    cluster_members: Union[ClusterMembers, ray.ObjectRef]
     transformed_detections: Union[TransformedDetections, ray.ObjectRef]
 
 
@@ -91,6 +101,7 @@ CheckpointData = Union[
     GenerateEphemeris,
     RangeAndTransform,
     ClusterAndLink,
+    FitClusters,
     InitialOrbitDetermination,
     DifferentialCorrection,
     RecoverOrbits,
@@ -103,6 +114,7 @@ stage_to_model: Dict[str, type] = {
     "generate_ephemeris": GenerateEphemeris,
     "range_and_transform": RangeAndTransform,
     "cluster_and_link": ClusterAndLink,
+    "fit_clusters": FitClusters,
     "initial_orbit_determination": InitialOrbitDetermination,
     "differential_correction": DifferentialCorrection,
     "recover_orbits": RecoverOrbits,
@@ -157,11 +169,17 @@ def detect_checkpoint_stage(test_orbit_directory: pathlib.Path) -> VALID_STAGES:
         logger.info("Found IOD orbits, starting stage differential_correction")
         return "differential_correction"
 
+    if (test_orbit_directory / "fitted_clusters.parquet").exists() and (
+        test_orbit_directory / "fitted_cluster_members.parquet"
+    ).exists():
+        logger.info("Found fitted clusters, starting stage initial_orbit_determination")
+        return "initial_orbit_determination"
+
     if (test_orbit_directory / "clusters.parquet").exists() and (
         test_orbit_directory / "cluster_members.parquet"
     ).exists():
-        logger.info("Found clusters, starting stage initial_orbit_determination")
-        return "initial_orbit_determination"
+        logger.info("Found unfitted clusters, starting stage fit_clusters")
+        return "fit_clusters"
 
     if (test_orbit_directory / "transformed_detections.parquet").exists():
         logger.info("Found transformed detections, starting stage cluster_and_link")
@@ -275,12 +293,12 @@ def load_initial_checkpoint_values(
             )
 
     if stage == "initial_orbit_determination":
-        clusters_path = pathlib.Path(test_orbit_directory, "clusters.parquet")
-        cluster_members_path = pathlib.Path(test_orbit_directory, "cluster_members.parquet")
-        if clusters_path.exists() and cluster_members_path.exists():
-            logger.info("Found clusters")
-            clusters = FittedClusters.from_parquet(clusters_path)
-            cluster_members = FittedClusterMembers.from_parquet(cluster_members_path)
+        fitted_clusters_path = pathlib.Path(test_orbit_directory, "fitted_clusters.parquet")
+        fitted_cluster_members_path = pathlib.Path(test_orbit_directory, "fitted_cluster_members.parquet")
+        if fitted_clusters_path.exists() and fitted_cluster_members_path.exists():
+            logger.info("Found fitted clusters")
+            clusters = FittedClusters.from_parquet(fitted_clusters_path)
+            cluster_members = FittedClusterMembers.from_parquet(fitted_cluster_members_path)
 
             if clusters.fragmented():
                 clusters = qv.defragment(clusters)
@@ -292,6 +310,29 @@ def load_initial_checkpoint_values(
                 filtered_observations=filtered_observations,
                 clusters=clusters,
                 cluster_members=cluster_members,
+            )
+
+    if stage == "fit_clusters":
+        clusters_path = pathlib.Path(test_orbit_directory, "clusters.parquet")
+        cluster_members_path = pathlib.Path(test_orbit_directory, "cluster_members.parquet")
+        transformed_detections_path = pathlib.Path(test_orbit_directory, "transformed_detections.parquet")
+        if clusters_path.exists() and cluster_members_path.exists():
+            logger.info("Found unfitted clusters")
+            clusters = Clusters.from_parquet(clusters_path)
+            cluster_members = ClusterMembers.from_parquet(cluster_members_path)
+            transformed_detections = TransformedDetections.from_parquet(transformed_detections_path)
+
+            if clusters.fragmented():
+                clusters = qv.defragment(clusters)
+            if cluster_members.fragmented():
+                cluster_members = qv.defragment(cluster_members)
+
+            return create_checkpoint_data(
+                "fit_clusters",
+                filtered_observations=filtered_observations,
+                clusters=clusters,
+                cluster_members=cluster_members,
+                transformed_detections=transformed_detections,
             )
 
     if stage == "cluster_and_link":
@@ -319,8 +360,10 @@ _OUTPUT_FILES = {
     "test_orbit_ephemeris": ("test_orbit_ephemeris.parquet", TestOrbitEphemeris),
     "filtered_observations": ("filtered_observations.parquet", Observations),
     "transformed_detections": ("transformed_detections.parquet", TransformedDetections),
-    "clusters": ("clusters.parquet", FittedClusters),
-    "cluster_members": ("cluster_members.parquet", FittedClusterMembers),
+    "clusters": ("clusters.parquet", Clusters),
+    "cluster_members": ("cluster_members.parquet", ClusterMembers),
+    "fitted_clusters": ("fitted_clusters.parquet", FittedClusters),
+    "fitted_cluster_members": ("fitted_cluster_members.parquet", FittedClusterMembers),
     "iod_orbits": ("iod_orbits.parquet", FittedOrbits),
     "iod_orbit_members": ("iod_orbit_members.parquet", FittedOrbitMembers),
     "od_orbits": ("od_orbits.parquet", FittedOrbits),
@@ -347,6 +390,8 @@ class RunResults(qv.Table):
     transformed_detections = qv.Int64Column(default=0)
     clusters = qv.Int64Column(default=0)
     cluster_members = qv.Int64Column(default=0)
+    fitted_clusters = qv.Int64Column(default=0)
+    fitted_cluster_members = qv.Int64Column(default=0)
     iod_orbits = qv.Int64Column(default=0)
     iod_orbit_members = qv.Int64Column(default=0)
     od_orbits = qv.Int64Column(default=0)
@@ -360,6 +405,8 @@ class RunResults(qv.Table):
     transformed_detections_file = qv.LargeStringColumn(nullable=True)
     clusters_file = qv.LargeStringColumn(nullable=True)
     cluster_members_file = qv.LargeStringColumn(nullable=True)
+    fitted_clusters_file = qv.LargeStringColumn(nullable=True)
+    fitted_cluster_members_file = qv.LargeStringColumn(nullable=True)
     iod_orbits_file = qv.LargeStringColumn(nullable=True)
     iod_orbit_members_file = qv.LargeStringColumn(nullable=True)
     od_orbits_file = qv.LargeStringColumn(nullable=True)
@@ -421,6 +468,8 @@ class RunResults(qv.Table):
             "transformed_detections_file": [],
             "clusters_file": [],
             "cluster_members_file": [],
+            "fitted_clusters_file": [],
+            "fitted_cluster_members_file": [],
             "iod_orbits_file": [],
             "iod_orbit_members_file": [],
             "od_orbits_file": [],
@@ -434,6 +483,8 @@ class RunResults(qv.Table):
             "transformed_detections": [],
             "clusters": [],
             "cluster_members": [],
+            "fitted_clusters": [],
+            "fitted_cluster_members": [],
             "iod_orbits": [],
             "iod_orbit_members": [],
             "od_orbits": [],
