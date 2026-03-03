@@ -2,7 +2,7 @@
 # THOR
 Tracklet-less Heliocentric Orbit Recovery  
 
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue)](https://img.shields.io/badge/Python-3.9%2B-blue)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)](https://img.shields.io/badge/Python-3.11%2B-blue)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![DOI](https://zenodo.org/badge/116747066.svg)](https://zenodo.org/badge/latestdoi/116747066)  
 [![docker - Build, Lint, and Test](https://github.com/moeyensj/thor/actions/workflows/docker-build-lint-test.yml/badge.svg)](https://github.com/moeyensj/thor/actions/workflows/docker-build-lint-test.yml)
@@ -35,7 +35,7 @@ The following installation paths are available:
 ```conda install -c moeyensj thor```
 
 Or, if preferred, installed into its own environment via:  
-```conda create -n thor_py38 -c moeyensj thor python=3.8```
+```conda create -n thor_py311 -c moeyensj thor python=3.11```
 
 ### Docker
 
@@ -61,32 +61,29 @@ Type "help", "copyright", "credits" or "license" for more information.
 ### Source
 Clone this repository using either `ssh` or `https`. Once cloned and downloaded, `cd` into the repository.
 
-To install THOR in its own `conda` enviroment please do the following:  
-
-```conda create -n thor_py38 -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt python=3.8```  
-
-Or, to install THOR in a pre-existing `conda` environment called `env`:  
-
-```conda activate env```  
-```conda install -c defaults -c conda-forge -c astropy -c moeyensj --file requirements.txt```  
-
-Once pre-requisites have been installed using either one of the options above, then:  
-
-```python setup.py install```
-
-Or, if you are actively planning to develop or contribute to THOR, then:
-
-```python setup.py develop --no-deps```
-
-You should now be able to start Python and import THOR.
+#### pip
+Install THOR and its dependencies:
 ```
-┌─(thor_py38)[moeyensj][±][main ✓][~/projects/thor]
-└─▪ python
-Python 3.8.8 (default, Apr 13 2021, 19:58:26)
-[GCC 7.3.0] :: Anaconda, Inc. on linux
-Type "help", "copyright", "credits" or "license" for more information.
+pip install .
+```
+
+To include development dependencies (ruff, pytest, etc.):
+```
+pip install ".[dev]"
+```
+
+#### pdm
+Install THOR and its dependencies:
+```
+pdm install
+```
+
+To include development dependencies:
+```
+pdm install -G dev
+```
+
+You should now be able to import THOR:
+```python
 >>> import thor
->>>
 ```
-
-**If you would like to run Jupyter Notebook or Juptyter Lab with THOR please see the installation instructions in the THOR notebooks repository.**

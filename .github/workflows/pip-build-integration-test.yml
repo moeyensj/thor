@@ -27,16 +27,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip' # caching pip dependencies
-      - name: Install openorb dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gfortran liblapack-dev
-          wget  -P /tmp/ https://storage.googleapis.com/oorb-data/oorb_data.tar.gz
-          mkdir -p /tmp/oorb/
-          tar -xvf /tmp/oorb_data.tar.gz -C /tmp/oorb/
       - name: Install Dependencies
         run: |
           pip install pip --upgrade
           pip install ".[dev]"
       - name: Integration Tests
-        run: pdm test -k integration
+        run: pytest --benchmark-disable -k integration

@@ -55,7 +55,7 @@ build-backend = "pdm.backend"
 "Issues" = "https://github.com/moeyensj/thor/issues"
 "Source" = "https://github.com/moeyensj/thor"
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "black",
     "ipython",
