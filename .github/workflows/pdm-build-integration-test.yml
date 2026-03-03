@@ -1,4 +1,4 @@
-name: pip - Build and Integration Test
+name: pdm - Build and Integration Test
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
     - cron: '0 20 * * * '
 
 jobs:
-  build-lint-test-coverage:
+  build-integration-test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -26,10 +26,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip' # caching pip dependencies
+      - name: Install pdm
+        run: pip install pdm
       - name: Install Dependencies
-        run: |
-          pip install pip --upgrade
-          pip install ".[dev]"
+        run: pdm install -G dev
       - name: Integration Tests
-        run: pytest --benchmark-disable -k integration
+        run: pdm run pytest --benchmark-disable -m "integration"
