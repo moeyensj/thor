@@ -171,10 +171,10 @@ def iod_worker(
             propagator_kwargs=propagator_kwargs,
         )
         if len(iod_orbit) > 0:
-            iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id]))
+            iod_orbit = iod_orbit.set_column("orbit_id", pa.array([linkage_id], pa.large_string()))
             iod_orbit_orbit_members = iod_orbit_orbit_members.set_column(
                 "orbit_id",
-                pa.array([linkage_id for i in range(len(iod_orbit_orbit_members))]),
+                pa.array([linkage_id] * len(iod_orbit_orbit_members), pa.large_string()),
             )
 
             # Propagate test_orbit_id from linkage_members
@@ -182,10 +182,10 @@ def iod_worker(
                 pc.equal(linkage_members.column(linkage_id_col), linkage_id)
             )
             test_orbit_id = linkage_members_subset.test_orbit_id[0].as_py()
-            iod_orbit = iod_orbit.set_column("test_orbit_id", pa.array([test_orbit_id]))
+            iod_orbit = iod_orbit.set_column("test_orbit_id", pa.array([test_orbit_id], pa.large_string()))
             iod_orbit_orbit_members = iod_orbit_orbit_members.set_column(
                 "test_orbit_id",
-                pa.repeat(test_orbit_id, len(iod_orbit_orbit_members)),
+                pa.repeat(pa.scalar(test_orbit_id, pa.large_string()), len(iod_orbit_orbit_members)),
             )
 
         time_end = time.time()
