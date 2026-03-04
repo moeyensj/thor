@@ -14,8 +14,8 @@ from .fitting import fit_clusters
 from .hotspot2d import VelocityGridHotspot2D
 from .hough import HoughLineClustering
 from .kdtree import VelocityGridKDTree
-from .optics import VelocityGridOPTICS
 from .metrics import filter_clusters_by_length
+from .optics import VelocityGridOPTICS
 from .velocity_grid import (
     VelocityGridBase,
     calculate_clustering_parameters_from_covariance,
