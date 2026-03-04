@@ -1,9 +1,9 @@
 import logging
 import pathlib
-from typing import Annotated, Dict, List, Literal, Optional, Type, Union
+from dataclasses import dataclass
+from typing import Dict, List, Literal, Optional, Union
 
 import pyarrow.parquet as pq
-import pydantic
 import quivr as qv
 import ray
 
@@ -28,93 +28,77 @@ VALID_STAGES = Literal[
 ]
 
 
-class FilterObservations(pydantic.BaseModel):
+@dataclass
+class FilterObservations:
     stage: Literal["filter_observations"]
 
 
-class GenerateEphemeris(pydantic.BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclass
+class GenerateEphemeris:
     stage: Literal["generate_ephemeris"]
     filtered_observations: Union[Observations, ray.ObjectRef]
     test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
 
 
-class RangeAndTransform(pydantic.BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclass
+class RangeAndTransform:
     stage: Literal["range_and_transform"]
     test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
     filtered_observations: Union[Observations, ray.ObjectRef]
 
 
-class ClusterAndLink(pydantic.BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclass
+class ClusterAndLink:
     stage: Literal["cluster_and_link"]
     test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
     filtered_observations: Union[Observations, ray.ObjectRef]
     transformed_detections: Union[TransformedDetections, ray.ObjectRef]
 
 
-class InitialOrbitDetermination(pydantic.BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclass
+class InitialOrbitDetermination:
     stage: Literal["initial_orbit_determination"]
     filtered_observations: Union[Observations, ray.ObjectRef]
     clusters: Union[FittedClusters, ray.ObjectRef]
     cluster_members: Union[FittedClusterMembers, ray.ObjectRef]
 
 
-class DifferentialCorrection(pydantic.BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclass
+class DifferentialCorrection:
     stage: Literal["differential_correction"]
     filtered_observations: Union[Observations, ray.ObjectRef]
     iod_orbits: Union[FittedOrbits, ray.ObjectRef]
     iod_orbit_members: Union[FittedOrbitMembers, ray.ObjectRef]
 
 
-class RecoverOrbits(pydantic.BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclass
+class RecoverOrbits:
     stage: Literal["recover_orbits"]
     filtered_observations: Union[Observations, ray.ObjectRef]
     od_orbits: Union[FittedOrbits, ray.ObjectRef]
     od_orbit_members: Union[FittedOrbitMembers, ray.ObjectRef]
 
 
-class Complete(pydantic.BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclass
+class Complete:
     stage: Literal["complete"]
     recovered_orbits: Union[FittedOrbits, ray.ObjectRef]
     recovered_orbit_members: Union[FittedOrbitMembers, ray.ObjectRef]
 
 
-CheckpointData = Annotated[
-    Union[
-        FilterObservations,
-        GenerateEphemeris,
-        RangeAndTransform,
-        ClusterAndLink,
-        InitialOrbitDetermination,
-        DifferentialCorrection,
-        RecoverOrbits,
-        Complete,
-    ],
-    pydantic.Field(discriminator="stage"),
+CheckpointData = Union[
+    FilterObservations,
+    GenerateEphemeris,
+    RangeAndTransform,
+    ClusterAndLink,
+    InitialOrbitDetermination,
+    DifferentialCorrection,
+    RecoverOrbits,
+    Complete,
 ]
 
 # A mapping from stage to model class
-stage_to_model: Dict[str, Type[pydantic.BaseModel]] = {
+stage_to_model: Dict[str, type] = {
     "filter_observations": FilterObservations,
     "generate_ephemeris": GenerateEphemeris,
     "range_and_transform": RangeAndTransform,
