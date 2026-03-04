@@ -12,7 +12,7 @@ import ray
 from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
-from .clustering import VelocityGridDBSCAN, VelocityGridHotspot2D, fit_clusters
+from .clustering import VelocityGridDBSCAN, VelocityGridHotspot2D, VelocityGridOPTICS, fit_clusters
 from .config import Config, initialize_config
 from .observations.filters import (
     ObservationFilter,
@@ -317,6 +317,7 @@ def link_test_orbit(
         _algorithm_classes = {
             "dbscan": VelocityGridDBSCAN,
             "hotspot_2d": VelocityGridHotspot2D,
+            "optics": VelocityGridOPTICS,
         }
         if config.cluster_algorithm not in _algorithm_classes:
             raise NotImplementedError(f"algorithm '{config.cluster_algorithm}' is not implemented")

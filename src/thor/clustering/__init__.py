@@ -11,6 +11,7 @@ from .data import (
 from .dbscan import VelocityGridDBSCAN
 from .fitting import fit_clusters
 from .hotspot2d import VelocityGridHotspot2D
+from .optics import VelocityGridOPTICS
 from .metrics import filter_clusters_by_length
 from .velocity_grid import (
     VelocityGridBase,
@@ -22,6 +23,7 @@ __all__ = [
     "VelocityGridBase",
     "VelocityGridDBSCAN",
     "VelocityGridHotspot2D",
+    "VelocityGridOPTICS",
     "Clusters",
     "ClusterMembers",
     "FittedClusters",
