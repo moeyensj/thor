@@ -162,7 +162,7 @@ if __name__ == "__main__":
         cluster_vx_bins=300,
         cluster_vy_bins=300,
         cluster_radius=0.005,
-        cluster_mahalanobis_distance=1.0,
+        cluster_mahalanobis_distance=None,
         cluster_velocity_bin_separation=2.0,
         cluster_whiten=False,
         cluster_min_obs=6,
