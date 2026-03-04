@@ -12,7 +12,7 @@ import ray
 from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
-from .clusters import cluster_and_link, fit_clusters
+from .clustering import VelocityGridDBSCAN, VelocityGridHotspot2D, fit_clusters
 from .config import Config, initialize_config
 from .observations.filters import (
     ObservationFilter,
@@ -313,26 +313,38 @@ def link_test_orbit(
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
 
-        # Run clustering (finding only — no fitting)
-        clusters, cluster_members = cluster_and_link(
-            transformed_detections,
-            test_orbit_ephemeris=test_orbit_ephemeris,
-            velocity_bin_separation=config.cluster_velocity_bin_separation,
+        # Instantiate the clustering algorithm from config
+        _algorithm_classes = {
+            "dbscan": VelocityGridDBSCAN,
+            "hotspot_2d": VelocityGridHotspot2D,
+        }
+        if config.cluster_algorithm not in _algorithm_classes:
+            raise NotImplementedError(f"algorithm '{config.cluster_algorithm}' is not implemented")
+
+        clustering_algorithm = _algorithm_classes[config.cluster_algorithm](
+            radius=config.cluster_radius,
             min_obs=config.cluster_min_obs,
             min_arc_length=config.cluster_min_arc_length,
             min_nights=config.cluster_min_nights,
-            mahalanobis_distance=config.cluster_mahalanobis_distance,
-            alg=config.cluster_algorithm,
-            radius=config.cluster_radius,
             vx_range=[config.cluster_vx_min, config.cluster_vx_max],
             vy_range=[config.cluster_vy_min, config.cluster_vy_max],
             vx_bins=config.cluster_vx_bins,
             vy_bins=config.cluster_vy_bins,
-            vx_values=None,
-            vy_values=None,
+            velocity_bin_separation=config.cluster_velocity_bin_separation,
+            mahalanobis_distance=config.cluster_mahalanobis_distance,
+            radius_multiplier=config.cluster_radius_multiplier,
+            density_multiplier=config.cluster_density_multiplier,
+            min_radius=config.cluster_min_radius,
+            max_radius=config.cluster_max_radius,
             chunk_size=config.cluster_chunk_size,
             max_processes=config.max_processes,
             whiten=config.cluster_whiten,
+        )
+
+        # Run clustering (finding only — no fitting)
+        clusters, cluster_members = clustering_algorithm.find_clusters(
+            transformed_detections,
+            test_orbit_ephemeris=test_orbit_ephemeris,
         )
 
         clusters_path = None

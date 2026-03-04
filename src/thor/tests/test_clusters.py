@@ -1,16 +1,14 @@
 import numpy as np
 import pytest
 
-from ..clusters import (
-    ClusterMembers,
-    Clusters,
+from ..clustering.data import ClusterMembers, Clusters, drop_duplicate_clusters
+from ..clustering.hotspot2d import (
     _adjust_labels,
     _build_label_aliases,
     _extend_2d_array,
     _find_runs,
     _label_clusters,
     _sort_order_2d,
-    drop_duplicate_clusters,
 )
 
 

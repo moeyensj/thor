@@ -25,11 +25,15 @@ class Config:
     cluster_mahalanobis_distance: float = 3.0
     cluster_velocity_bin_separation: float = 2.0
     cluster_whiten: bool = False
+    cluster_radius_multiplier: float = 5.0
+    cluster_density_multiplier: float = 2.5
+    cluster_min_radius: float = 1 / 3600  # 1 arcsec in degrees
+    cluster_max_radius: float = 0.05  # 180 arcsec in degrees
     cluster_min_obs: int = 6
     cluster_min_arc_length: float = 1.0
     cluster_min_nights: int = 3
     cluster_rchi2_threshold: float = 1e4
-    cluster_algorithm: Literal["hotspot_2d", "dbscan"] = "dbscan"
+    cluster_algorithm: str = "dbscan"
     cluster_chunk_size: int = 1000
     split_threshold: Optional[int] = None
     split_max_depth: int = 2
