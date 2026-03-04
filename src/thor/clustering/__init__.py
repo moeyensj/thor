@@ -9,6 +9,7 @@ from .data import (
     hash_obs_ids,
 )
 from .dbscan import VelocityGridDBSCAN
+from .fft import VelocityGridFFT
 from .fitting import fit_clusters
 from .hotspot2d import VelocityGridHotspot2D
 from .kdtree import VelocityGridKDTree
@@ -23,6 +24,7 @@ __all__ = [
     "ClusteringAlgorithm",
     "VelocityGridBase",
     "VelocityGridDBSCAN",
+    "VelocityGridFFT",
     "VelocityGridHotspot2D",
     "VelocityGridKDTree",
     "VelocityGridOPTICS",
