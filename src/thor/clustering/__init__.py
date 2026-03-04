@@ -12,6 +12,7 @@ from .dbscan import VelocityGridDBSCAN
 from .fft import VelocityGridFFT
 from .fitting import fit_clusters
 from .hotspot2d import VelocityGridHotspot2D
+from .hough import HoughLineClustering
 from .kdtree import VelocityGridKDTree
 from .optics import VelocityGridOPTICS
 from .metrics import filter_clusters_by_length
@@ -28,6 +29,7 @@ __all__ = [
     "VelocityGridHotspot2D",
     "VelocityGridKDTree",
     "VelocityGridOPTICS",
+    "HoughLineClustering",
     "Clusters",
     "ClusterMembers",
     "FittedClusters",

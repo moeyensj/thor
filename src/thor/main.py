@@ -13,6 +13,7 @@ from adam_core.ray_cluster import initialize_use_ray
 
 from .checkpointing import create_checkpoint_data, load_initial_checkpoint_values
 from .clustering import (
+    HoughLineClustering,
     VelocityGridDBSCAN,
     VelocityGridFFT,
     VelocityGridHotspot2D,
@@ -327,6 +328,7 @@ def link_test_orbit(
             "optics": VelocityGridOPTICS,
             "kdtree": VelocityGridKDTree,
             "fft": VelocityGridFFT,
+            "hough": HoughLineClustering,
         }
         if config.cluster_algorithm not in _algorithm_classes:
             raise NotImplementedError(f"algorithm '{config.cluster_algorithm}' is not implemented")
