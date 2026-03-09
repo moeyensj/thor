@@ -255,7 +255,15 @@ def _find_clusters_hotspots_2d(
 
 
 def _hotspot2d_find_worker(
-    vx, vy, transformed_detections, radius=1 / 3600, min_obs=6, min_arc_length=1.5, min_nights=3
+    vx,
+    vy,
+    transformed_detections,
+    radius=1 / 3600,
+    min_obs=6,
+    min_arc_length=1.5,
+    min_nights=3,
+    tracklets=None,
+    tracklet_members=None,
 ):
     """Ray-serializable worker that uses Hotspot2D point clustering."""
     return _cluster_velocity_find_worker(
@@ -268,6 +276,8 @@ def _hotspot2d_find_worker(
         min_nights=min_nights,
         point_cluster_fn=_find_clusters_hotspots_2d,
         alg_name="Hotspot2D",
+        tracklets=tracklets,
+        tracklet_members=tracklet_members,
     )
 
 

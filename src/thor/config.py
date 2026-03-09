@@ -36,6 +36,10 @@ class Config:
     cluster_rchi2_threshold: float = 1e4
     cluster_algorithm: str = "dbscan"
     cluster_chunk_size: int = 1000
+    use_tracklets: bool = True
+    tracklet_min_obs: int = 2
+    tracklet_max_velocity: Optional[float] = None
+    tracklet_mahalanobis_distance: float = 3.0
     split_threshold: Optional[int] = None
     split_max_depth: int = 2
     split_method: Literal["healpixel", "eigenvalue"] = "eigenvalue"
@@ -44,6 +48,7 @@ class Config:
             "filter_observations",
             "generate_ephemeris",
             "range_and_transform",
+            "form_tracklets",
             "cluster_and_link",
             "fit_clusters",
             "initial_orbit_determination",

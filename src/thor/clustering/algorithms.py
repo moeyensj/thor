@@ -1,8 +1,13 @@
-from typing import Optional, Protocol, Tuple
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional, Protocol, Tuple
 
 from ..orbit import TestOrbitEphemeris
 from ..range_and_transform import TransformedDetections
 from .data import ClusterMembers, Clusters
+
+if TYPE_CHECKING:
+    from .tracklets import TrackletMembers, Tracklets
 
 
 class ClusteringAlgorithm(Protocol):
@@ -21,6 +26,8 @@ class ClusteringAlgorithm(Protocol):
         self,
         transformed_detections: TransformedDetections,
         test_orbit_ephemeris: Optional[TestOrbitEphemeris] = None,
+        tracklets: Optional[Tracklets] = None,
+        tracklet_members: Optional[TrackletMembers] = None,
     ) -> Tuple[Clusters, ClusterMembers]:
         """
         Find clusters in transformed detections.
@@ -33,6 +40,11 @@ class ClusteringAlgorithm(Protocol):
         test_orbit_ephemeris : TestOrbitEphemeris, optional
             Test orbit ephemeris with covariances, used by some algorithms
             to derive clustering parameters automatically.
+        tracklets : Tracklets, optional
+            Pre-formed tracklets. When provided, clustering may operate on
+            tracklet centroids rather than individual observations.
+        tracklet_members : TrackletMembers, optional
+            Mapping from tracklet_id to obs_id.
 
         Returns
         -------

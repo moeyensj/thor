@@ -1,9 +1,13 @@
 import os
 import shutil
 
+import numpy as np
 import pyarrow.compute as pc
 import pytest
 from adam_assist import ASSISTPropagator
+from adam_core.coordinates import CartesianCoordinates, CoordinateCovariances
+from adam_core.orbits import Orbits
+from adam_core.orbits.variants import VariantOrbits
 from adam_core.utils.helpers import make_observations, make_real_orbits
 
 from ..checkpointing import (
@@ -315,6 +319,20 @@ def test_link_test_orbit_simple(orbits, observations, integration_config):
             (transformed_detections,) = stage_result.result
             assert len(transformed_detections) > 0, "range_and_transform produced empty result"
 
+        elif stage_result.name == "form_tracklets":
+            tracklets, tracklet_members = stage_result.result
+            if tracklets is not None:
+                from ..clustering.tracklets import TrackletMembers, Tracklets
+
+                assert isinstance(tracklets, Tracklets), "form_tracklets should return Tracklets"
+                assert isinstance(tracklet_members, TrackletMembers)
+                assert len(tracklets) > 0, "form_tracklets produced no tracklets"
+                assert len(tracklet_members) > 0, "form_tracklets produced no tracklet members"
+                # Every observation from transformed_detections should appear exactly once
+                member_obs = set(tracklet_members.obs_id.to_pylist())
+                td_obs = set(transformed_detections.id.to_pylist())
+                assert member_obs == td_obs, "Not all observations accounted for in tracklets"
+
         elif stage_result.name == "cluster_and_link":
             clusters, cluster_members = stage_result.result
             assert isinstance(clusters, Clusters), "cluster_and_link should return unfitted Clusters"
@@ -346,11 +364,134 @@ def test_link_test_orbit_simple(orbits, observations, integration_config):
             obs_ids_actual = recovered_orbit_members.obs_id
             assert pc.all(pc.equal(obs_ids_actual, obs_ids_expected))
 
-    # Verify all 8 stages executed
+    # Verify all 9 stages executed
     expected_stages = [
         "filter_observations",
         "generate_ephemeris",
         "range_and_transform",
+        "form_tracklets",
+        "cluster_and_link",
+        "fit_clusters",
+        "initial_orbit_determination",
+        "differential_correction",
+        "recover_orbits",
+    ]
+    assert stages_seen == expected_stages, f"Expected stages {expected_stages}, but saw {stages_seen}"
+
+
+@pytest.mark.integration
+def test_link_test_orbit_inflated_covariance(orbits, observations, integration_config):
+    """
+    Integration test with a perturbed test orbit sampled from an inflated covariance.
+
+    Uses the real Ivezic observations but creates an offset test orbit by:
+    1. Inflating the orbit covariance by 1e5
+    2. Sampling a variant orbit from the inflated covariance
+    3. Attaching the inflated covariance to the sampled state
+
+    This exercises tracklet formation with meaningful velocity bounds (the inflated
+    covariance produces real sigma_vx/sigma_vy values rather than near-zero).
+    """
+    object_id = "202930 Ivezic (1998 SG172)"
+    integration_config.max_processes = 1
+    covariance_scale = 1e5
+
+    (
+        _test_orbit,
+        observations,
+        obs_ids_expected,
+        integration_config,
+    ) = setup_test_data(object_id, orbits, observations, integration_config, max_arc_length=14)
+
+    # Get the original orbit and inflate its covariance
+    orbit = orbits.select("object_id", object_id)
+    cov = np.array(orbit.coordinates.covariance.values[0].as_py()).reshape(6, 6)
+    inflated_cov = cov * covariance_scale
+
+    # Build orbit with inflated covariance for sampling
+    inflated_cov_obj = CoordinateCovariances.from_matrix(inflated_cov.reshape(1, 6, 6))
+    inflated_coords = CartesianCoordinates.from_kwargs(
+        x=orbit.coordinates.x,
+        y=orbit.coordinates.y,
+        z=orbit.coordinates.z,
+        vx=orbit.coordinates.vx,
+        vy=orbit.coordinates.vy,
+        vz=orbit.coordinates.vz,
+        time=orbit.coordinates.time,
+        frame=orbit.coordinates.frame,
+        origin=orbit.coordinates.origin,
+        covariance=inflated_cov_obj,
+    )
+    inflated_orbit = Orbits.from_kwargs(
+        orbit_id=orbit.orbit_id,
+        object_id=orbit.object_id,
+        coordinates=inflated_coords,
+    )
+
+    # Sample a variant (num_samples=1 has a bug in adam_core, use 2 and take first)
+    variant = VariantOrbits.create(inflated_orbit, method="monte-carlo", num_samples=2, seed=42)[0]
+
+    # Build test orbit from the sampled state with the inflated covariance attached
+    perturbed_coords = CartesianCoordinates.from_kwargs(
+        x=variant.coordinates.x,
+        y=variant.coordinates.y,
+        z=variant.coordinates.z,
+        vx=variant.coordinates.vx,
+        vy=variant.coordinates.vy,
+        vz=variant.coordinates.vz,
+        time=orbit.coordinates.time,
+        frame=orbit.coordinates.frame,
+        origin=orbit.coordinates.origin,
+        covariance=inflated_cov_obj,
+    )
+    perturbed_orbit = Orbits.from_kwargs(
+        orbit_id=orbit.orbit_id,
+        object_id=orbit.object_id,
+        coordinates=perturbed_coords,
+    )
+    test_orbit = THORbits.from_orbits(perturbed_orbit)
+
+    # Widen the observation filter radius to account for the orbital offset
+    # (the perturbed orbit is ~4 arcsec away from the true position)
+    integration_config.filter_cell_radius = 10.0 / 3600  # 10 arcsec
+
+    stages_seen = []
+    for stage_result in link_test_orbit(test_orbit, observations, config=integration_config):
+        stages_seen.append(stage_result.name)
+
+        if stage_result.name == "form_tracklets":
+            tracklets, tracklet_members = stage_result.result
+            if tracklets is not None:
+                from ..clustering.tracklets import TrackletMembers, Tracklets
+
+                assert isinstance(tracklets, Tracklets)
+                assert isinstance(tracklet_members, TrackletMembers)
+                assert len(tracklets) > 0, "form_tracklets produced no tracklets"
+                assert len(tracklet_members) > 0, "form_tracklets produced no tracklet members"
+
+                # Check that some multi-observation tracklets formed
+                multi_obs = [n for n in tracklets.num_obs.to_pylist() if n >= 2]
+                assert len(multi_obs) > 0, "Expected multi-obs tracklets with inflated covariance"
+
+        elif stage_result.name == "recover_orbits":
+            recovered_orbits, recovered_orbit_members = stage_result.result
+            assert len(recovered_orbits) >= 1, f"Expected at least 1 recovered orbit, got {len(recovered_orbits)}"
+            # With inflated covariance the orbit is offset, so we check that we
+            # recover a substantial fraction of the expected observations
+            recovered_obs = set(recovered_orbit_members.obs_id.to_pylist())
+            expected_obs = set(obs_ids_expected.to_pylist())
+            overlap = recovered_obs & expected_obs
+            fraction = len(overlap) / len(expected_obs)
+            assert fraction >= 0.5, (
+                f"Expected to recover at least 50% of observations, got {fraction:.1%} "
+                f"({len(overlap)}/{len(expected_obs)})"
+            )
+
+    expected_stages = [
+        "filter_observations",
+        "generate_ephemeris",
+        "range_and_transform",
+        "form_tracklets",
         "cluster_and_link",
         "fit_clusters",
         "initial_orbit_determination",
@@ -395,6 +536,17 @@ def test_load_initial_checkpoint_values(working_dir):
 
     # Create transformed_detections file to simulate next checkpoint
     TransformedDetections.empty().to_parquet(os.path.join(working_dir, "transformed_detections.parquet"))
+
+    checkpoint = load_initial_checkpoint_values(working_dir)
+    assert checkpoint.stage == "form_tracklets"
+    assert checkpoint.filtered_observations is not None
+    assert checkpoint.transformed_detections is not None
+
+    # Create tracklet files to simulate form_tracklets checkpoint
+    from thor.clustering.tracklets import TrackletMembers, Tracklets
+
+    Tracklets.empty().to_parquet(os.path.join(working_dir, "tracklets.parquet"))
+    TrackletMembers.empty().to_parquet(os.path.join(working_dir, "tracklet_members.parquet"))
 
     checkpoint = load_initial_checkpoint_values(working_dir)
     assert checkpoint.stage == "cluster_and_link"

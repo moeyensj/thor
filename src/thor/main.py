@@ -20,6 +20,7 @@ from .clustering import (
     VelocityGridKDTree,
     VelocityGridOPTICS,
     fit_clusters,
+    form_tracklets,
 )
 
 try:
@@ -72,6 +73,7 @@ class LinkTestOrbitStageResult:
         "filter_observations",
         "generate_ephemeris",
         "range_and_transform",
+        "form_tracklets",
         "cluster_and_link",
         "fit_clusters",
         "initial_orbit_determination",
@@ -318,16 +320,80 @@ def link_test_orbit(
                 logger.info("Placed transformed detections in the object store.")
 
         checkpoint = create_checkpoint_data(
+            "form_tracklets",
+            test_orbit_ephemeris=test_orbit_ephemeris,
+            filtered_observations=filtered_observations,
+            transformed_detections=transformed_detections,
+        )
+
+    if checkpoint.stage == "form_tracklets":
+        test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
+        filtered_observations = checkpoint.filtered_observations
+        transformed_detections = checkpoint.transformed_detections
+
+        tracklets = None
+        tracklet_members = None
+        if config.use_tracklets:
+            if isinstance(transformed_detections, ray.ObjectRef):
+                td_local = ray.get(transformed_detections)
+            else:
+                td_local = transformed_detections
+            if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                toe_local = ray.get(test_orbit_ephemeris)
+            else:
+                toe_local = test_orbit_ephemeris
+
+            tracklets, tracklet_members = form_tracklets(
+                td_local,
+                toe_local,
+                min_obs=config.tracklet_min_obs,
+                max_velocity=config.tracklet_max_velocity,
+                mahalanobis_distance=config.tracklet_mahalanobis_distance,
+            )
+
+        tracklets_path = None
+        tracklet_members_path = None
+        if test_orbit_directory is not None and tracklets is not None:
+            logger.info(f"Saving tracklets to {test_orbit_directory}...")
+            tracklets_path = os.path.join(test_orbit_directory, "tracklets.parquet")
+            tracklet_members_path = os.path.join(test_orbit_directory, "tracklet_members.parquet")
+            tracklets.to_parquet(tracklets_path)
+            tracklet_members.to_parquet(tracklet_members_path)
+
+        yield LinkTestOrbitStageResult(
+            name="form_tracklets",
+            result=(
+                tracklets_path if yield_paths and tracklets_path else tracklets,
+                tracklet_members_path if yield_paths and tracklet_members_path else tracklet_members,
+            ),
+            path=(tracklets_path, tracklet_members_path),
+        )
+        if stop_after_stage == "form_tracklets":
+            return
+
+        if use_ray:
+            if not isinstance(test_orbit_ephemeris, ray.ObjectRef):
+                test_orbit_ephemeris = ray.put(test_orbit_ephemeris)
+            if not isinstance(filtered_observations, ray.ObjectRef):
+                filtered_observations = ray.put(filtered_observations)
+            if not isinstance(transformed_detections, ray.ObjectRef):
+                transformed_detections = ray.put(transformed_detections)
+
+        checkpoint = create_checkpoint_data(
             "cluster_and_link",
             test_orbit_ephemeris=test_orbit_ephemeris,
             filtered_observations=filtered_observations,
             transformed_detections=transformed_detections,
+            tracklets=tracklets,
+            tracklet_members=tracklet_members,
         )
 
     if checkpoint.stage == "cluster_and_link":
         test_orbit_ephemeris = checkpoint.test_orbit_ephemeris
         filtered_observations = checkpoint.filtered_observations
         transformed_detections = checkpoint.transformed_detections
+        tracklets = getattr(checkpoint, "tracklets", None)
+        tracklet_members = getattr(checkpoint, "tracklet_members", None)
 
         # Instantiate the clustering algorithm from config
         _algorithm_classes = {
@@ -368,6 +434,8 @@ def link_test_orbit(
         clusters, cluster_members = clustering_algorithm.find_clusters(
             transformed_detections,
             test_orbit_ephemeris=test_orbit_ephemeris,
+            tracklets=tracklets,
+            tracklet_members=tracklet_members,
         )
 
         clusters_path = None
