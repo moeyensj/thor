@@ -172,6 +172,8 @@ class HoughLineClustering:
         self,
         transformed_detections: TransformedDetections,
         test_orbit_ephemeris=None,
+        tracklets=None,
+        tracklet_members=None,
     ) -> Tuple[Clusters, ClusterMembers]:
         """
         Find clusters using Hough-style line finding in (x, y, t) space.

@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE_TAG: ${{ github.sha }}
-      OORB_DATA: /tmp/oorb/data
   
     steps:
       - name: Checkout git repo

@@ -15,9 +15,6 @@ jobs:
     defaults:
       run:
         shell: bash -l {0}
-    env:
-      OORB_DATA: /tmp/oorb/data
-
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v4

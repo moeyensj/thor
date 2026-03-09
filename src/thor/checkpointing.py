@@ -20,6 +20,7 @@ VALID_STAGES = Literal[
     "filter_observations",
     "generate_ephemeris",
     "range_and_transform",
+    "form_tracklets",
     "cluster_and_link",
     "fit_clusters",
     "initial_orbit_determination",
@@ -49,11 +50,21 @@ class RangeAndTransform:
 
 
 @dataclass
+class FormTracklets:
+    stage: Literal["form_tracklets"]
+    test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
+    filtered_observations: Union[Observations, ray.ObjectRef]
+    transformed_detections: Union[TransformedDetections, ray.ObjectRef]
+
+
+@dataclass
 class ClusterAndLink:
     stage: Literal["cluster_and_link"]
     test_orbit_ephemeris: Union[TestOrbitEphemeris, ray.ObjectRef]
     filtered_observations: Union[Observations, ray.ObjectRef]
     transformed_detections: Union[TransformedDetections, ray.ObjectRef]
+    tracklets: Optional[object] = None
+    tracklet_members: Optional[object] = None
 
 
 @dataclass
@@ -100,6 +111,7 @@ CheckpointData = Union[
     FilterObservations,
     GenerateEphemeris,
     RangeAndTransform,
+    FormTracklets,
     ClusterAndLink,
     FitClusters,
     InitialOrbitDetermination,
@@ -113,6 +125,7 @@ stage_to_model: Dict[str, type] = {
     "filter_observations": FilterObservations,
     "generate_ephemeris": GenerateEphemeris,
     "range_and_transform": RangeAndTransform,
+    "form_tracklets": FormTracklets,
     "cluster_and_link": ClusterAndLink,
     "fit_clusters": FitClusters,
     "initial_orbit_determination": InitialOrbitDetermination,
@@ -181,9 +194,15 @@ def detect_checkpoint_stage(test_orbit_directory: pathlib.Path) -> VALID_STAGES:
         logger.info("Found unfitted clusters, starting stage fit_clusters")
         return "fit_clusters"
 
-    if (test_orbit_directory / "transformed_detections.parquet").exists():
-        logger.info("Found transformed detections, starting stage cluster_and_link")
+    if (test_orbit_directory / "tracklets.parquet").exists() and (
+        test_orbit_directory / "tracklet_members.parquet"
+    ).exists():
+        logger.info("Found tracklets, starting stage cluster_and_link")
         return "cluster_and_link"
+
+    if (test_orbit_directory / "transformed_detections.parquet").exists():
+        logger.info("Found transformed detections, starting stage form_tracklets")
+        return "form_tracklets"
 
     if (test_orbit_directory / "test_orbit_ephemeris.parquet").exists():
         logger.info("Found test orbit ephemeris, starting stage range_and_transform")
@@ -337,12 +356,40 @@ def load_initial_checkpoint_values(
 
     if stage == "cluster_and_link":
         transformed_detections_path = pathlib.Path(test_orbit_directory, "transformed_detections.parquet")
+        tracklets_path = pathlib.Path(test_orbit_directory, "tracklets.parquet")
+        tracklet_members_path = pathlib.Path(test_orbit_directory, "tracklet_members.parquet")
+
         if transformed_detections_path.exists():
             logger.info("Found transformed detections")
             transformed_detections = TransformedDetections.from_parquet(transformed_detections_path)
 
+            tracklets = None
+            tracklet_members_data = None
+            if tracklets_path.exists() and tracklet_members_path.exists():
+                from thor.clustering.tracklets import TrackletMembers as TM
+                from thor.clustering.tracklets import Tracklets as T
+
+                logger.info("Found tracklets")
+                tracklets = T.from_parquet(tracklets_path)
+                tracklet_members_data = TM.from_parquet(tracklet_members_path)
+
             return create_checkpoint_data(
                 "cluster_and_link",
+                test_orbit_ephemeris=test_orbit_ephemeris,
+                filtered_observations=filtered_observations,
+                transformed_detections=transformed_detections,
+                tracklets=tracklets,
+                tracklet_members=tracklet_members_data,
+            )
+
+    if stage == "form_tracklets":
+        transformed_detections_path = pathlib.Path(test_orbit_directory, "transformed_detections.parquet")
+        if transformed_detections_path.exists():
+            logger.info("Found transformed detections, starting tracklet formation")
+            transformed_detections = TransformedDetections.from_parquet(transformed_detections_path)
+
+            return create_checkpoint_data(
+                "form_tracklets",
                 test_orbit_ephemeris=test_orbit_ephemeris,
                 filtered_observations=filtered_observations,
                 transformed_detections=transformed_detections,

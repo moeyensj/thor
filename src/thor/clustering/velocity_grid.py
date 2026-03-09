@@ -405,6 +405,7 @@ def _cluster_velocity(
         List[npt.NDArray[np.int64]],
     ],
     alg_name: str = "clustering",
+    tracklet_member_obs_ids: Optional[dict] = None,
 ) -> Tuple[Clusters, ClusterMembers]:
     """
     Cluster THOR projection at a single velocity hypothesis.
@@ -415,9 +416,9 @@ def _cluster_velocity(
     Parameters
     ----------
     obs_ids : array-like
-        Observation IDs.
+        Observation IDs (or tracklet IDs when tracklets are used).
     x, y : ndarray
-        Gnomonic coordinates in degrees.
+        Gnomonic coordinates in degrees (or tracklet centroids).
     dt : ndarray
         Time offsets from first observation in days.
     nights : ndarray
@@ -436,6 +437,10 @@ def _cluster_velocity(
         2D clustering function with signature ``(points, eps, min_samples) -> list[ndarray]``.
     alg_name : str
         Algorithm name for log messages.
+    tracklet_member_obs_ids : dict, optional
+        When clustering on tracklet centroids, a mapping from tracklet_id
+        to list of obs_ids. If provided, cluster membership is expanded
+        from tracklets back to individual observations.
 
     Returns
     -------
@@ -486,13 +491,23 @@ def _cluster_velocity(
     cluster_members_cluster_ids = []
     cluster_members_obs_ids = []
     for cluster in clusters:
-        id = uuid.uuid4().hex
-        obs_ids_i = obs_ids[cluster]
+        cid = uuid.uuid4().hex
+        ids_in_cluster = obs_ids[cluster]
+
+        if tracklet_member_obs_ids is not None:
+            # Expand tracklet IDs to observation IDs
+            expanded = []
+            for tid in ids_in_cluster:
+                expanded.extend(tracklet_member_obs_ids[tid])
+            obs_ids_i = np.array(expanded)
+        else:
+            obs_ids_i = ids_in_cluster
+
         num_obs = len(obs_ids_i)
 
-        cluster_ids.append(id)
+        cluster_ids.append(cid)
         cluster_num_obs.append(num_obs)
-        cluster_members_cluster_ids.append(np.full(num_obs, id))
+        cluster_members_cluster_ids.append(np.full(num_obs, cid))
         cluster_members_obs_ids.append(obs_ids_i)
 
     clusters_table = Clusters.from_kwargs(
@@ -521,6 +536,8 @@ def _cluster_velocity_find_worker(
     min_nights: int,
     point_cluster_fn: Callable,
     alg_name: str = "clustering",
+    tracklets: Optional[object] = None,
+    tracklet_members: Optional[object] = None,
 ) -> Tuple[Clusters, ClusterMembers]:
     """
     Worker that clusters a batch of velocity hypotheses and deduplicates.
@@ -537,6 +554,11 @@ def _cluster_velocity_find_worker(
         2D clustering function.
     alg_name : str
         Algorithm name for log messages.
+    tracklets : Tracklets, optional
+        Pre-formed tracklets. When provided, clustering operates on
+        tracklet centroids.
+    tracklet_members : TrackletMembers, optional
+        Mapping from tracklet_id to obs_id.
 
     Returns
     -------
@@ -545,11 +567,32 @@ def _cluster_velocity_find_worker(
     """
     time_start = time.perf_counter()
 
-    obs_ids = transformed_detections.id.to_numpy(zero_copy_only=False)
-    nights = transformed_detections.night.to_numpy(zero_copy_only=False)
-    x = transformed_detections.coordinates.theta_x.to_numpy(zero_copy_only=False)
-    y = transformed_detections.coordinates.theta_y.to_numpy(zero_copy_only=False)
-    mjd = transformed_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
+    # Determine whether to cluster on tracklet centroids or raw observations
+    tracklet_member_obs_ids = None
+    if tracklets is not None and tracklet_members is not None and len(tracklets) > 0:
+        # Cluster on tracklet centroids
+        point_ids = tracklets.tracklet_id.to_numpy(zero_copy_only=False)
+        nights = tracklets.night.to_numpy(zero_copy_only=False)
+        x = tracklets.theta_x.to_numpy(zero_copy_only=False)
+        y = tracklets.theta_y.to_numpy(zero_copy_only=False)
+        mjd = tracklets.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
+
+        # Build tracklet_id -> [obs_id, ...] lookup
+        tracklet_member_obs_ids = {}
+        tm_tids = tracklet_members.tracklet_id.to_numpy(zero_copy_only=False)
+        tm_oids = tracklet_members.obs_id.to_numpy(zero_copy_only=False)
+        for tid, oid in zip(tm_tids, tm_oids):
+            if tid not in tracklet_member_obs_ids:
+                tracklet_member_obs_ids[tid] = []
+            tracklet_member_obs_ids[tid].append(oid)
+    else:
+        # Cluster on raw observations
+        point_ids = transformed_detections.id.to_numpy(zero_copy_only=False)
+        nights = transformed_detections.night.to_numpy(zero_copy_only=False)
+        x = transformed_detections.coordinates.theta_x.to_numpy(zero_copy_only=False)
+        y = transformed_detections.coordinates.theta_y.to_numpy(zero_copy_only=False)
+        mjd = transformed_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
+
     dt = mjd - mjd.min()
 
     all_clusters = Clusters.empty()
@@ -557,7 +600,7 @@ def _cluster_velocity_find_worker(
 
     for vx_i, vy_i in zip(vx, vy):
         clusters_i, cluster_members_i = _cluster_velocity(
-            obs_ids,
+            point_ids,
             x,
             y,
             dt,
@@ -570,6 +613,7 @@ def _cluster_velocity_find_worker(
             min_nights=min_nights,
             point_cluster_fn=point_cluster_fn,
             alg_name=alg_name,
+            tracklet_member_obs_ids=tracklet_member_obs_ids,
         )
         if len(clusters_i) == 0:
             continue
@@ -713,6 +757,8 @@ class VelocityGridBase(abc.ABC):
         self,
         transformed_detections: TransformedDetections,
         test_orbit_ephemeris: Optional[TestOrbitEphemeris] = None,
+        tracklets: Optional[object] = None,
+        tracklet_members: Optional[object] = None,
     ) -> Tuple[Clusters, ClusterMembers]:
         """
         Find clusters using velocity-grid sweep + 2D point clustering.
@@ -723,6 +769,11 @@ class VelocityGridBase(abc.ABC):
             Observations in the test orbit's co-moving gnomonic frame.
         test_orbit_ephemeris : TestOrbitEphemeris, optional
             If provided, clustering parameters are calculated from covariances.
+        tracklets : Tracklets, optional
+            Pre-formed tracklets. When provided, clustering operates on
+            tracklet centroids instead of individual observations.
+        tracklet_members : TrackletMembers, optional
+            Mapping from tracklet_id to obs_id.
 
         Returns
         -------
@@ -786,8 +837,18 @@ class VelocityGridBase(abc.ABC):
             logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
             return Clusters.empty(), ClusterMembers.empty()
 
+        if tracklets is not None and tracklet_members is not None and len(tracklets) > 0:
+            n_tracklets = len(tracklets)
+            n_multi = int(np.sum(np.array(tracklets.num_obs.to_pylist()) > 1))
+            logger.info(
+                f"Using {n_tracklets} tracklets ({n_multi} multi-obs) "
+                f"instead of {len(transformed_detections)} raw observations."
+            )
+
         # Run velocity grid sweep
-        all_clusters, all_cluster_members = self._run_velocity_sweep(vxx, vyy, transformed_detections, radius)
+        all_clusters, all_cluster_members = self._run_velocity_sweep(
+            vxx, vyy, transformed_detections, radius, tracklets=tracklets, tracklet_members=tracklet_members
+        )
 
         num_clusters = len(all_clusters)
         if num_clusters == 0:
@@ -882,6 +943,8 @@ class VelocityGridBase(abc.ABC):
         vyy: npt.NDArray[np.float64],
         transformed_detections: TransformedDetections,
         radius: float,
+        tracklets: Optional[object] = None,
+        tracklet_members: Optional[object] = None,
     ) -> Tuple[Clusters, ClusterMembers]:
         """Execute velocity sweep across all grid points."""
         all_clusters = Clusters.empty()
@@ -919,6 +982,13 @@ class VelocityGridBase(abc.ABC):
                 transformed_ref = ray.put(transformed_detections)
                 logger.info("Placed transformed detections in the object store.")
 
+            tracklets_ref = None
+            tracklet_members_ref = None
+            if tracklets is not None and tracklet_members is not None:
+                tracklets_ref = ray.put(tracklets)
+                tracklet_members_ref = ray.put(tracklet_members)
+                logger.info("Placed tracklets in the object store.")
+
             remote_fn = self._make_ray_remote()
 
             futures = []
@@ -934,6 +1004,8 @@ class VelocityGridBase(abc.ABC):
                         min_obs=self.min_obs,
                         min_arc_length=self.min_arc_length,
                         min_nights=self.min_nights,
+                        tracklets=tracklets_ref,
+                        tracklet_members=tracklet_members_ref,
                     )
                 )
 
@@ -971,6 +1043,8 @@ class VelocityGridBase(abc.ABC):
                     min_nights=self.min_nights,
                     point_cluster_fn=point_cluster_fn,
                     alg_name=self._alg_name,
+                    tracklets=tracklets,
+                    tracklet_members=tracklet_members,
                 )
 
                 all_clusters = qv.concatenate([all_clusters, clusters_i])
