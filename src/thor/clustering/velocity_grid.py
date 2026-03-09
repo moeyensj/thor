@@ -33,6 +33,25 @@ from .metrics import filter_clusters_by_length
 logger = logging.getLogger(__name__)
 
 
+def _estimate_astrometric_precision(
+    transformed_detections: TransformedDetections,
+    fallback: float = 1.0 / 3600,
+) -> float:
+    """Estimate astrometric precision from observation covariances.
+
+    Returns fallback (default 1 arcsec) if covariances are NaN or unavailable.
+    """
+    try:
+        covs = transformed_detections.coordinates.covariance.to_matrix()
+        pos_var = covs[:, 0, 0]
+        finite_mask = np.isfinite(pos_var) & (pos_var > 0)
+        if np.any(finite_mask):
+            return float(np.sqrt(np.median(pos_var[finite_mask])))
+    except Exception:
+        pass
+    return fallback
+
+
 def calculate_clustering_parameters_from_covariance(
     test_orbit_ephemeris: TestOrbitEphemeris,
     transformed_detections: Union[TransformedDetections, ray.ObjectRef],
@@ -40,11 +59,12 @@ def calculate_clustering_parameters_from_covariance(
     velocity_bin_separation: float = 2.0,
     radius_multiplier: float = 5.0,
     density_multiplier: float = 2.5,
-    min_radius: float = 1 / 3600,
+    min_radius: float = 0.01 / 3600,
     max_radius: float = 0.05,
     min_bins: int = 10,
     max_bins: int = 1000,
     whiten: bool = False,
+    astrometric_precision: Optional[float] = None,
 ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], float, dict]:
     """
     Calculate clustering parameters (velocity grid and radius) from test orbit
@@ -55,13 +75,15 @@ def calculate_clustering_parameters_from_covariance(
     based on velocity uncertainties.
 
     The clustering radius is computed from two competing bounds:
-    - Lower bound: radius_multiplier x max positional sigma (from covariance
-      eigenvalues). This ensures the radius captures the scatter of a real
-      object's detections after velocity de-rotation.
+    - Combined lower bound: radius_multiplier x sqrt(sigma_astro^2 + sigma_orbital^2),
+      where sigma_orbital is the max positional sigma from covariance eigenvalues and
+      sigma_astro is the astrometric precision. This ensures the radius captures both
+      astrometric scatter and orbital uncertainty.
     - Upper bound: density_multiplier x characteristic separation, where the
       density is computed from the total number of observations divided by the
-      projected phase space volume (covariance area). This caps the radius to
-      limit contamination from background detections.
+      observation footprint area. This caps the radius to limit contamination
+      from background detections. The upper bound is applied subject to an
+      astrometric floor of radius_multiplier x sigma_astro.
 
     The ephemeris is automatically filtered to only include times within the
     observation time range, ensuring parameters are calculated from relevant
@@ -86,7 +108,7 @@ def calculate_clustering_parameters_from_covariance(
         Multiplier on the characteristic inter-source separation for the radius
         upper bound. [Default = 2.5]
     min_radius : float, optional
-        Minimum radius in degrees. [Default = 1/3600]
+        Minimum radius in degrees. [Default = 0.01/3600]
     max_radius : float, optional
         Maximum radius in degrees. [Default = 0.05]
     min_bins : int, optional
@@ -96,6 +118,10 @@ def calculate_clustering_parameters_from_covariance(
     whiten : bool, optional
         If True, also report clustering parameters in whitened (sigma) units.
         [Default = False]
+    astrometric_precision : float, optional
+        Astrometric precision in degrees. If None, estimated from observation
+        covariances (falling back to 1 arcsec if covariances are unavailable).
+        [Default = None]
 
     Returns
     -------
@@ -185,8 +211,18 @@ def calculate_clustering_parameters_from_covariance(
     all_eigvals = np.linalg.eigvalsh(valid_pos_covs)  # (n_valid, 2)
     all_eigvals = np.maximum(all_eigvals, 1e-18)
     max_sigma_pos = np.sqrt(np.max(all_eigvals))
+    sigma_orbital = max_sigma_pos
 
-    r_lower = radius_multiplier * max_sigma_pos
+    # --- Astrometric precision ---
+    if astrometric_precision is not None:
+        sigma_astro = astrometric_precision
+    else:
+        sigma_astro = _estimate_astrometric_precision(transformed_detections)
+
+    # Combined radius: quadrature sum of astrometric and orbital uncertainties
+    radius_combined = radius_multiplier * np.sqrt(sigma_astro**2 + sigma_orbital**2)
+    # Astrometric floor: never shrink below the pure astrometric term
+    astro_floor = radius_multiplier * sigma_astro
 
     # --- Upper bound: detection density within the observation footprint ---
     obs_x = transformed_detections.coordinates.theta_x.to_numpy(zero_copy_only=False)
@@ -208,17 +244,19 @@ def calculate_clustering_parameters_from_covariance(
         r_sep = np.inf
         r_upper = np.inf
 
-    # --- Final radius: lower bound clipped by upper bound, then hard floor/ceiling ---
-    radius = max(r_lower, min_radius)
+    # --- Final radius: combined bound, density cap (respecting astro floor), then hard clip ---
     if np.isfinite(r_upper):
-        radius = min(radius, r_upper)
+        radius = max(min(radius_combined, r_upper), astro_floor)
+    else:
+        radius = radius_combined
     radius = np.clip(radius, min_radius, max_radius)
 
     logger.info(f"Effective clustering radius: {radius:.6f} deg ({radius * 3600:.3f} arcsec)")
     logger.info(
-        f"  - Max positional sigma (eigval): {max_sigma_pos:.6f} deg ({max_sigma_pos * 3600:.3f} arcsec)"
+        f"  - sigma_orbital (max eigval): {sigma_orbital:.6f} deg ({sigma_orbital * 3600:.3f} arcsec)"
     )
-    logger.info(f"  - Lower bound (r_lower): {r_lower:.6f} deg")
+    logger.info(f"  - sigma_astro: {sigma_astro:.6f} deg ({sigma_astro * 3600:.3f} arcsec)")
+    logger.info(f"  - radius_combined: {radius_combined:.6f} deg")
     logger.info(
         f"  - Observation footprint: {obs_extent_x:.6f} x {obs_extent_y:.6f} deg ({obs_area:.6e} deg^2)"
     )
@@ -352,9 +390,11 @@ def calculate_clustering_parameters_from_covariance(
         "n_velocity_points": len(vxx_flat),
         "dv_x": dv_x,
         "dv_y": dv_y,
+        "sigma_astro_deg": float(sigma_astro),
+        "sigma_orbital_deg": float(sigma_orbital),
         "max_sigma_pos": float(max_sigma_pos),
         "radius_multiplier": radius_multiplier,
-        "r_lower": r_lower,
+        "radius_combined": float(radius_combined),
         "obs_area": obs_area,
         "obs_extent_x": obs_extent_x,
         "obs_extent_y": obs_extent_y,
@@ -649,6 +689,9 @@ class VelocityGridBase(abc.ABC):
         Maximum number of processes for parallelization.
     whiten : bool
         Whether to compute whitened parameters in metadata.
+    astrometric_precision : float, optional
+        Astrometric precision in degrees for radius calculation.
+        If None, estimated from observation covariances.
     """
 
     def __init__(
@@ -667,11 +710,12 @@ class VelocityGridBase(abc.ABC):
         mahalanobis_distance: Optional[float] = None,
         radius_multiplier: float = 5.0,
         density_multiplier: float = 2.5,
-        min_radius: float = 1 / 3600,
+        min_radius: float = 0.01 / 3600,
         max_radius: float = 0.05,
         chunk_size: int = 1000,
         max_processes: Optional[int] = 1,
         whiten: bool = False,
+        astrometric_precision: Optional[float] = None,
     ):
         self.radius = radius
         self.min_obs = min_obs
@@ -692,6 +736,7 @@ class VelocityGridBase(abc.ABC):
         self.chunk_size = chunk_size
         self.max_processes = max_processes
         self.whiten = whiten
+        self.astrometric_precision = astrometric_precision
 
     @property
     @abc.abstractmethod
@@ -847,6 +892,7 @@ class VelocityGridBase(abc.ABC):
                     min_radius=self.min_radius,
                     max_radius=self.max_radius,
                     whiten=self.whiten,
+                    astrometric_precision=self.astrometric_precision,
                 )
                 self._resolved_radius = radius
                 logger.info(

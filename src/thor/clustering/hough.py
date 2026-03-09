@@ -68,6 +68,9 @@ class HoughLineClustering:
         Not used directly, kept for interface consistency.
     whiten : bool
         Whether to compute whitened parameters in metadata.
+    astrometric_precision : float, optional
+        Astrometric precision in degrees for radius calculation.
+        If None, estimated from observation covariances.
     """
 
     def __init__(
@@ -86,11 +89,12 @@ class HoughLineClustering:
         mahalanobis_distance: Optional[float] = None,
         radius_multiplier: float = 5.0,
         density_multiplier: float = 2.5,
-        min_radius: float = 1 / 3600,
+        min_radius: float = 0.01 / 3600,
         max_radius: float = 0.05,
         chunk_size: int = 1000,
         max_processes: Optional[int] = 1,
         whiten: bool = False,
+        astrometric_precision: Optional[float] = None,
     ):
         self.radius = radius
         self.min_obs = min_obs
@@ -111,6 +115,7 @@ class HoughLineClustering:
         self.chunk_size = chunk_size
         self.max_processes = max_processes
         self.whiten = whiten
+        self.astrometric_precision = astrometric_precision
 
     def _resolve_velocity_grid(
         self,
@@ -146,6 +151,7 @@ class HoughLineClustering:
                     min_radius=self.min_radius,
                     max_radius=self.max_radius,
                     whiten=self.whiten,
+                    astrometric_precision=self.astrometric_precision,
                 )
                 radius = cov_radius
                 # Derive grid edges from the covariance-computed velocity points

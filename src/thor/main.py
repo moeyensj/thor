@@ -351,6 +351,7 @@ def link_test_orbit(
             chunk_size=config.cluster_chunk_size,
             max_processes=config.max_processes,
             whiten=config.cluster_whiten,
+            astrometric_precision=config.cluster_astrometric_precision,
         )
 
         # Run clustering (finding only — no fitting)
