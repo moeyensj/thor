@@ -458,6 +458,40 @@ class CUDAShiftAndStack:
     # Coarse pass
     # -----------------------------------------------------------------
 
+    def _compute_background_peak(
+        self,
+        x_d: "cp.ndarray",
+        y_d: "cp.ndarray",
+        n_obs: int,
+        coarse_bin_size: float,
+        x_origin: float,
+        y_origin: float,
+        x_max: float,
+        y_max: float,
+    ) -> int:
+        """
+        Compute the peak bin count of the observation field at zero velocity.
+
+        This represents the maximum number of observations that can land
+        in a single coarse bin purely from the survey field density pattern,
+        without any real cluster signal. Used to set an elevated threshold
+        for the coarse prefilter.
+        """
+        n_bins_x = _grid_dims(x_origin, x_max, coarse_bin_size)
+        n_bins_y = _grid_dims(y_origin, y_max, coarse_bin_size)
+        inv_bin = 1.0 / coarse_bin_size
+
+        # Bin observations at zero velocity using CuPy
+        bx = cp.floor((x_d - x_origin) * inv_bin).astype(cp.int32)
+        by = cp.floor((y_d - y_origin) * inv_bin).astype(cp.int32)
+        valid = (bx >= 0) & (bx < n_bins_x) & (by >= 0) & (by < n_bins_y)
+        flat = bx[valid] * n_bins_y + by[valid]
+        counts = cp.bincount(flat, minlength=n_bins_x * n_bins_y)
+        peak = int(counts.max().get())
+
+        del bx, by, valid, flat, counts
+        return peak
+
     def _coarse_pass(
         self,
         x_d: "cp.ndarray",
@@ -472,13 +506,23 @@ class CUDAShiftAndStack:
         y_origin: float,
         x_max: float,
         y_max: float,
+        coarse_threshold: Optional[int] = None,
     ) -> npt.NDArray[np.intp]:
         """
         Run the coarse pass.  Returns numpy array of candidate velocity indices.
 
         Uses shared-memory atomics when the coarse grid fits in 48 KB,
         otherwise falls back to a global-memory kernel processed in chunks.
+
+        Parameters
+        ----------
+        coarse_threshold : int, optional
+            Minimum bin count to consider a velocity "hot". If None,
+            uses self.min_obs. Set to background_peak + min_obs for
+            background-subtracted filtering.
         """
+        threshold = coarse_threshold if coarse_threshold is not None else self.min_obs
+
         n_bins_x = _grid_dims(x_origin, x_max, coarse_bin_size)
         n_bins_y = _grid_dims(y_origin, y_max, coarse_bin_size)
         n_coarse_spatial = n_bins_x * n_bins_y
@@ -500,7 +544,7 @@ class CUDAShiftAndStack:
                     np.float32(y_origin),
                     np.int32(n_bins_x),
                     np.int32(n_bins_y),
-                    np.int32(self.min_obs),
+                    np.int32(threshold),
                 ),
                 shared_mem=shared_bytes,
             )
@@ -548,10 +592,10 @@ class CUDAShiftAndStack:
                 ),
             )
 
-            # Check which velocities have any bin >= min_obs
+            # Check which velocities have any bin >= threshold
             counts_2d = bin_counts.reshape(n_chunk, n_coarse_spatial)
             max_per_vel = counts_2d.max(axis=1)
-            hot_mask = max_per_vel >= self.min_obs
+            hot_mask = max_per_vel >= threshold
             hot_local = cp.nonzero(hot_mask)[0].get()
 
             del bin_counts, counts_2d, max_per_vel
@@ -935,6 +979,23 @@ class CUDAShiftAndStack:
             (radius, radius),
         ]
 
+        # Compute background peak density for the coarse prefilter.
+        # At zero velocity, the histogram reflects the survey field density.
+        # A real cluster adds min_obs observations ON TOP of this background,
+        # so we set the coarse threshold to background_peak + min_obs.
+        bg_x_origin, bg_x_max, bg_y_origin, bg_y_max = _shifted_bounds(
+            x, y, dt, vxx, vyy, 0.0, 0.0
+        )
+        background_peak = self._compute_background_peak(
+            x_d, y_d, n_obs, coarse_bin_size,
+            bg_x_origin, bg_y_origin, bg_x_max, bg_y_max,
+        )
+        coarse_threshold = background_peak + self.min_obs
+        logger.info(
+            f"Background peak density: {background_peak} obs/coarse-bin, "
+            f"coarse threshold: {coarse_threshold} (background + min_obs={self.min_obs})"
+        )
+
         # Accumulators
         all_cluster_ids: List[str] = []
         all_cluster_vx: List[float] = []
@@ -971,6 +1032,7 @@ class CUDAShiftAndStack:
                 n_obs, n_vel,
                 coarse_bin_size,
                 kx_origin, ky_origin, kx_max, ky_max,
+                coarse_threshold=coarse_threshold,
             )
 
             del vx_d, vy_d
