@@ -114,6 +114,45 @@ void coarse_count(
 }
 """
 
+_COARSE_GLOBAL_SRC = r"""
+extern "C" __global__
+void coarse_count_global(
+    const float* __restrict__ x,
+    const float* __restrict__ y,
+    const float* __restrict__ dt,
+    const float* __restrict__ vx,
+    const float* __restrict__ vy,
+    int*         bin_counts,
+    int          n_obs,
+    int          n_vel,
+    float        inv_coarse_bin,
+    float        x_origin,
+    float        y_origin,
+    int          n_bins_x,
+    int          n_bins_y,
+    int          n_spatial
+) {
+    /*
+     * Grid: (n_vel, ceil(n_obs / blockDim.x))
+     * Same structure as fine_count but with coarse bins.
+     * Writes into bin_counts[vel * n_spatial + flat_bin].
+     */
+    int vel = blockIdx.x;
+    int obs = threadIdx.x + blockIdx.y * blockDim.x;
+    if (vel >= n_vel || obs >= n_obs) return;
+
+    float xs = x[obs] - vx[vel] * dt[obs];
+    float ys = y[obs] - vy[vel] * dt[obs];
+    int bx = __float2int_rd((xs - x_origin) * inv_coarse_bin);
+    int by = __float2int_rd((ys - y_origin) * inv_coarse_bin);
+
+    if (bx >= 0 && bx < n_bins_x && by >= 0 && by < n_bins_y) {
+        int flat = bx * n_bins_y + by;
+        atomicAdd(&bin_counts[vel * n_spatial + flat], 1);
+    }
+}
+"""
+
 _FINE_COUNT_SRC = r"""
 extern "C" __global__
 void fine_count(
@@ -203,11 +242,12 @@ void extract_members(
 
 
 def _compile_kernels():
-    """Compile and cache the three CUDA kernels."""
+    """Compile and cache the CUDA kernels."""
     coarse = RawKernel(_COARSE_COUNT_SRC, "coarse_count")
+    coarse_global = RawKernel(_COARSE_GLOBAL_SRC, "coarse_count_global")
     fine = RawKernel(_FINE_COUNT_SRC, "fine_count")
     extract = RawKernel(_EXTRACT_MEMBERS_SRC, "extract_members")
-    return coarse, fine, extract
+    return coarse, coarse_global, fine, extract
 
 
 def _shifted_bounds(
@@ -333,7 +373,7 @@ class CUDAShiftAndStack:
         logger.info(f"CUDAShiftAndStack using CUDA device {self._device_id}")
 
         # Compile kernels (cached by CuPy after first call)
-        self._k_coarse, self._k_fine, self._k_extract = _compile_kernels()
+        self._k_coarse, self._k_coarse_global, self._k_fine, self._k_extract = _compile_kernels()
 
     # -----------------------------------------------------------------
     # Velocity grid resolution (mirrors GPUShiftAndStack)
@@ -434,44 +474,95 @@ class CUDAShiftAndStack:
         y_max: float,
     ) -> npt.NDArray[np.intp]:
         """
-        Run the coarse shared-memory pass.  Returns numpy array of
-        candidate velocity indices.
+        Run the coarse pass.  Returns numpy array of candidate velocity indices.
+
+        Uses shared-memory atomics when the coarse grid fits in 48 KB,
+        otherwise falls back to a global-memory kernel processed in chunks.
         """
         n_bins_x = _grid_dims(x_origin, x_max, coarse_bin_size)
         n_bins_y = _grid_dims(y_origin, y_max, coarse_bin_size)
         n_coarse_spatial = n_bins_x * n_bins_y
         shared_bytes = n_coarse_spatial * 4  # int32 per bin
 
-        if shared_bytes > _MAX_SHARED_BYTES:
-            # Coarse grid too large for shared memory — skip prefilter
-            logger.info(
-                f"Coarse grid {n_bins_x}x{n_bins_y} = {n_coarse_spatial} bins "
-                f"exceeds shared memory ({shared_bytes / 1024:.0f} KB > "
-                f"{_MAX_SHARED_BYTES / 1024:.0f} KB). Skipping coarse prefilter."
+        if shared_bytes <= _MAX_SHARED_BYTES:
+            # Fast path: shared-memory coarse pass
+            hot_flags = cp.zeros(n_vel, dtype=cp.int32)
+
+            self._k_coarse(
+                (n_vel,),
+                (_COARSE_BLOCK_SIZE,),
+                (
+                    x_d, y_d, dt_d, vx_d, vy_d,
+                    hot_flags,
+                    np.int32(n_obs),
+                    np.float32(1.0 / coarse_bin_size),
+                    np.float32(x_origin),
+                    np.float32(y_origin),
+                    np.int32(n_bins_x),
+                    np.int32(n_bins_y),
+                    np.int32(self.min_obs),
+                ),
+                shared_mem=shared_bytes,
             )
-            return np.arange(n_vel)
 
-        hot_flags = cp.zeros(n_vel, dtype=cp.int32)
+            candidates = cp.nonzero(hot_flags)[0].get()
+            return candidates
 
-        self._k_coarse(
-            (n_vel,),                    # grid: one block per velocity
-            (_COARSE_BLOCK_SIZE,),       # block
-            (
-                x_d, y_d, dt_d, vx_d, vy_d,
-                hot_flags,
-                np.int32(n_obs),
-                np.float32(1.0 / coarse_bin_size),
-                np.float32(x_origin),
-                np.float32(y_origin),
-                np.int32(n_bins_x),
-                np.int32(n_bins_y),
-                np.int32(self.min_obs),
-            ),
-            shared_mem=shared_bytes,
+        # Slow path: global-memory coarse pass, processed in velocity chunks
+        # to bound GPU memory (n_chunk * n_coarse_spatial * 4 bytes)
+        logger.info(
+            f"Coarse grid {n_bins_x}x{n_bins_y} = {n_coarse_spatial} bins "
+            f"exceeds shared memory. Using global-memory coarse pass."
         )
 
-        candidates = cp.nonzero(hot_flags)[0].get()
-        return candidates
+        mem_free = cp.cuda.Device(self._device_id).mem_info[0]
+        usable = int(mem_free * 0.5)
+        bytes_per_vel = n_coarse_spatial * 4
+        coarse_chunk = max(1, min(usable // max(bytes_per_vel, 1), n_vel))
+
+        all_candidates = []
+        obs_blocks = (n_obs + _BLOCK_SIZE - 1) // _BLOCK_SIZE
+
+        for chunk_start in range(0, n_vel, coarse_chunk):
+            chunk_end = min(chunk_start + coarse_chunk, n_vel)
+            n_chunk = chunk_end - chunk_start
+
+            bin_counts = cp.zeros(n_chunk * n_coarse_spatial, dtype=cp.int32)
+
+            self._k_coarse_global(
+                (n_chunk, obs_blocks),
+                (_BLOCK_SIZE,),
+                (
+                    x_d, y_d, dt_d,
+                    vx_d[chunk_start:chunk_end],
+                    vy_d[chunk_start:chunk_end],
+                    bin_counts,
+                    np.int32(n_obs),
+                    np.int32(n_chunk),
+                    np.float32(1.0 / coarse_bin_size),
+                    np.float32(x_origin),
+                    np.float32(y_origin),
+                    np.int32(n_bins_x),
+                    np.int32(n_bins_y),
+                    np.int32(n_coarse_spatial),
+                ),
+            )
+
+            # Check which velocities have any bin >= min_obs
+            counts_2d = bin_counts.reshape(n_chunk, n_coarse_spatial)
+            max_per_vel = counts_2d.max(axis=1)
+            hot_mask = max_per_vel >= self.min_obs
+            hot_local = cp.nonzero(hot_mask)[0].get()
+
+            del bin_counts, counts_2d, max_per_vel
+
+            if len(hot_local) > 0:
+                all_candidates.append(hot_local + chunk_start)
+
+        if len(all_candidates) == 0:
+            return np.array([], dtype=np.intp)
+
+        return np.concatenate(all_candidates)
 
     # -----------------------------------------------------------------
     # Fine pass
@@ -652,6 +743,112 @@ class CUDAShiftAndStack:
         return n_added
 
     # -----------------------------------------------------------------
+    # Fine + extract for a spatial region
+    # -----------------------------------------------------------------
+
+    def _fine_extract_region(
+        self,
+        x_d,
+        y_d,
+        dt_d,
+        x: np.ndarray,
+        y: np.ndarray,
+        dt: np.ndarray,
+        nights: np.ndarray,
+        obs_ids: np.ndarray,
+        cand_vx: np.ndarray,
+        cand_vy: np.ndarray,
+        candidates: np.ndarray,
+        n_candidates: int,
+        n_obs: int,
+        bin_size: float,
+        kx_origin: float,
+        ky_origin: float,
+        kx_max: float,
+        ky_max: float,
+        vxx: np.ndarray,
+        vyy: np.ndarray,
+        # Accumulators (modified in place)
+        all_cluster_ids: List[str],
+        all_cluster_vx: List[float],
+        all_cluster_vy: List[float],
+        all_cluster_arc_lengths: List[float],
+        all_cluster_num_obs: List[int],
+        all_member_cluster_ids: List[str],
+        all_member_obs_ids: List[str],
+    ) -> int:
+        """
+        Run fine pass and extract pass for a single spatial region.
+
+        This encapsulates the fine+extract logic so it can be called both
+        for the full spatial domain (no tiling) and for each spatial tile.
+
+        Returns the number of clusters added.
+        """
+        n_bins_x_r = _grid_dims(kx_origin, kx_max, bin_size)
+        n_bins_y_r = _grid_dims(ky_origin, ky_max, bin_size)
+        n_spatial_r = n_bins_x_r * n_bins_y_r
+
+        if n_spatial_r == 0:
+            return 0
+
+        fine_chunk = self._auto_chunk_size(n_obs, n_spatial_r)
+        total_added = 0
+
+        for chunk_start in range(0, n_candidates, fine_chunk):
+            chunk_end = min(chunk_start + fine_chunk, n_candidates)
+            chunk_vx = cand_vx[chunk_start:chunk_end]
+            chunk_vy = cand_vy[chunk_start:chunk_end]
+            n_chunk = chunk_end - chunk_start
+
+            chunk_vx_d = cp.asarray(chunk_vx)
+            chunk_vy_d = cp.asarray(chunk_vy)
+
+            bin_counts_h, _, n_bins_y_fine, n_spatial = self._fine_pass(
+                x_d, y_d, dt_d,
+                chunk_vx_d, chunk_vy_d,
+                n_obs, n_chunk,
+                bin_size,
+                kx_origin, ky_origin, kx_max, ky_max,
+            )
+
+            del chunk_vx_d, chunk_vy_d
+
+            # Find hot (velocity, bin) pairs
+            bin_counts_2d = bin_counts_h.reshape(n_chunk, n_spatial)
+            hot_vel_local, hot_bin_flat = np.nonzero(bin_counts_2d >= self.min_obs)
+
+            if len(hot_vel_local) == 0:
+                continue
+
+            hot_vx_np = chunk_vx[hot_vel_local]
+            hot_vy_np = chunk_vy[hot_vel_local]
+            hot_bins_np = hot_bin_flat.astype(np.int32)
+            hot_counts_np = bin_counts_2d[hot_vel_local, hot_bin_flat]
+
+            # Extract members for hot pairs
+            member_lists = self._extract_pass(
+                x_d, y_d, dt_d,
+                hot_vx_np, hot_vy_np, hot_bins_np, hot_counts_np,
+                n_obs, bin_size,
+                kx_origin, ky_origin, n_bins_y_fine,
+            )
+
+            # Map local candidate indices back to global velocity indices
+            hot_vel_global = candidates[chunk_start + hot_vel_local]
+
+            n_added = self._build_clusters_from_members(
+                member_lists, hot_vel_global, vxx, vyy,
+                dt, nights, obs_ids,
+                all_cluster_ids, all_cluster_vx, all_cluster_vy,
+                all_cluster_arc_lengths, all_cluster_num_obs,
+                all_member_cluster_ids, all_member_obs_ids,
+            )
+            total_added += n_added
+
+        return total_added
+
+    # -----------------------------------------------------------------
     # Main entry point
     # -----------------------------------------------------------------
 
@@ -806,58 +1003,80 @@ class CUDAShiftAndStack:
             n_bins_y_f = _grid_dims(ky_origin_f, ky_max_f, bin_size)
             n_spatial_f = n_bins_x_f * n_bins_y_f
 
-            fine_chunk = self._auto_chunk_size(n_obs, n_spatial_f)
+            # If the spatial domain is too large, tile it to bound memory
+            max_spatial_bins = 2_000_000  # ~8MB per candidate at int32
 
-            for chunk_start in range(0, n_candidates, fine_chunk):
-                chunk_end = min(chunk_start + fine_chunk, n_candidates)
-                chunk_vx = cand_vx[chunk_start:chunk_end]
-                chunk_vy = cand_vy[chunk_start:chunk_end]
-                n_chunk = chunk_end - chunk_start
-
-                chunk_vx_d = cp.asarray(chunk_vx)
-                chunk_vy_d = cp.asarray(chunk_vy)
-
-                bin_counts_h, _, n_bins_y_fine, n_spatial = self._fine_pass(
+            if n_spatial_f <= max_spatial_bins:
+                # Original approach: single fine pass over the full spatial domain
+                n_added = self._fine_extract_region(
                     x_d, y_d, dt_d,
-                    chunk_vx_d, chunk_vy_d,
-                    n_obs, n_chunk,
+                    x, y, dt, nights, obs_ids,
+                    cand_vx, cand_vy, candidates, n_candidates, n_obs,
                     bin_size,
                     kx_origin_f, ky_origin_f, kx_max_f, ky_max_f,
-                )
-
-                del chunk_vx_d, chunk_vy_d
-
-                # Find hot (velocity, bin) pairs
-                bin_counts_2d = bin_counts_h.reshape(n_chunk, n_spatial)
-                hot_vel_local, hot_bin_flat = np.nonzero(bin_counts_2d >= self.min_obs)
-
-                if len(hot_vel_local) == 0:
-                    continue
-
-                hot_vx_np = chunk_vx[hot_vel_local]
-                hot_vy_np = chunk_vy[hot_vel_local]
-                hot_bins_np = hot_bin_flat.astype(np.int32)
-                hot_counts_np = bin_counts_2d[hot_vel_local, hot_bin_flat]
-
-                # Extract members for hot pairs
-                member_lists = self._extract_pass(
-                    x_d, y_d, dt_d,
-                    hot_vx_np, hot_vy_np, hot_bins_np, hot_counts_np,
-                    n_obs, bin_size,
-                    kx_origin_f, ky_origin_f, n_bins_y_fine,
-                )
-
-                # Map local candidate indices back to global velocity indices
-                hot_vel_global = candidates[chunk_start + hot_vel_local]
-
-                n_added = self._build_clusters_from_members(
-                    member_lists, hot_vel_global, vxx, vyy,
-                    dt, nights, obs_ids,
+                    vxx, vyy,
                     all_cluster_ids, all_cluster_vx, all_cluster_vy,
                     all_cluster_arc_lengths, all_cluster_num_obs,
                     all_member_cluster_ids, all_member_obs_ids,
                 )
                 total_raw += n_added
+            else:
+                # Tile the spatial domain to bound fine-pass memory
+                max_tile_bins_per_side = int(np.sqrt(max_spatial_bins))
+                spatial_tile_size = max_tile_bins_per_side * bin_size
+
+                # Tile bounds in shifted+offset coordinates
+                sx_min, sx_max = float(x_origin_f), float(x_max_f)
+                sy_min, sy_max = float(y_origin_f), float(y_max_f)
+
+                n_stiles_x = max(int(np.ceil((sx_max - sx_min) / spatial_tile_size)), 1)
+                n_stiles_y = max(int(np.ceil((sy_max - sy_min) / spatial_tile_size)), 1)
+
+                logger.info(
+                    f"  Tiling spatial domain into {n_stiles_x}x{n_stiles_y} tiles "
+                    f"(global bins: {n_bins_x_f}x{n_bins_y_f}={n_spatial_f})"
+                )
+
+                border = 2.0 * radius
+                for stx in range(n_stiles_x):
+                    for sty in range(n_stiles_y):
+                        # Tile bounds in shifted+offset coordinates
+                        tile_sx_lo = sx_min + stx * spatial_tile_size
+                        tile_sx_hi = sx_min + (stx + 1) * spatial_tile_size
+                        tile_sy_lo = sy_min + sty * spatial_tile_size
+                        tile_sy_hi = sy_min + (sty + 1) * spatial_tile_size
+
+                        # Add border for edge clusters
+                        ext_sx_lo = tile_sx_lo - border
+                        ext_sx_hi = tile_sx_hi + border
+                        ext_sy_lo = tile_sy_lo - border
+                        ext_sy_hi = tile_sy_hi + border
+
+                        # Kernel origins for this tile (subtract offset)
+                        kx_lo = ext_sx_lo - ox
+                        kx_hi = ext_sx_hi - ox
+                        ky_lo = ext_sy_lo - oy
+                        ky_hi = ext_sy_hi - oy
+
+                        n_bx = _grid_dims(kx_lo, kx_hi, bin_size)
+                        n_by = _grid_dims(ky_lo, ky_hi, bin_size)
+                        n_sp = n_bx * n_by
+
+                        if n_sp == 0:
+                            continue
+
+                        n_added = self._fine_extract_region(
+                            x_d, y_d, dt_d,
+                            x, y, dt, nights, obs_ids,
+                            cand_vx, cand_vy, candidates, n_candidates, n_obs,
+                            bin_size,
+                            kx_lo, ky_lo, kx_hi, ky_hi,
+                            vxx, vyy,
+                            all_cluster_ids, all_cluster_vx, all_cluster_vy,
+                            all_cluster_arc_lengths, all_cluster_num_obs,
+                            all_member_cluster_ids, all_member_obs_ids,
+                        )
+                        total_raw += n_added
 
         time_kernel_end = time.perf_counter()
 

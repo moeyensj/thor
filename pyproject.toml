@@ -74,6 +74,9 @@ dev = [
     "ruff>=0.15.4",
     "ipdb>=0.13.13",
 ]
+cuda = [
+    "cupy-cuda12x",
+]
 
 [tool.black]
 line-length = 110

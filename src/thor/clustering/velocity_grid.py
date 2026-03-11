@@ -29,6 +29,7 @@ from ..orbit import TestOrbitEphemeris
 from ..range_and_transform import TransformedDetections
 from .data import ClusterMembers, Clusters, drop_duplicate_clusters
 from .metrics import filter_clusters_by_length
+from .tiling import compute_auto_tile_size, compute_tile_grid, extract_tile_observations
 
 logger = logging.getLogger(__name__)
 
@@ -500,9 +501,35 @@ def _cluster_velocity(
     if len(xx) < min_obs:
         return Clusters.empty(), ClusterMembers.empty()
 
-    X = np.stack((xx, yy), 1)
+    # Spatial tiling pre-filter
+    x_extent = xx.max() - xx.min() if len(xx) > 0 else 0
+    y_extent = yy.max() - yy.min() if len(yy) > 0 else 0
+    tile_size = compute_auto_tile_size(radius, len(xx), x_extent, y_extent)
+    border_width = 2.0 * radius
 
-    clusters = point_cluster_fn(X, radius, min_obs)
+    tiles = compute_tile_grid(xx, yy, tile_size, border_width, min_obs)
+
+    all_raw_clusters = []
+    if len(tiles) == 1 and tiles[0].n_obs_core == len(xx):
+        # Single tile covering everything - skip tiling overhead
+        X = np.stack((xx, yy), 1)
+        all_raw_clusters = point_cluster_fn(X, radius, min_obs)
+    else:
+        logger.info(
+            f"{alg_name} tiling: {len(tiles)} active tiles "
+            f"(tile_size={tile_size:.6f}, border={border_width:.6f})"
+        )
+        for tile in tiles:
+            tile_idx = extract_tile_observations(tile, xx, yy)
+            if len(tile_idx) < min_obs:
+                continue
+            X_tile = np.stack((xx[tile_idx], yy[tile_idx]), 1)
+            tile_clusters = point_cluster_fn(X_tile, radius, min_obs)
+            # Remap local tile indices to global indices
+            for cluster_local_idx in tile_clusters:
+                all_raw_clusters.append(tile_idx[cluster_local_idx])
+
+    clusters = all_raw_clusters
     if clusters:
         sizes = [len(c) for c in clusters]
         logger.info(
