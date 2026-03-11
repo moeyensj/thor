@@ -29,12 +29,14 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
+import quivr as qv
 import ray
 
 from ..orbit import TestOrbitEphemeris
 from ..range_and_transform import TransformedDetections
 from .data import ClusterMembers, Clusters, drop_duplicate_clusters
 from .velocity_grid import calculate_clustering_parameters_from_covariance
+from .windowing import TimeWindow, compute_linearity_window, compute_time_windows
 
 logger = logging.getLogger("thor.clustering.cuda_shift_and_stack")
 
@@ -896,77 +898,66 @@ class CUDAShiftAndStack:
     # Main entry point
     # -----------------------------------------------------------------
 
-    def find_clusters(
+    def _compute_windows(
         self,
+        test_orbit_ephemeris: Optional[TestOrbitEphemeris],
         transformed_detections: TransformedDetections,
-        test_orbit_ephemeris: Optional[TestOrbitEphemeris] = None,
-        tracklets=None,
-        tracklet_members=None,
-    ) -> Tuple[Clusters, ClusterMembers]:
-        time_start = time.perf_counter()
-        logger.info("Running CUDA atomic-histogram shift-and-stack clustering...")
-
-        # Handle Ray ObjectRef inputs
-        if isinstance(transformed_detections, ray.ObjectRef):
-            transformed_detections = ray.get(transformed_detections)
-        if isinstance(test_orbit_ephemeris, ray.ObjectRef):
-            test_orbit_ephemeris = ray.get(test_orbit_ephemeris)
-
-        if len(transformed_detections) == 0:
-            logger.info("No observations to cluster.")
-            return Clusters.empty(), ClusterMembers.empty()
-
-        unique_times = transformed_detections.coordinates.time.unique()
-        if len(unique_times) < self.min_obs:
-            logger.info("Not enough unique observation times.")
-            return Clusters.empty(), ClusterMembers.empty()
-
-        time_range = unique_times.max().mjd()[0].as_py() - unique_times.min().mjd()[0].as_py()
-        if time_range < self.min_arc_length:
-            logger.info("Time range less than minimum arc length.")
-            return Clusters.empty(), ClusterMembers.empty()
-
-        # Resolve velocity grid and radius
-        vxx, vyy, radius = self._resolve_velocity_grid(
-            transformed_detections, test_orbit_ephemeris
+        radius: float,
+    ) -> List[TimeWindow]:
+        """Compute time windows based on ephemeris linearity."""
+        obs_times_mjd = (
+            transformed_detections.coordinates.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
         )
+        t_min = float(obs_times_mjd.min())
+        t_max = float(obs_times_mjd.max())
+
+        if test_orbit_ephemeris is None or len(test_orbit_ephemeris) < 3:
+            return [TimeWindow(t_start=t_min, t_end=t_max)]
+
+        ephem = test_orbit_ephemeris.ephemeris
+        ephem_ra = ephem.coordinates.lon.to_numpy(zero_copy_only=False)
+        ephem_dec = ephem.coordinates.lat.to_numpy(zero_copy_only=False)
+        ephem_times = ephem.coordinates.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
+
+        time_mask = (ephem_times >= t_min) & (ephem_times <= t_max)
+        if np.sum(time_mask) < 3:
+            return [TimeWindow(t_start=t_min, t_end=t_max)]
+
+        window_size = compute_linearity_window(
+            ephem_ra[time_mask],
+            ephem_dec[time_mask],
+            ephem_times[time_mask],
+            radius=radius,
+            min_window=max(self.min_arc_length * 2.0, 1.0),
+        )
+
+        return compute_time_windows(obs_times_mjd, window_size, self.min_arc_length)
+
+    def _run_gpu_sweep(
+        self,
+        x: npt.NDArray[np.float32],
+        y: npt.NDArray[np.float32],
+        dt: npt.NDArray[np.float32],
+        nights: npt.NDArray[np.int64],
+        obs_ids: npt.NDArray,
+        vxx: npt.NDArray[np.float64],
+        vyy: npt.NDArray[np.float64],
+        radius: float,
+    ) -> Tuple[Clusters, ClusterMembers]:
+        """
+        Run the full GPU coarse->fine->extract sweep on a set of observations.
+
+        This is the core GPU clustering body, factored out so it can be called
+        once per time window.
+        """
+        n_obs = len(x)
+        n_vel = len(vxx)
         bin_size = 2.0 * radius
         coarse_bin_size = bin_size * self.coarse_factor
 
-        # Extract observation arrays
-        obs_ids = transformed_detections.id.to_numpy(zero_copy_only=False)
-        nights = transformed_detections.night.to_numpy(zero_copy_only=False)
-        x = transformed_detections.coordinates.theta_x.to_numpy(zero_copy_only=False).astype(
-            np.float32
-        )
-        y = transformed_detections.coordinates.theta_y.to_numpy(zero_copy_only=False).astype(
-            np.float32
-        )
-        mjd = transformed_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
-        dt = (mjd - mjd.min()).astype(np.float32)
-
-        # Drop NaNs
-        finite_mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(dt)
-        if not np.all(finite_mask):
-            n_drop = np.size(finite_mask) - np.count_nonzero(finite_mask)
-            logger.warning(f"Dropping {n_drop} observations with NaN coordinates.")
-            x, y, dt = x[finite_mask], y[finite_mask], dt[finite_mask]
-            nights, obs_ids = nights[finite_mask], obs_ids[finite_mask]
-
-        n_obs = len(x)
-        if n_obs < self.min_obs:
-            logger.info(f"Only {n_obs} finite observations, fewer than min_obs={self.min_obs}.")
-            return Clusters.empty(), ClusterMembers.empty()
-
-        n_vel = len(vxx)
-
-        logger.info(f"Clustering radius: {radius:.6f} deg ({radius * 3600:.3f} arcsec)")
-        logger.info(
-            f"Bin size: {bin_size:.6f} deg, coarse bin size: {coarse_bin_size:.6f} deg"
-        )
         logger.info(f"CUDA shift-and-stack: {n_vel} vel x {n_obs} obs")
 
-        # Upload observations to GPU (once, reused for all offsets and chunks)
+        # Upload observations to GPU
         cp.cuda.Device(self._device_id).use()
         x_d = cp.asarray(x)
         y_d = cp.asarray(y)
@@ -979,10 +970,7 @@ class CUDAShiftAndStack:
             (radius, radius),
         ]
 
-        # Compute background peak density for the coarse prefilter.
-        # At zero velocity, the histogram reflects the survey field density.
-        # A real cluster adds min_obs observations ON TOP of this background,
-        # so we set the coarse threshold to background_peak + min_obs.
+        # Background-subtracted coarse threshold
         bg_x_origin, bg_x_max, bg_y_origin, bg_y_max = _shifted_bounds(
             x, y, dt, vxx, vyy, 0.0, 0.0
         )
@@ -1010,11 +998,6 @@ class CUDAShiftAndStack:
         total_coarse_survived = 0
 
         for ox, oy in offsets:
-            # Compute conservative bounds for shifted coordinates
-            # _shifted_bounds returns bounds of (x + ox) - vx * dt, but kernels
-            # compute x - vx * dt (no offset).  Subtracting offset from origin
-            # and max makes the kernel's binning equivalent:
-            #   floor((x - vx*dt - (origin - ox)) / bin) = floor(((x+ox) - vx*dt - origin) / bin)
             x_origin, x_max, y_origin, y_max = _shifted_bounds(
                 x, y, dt, vxx, vyy, ox, oy
             )
@@ -1023,7 +1006,6 @@ class CUDAShiftAndStack:
             ky_origin = y_origin - oy
             ky_max = y_max - oy
 
-            # Coarse pass: upload full velocity arrays
             vx_d = cp.asarray(vxx.astype(np.float32))
             vy_d = cp.asarray(vyy.astype(np.float32))
 
@@ -1048,11 +1030,9 @@ class CUDAShiftAndStack:
                 f"({100 * n_candidates / n_vel:.1f}%)"
             )
 
-            # Fine pass: process candidates in chunks
             cand_vx = vxx[candidates].astype(np.float32)
             cand_vy = vyy[candidates].astype(np.float32)
 
-            # Recompute tighter bounds for candidates only (kernel-adjusted)
             x_origin_f, x_max_f, y_origin_f, y_max_f = _shifted_bounds(
                 x, y, dt, cand_vx, cand_vy, ox, oy
             )
@@ -1060,16 +1040,13 @@ class CUDAShiftAndStack:
             kx_max_f = x_max_f - ox
             ky_origin_f = y_origin_f - oy
             ky_max_f = y_max_f - oy
-            # Grid dims use the range which is the same with or without offset
             n_bins_x_f = _grid_dims(kx_origin_f, kx_max_f, bin_size)
             n_bins_y_f = _grid_dims(ky_origin_f, ky_max_f, bin_size)
             n_spatial_f = n_bins_x_f * n_bins_y_f
 
-            # If the spatial domain is too large, tile it to bound memory
-            max_spatial_bins = 2_000_000  # ~8MB per candidate at int32
+            max_spatial_bins = 2_000_000
 
             if n_spatial_f <= max_spatial_bins:
-                # Original approach: single fine pass over the full spatial domain
                 n_added = self._fine_extract_region(
                     x_d, y_d, dt_d,
                     x, y, dt, nights, obs_ids,
@@ -1083,11 +1060,9 @@ class CUDAShiftAndStack:
                 )
                 total_raw += n_added
             else:
-                # Tile the spatial domain to bound fine-pass memory
                 max_tile_bins_per_side = int(np.sqrt(max_spatial_bins))
                 spatial_tile_size = max_tile_bins_per_side * bin_size
 
-                # Tile bounds in shifted+offset coordinates
                 sx_min, sx_max = float(x_origin_f), float(x_max_f)
                 sy_min, sy_max = float(y_origin_f), float(y_max_f)
 
@@ -1102,19 +1077,16 @@ class CUDAShiftAndStack:
                 border = 2.0 * radius
                 for stx in range(n_stiles_x):
                     for sty in range(n_stiles_y):
-                        # Tile bounds in shifted+offset coordinates
                         tile_sx_lo = sx_min + stx * spatial_tile_size
                         tile_sx_hi = sx_min + (stx + 1) * spatial_tile_size
                         tile_sy_lo = sy_min + sty * spatial_tile_size
                         tile_sy_hi = sy_min + (sty + 1) * spatial_tile_size
 
-                        # Add border for edge clusters
                         ext_sx_lo = tile_sx_lo - border
                         ext_sx_hi = tile_sx_hi + border
                         ext_sy_lo = tile_sy_lo - border
                         ext_sy_hi = tile_sy_hi + border
 
-                        # Kernel origins for this tile (subtract offset)
                         kx_lo = ext_sx_lo - ox
                         kx_hi = ext_sx_hi - ox
                         ky_lo = ext_sy_lo - oy
@@ -1158,6 +1130,133 @@ class CUDAShiftAndStack:
         logger.info(f"Raw clusters from fine pass: {total_raw}")
 
         if len(all_cluster_ids) == 0:
+            return Clusters.empty(), ClusterMembers.empty()
+
+        clusters = Clusters.from_kwargs(
+            cluster_id=all_cluster_ids,
+            vtheta_x=np.array(all_cluster_vx),
+            vtheta_y=np.array(all_cluster_vy),
+            arc_length=all_cluster_arc_lengths,
+            num_obs=all_cluster_num_obs,
+        )
+        cluster_members = ClusterMembers.from_kwargs(
+            cluster_id=all_member_cluster_ids,
+            obs_id=all_member_obs_ids,
+        )
+
+        return clusters, cluster_members
+
+    def find_clusters(
+        self,
+        transformed_detections: TransformedDetections,
+        test_orbit_ephemeris: Optional[TestOrbitEphemeris] = None,
+        tracklets=None,
+        tracklet_members=None,
+    ) -> Tuple[Clusters, ClusterMembers]:
+        time_start = time.perf_counter()
+        logger.info("Running CUDA atomic-histogram shift-and-stack clustering...")
+
+        # Handle Ray ObjectRef inputs
+        if isinstance(transformed_detections, ray.ObjectRef):
+            transformed_detections = ray.get(transformed_detections)
+        if isinstance(test_orbit_ephemeris, ray.ObjectRef):
+            test_orbit_ephemeris = ray.get(test_orbit_ephemeris)
+
+        if len(transformed_detections) == 0:
+            logger.info("No observations to cluster.")
+            return Clusters.empty(), ClusterMembers.empty()
+
+        unique_times = transformed_detections.coordinates.time.unique()
+        if len(unique_times) < self.min_obs:
+            logger.info("Not enough unique observation times.")
+            return Clusters.empty(), ClusterMembers.empty()
+
+        time_range = unique_times.max().mjd()[0].as_py() - unique_times.min().mjd()[0].as_py()
+        if time_range < self.min_arc_length:
+            logger.info("Time range less than minimum arc length.")
+            return Clusters.empty(), ClusterMembers.empty()
+
+        # Resolve velocity grid and radius (once for all windows)
+        vxx, vyy, radius = self._resolve_velocity_grid(
+            transformed_detections, test_orbit_ephemeris
+        )
+
+        logger.info(f"Clustering radius: {radius:.6f} deg ({radius * 3600:.3f} arcsec)")
+        logger.info(
+            f"Bin size: {2.0 * radius:.6f} deg, "
+            f"coarse bin size: {2.0 * radius * self.coarse_factor:.6f} deg"
+        )
+
+        # Compute sliding windows from ephemeris linearity
+        windows = self._compute_windows(test_orbit_ephemeris, transformed_detections, radius)
+
+        all_clusters = Clusters.empty()
+        all_cluster_members = ClusterMembers.empty()
+
+        for wi, window in enumerate(windows):
+            # Select observations in this window
+            if len(windows) > 1:
+                obs_times_mjd = (
+                    transformed_detections.coordinates.time.rescale("utc")
+                    .mjd().to_numpy(zero_copy_only=False)
+                )
+                mask = (obs_times_mjd >= window.t_start) & (obs_times_mjd <= window.t_end)
+                window_detections = transformed_detections.apply_mask(mask)
+            else:
+                window_detections = transformed_detections
+
+            if len(window_detections) < self.min_obs:
+                if len(windows) > 1:
+                    logger.info(
+                        f"Window {wi+1}/{len(windows)} "
+                        f"[{window.t_start:.2f}, {window.t_end:.2f}]: "
+                        f"{len(window_detections)} obs < min_obs ({self.min_obs}), skipping."
+                    )
+                continue
+
+            # Extract observation arrays
+            obs_ids = window_detections.id.to_numpy(zero_copy_only=False)
+            nights = window_detections.night.to_numpy(zero_copy_only=False)
+            x = window_detections.coordinates.theta_x.to_numpy(zero_copy_only=False).astype(
+                np.float32
+            )
+            y = window_detections.coordinates.theta_y.to_numpy(zero_copy_only=False).astype(
+                np.float32
+            )
+            mjd = window_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
+            dt = (mjd - mjd.min()).astype(np.float32)
+
+            # Drop NaNs
+            finite_mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(dt)
+            if not np.all(finite_mask):
+                n_drop = np.size(finite_mask) - np.count_nonzero(finite_mask)
+                logger.warning(f"Dropping {n_drop} observations with NaN coordinates.")
+                x, y, dt = x[finite_mask], y[finite_mask], dt[finite_mask]
+                nights, obs_ids = nights[finite_mask], obs_ids[finite_mask]
+
+            if len(x) < self.min_obs:
+                continue
+
+            if len(windows) > 1:
+                logger.info(
+                    f"Window {wi+1}/{len(windows)} "
+                    f"[{window.t_start:.2f}, {window.t_end:.2f}]: "
+                    f"{len(x)} observations, {window.t_end - window.t_start:.2f} days."
+                )
+
+            w_clusters, w_members = self._run_gpu_sweep(
+                x, y, dt, nights, obs_ids, vxx, vyy, radius
+            )
+
+            if len(w_clusters) > 0:
+                all_clusters = qv.concatenate([all_clusters, w_clusters])
+                if all_clusters.fragmented():
+                    all_clusters = qv.defragment(all_clusters)
+                all_cluster_members = qv.concatenate([all_cluster_members, w_members])
+                if all_cluster_members.fragmented():
+                    all_cluster_members = qv.defragment(all_cluster_members)
+
+        if len(all_clusters) == 0:
             logger.info("Found 0 clusters.")
             logger.info(
                 f"CUDA shift-and-stack completed in "
@@ -1165,20 +1264,7 @@ class CUDAShiftAndStack:
             )
             return Clusters.empty(), ClusterMembers.empty()
 
-        # Build quivr tables
-        all_clusters = Clusters.from_kwargs(
-            cluster_id=all_cluster_ids,
-            vtheta_x=np.array(all_cluster_vx),
-            vtheta_y=np.array(all_cluster_vy),
-            arc_length=all_cluster_arc_lengths,
-            num_obs=all_cluster_num_obs,
-        )
-        all_cluster_members = ClusterMembers.from_kwargs(
-            cluster_id=all_member_cluster_ids,
-            obs_id=all_member_obs_ids,
-        )
-
-        # Deduplicate
+        # Deduplicate across all windows
         all_clusters = all_clusters.sort_by([("cluster_id", "ascending")])
         all_cluster_members = all_cluster_members.sort_by([("cluster_id", "ascending")])
         num_before = len(all_clusters)
