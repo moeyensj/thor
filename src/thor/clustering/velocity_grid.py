@@ -30,6 +30,7 @@ from ..range_and_transform import TransformedDetections
 from .data import ClusterMembers, Clusters, drop_duplicate_clusters
 from .metrics import filter_clusters_by_length
 from .tiling import compute_auto_tile_size, compute_tile_grid, extract_tile_observations
+from .windowing import TimeWindow, compute_linearity_window, compute_time_windows
 
 logger = logging.getLogger(__name__)
 
@@ -858,8 +859,54 @@ class VelocityGridBase(abc.ABC):
             logger.info(f"Clustering completed in {time_end_cluster - time_start_cluster:.3f} seconds.")
             return Clusters.empty(), ClusterMembers.empty()
 
-        # Run velocity grid sweep
-        all_clusters, all_cluster_members = self._run_velocity_sweep(vxx, vyy, transformed_detections, radius)
+        # Compute sliding windows from ephemeris linearity
+        windows = self._compute_windows(test_orbit_ephemeris, transformed_detections, radius)
+
+        if len(windows) == 1:
+            # Single window (full span) — no splitting needed
+            all_clusters, all_cluster_members = self._run_velocity_sweep(
+                vxx, vyy, transformed_detections, radius
+            )
+        else:
+            logger.info(
+                f"Splitting observations into {len(windows)} time windows "
+                f"for velocity sweep."
+            )
+            all_clusters = Clusters.empty()
+            all_cluster_members = ClusterMembers.empty()
+
+            obs_times_mjd = (
+                transformed_detections.coordinates.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
+            )
+
+            for i, window in enumerate(windows):
+                mask = (obs_times_mjd >= window.t_start) & (obs_times_mjd <= window.t_end)
+                n_obs_window = int(np.sum(mask))
+                if n_obs_window < self.min_obs:
+                    logger.info(
+                        f"Window {i+1}/{len(windows)} [{window.t_start:.2f}, {window.t_end:.2f}]: "
+                        f"{n_obs_window} obs < min_obs ({self.min_obs}), skipping."
+                    )
+                    continue
+
+                window_detections = transformed_detections.apply_mask(mask)
+                logger.info(
+                    f"Window {i+1}/{len(windows)} [{window.t_start:.2f}, {window.t_end:.2f}]: "
+                    f"{n_obs_window} observations, "
+                    f"{window.t_end - window.t_start:.2f} days."
+                )
+
+                w_clusters, w_members = self._run_velocity_sweep(
+                    vxx, vyy, window_detections, radius
+                )
+
+                if len(w_clusters) > 0:
+                    all_clusters = qv.concatenate([all_clusters, w_clusters])
+                    if all_clusters.fragmented():
+                        all_clusters = qv.defragment(all_clusters)
+                    all_cluster_members = qv.concatenate([all_cluster_members, w_members])
+                    if all_cluster_members.fragmented():
+                        all_cluster_members = qv.defragment(all_cluster_members)
 
         num_clusters = len(all_clusters)
         if num_clusters == 0:
@@ -948,6 +995,68 @@ class VelocityGridBase(abc.ABC):
         logger.debug("Y velocity bins: {}".format(vy_bins))
         logger.info(f"Generated velocity grid with {len(vxx)} points.")
         return vxx, vyy
+
+    def _compute_windows(
+        self,
+        test_orbit_ephemeris: Optional[TestOrbitEphemeris],
+        transformed_detections: TransformedDetections,
+        radius: float,
+    ) -> List[TimeWindow]:
+        """
+        Compute time windows based on ephemeris linearity.
+
+        If the test orbit's sky motion is linear to within the clustering
+        radius over the full observation span, returns a single window.
+        Otherwise, splits into overlapping windows sized so the linear
+        approximation error stays below the radius.
+
+        Parameters
+        ----------
+        test_orbit_ephemeris : TestOrbitEphemeris or None
+            If None, returns a single window spanning all observations.
+        transformed_detections : TransformedDetections
+            Observations (used for time range).
+        radius : float
+            Clustering radius in degrees.
+
+        Returns
+        -------
+        windows : list of TimeWindow
+            Time windows for clustering.
+        """
+        obs_times_mjd = (
+            transformed_detections.coordinates.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
+        )
+        t_min = float(obs_times_mjd.min())
+        t_max = float(obs_times_mjd.max())
+
+        if test_orbit_ephemeris is None or len(test_orbit_ephemeris) < 3:
+            return [TimeWindow(t_start=t_min, t_end=t_max)]
+
+        # Extract ephemeris RA/Dec
+        ephem = test_orbit_ephemeris.ephemeris
+        ephem_ra = ephem.coordinates.lon.to_numpy(zero_copy_only=False)
+        ephem_dec = ephem.coordinates.lat.to_numpy(zero_copy_only=False)
+        ephem_times = ephem.coordinates.time.rescale("utc").mjd().to_numpy(zero_copy_only=False)
+
+        # Filter to observation time range
+        time_mask = (ephem_times >= t_min) & (ephem_times <= t_max)
+        if np.sum(time_mask) < 3:
+            return [TimeWindow(t_start=t_min, t_end=t_max)]
+
+        ephem_ra = ephem_ra[time_mask]
+        ephem_dec = ephem_dec[time_mask]
+        ephem_times = ephem_times[time_mask]
+
+        window_size = compute_linearity_window(
+            ephem_ra,
+            ephem_dec,
+            ephem_times,
+            radius=radius,
+            min_window=max(self.min_arc_length * 2.0, 1.0),
+        )
+
+        return compute_time_windows(obs_times_mjd, window_size, self.min_arc_length)
 
     def _run_velocity_sweep(
         self,

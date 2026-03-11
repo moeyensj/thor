@@ -21,6 +21,7 @@ from .velocity_grid import (
     VelocityGridBase,
     calculate_clustering_parameters_from_covariance,
 )
+from .windowing import TimeWindow, compute_linearity_window, compute_time_windows
 
 try:
     from .cuda_shift_and_stack import CUDAShiftAndStack
@@ -50,4 +51,7 @@ __all__ = [
     "compute_tile_grid",
     "extract_tile_observations",
     "compute_auto_tile_size",
+    "TimeWindow",
+    "compute_linearity_window",
+    "compute_time_windows",
 ]
