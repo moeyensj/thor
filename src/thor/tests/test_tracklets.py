@@ -6,8 +6,6 @@ from adam_core.orbits import Ephemeris
 from adam_core.time import Timestamp
 
 from thor.clustering.tracklets import (
-    TrackletMembers,
-    Tracklets,
     _UnionFind,
     form_tracklets,
 )
@@ -212,9 +210,7 @@ class TestFormTracklets:
             theta_y=[0.0, v * dt1, v * dt2],
             mjds=[60000.0, 60000.0 + dt1, 60000.0 + dt2],
         )
-        toe = _make_test_orbit_ephemeris(
-            [60000.0, 60000.0 + dt1, 60000.0 + dt2], sigma_vx=0.1, sigma_vy=0.1
-        )
+        toe = _make_test_orbit_ephemeris([60000.0, 60000.0 + dt1, 60000.0 + dt2], sigma_vx=0.1, sigma_vy=0.1)
         tracklets, members = form_tracklets(td, toe, min_obs=2, mahalanobis_distance=3.0)
 
         # Should form one 3-observation tracklet
@@ -230,9 +226,7 @@ class TestFormTracklets:
             theta_y=[0.0, 0.0005, 0.0, 0.0005],
             mjds=[60000.0, 60000.05, 60001.0, 60001.05],
         )
-        toe = _make_test_orbit_ephemeris(
-            [60000.0, 60000.05, 60001.0, 60001.05], sigma_vx=0.1, sigma_vy=0.1
-        )
+        toe = _make_test_orbit_ephemeris([60000.0, 60000.05, 60001.0, 60001.05], sigma_vx=0.1, sigma_vy=0.1)
         tracklets, members = form_tracklets(td, toe, min_obs=2, mahalanobis_distance=3.0)
 
         # Should form two separate 2-obs tracklets (one per night)
@@ -312,9 +306,7 @@ class TestFormTracklets:
             theta_y=np.random.uniform(-0.01, 0.01, n_obs),
             mjds=[60000.0] * 12 + [60000.05] * 13 + [60001.0] * 12 + [60001.05] * 13,
         )
-        toe = _make_test_orbit_ephemeris(
-            [60000.0, 60000.05, 60001.0, 60001.05], sigma_vx=0.5, sigma_vy=0.5
-        )
+        toe = _make_test_orbit_ephemeris([60000.0, 60000.05, 60001.0, 60001.05], sigma_vx=0.5, sigma_vy=0.5)
         tracklets, members = form_tracklets(td, toe, min_obs=2, mahalanobis_distance=5.0)
 
         # Every obs_id should appear exactly once in members

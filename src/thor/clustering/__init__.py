@@ -16,8 +16,13 @@ from .hough import HoughLineClustering
 from .kdtree import VelocityGridKDTree
 from .metrics import filter_clusters_by_length
 from .optics import VelocityGridOPTICS
-from .tiling import TileSpec, compute_auto_tile_size, compute_tile_grid, extract_tile_observations
-from .tracklets import Tracklets, TrackletMembers, form_tracklets
+from .tiling import (
+    TileSpec,
+    compute_auto_tile_size,
+    compute_tile_grid,
+    extract_tile_observations,
+)
+from .tracklets import TrackletMembers, Tracklets, form_tracklets
 from .velocity_grid import (
     VelocityGridBase,
     calculate_clustering_parameters_from_covariance,

@@ -924,14 +924,15 @@ class VelocityGridBase(abc.ABC):
         if len(windows) == 1:
             # Single window (full span) — no splitting needed
             all_clusters, all_cluster_members = self._run_velocity_sweep(
-                vxx, vyy, transformed_detections, radius,
-                tracklets=tracklets, tracklet_members=tracklet_members,
+                vxx,
+                vyy,
+                transformed_detections,
+                radius,
+                tracklets=tracklets,
+                tracklet_members=tracklet_members,
             )
         else:
-            logger.info(
-                f"Splitting observations into {len(windows)} time windows "
-                f"for velocity sweep."
-            )
+            logger.info(f"Splitting observations into {len(windows)} time windows " f"for velocity sweep.")
             all_clusters = Clusters.empty()
             all_cluster_members = ClusterMembers.empty()
 
@@ -957,8 +958,12 @@ class VelocityGridBase(abc.ABC):
                 )
 
                 w_clusters, w_members = self._run_velocity_sweep(
-                    vxx, vyy, window_detections, radius,
-                    tracklets=tracklets, tracklet_members=tracklet_members,
+                    vxx,
+                    vyy,
+                    window_detections,
+                    radius,
+                    tracklets=tracklets,
+                    tracklet_members=tracklet_members,
                 )
 
                 if len(w_clusters) > 0:

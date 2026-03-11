@@ -475,7 +475,9 @@ def test_link_test_orbit_inflated_covariance(orbits, observations, integration_c
 
         elif stage_result.name == "recover_orbits":
             recovered_orbits, recovered_orbit_members = stage_result.result
-            assert len(recovered_orbits) >= 1, f"Expected at least 1 recovered orbit, got {len(recovered_orbits)}"
+            assert (
+                len(recovered_orbits) >= 1
+            ), f"Expected at least 1 recovered orbit, got {len(recovered_orbits)}"
             # With inflated covariance the orbit is offset, so we check that we
             # recover a substantial fraction of the expected observations
             recovered_obs = set(recovered_orbit_members.obs_id.to_pylist())

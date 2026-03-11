@@ -18,8 +18,6 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
-import pyarrow as pa
-import pyarrow.compute as pc
 import quivr as qv
 from adam_core.time import Timestamp
 from scipy.spatial import cKDTree
@@ -345,8 +343,7 @@ def form_tracklets(
     n_singleton = len(singleton_indices)
     n_multi_obs = sum(len(g) for g in tracklet_groups)
     logger.info(
-        f"Formed {n_multi} multi-observation tracklets ({n_multi_obs} obs) "
-        f"and {n_singleton} singletons."
+        f"Formed {n_multi} multi-observation tracklets ({n_multi_obs} obs) " f"and {n_singleton} singletons."
     )
 
     # Build output tables

@@ -1,5 +1,4 @@
 import numpy as np
-import pyarrow as pa
 import pytest
 from adam_core.coordinates import CartesianCoordinates, Origin, SphericalCoordinates
 from adam_core.observers import Observers

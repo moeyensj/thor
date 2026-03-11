@@ -183,9 +183,7 @@ class TestComputeTimeWindows:
 
         for i in range(len(windows) - 1):
             overlap = windows[i].t_end - windows[i + 1].t_start
-            assert overlap >= min_arc - 0.01, (
-                f"Overlap {overlap:.2f} < min_arc_length {min_arc:.2f}"
-            )
+            assert overlap >= min_arc - 0.01, f"Overlap {overlap:.2f} < min_arc_length {min_arc:.2f}"
 
     def test_stride_too_small_returns_single_window(self):
         """If window is smaller than required overlap, return single window."""

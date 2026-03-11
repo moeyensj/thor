@@ -538,7 +538,11 @@ class CUDAShiftAndStack:
                 (n_vel,),
                 (_COARSE_BLOCK_SIZE,),
                 (
-                    x_d, y_d, dt_d, vx_d, vy_d,
+                    x_d,
+                    y_d,
+                    dt_d,
+                    vx_d,
+                    vy_d,
                     hot_flags,
                     np.int32(n_obs),
                     np.float32(1.0 / coarse_bin_size),
@@ -579,7 +583,9 @@ class CUDAShiftAndStack:
                 (n_chunk, obs_blocks),
                 (_BLOCK_SIZE,),
                 (
-                    x_d, y_d, dt_d,
+                    x_d,
+                    y_d,
+                    dt_d,
                     vx_d[chunk_start:chunk_end],
                     vy_d[chunk_start:chunk_end],
                     bin_counts,
@@ -642,9 +648,13 @@ class CUDAShiftAndStack:
         obs_blocks = (n_obs + _BLOCK_SIZE - 1) // _BLOCK_SIZE
         self._k_fine(
             (n_candidates, obs_blocks),  # grid
-            (_BLOCK_SIZE,),              # block
+            (_BLOCK_SIZE,),  # block
             (
-                x_d, y_d, dt_d, cand_vx_d, cand_vy_d,
+                x_d,
+                y_d,
+                dt_d,
+                cand_vx_d,
+                cand_vy_d,
                 bin_counts,
                 np.int32(n_obs),
                 np.int32(n_candidates),
@@ -701,9 +711,14 @@ class CUDAShiftAndStack:
             (n_hot, obs_blocks),
             (_BLOCK_SIZE,),
             (
-                x_d, y_d, dt_d,
-                hot_vx_d, hot_vy_d, hot_bins_d,
-                member_counts_d, member_obs_d,
+                x_d,
+                y_d,
+                dt_d,
+                hot_vx_d,
+                hot_vy_d,
+                hot_bins_d,
+                member_counts_d,
+                member_obs_d,
                 np.int32(n_obs),
                 np.int32(n_hot),
                 np.int32(max_members),
@@ -851,11 +866,18 @@ class CUDAShiftAndStack:
             chunk_vy_d = cp.asarray(chunk_vy)
 
             bin_counts_h, _, n_bins_y_fine, n_spatial = self._fine_pass(
-                x_d, y_d, dt_d,
-                chunk_vx_d, chunk_vy_d,
-                n_obs, n_chunk,
+                x_d,
+                y_d,
+                dt_d,
+                chunk_vx_d,
+                chunk_vy_d,
+                n_obs,
+                n_chunk,
                 bin_size,
-                kx_origin, ky_origin, kx_max, ky_max,
+                kx_origin,
+                ky_origin,
+                kx_max,
+                ky_max,
             )
 
             del chunk_vx_d, chunk_vy_d
@@ -874,21 +896,38 @@ class CUDAShiftAndStack:
 
             # Extract members for hot pairs
             member_lists = self._extract_pass(
-                x_d, y_d, dt_d,
-                hot_vx_np, hot_vy_np, hot_bins_np, hot_counts_np,
-                n_obs, bin_size,
-                kx_origin, ky_origin, n_bins_y_fine,
+                x_d,
+                y_d,
+                dt_d,
+                hot_vx_np,
+                hot_vy_np,
+                hot_bins_np,
+                hot_counts_np,
+                n_obs,
+                bin_size,
+                kx_origin,
+                ky_origin,
+                n_bins_y_fine,
             )
 
             # Map local candidate indices back to global velocity indices
             hot_vel_global = candidates[chunk_start + hot_vel_local]
 
             n_added = self._build_clusters_from_members(
-                member_lists, hot_vel_global, vxx, vyy,
-                dt, nights, obs_ids,
-                all_cluster_ids, all_cluster_vx, all_cluster_vy,
-                all_cluster_arc_lengths, all_cluster_num_obs,
-                all_member_cluster_ids, all_member_obs_ids,
+                member_lists,
+                hot_vel_global,
+                vxx,
+                vyy,
+                dt,
+                nights,
+                obs_ids,
+                all_cluster_ids,
+                all_cluster_vx,
+                all_cluster_vy,
+                all_cluster_arc_lengths,
+                all_cluster_num_obs,
+                all_member_cluster_ids,
+                all_member_obs_ids,
             )
             total_added += n_added
 
@@ -971,12 +1010,16 @@ class CUDAShiftAndStack:
         ]
 
         # Background-subtracted coarse threshold
-        bg_x_origin, bg_x_max, bg_y_origin, bg_y_max = _shifted_bounds(
-            x, y, dt, vxx, vyy, 0.0, 0.0
-        )
+        bg_x_origin, bg_x_max, bg_y_origin, bg_y_max = _shifted_bounds(x, y, dt, vxx, vyy, 0.0, 0.0)
         background_peak = self._compute_background_peak(
-            x_d, y_d, n_obs, coarse_bin_size,
-            bg_x_origin, bg_y_origin, bg_x_max, bg_y_max,
+            x_d,
+            y_d,
+            n_obs,
+            coarse_bin_size,
+            bg_x_origin,
+            bg_y_origin,
+            bg_x_max,
+            bg_y_max,
         )
         coarse_threshold = background_peak + self.min_obs
         logger.info(
@@ -998,9 +1041,7 @@ class CUDAShiftAndStack:
         total_coarse_survived = 0
 
         for ox, oy in offsets:
-            x_origin, x_max, y_origin, y_max = _shifted_bounds(
-                x, y, dt, vxx, vyy, ox, oy
-            )
+            x_origin, x_max, y_origin, y_max = _shifted_bounds(x, y, dt, vxx, vyy, ox, oy)
             kx_origin = x_origin - ox
             kx_max = x_max - ox
             ky_origin = y_origin - oy
@@ -1010,10 +1051,18 @@ class CUDAShiftAndStack:
             vy_d = cp.asarray(vyy.astype(np.float32))
 
             candidates = self._coarse_pass(
-                x_d, y_d, dt_d, vx_d, vy_d,
-                n_obs, n_vel,
+                x_d,
+                y_d,
+                dt_d,
+                vx_d,
+                vy_d,
+                n_obs,
+                n_vel,
                 coarse_bin_size,
-                kx_origin, ky_origin, kx_max, ky_max,
+                kx_origin,
+                ky_origin,
+                kx_max,
+                ky_max,
                 coarse_threshold=coarse_threshold,
             )
 
@@ -1033,9 +1082,7 @@ class CUDAShiftAndStack:
             cand_vx = vxx[candidates].astype(np.float32)
             cand_vy = vyy[candidates].astype(np.float32)
 
-            x_origin_f, x_max_f, y_origin_f, y_max_f = _shifted_bounds(
-                x, y, dt, cand_vx, cand_vy, ox, oy
-            )
+            x_origin_f, x_max_f, y_origin_f, y_max_f = _shifted_bounds(x, y, dt, cand_vx, cand_vy, ox, oy)
             kx_origin_f = x_origin_f - ox
             kx_max_f = x_max_f - ox
             ky_origin_f = y_origin_f - oy
@@ -1048,15 +1095,33 @@ class CUDAShiftAndStack:
 
             if n_spatial_f <= max_spatial_bins:
                 n_added = self._fine_extract_region(
-                    x_d, y_d, dt_d,
-                    x, y, dt, nights, obs_ids,
-                    cand_vx, cand_vy, candidates, n_candidates, n_obs,
+                    x_d,
+                    y_d,
+                    dt_d,
+                    x,
+                    y,
+                    dt,
+                    nights,
+                    obs_ids,
+                    cand_vx,
+                    cand_vy,
+                    candidates,
+                    n_candidates,
+                    n_obs,
                     bin_size,
-                    kx_origin_f, ky_origin_f, kx_max_f, ky_max_f,
-                    vxx, vyy,
-                    all_cluster_ids, all_cluster_vx, all_cluster_vy,
-                    all_cluster_arc_lengths, all_cluster_num_obs,
-                    all_member_cluster_ids, all_member_obs_ids,
+                    kx_origin_f,
+                    ky_origin_f,
+                    kx_max_f,
+                    ky_max_f,
+                    vxx,
+                    vyy,
+                    all_cluster_ids,
+                    all_cluster_vx,
+                    all_cluster_vy,
+                    all_cluster_arc_lengths,
+                    all_cluster_num_obs,
+                    all_member_cluster_ids,
+                    all_member_obs_ids,
                 )
                 total_raw += n_added
             else:
@@ -1100,15 +1165,33 @@ class CUDAShiftAndStack:
                             continue
 
                         n_added = self._fine_extract_region(
-                            x_d, y_d, dt_d,
-                            x, y, dt, nights, obs_ids,
-                            cand_vx, cand_vy, candidates, n_candidates, n_obs,
+                            x_d,
+                            y_d,
+                            dt_d,
+                            x,
+                            y,
+                            dt,
+                            nights,
+                            obs_ids,
+                            cand_vx,
+                            cand_vy,
+                            candidates,
+                            n_candidates,
+                            n_obs,
                             bin_size,
-                            kx_lo, ky_lo, kx_hi, ky_hi,
-                            vxx, vyy,
-                            all_cluster_ids, all_cluster_vx, all_cluster_vy,
-                            all_cluster_arc_lengths, all_cluster_num_obs,
-                            all_member_cluster_ids, all_member_obs_ids,
+                            kx_lo,
+                            ky_lo,
+                            kx_hi,
+                            ky_hi,
+                            vxx,
+                            vyy,
+                            all_cluster_ids,
+                            all_cluster_vx,
+                            all_cluster_vy,
+                            all_cluster_arc_lengths,
+                            all_cluster_num_obs,
+                            all_member_cluster_ids,
+                            all_member_obs_ids,
                         )
                         total_raw += n_added
 
@@ -1120,8 +1203,7 @@ class CUDAShiftAndStack:
 
         coarse_total = n_vel * len(offsets)
         logger.info(
-            f"CUDA kernels: {n_vel} vel x {len(offsets)} offsets "
-            f"in {time_kernel_end - time_kernel:.3f}s"
+            f"CUDA kernels: {n_vel} vel x {len(offsets)} offsets " f"in {time_kernel_end - time_kernel:.3f}s"
         )
         logger.info(
             f"Coarse prefilter: {total_coarse_survived}/{coarse_total} survived "
@@ -1177,9 +1259,7 @@ class CUDAShiftAndStack:
             return Clusters.empty(), ClusterMembers.empty()
 
         # Resolve velocity grid and radius (once for all windows)
-        vxx, vyy, radius = self._resolve_velocity_grid(
-            transformed_detections, test_orbit_ephemeris
-        )
+        vxx, vyy, radius = self._resolve_velocity_grid(transformed_detections, test_orbit_ephemeris)
 
         logger.info(f"Clustering radius: {radius:.6f} deg ({radius * 3600:.3f} arcsec)")
         logger.info(
@@ -1198,7 +1278,8 @@ class CUDAShiftAndStack:
             if len(windows) > 1:
                 obs_times_mjd = (
                     transformed_detections.coordinates.time.rescale("utc")
-                    .mjd().to_numpy(zero_copy_only=False)
+                    .mjd()
+                    .to_numpy(zero_copy_only=False)
                 )
                 mask = (obs_times_mjd >= window.t_start) & (obs_times_mjd <= window.t_end)
                 window_detections = transformed_detections.apply_mask(mask)
@@ -1217,12 +1298,8 @@ class CUDAShiftAndStack:
             # Extract observation arrays
             obs_ids = window_detections.id.to_numpy(zero_copy_only=False)
             nights = window_detections.night.to_numpy(zero_copy_only=False)
-            x = window_detections.coordinates.theta_x.to_numpy(zero_copy_only=False).astype(
-                np.float32
-            )
-            y = window_detections.coordinates.theta_y.to_numpy(zero_copy_only=False).astype(
-                np.float32
-            )
+            x = window_detections.coordinates.theta_x.to_numpy(zero_copy_only=False).astype(np.float32)
+            y = window_detections.coordinates.theta_y.to_numpy(zero_copy_only=False).astype(np.float32)
             mjd = window_detections.coordinates.time.mjd().to_numpy(zero_copy_only=False)
             dt = (mjd - mjd.min()).astype(np.float32)
 
@@ -1244,9 +1321,7 @@ class CUDAShiftAndStack:
                     f"{len(x)} observations, {window.t_end - window.t_start:.2f} days."
                 )
 
-            w_clusters, w_members = self._run_gpu_sweep(
-                x, y, dt, nights, obs_ids, vxx, vyy, radius
-            )
+            w_clusters, w_members = self._run_gpu_sweep(x, y, dt, nights, obs_ids, vxx, vyy, radius)
 
             if len(w_clusters) > 0:
                 all_clusters = qv.concatenate([all_clusters, w_clusters])
@@ -1258,24 +1333,16 @@ class CUDAShiftAndStack:
 
         if len(all_clusters) == 0:
             logger.info("Found 0 clusters.")
-            logger.info(
-                f"CUDA shift-and-stack completed in "
-                f"{time.perf_counter() - time_start:.3f}s"
-            )
+            logger.info(f"CUDA shift-and-stack completed in " f"{time.perf_counter() - time_start:.3f}s")
             return Clusters.empty(), ClusterMembers.empty()
 
         # Deduplicate across all windows
         all_clusters = all_clusters.sort_by([("cluster_id", "ascending")])
         all_cluster_members = all_cluster_members.sort_by([("cluster_id", "ascending")])
         num_before = len(all_clusters)
-        all_clusters, all_cluster_members = drop_duplicate_clusters(
-            all_clusters, all_cluster_members
-        )
+        all_clusters, all_cluster_members = drop_duplicate_clusters(all_clusters, all_cluster_members)
         logger.info(f"Removed {num_before - len(all_clusters)} duplicate clusters.")
         logger.info(f"Found {len(all_clusters)} clusters.")
-        logger.info(
-            f"CUDA shift-and-stack completed in "
-            f"{time.perf_counter() - time_start:.3f}s"
-        )
+        logger.info(f"CUDA shift-and-stack completed in " f"{time.perf_counter() - time_start:.3f}s")
 
         return all_clusters, all_cluster_members
