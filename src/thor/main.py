@@ -21,6 +21,14 @@ from .clustering import (
     VelocityGridOPTICS,
     fit_clusters,
 )
+
+try:
+    from .clustering import CUDAShiftAndStack
+
+    _CUDA_AVAILABLE = True
+except ImportError:
+    _CUDA_AVAILABLE = False
+
 from .config import Config, initialize_config
 from .observations.filters import (
     ObservationFilter,
@@ -330,6 +338,8 @@ def link_test_orbit(
             "fft": VelocityGridFFT,
             "hough": HoughLineClustering,
         }
+        if _CUDA_AVAILABLE:
+            _algorithm_classes["cuda"] = CUDAShiftAndStack
         if config.cluster_algorithm not in _algorithm_classes:
             raise NotImplementedError(f"algorithm '{config.cluster_algorithm}' is not implemented")
 

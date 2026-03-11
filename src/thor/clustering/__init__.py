@@ -21,6 +21,11 @@ from .velocity_grid import (
     calculate_clustering_parameters_from_covariance,
 )
 
+try:
+    from .cuda_shift_and_stack import CUDAShiftAndStack
+except ImportError:
+    pass
+
 __all__ = [
     "ClusteringAlgorithm",
     "VelocityGridBase",
@@ -30,6 +35,7 @@ __all__ = [
     "VelocityGridKDTree",
     "VelocityGridOPTICS",
     "HoughLineClustering",
+    "CUDAShiftAndStack",
     "Clusters",
     "ClusterMembers",
     "FittedClusters",
