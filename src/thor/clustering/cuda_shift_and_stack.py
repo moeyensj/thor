@@ -335,6 +335,8 @@ class CUDAShiftAndStack:
         max_processes: Optional[int] = 1,
         whiten: bool = False,
         device: Optional[int] = None,
+        window_enabled: bool = True,
+        window_min_days: float = 1.0,
     ):
         if not CUPY_AVAILABLE:
             raise ImportError(
@@ -365,6 +367,8 @@ class CUDAShiftAndStack:
         self.chunk_size = chunk_size
         self.max_processes = max_processes
         self.whiten = whiten
+        self.window_enabled = window_enabled
+        self.window_min_days = window_min_days
 
         if device is not None:
             self._device_id = device
@@ -950,6 +954,9 @@ class CUDAShiftAndStack:
         t_min = float(obs_times_mjd.min())
         t_max = float(obs_times_mjd.max())
 
+        if not self.window_enabled:
+            return [TimeWindow(t_start=t_min, t_end=t_max)]
+
         if test_orbit_ephemeris is None or len(test_orbit_ephemeris) < 3:
             return [TimeWindow(t_start=t_min, t_end=t_max)]
 
@@ -967,7 +974,7 @@ class CUDAShiftAndStack:
             ephem_dec[time_mask],
             ephem_times[time_mask],
             radius=radius,
-            min_window=max(self.min_arc_length * 2.0, 1.0),
+            min_window=max(self.min_arc_length * 2.0, self.window_min_days),
         )
 
         return compute_time_windows(obs_times_mjd, window_size, self.min_arc_length)

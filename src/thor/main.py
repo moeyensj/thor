@@ -428,6 +428,8 @@ def link_test_orbit(
             max_processes=config.max_processes,
             whiten=config.cluster_whiten,
             astrometric_precision=config.cluster_astrometric_precision,
+            window_enabled=config.cluster_window_enabled,
+            window_min_days=config.cluster_window_min_days,
         )
 
         # Run clustering (finding only — no fitting)

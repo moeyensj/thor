@@ -36,6 +36,8 @@ class Config:
     cluster_rchi2_threshold: float = 1e4
     cluster_algorithm: str = "dbscan"
     cluster_chunk_size: int = 1000
+    cluster_window_enabled: bool = True
+    cluster_window_min_days: float = 1.0
     use_tracklets: bool = True
     tracklet_min_obs: int = 2
     tracklet_max_velocity: Optional[float] = None

@@ -788,6 +788,8 @@ class VelocityGridBase(abc.ABC):
         max_processes: Optional[int] = 1,
         whiten: bool = False,
         astrometric_precision: Optional[float] = None,
+        window_enabled: bool = True,
+        window_min_days: float = 1.0,
     ):
         self.radius = radius
         self.min_obs = min_obs
@@ -809,6 +811,8 @@ class VelocityGridBase(abc.ABC):
         self.max_processes = max_processes
         self.whiten = whiten
         self.astrometric_precision = astrometric_precision
+        self.window_enabled = window_enabled
+        self.window_min_days = window_min_days
 
     @property
     @abc.abstractmethod
@@ -1096,6 +1100,9 @@ class VelocityGridBase(abc.ABC):
         t_min = float(obs_times_mjd.min())
         t_max = float(obs_times_mjd.max())
 
+        if not self.window_enabled:
+            return [TimeWindow(t_start=t_min, t_end=t_max)]
+
         if test_orbit_ephemeris is None or len(test_orbit_ephemeris) < 3:
             return [TimeWindow(t_start=t_min, t_end=t_max)]
 
@@ -1119,7 +1126,7 @@ class VelocityGridBase(abc.ABC):
             ephem_dec,
             ephem_times,
             radius=radius,
-            min_window=max(self.min_arc_length * 2.0, 1.0),
+            min_window=max(self.min_arc_length * 2.0, self.window_min_days),
         )
 
         return compute_time_windows(obs_times_mjd, window_size, self.min_arc_length)
