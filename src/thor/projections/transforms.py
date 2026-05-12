@@ -1,6 +1,7 @@
 from typing import Tuple
 
 import jax.numpy as jnp
+import numpy as np
 from jax import config, jit, lax, vmap
 
 config.update("jax_enable_x64", True)
@@ -170,3 +171,72 @@ def cartesian_to_gnomonic(
     """
     coords_gnomonic, M_matrix = _cartesian_to_gnomonic_vmap(coords_cartesian, center_cartesian)
     return coords_gnomonic, M_matrix
+
+
+def cartesian_to_gnomonic_chunked(
+    coords_cartesian: jnp.ndarray,
+    center_cartesian: jnp.ndarray,
+    chunk_size: int = 1024,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Project Cartesian coordinates onto a gnomonic tangent plane centered about
+    central Cartesian coordinate, processing in fixed-size chunks to avoid
+    recompiling the JAX kernel for every unique input size.
+
+    Parameters
+    ----------
+    coords_cartesian : `~jax.numpy.ndarray` (N, 6)
+        Cartesian coordinates to be projected onto a tangent plane centered at
+        the center Cartesian coordinate.
+    center_cartesian : `~jax.numpy.ndarray` (6)
+        Cartesian coordinate about which to center the tangent plane projection.
+    chunk_size : int, optional
+        Size of chunks to process at a time. Default is 1024.
+
+    Returns
+    -------
+    coords_gnomonic : `~jax.numpy.ndarray` (N, 4)
+        Gnomonic longitude, latitude and their velocities in degrees and degrees
+        per day.
+    M : `~jax.numpy.ndarray` (6, 6)
+        Gnomonic rotation matrix (shared across all rows for a fixed center).
+    """
+    n_total = len(coords_cartesian)
+    # If empty, return empty arrays with correct shapes
+    if n_total == 0:
+        return (
+            jnp.zeros((0, 4), dtype=jnp.float64),
+            jnp.zeros((0, 6, 6), dtype=jnp.float64),
+        )
+
+    # Helper to pad and process a chunk
+    def _process_chunk(chunk_values, center_val):
+        n_chunk = len(chunk_values)
+        # Pad if smaller than chunk size
+        if n_chunk < chunk_size:
+            pad_width = ((0, chunk_size - n_chunk), (0, 0))
+            padded_values = np.pad(chunk_values, pad_width, mode="constant")
+            res, M = cartesian_to_gnomonic(padded_values, center_cartesian=center_val)
+            # Slice back to original size
+            return res[:n_chunk], M
+        else:
+            return cartesian_to_gnomonic(chunk_values, center_cartesian=center_val)
+
+    coords_gnomonic_list = []
+    M_matrix = None
+
+    # Iterate in chunks
+    for i in range(0, n_total, chunk_size):
+        chunk = coords_cartesian[i : i + chunk_size]
+        res_chunk, M_chunk = _process_chunk(chunk, center_cartesian)
+        coords_gnomonic_list.append(res_chunk)
+        if M_matrix is None:
+            M_matrix = M_chunk
+
+    coords_gnomonic = jnp.concatenate(coords_gnomonic_list)
+    # cartesian_to_gnomonic always returns a single (6,6) matrix for a fixed center.
+    # Keep that behavior here to allow NumPy broadcasting in callers.
+    assert M_matrix is not None
+
+    # Ensure output shape matches input length (slice off any over-padding from the last chunk)
+    return coords_gnomonic[:n_total], M_matrix

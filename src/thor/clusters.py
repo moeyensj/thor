@@ -28,7 +28,7 @@ from .range_and_transform import TransformedDetections
 USE_GPU = False
 
 if USE_GPU:
-    from cuml.cluster import DBSCAN
+    from cuml.cluster import DBSCAN  # type: ignore[import-not-found]
 else:
     from sklearn.cluster import DBSCAN
 
@@ -933,7 +933,7 @@ def calculate_clustering_parameters_from_covariance(
     # Extract position and velocity covariances
     pos_cov = mean_cov[0:2, 0:2]  # theta_x, theta_y
     vel_cov = mean_cov[2:4, 2:4]  # vtheta_x, vtheta_y
-    cross_cov = mean_cov[0:2, 2:4]  # cross terms
+    _cross_cov = mean_cov[0:2, 2:4]  # cross terms (kept for debugging / future use)
 
     # Pre-compute scale factors for optional whitening metadata
     pos_scales = np.sqrt(np.maximum(np.diag(pos_cov), 1e-18))
@@ -1397,12 +1397,14 @@ def cluster_and_link(
 
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
+        created_refs: list[ray.ObjectRef] = []
         # Put transformed detections in the Ray object store
         if isinstance(observations, ray.ObjectRef):
             transformed_ref = observations
         else:
             transformed_ref = ray.put(observations)
             logger.info("Placed transformed detections in the object store.")
+            created_refs.append(transformed_ref)
 
         futures = []
         for vxi_chunk, vyi_chunk in zip(_iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)):
@@ -1426,6 +1428,7 @@ def cluster_and_link(
             if len(futures) >= max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
                 fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+                ray.internal.free(finished)
                 fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
                 if fitted_clusters.fragmented():
                     fitted_clusters = qv.defragment(fitted_clusters)
@@ -1439,6 +1442,7 @@ def cluster_and_link(
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
             fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+            ray.internal.free(finished)
             fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
             if fitted_clusters.fragmented():
                 fitted_clusters = qv.defragment(fitted_clusters)
@@ -1446,6 +1450,13 @@ def cluster_and_link(
             fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_chunk])
             if fitted_cluster_members.fragmented():
                 fitted_cluster_members = qv.defragment(fitted_cluster_members)
+
+        # Best-effort: free any large inputs we placed in the object store.
+        if created_refs:
+            try:
+                ray.internal.free(created_refs)
+            except Exception:
+                pass
 
     else:
         for vxi_chunk, vyi_chunk in zip(_iterate_chunks(vxx, chunk_size), _iterate_chunks(vyy, chunk_size)):
@@ -1600,7 +1611,7 @@ def fit_cluster(
 
         return fitted_cluster, fitted_cluster_members
 
-    except np.linalg.LinAlgError as e:
+    except np.linalg.LinAlgError:
         cluster_id = cluster.cluster_id[0].as_py()
         logger.warning(
             f"Failed to fit cluster {cluster_id}: Singular matrix (degenerate observations). Skipping cluster."
@@ -1691,10 +1702,12 @@ def fit_clusters(
     use_ray = initialize_use_ray(num_cpus=max_processes)
     cluster_ids = clusters.cluster_id.to_pylist()
     if use_ray:
+        created_refs: list[ray.ObjectRef] = []
         # Put tables in Ray object store to avoid repeated serialization
         clusters_ref = ray.put(clusters)
         cluster_members_ref = ray.put(cluster_members)
         transformed_detections_ref = ray.put(transformed_detections)
+        created_refs.extend([clusters_ref, cluster_members_ref, transformed_detections_ref])
 
         futures = []
         for cluster_id_chunk in _iterate_chunks(cluster_ids, chunk_size):
@@ -1707,6 +1720,7 @@ def fit_clusters(
             if len(futures) >= max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
                 fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+                ray.internal.free(finished)
                 fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
                 if fitted_clusters.fragmented():
                     fitted_clusters = qv.defragment(fitted_clusters)
@@ -1719,12 +1733,19 @@ def fit_clusters(
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
             fitted_clusters_chunk, fitted_cluster_members_chunk = ray.get(finished[0])
+            ray.internal.free(finished)
             fitted_clusters = qv.concatenate([fitted_clusters, fitted_clusters_chunk])
             fitted_cluster_members = qv.concatenate([fitted_cluster_members, fitted_cluster_members_chunk])
             if fitted_clusters.fragmented():
                 fitted_clusters = qv.defragment(fitted_clusters)
             if fitted_cluster_members.fragmented():
                 fitted_cluster_members = qv.defragment(fitted_cluster_members)
+
+        # Best-effort: free any large inputs we placed in the object store.
+        try:
+            ray.internal.free(created_refs)
+        except Exception:
+            pass
     else:
         for cluster_id in cluster_ids:
             cluster_i = clusters.select("cluster_id", cluster_id)

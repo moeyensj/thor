@@ -382,22 +382,36 @@ class TestOrbits(qv.Table):
         if max_processes is None:
             max_processes = mp.cpu_count()
 
-        ranged_detections = RangedPointSourceDetections.empty()
+        # Build outputs in chunks and concatenate once at the end to avoid
+        # repeated qv.concatenate() growth, which can cause large transient
+        # allocations and apparent memory accumulation across stages/orbits.
+        ranged_chunks: list[RangedPointSourceDetections] = []
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
+            created_refs: list[ray.ObjectRef] = []
             if isinstance(observations, ray.ObjectRef):
                 observations_ref = observations
                 observations = ray.get(observations_ref)
             else:
                 observations_ref = ray.put(observations)
+                created_refs.append(observations_ref)
 
             if isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ephemeris
             else:
                 ephemeris_ref = ray.put(ephemeris)
+                created_refs.append(ephemeris_ref)
 
             # Get state IDs
             state_ids = observations.state_id.unique()
+            # Drop local references (best-effort) once we've extracted state_ids
+            # and placed large inputs into the object store.
+            try:
+                observations = None  # type: ignore[assignment]
+                ephemeris = None  # type: ignore[assignment]
+            except Exception:
+                pass
+
             futures = []
             for state_id in state_ids:
                 futures.append(range_observations_remote.remote(observations_ref, ephemeris_ref, state_id))
@@ -405,16 +419,20 @@ class TestOrbits(qv.Table):
                 if len(futures) >= max_processes * 1.5:
                     finished, futures = ray.wait(futures, num_returns=1)
                     ranged_detections_chunk = ray.get(finished[0])
-                    ranged_detections = qv.concatenate([ranged_detections, ranged_detections_chunk])
-                    if ranged_detections.fragmented():
-                        ranged_detections = qv.defragment(ranged_detections)
+                    ray.internal.free(finished)
+                    ranged_chunks.append(ranged_detections_chunk)
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 ranged_detections_chunk = ray.get(finished[0])
-                ranged_detections = qv.concatenate([ranged_detections, ranged_detections_chunk])
-                if ranged_detections.fragmented():
-                    ranged_detections = qv.defragment(ranged_detections)
+                ray.internal.free(finished)
+                ranged_chunks.append(ranged_detections_chunk)
+
+            # Free large inputs from the object store (best-effort).
+            try:
+                ray.internal.free(created_refs)
+            except Exception:
+                pass
 
         else:
             # Get state IDs
@@ -427,9 +445,14 @@ class TestOrbits(qv.Table):
                     state_id,
                 )
 
-                ranged_detections = qv.concatenate([ranged_detections, ranged_detections_chunk])
-                if ranged_detections.fragmented():
-                    ranged_detections = qv.defragment(ranged_detections)
+                ranged_chunks.append(ranged_detections_chunk)
+
+        if ranged_chunks:
+            ranged_detections = qv.concatenate(ranged_chunks)
+            if ranged_detections.fragmented():
+                ranged_detections = qv.defragment(ranged_detections)
+        else:
+            ranged_detections = RangedPointSourceDetections.empty()
 
         return ranged_detections.sort_by(by=["state_id"])
 
@@ -628,6 +651,13 @@ def assume_heliocentric_distance(
     # Convert equatorial spherical units to a unit sphere (so we can rotate them to the ecliptic)
     # and set nan covariance terms to zero so we preserve the non-zero covariance terms through
     # the transformations
+    #
+    # NOTE: Quivr cannot convert nested tables (e.g. Timestamp / Covariances / Origin)
+    # to Arrow StructArrays while fragmented. `to_unit_sphere()` rebuilds a
+    # SphericalCoordinates table via `from_kwargs(...)` while passing these nested
+    # columns through, so ensure the input is defragmented before that conversion.
+    if coords.fragmented():
+        coords = qv.defragment(coords)
     coords_eq_unit = coords.to_unit_sphere(only_missing=True)
     coords_eq_unit = zero_covariances(coords_eq_unit)
 

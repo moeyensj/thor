@@ -626,25 +626,30 @@ def differential_correction(
 
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
+        created_refs: list[ray.ObjectRef] = []
 
         orbit_ids_ref = ray.put(orbit_ids)
         orbit_ids = ray.get(orbit_ids_ref)
         logger.info("Placed orbit IDs in the object store.")
+        created_refs.append(orbit_ids_ref)
 
         if orbits_ref is None:
             orbits_ref = ray.put(orbits)
             orbits = ray.get(orbits_ref)
             logger.info("Placed orbits in the object store.")
+            created_refs.append(orbits_ref)
 
         if orbit_members_ref is None:
             orbit_members_ref = ray.put(orbit_members)
             orbit_members = ray.get(orbit_members_ref)
             logger.info("Placed orbit members in the object store.")
+            created_refs.append(orbit_members_ref)
 
         if observations_ref is None:
             observations_ref = ray.put(observations)
             observations = ray.get(observations_ref)
             logger.info("Placed observations in the object store.")
+            created_refs.append(observations_ref)
 
         futures = []
         for orbit_ids_indices in _iterate_chunk_indices(orbit_ids, chunk_size):
@@ -670,6 +675,7 @@ def differential_correction(
             if len(futures) >= max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
                 od_orbits_chunk, od_orbit_members_chunk = ray.get(finished[0])
+                ray.internal.free(finished)
                 od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
                 if od_orbits.fragmented():
                     od_orbits = qv.defragment(od_orbits)
@@ -680,12 +686,19 @@ def differential_correction(
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
             od_orbits_chunk, od_orbit_members_chunk = ray.get(finished[0])
+            ray.internal.free(finished)
             od_orbits = qv.concatenate([od_orbits, od_orbits_chunk])
             if od_orbits.fragmented():
                 od_orbits = qv.defragment(od_orbits)
             od_orbit_members = qv.concatenate([od_orbit_members, od_orbit_members_chunk])
             if od_orbit_members.fragmented():
                 od_orbit_members = qv.defragment(od_orbit_members)
+
+        # Best-effort: free any large inputs we placed in the object store.
+        try:
+            ray.internal.free(created_refs)
+        except Exception:
+            pass
 
     else:
         for orbit_ids_chunk in _iterate_chunks(orbit_ids, chunk_size):

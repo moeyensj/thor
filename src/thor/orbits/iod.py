@@ -579,17 +579,21 @@ def initial_orbit_determination(
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
+            created_refs: list[ray.ObjectRef] = []
 
             linkage_ids_ref = ray.put(linkage_ids)
             logger.info("Placed linkage IDs in the object store.")
+            created_refs.append(linkage_ids_ref)
 
             if linkage_members_ref is None:
                 linkage_members_ref = ray.put(linkage_members)
                 logger.info("Placed linkage members in the object store.")
+                created_refs.append(linkage_members_ref)
 
             if observations_ref is None:
                 observations_ref = ray.put(observations)
                 logger.info("Placed observations in the object store.")
+                created_refs.append(observations_ref)
 
             futures = []
             for linkage_id_chunk_indices in _iterate_chunk_indices(linkage_ids, chunk_size):
@@ -615,6 +619,7 @@ def initial_orbit_determination(
                 if len(futures) >= max_processes * 1.5:
                     finished, futures = ray.wait(futures, num_returns=1)
                     result = ray.get(finished[0])
+                    ray.internal.free(finished)
                     iod_orbits_chunk, iod_orbit_members_chunk = result
                     iod_orbits = qv.concatenate([iod_orbits, iod_orbits_chunk])
                     iod_orbit_members = qv.concatenate([iod_orbit_members, iod_orbit_members_chunk])
@@ -626,6 +631,7 @@ def initial_orbit_determination(
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 result = ray.get(finished[0])
+                ray.internal.free(finished)
                 iod_orbits_chunk, iod_orbit_members_chunk = result
                 iod_orbits = qv.concatenate([iod_orbits, iod_orbits_chunk])
                 iod_orbit_members = qv.concatenate([iod_orbit_members, iod_orbit_members_chunk])
@@ -633,6 +639,12 @@ def initial_orbit_determination(
                     iod_orbits = qv.defragment(iod_orbits)
                 if iod_orbit_members.fragmented():
                     iod_orbit_members = qv.defragment(iod_orbit_members)
+
+            # Best-effort: free any large inputs we placed in the object store.
+            try:
+                ray.internal.free(created_refs)
+            except Exception:
+                pass
 
         else:
             for linkage_id_chunk in _iterate_chunks(linkage_ids, chunk_size):

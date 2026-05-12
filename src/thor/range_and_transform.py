@@ -203,17 +203,21 @@ def range_and_transform(
 
         use_ray = initialize_use_ray(num_cpus=max_processes)
         if use_ray:
+            created_refs: list[ray.ObjectRef] = []
             if observations_ref is None:
                 observations_ref = ray.put(observations)
                 logger.info("Placed observations in the object store.")
+                created_refs.append(observations_ref)
 
             if not isinstance(ephemeris, ray.ObjectRef):
                 ephemeris_ref = ray.put(ephemeris)
                 logger.info("Placed ephemeris in the object store.")
+                created_refs.append(ephemeris_ref)
             else:
                 ephemeris_ref = ephemeris
 
             ranged_detections_spherical_ref = ray.put(ranged_detections_spherical)
+            created_refs.append(ranged_detections_spherical_ref)
 
             # Get state IDs
             state_ids = observations.state_id.unique()
@@ -231,14 +235,22 @@ def range_and_transform(
                 if len(futures) >= max_processes * 1.5:
                     finished, futures = ray.wait(futures, num_returns=1)
                     transformed_detections = qv.concatenate([transformed_detections, ray.get(finished[0])])
+                    ray.internal.free(finished)
                     if transformed_detections.fragmented():
                         transformed_detections = qv.defragment(transformed_detections)
 
             while futures:
                 finished, futures = ray.wait(futures, num_returns=1)
                 transformed_detections = qv.concatenate([transformed_detections, ray.get(finished[0])])
+                ray.internal.free(finished)
                 if transformed_detections.fragmented():
                     transformed_detections = qv.defragment(transformed_detections)
+
+            # Free large inputs from the object store (best-effort).
+            try:
+                ray.internal.free(created_refs)
+            except Exception:
+                pass
 
         else:
             # Get state IDs

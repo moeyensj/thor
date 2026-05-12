@@ -9,7 +9,7 @@ from adam_core.coordinates.covariances import transform_covariances_jacobian
 from adam_core.time import Timestamp
 
 from .covariances import ProjectionCovariances
-from .transforms import _cartesian_to_gnomonic, cartesian_to_gnomonic
+from .transforms import _cartesian_to_gnomonic, cartesian_to_gnomonic_chunked
 
 
 class GnomonicCoordinates(qv.Table):
@@ -162,12 +162,16 @@ class GnomonicCoordinates(qv.Table):
             if len(center_cartesian_i) == 0:
                 raise ValueError("No center cartesian coordinates found for this time.")
 
-            coords_gnomonic, M = cartesian_to_gnomonic(
+            # Process in fixed-size chunks to maintain stable JIT cache behavior
+            coords_gnomonic, M = cartesian_to_gnomonic_chunked(
                 cartesian_i.values,
-                center_cartesian=center_cartesian_i.values[0],
+                center_cartesian_i.values[0],
+                chunk_size=1024
             )
+
             coords_gnomonic = np.array(coords_gnomonic)
-            rotation_matrices[mask] = M
+            # M is a single (6,6) rotation matrix for this time-group; broadcast it across rows.
+            rotation_matrices[mask] = np.array(M)
 
             if not cartesian_i.covariance.is_all_nan():
                 cartesian_covariances = cartesian_i.covariance.to_matrix()

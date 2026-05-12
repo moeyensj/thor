@@ -45,7 +45,8 @@ def test_compare_configs(working_dir):
     initialize_config(config, working_dir=working_dir)
 
     # Test that if the checkpoint directory exists and there is a matching config, we do not raise an exception
-    existing_config_path = pathlib.Path(working_dir) / "config.json"
+    existing_config_path = pathlib.Path(working_dir) / "inputs" / "config.json"
+    existing_config_path.parent.mkdir(parents=True, exist_ok=True)
     existing_config_path.write_text(config.json(indent=4))
     initialize_config(config, working_dir=working_dir)
 

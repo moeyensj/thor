@@ -15,6 +15,7 @@ from adam_core.observations import Exposures, PointSourceDetections, SourceCatal
 from adam_core.observers import Observers, calculate_observing_night
 from adam_core.ray_cluster import initialize_use_ray
 from adam_core.time import Timestamp
+from adam_core.utils.iter import ChunkedParquetWriter, qv_table_iter
 
 from ..config import Config
 from .photometry import Photometry
@@ -36,6 +37,34 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _log_parquet_metadata(path: str, context: str) -> None:
+    """
+    Log the metadata of a parquet file for debugging.
+
+    Parameters
+    ----------
+    path : str
+        Path to the parquet file.
+    context : str
+        A description of the context (e.g., "reading filtered observations").
+    """
+    try:
+        schema = pq.read_schema(path)
+        metadata = schema.metadata or {}
+        # Log specific metadata we care about
+        time_scale = metadata.get(b"coordinates.time.scale")
+        frame = metadata.get(b"coordinates.frame")
+        logger.info(
+            "Parquet metadata (%s): %s - time.scale=%s, frame=%s",
+            context,
+            path,
+            time_scale.decode("utf-8") if time_scale else None,
+            frame.decode("utf-8") if frame else None,
+        )
+    except Exception as e:
+        logger.info("Failed to read parquet metadata for %s (%s): %s", path, context, e)
+
+
 def observations_iterator(
     observations: Union["Observations", str],
     chunk_size: int = 1_000_000,
@@ -53,62 +82,52 @@ def observations_iterator(
     observations_chunk : `Observations`
         A chunk of observations.
     """
+    # Prefer the canonical Quivr chunk iterator so schema metadata (Quivr
+    # attributes) is preserved across batch boundaries.
     if isinstance(observations, str):
-        # Discover if it's a single file or a folder using pathlib
-        parquet_paths = []
-        path = pathlib.Path(observations)
-        if path.is_dir():
-            # grab all parquet files from the folder
-            # and its subdirectories
-            for file in path.glob("**/*.parquet"):
-                parquet_paths.append(str(file))
-        else:
-            parquet_paths.append(observations)
-
-        for parquet_path in parquet_paths:
-            parquet_file = pa.parquet.ParquetFile(parquet_path, memory_map=True)
-            logger.debug(f"Starting to read {parquet_file}")
-            for batch in parquet_file.iter_batches(batch_size=chunk_size):
-                table = Observations.from_pyarrow(pa.Table.from_batches([batch]))
-
-                # Reading the table as above will cause the time scale attribute to
-                # be read in as the default 'tai' rather than 'utc'
-                if table.coordinates.time.scale != "utc":
-                    table = table.set_column(
-                        "coordinates.time",
-                        Timestamp.from_kwargs(
-                            days=table.coordinates.time.days,
-                            nanos=table.coordinates.time.nanos,
-                            scale="utc",
-                        ),
-                    )
-
-                # Similarly, the coordinates frame attribute will be read in as the
-                # default 'unspecified' rather than 'equatorial'
-                if table.coordinates.frame != "equatorial":
-                    table = table.set_column(
-                        "coordinates",
-                        SphericalCoordinates.from_kwargs(
-                            rho=table.coordinates.rho,
-                            lon=table.coordinates.lon,
-                            lat=table.coordinates.lat,
-                            vrho=table.coordinates.vrho,
-                            vlon=table.coordinates.vlon,
-                            vlat=table.coordinates.vlat,
-                            time=table.coordinates.time,
-                            covariance=table.coordinates.covariance,
-                            origin=table.coordinates.origin,
-                            frame="equatorial",
-                        ),
-                    )
-
-                yield table
-
+        p = pathlib.Path(observations)
+        pattern = "**/*.parquet" if p.is_dir() else "*.parquet"
+        it = qv_table_iter(
+            Observations,
+            p,
+            filename_pattern=pattern,
+            max_chunk_size=chunk_size,
+        )
     else:
-        offset = 0
-        while offset < len(observations):
-            yield observations[offset : offset + chunk_size]
-            offset += chunk_size
+        it = qv_table_iter(Observations, observations, max_chunk_size=chunk_size)
+
+    for table in it:
+        # Back-compat normalization for older parquets that may be missing
+        # schema metadata (time scale / frame). When metadata is present, these
+        # conditionals are no-ops.
+        if table.coordinates.time.scale != "utc":
+            table = table.set_column(
+                "coordinates.time",
+                Timestamp.from_kwargs(
+                    days=table.coordinates.time.days,
+                    nanos=table.coordinates.time.nanos,
+                    scale="utc",
+                ),
+            )
+
+        if table.coordinates.frame != "equatorial":
+            table = table.set_column(
+                "coordinates",
+                SphericalCoordinates.from_kwargs(
+                    rho=table.coordinates.rho,
+                    lon=table.coordinates.lon,
+                    lat=table.coordinates.lat,
+                    vrho=table.coordinates.vrho,
+                    vlon=table.coordinates.vlon,
+                    vlat=table.coordinates.vlat,
+                    time=table.coordinates.time,
+                    covariance=table.coordinates.covariance,
+                    origin=table.coordinates.origin,
+                    frame="equatorial",
+                ),
+            )
+
+        yield table
 
 
 def _input_observations_iterator(
@@ -129,30 +148,27 @@ def _input_observations_iterator(
         A chunk of input observations.
     """
     if isinstance(input_observations, str):
-        # Discover if it's a single file or a folder using pathlib
-        parquet_paths = []
-        path = pathlib.Path(input_observations)
-        if path.is_dir():
-            for file in path.glob("**/*.parquet"):
-                parquet_paths.append(str(file))
-        else:
-            parquet_paths.append(input_observations)
-
-        for parquet_path in parquet_paths:
-            parquet_file = pa.parquet.ParquetFile(parquet_path, memory_map=True)
-            logger.debug(f"Starting to read {parquet_file}")
-            for batch in parquet_file.iter_batches(batch_size=chunk_size):
-                table = InputObservations.from_pyarrow(pa.Table.from_batches([batch]))
-            ## TODO: This should be happening some other way
-            time = Timestamp.from_kwargs(days=table.time.days, nanos=table.time.nanos, scale="utc")
-            table = table.set_column("time", time)
-            yield table
-
+        p = pathlib.Path(input_observations)
+        pattern = "**/*.parquet" if p.is_dir() else "*.parquet"
+        it = qv_table_iter(
+            InputObservations,
+            p,
+            filename_pattern=pattern,
+            max_chunk_size=chunk_size,
+        )
     else:
-        offset = 0
-        while offset < len(input_observations):
-            yield input_observations[offset : offset + chunk_size]
-            offset += chunk_size
+        it = qv_table_iter(InputObservations, input_observations, max_chunk_size=chunk_size)
+
+    for table in it:
+        # Back-compat normalization: default to UTC when scale metadata is absent.
+        if table.time.scale != "utc":
+            time = Timestamp.from_kwargs(
+                days=table.time.days,
+                nanos=table.time.nanos,
+                scale="utc",
+            )
+            table = table.set_column("time", time)
+        yield table
 
 
 def input_observations_to_observations_worker(
@@ -235,9 +251,11 @@ def convert_input_observations_to_observations(
 
     output_observations = Observations.empty()
 
-    output_writer = None
+    output_writer: ChunkedParquetWriter | None = None
     if output_path is not None:
-        output_writer = pa.parquet.ParquetWriter(output_path, Observations.schema)
+        # Use a lazy schema derived from the first non-empty chunk so Quivr
+        # attributes are preserved in Arrow schema metadata.
+        output_writer = ChunkedParquetWriter(output_path)
 
     if config.max_processes is None:
         max_processes = mp.cpu_count()
@@ -354,7 +372,16 @@ def _get_observation_observers_from_path(observations_path: str) -> ObserversWit
 
     # Read the time scale from schema metadata (use first file)
     schema = pq.read_schema(str(parquet_paths[0]))
-    scale = schema.metadata.get(b"coordinates.time.scale").decode("utf-8")
+    _log_parquet_metadata(str(parquet_paths[0]), "_get_observation_observers_from_path")
+    time_scale_bytes = schema.metadata.get(b"coordinates.time.scale") if schema.metadata else None
+    if time_scale_bytes is None:
+        logger.warning(
+            "Missing 'coordinates.time.scale' metadata in %s; defaulting to 'utc'",
+            parquet_paths[0],
+        )
+        scale = "utc"
+    else:
+        scale = time_scale_bytes.decode("utf-8")
 
     all_data = []
     for parquet_path in parquet_paths:
@@ -751,13 +778,10 @@ def _source_catalog_iterator(
     """
     Create an iterator that yields chunks of SourceCatalog from a file
     """
-    source_catalog_file = pa.parquet.ParquetFile(source_catalog_path, memory_map=True)
-    i = 0
-    for batch in source_catalog_file.iter_batches(batch_size=chunk_size):
-        print(f"Yielding source catalog batch {i}")
-        i += 1
-        table = SourceCatalog.from_pyarrow(pa.Table.from_batches([batch]))
-        yield table
+    # Stream SourceCatalog chunks from a Parquet file, preserving schema metadata
+    # so Quivr attributes round-trip across chunk boundaries.
+    for table in qv_table_iter(SourceCatalog, source_catalog_path, max_chunk_size=chunk_size):
+        yield table  # type: ignore[misc]
 
 
 def convert_source_catalog_to_observations(
@@ -770,7 +794,7 @@ def convert_source_catalog_to_observations(
     Convert a SourceCatalog to Observations by reading and writing from files in chunks
     """
     source_catalog_iterator = _source_catalog_iterator(source_catalog_path, chunk_size)
-    observations_writer = pa.parquet.ParquetWriter(observations_path, Observations.schema)
+    observations_writer = ChunkedParquetWriter(observations_path)
     futures: List[ray.ObjectRef] = []
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if not use_ray:
@@ -818,7 +842,16 @@ def get_observation_times(observations: Union[str, "Observations"]) -> Tuple[Tim
 
         table = pq.read_table(observations, columns=["coordinates.time.days", "coordinates.time.nanos"])
         schema = pq.read_schema(metadata_file)
-        scale = schema.metadata.get(b"coordinates.time.scale").decode("utf-8")
+        _log_parquet_metadata(metadata_file, "get_observation_times")
+        time_scale_bytes = schema.metadata.get(b"coordinates.time.scale") if schema.metadata else None
+        if time_scale_bytes is None:
+            logger.warning(
+                "Missing 'coordinates.time.scale' metadata in %s; defaulting to 'utc'",
+                metadata_file,
+            )
+            scale = "utc"
+        else:
+            scale = time_scale_bytes.decode("utf-8")
         time = Timestamp.from_kwargs(
             days=table.column("days").combine_chunks(),
             nanos=table.column("nanos").combine_chunks(),

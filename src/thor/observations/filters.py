@@ -402,8 +402,11 @@ def filter_observations(
     if max_processes is None:
         max_processes = mp.cpu_count()
 
-    filtered_observations = Observations.empty()
-    test_orbit_ephemeris = TestOrbitEphemeris.empty()
+    # Build outputs in chunks and concatenate once at the end to avoid repeated
+    # qv.concatenate() growth, which can cause large transient allocations and
+    # apparent memory accumulation across stages/orbits.
+    filtered_obs_chunks: List[Observations] = []
+    ephemeris_chunks: List[TestOrbitEphemeris] = []
     use_ray = initialize_use_ray(num_cpus=max_processes)
     if use_ray:
 
@@ -414,25 +417,31 @@ def filter_observations(
                     observations_chunk, test_orbit, filters, propagator_class
                 )
             )
+            # Drop the local chunk reference as soon as it has been submitted to Ray.
+            # (Ray will have serialized it for the task arguments.)
+            del observations_chunk
             if len(futures) > max_processes * 1.5:
                 finished, futures = ray.wait(futures, num_returns=1)
+                # Fetch the result and promptly free the ObjectRef so the
+                # object store doesn't retain large per-chunk outputs across
+                # many iterations / child-orbit runs.
                 obs_chunk, ephemeris_chunk = ray.get(finished[0])
-                filtered_observations = qv.concatenate([filtered_observations, obs_chunk])
-                test_orbit_ephemeris = qv.concatenate([test_orbit_ephemeris, ephemeris_chunk])
-                if filtered_observations.fragmented():
-                    filtered_observations = qv.defragment(filtered_observations)
-                if test_orbit_ephemeris.fragmented():
-                    test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
+                try:
+                    ray.internal.free(finished)
+                except Exception:
+                    pass
+                filtered_obs_chunks.append(obs_chunk)
+                ephemeris_chunks.append(ephemeris_chunk)
 
         while futures:
             finished, futures = ray.wait(futures, num_returns=1)
             obs_chunk, ephemeris_chunk = ray.get(finished[0])
-            filtered_observations = qv.concatenate([filtered_observations, obs_chunk])
-            test_orbit_ephemeris = qv.concatenate([test_orbit_ephemeris, ephemeris_chunk])
-            if filtered_observations.fragmented():
-                filtered_observations = qv.defragment(filtered_observations)
-            if test_orbit_ephemeris.fragmented():
-                test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
+            try:
+                ray.internal.free(finished)
+            except Exception:
+                pass
+            filtered_obs_chunks.append(obs_chunk)
+            ephemeris_chunks.append(ephemeris_chunk)
 
         if isinstance(observations, ray.ObjectRef):
             ray.internal.free([observations])
@@ -446,12 +455,22 @@ def filter_observations(
                 filters,
                 propagator_class,
             )
-            filtered_observations = qv.concatenate([filtered_observations, obs_chunk])
-            test_orbit_ephemeris = qv.concatenate([test_orbit_ephemeris, ephemeris_chunk])
-            if filtered_observations.fragmented():
-                filtered_observations = qv.defragment(filtered_observations)
-            if test_orbit_ephemeris.fragmented():
-                test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
+            filtered_obs_chunks.append(obs_chunk)
+            ephemeris_chunks.append(ephemeris_chunk)
+
+    if filtered_obs_chunks:
+        filtered_observations = qv.concatenate(filtered_obs_chunks)
+        if filtered_observations.fragmented():
+            filtered_observations = qv.defragment(filtered_observations)
+    else:
+        filtered_observations = Observations.empty()
+
+    if ephemeris_chunks:
+        test_orbit_ephemeris = qv.concatenate(ephemeris_chunks)
+        if test_orbit_ephemeris.fragmented():
+            test_orbit_ephemeris = qv.defragment(test_orbit_ephemeris)
+    else:
+        test_orbit_ephemeris = TestOrbitEphemeris.empty()
 
     filtered_observations = filtered_observations.sort_by(
         [
